@@ -1,0 +1,28 @@
+name: budget_client
+description: Budget Tool Flutter web client
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.6.1
+  go_router: ^15.1.2
+  http: ^1.4.0
+  intl: ^0.20.2
+  decimal: ^3.2.1
+  uuid: ^4.5.1
+  fl_chart: ^0.71.0
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

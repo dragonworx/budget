@@ -1,0 +1,156 @@
+import 'package:decimal/decimal.dart';
+import 'package:postgres/postgres.dart';
+import 'package:shelf/shelf.dart';
+import 'package:shelf_router/shelf_router.dart';
+
+import '../domain/enums.dart';
+import '../domain/models.dart';
+import '../repo/transaction_repo.dart';
+import 'json_helpers.dart';
+
+Router transactionsRouter(Connection conn) {
+  final transactions = TransactionRepo(conn);
+  final router = Router();
+
+  router.get('/<id>', (Request request, String id) async {
+    final transaction = await transactions.get(id);
+    if (transaction == null) return jsonError(404, 'transaction not found');
+    return jsonOk(transaction.toJson());
+  });
+
+  router.patch('/<id>', (Request request, String id) async {
+    try {
+      final body = await readJsonObject(request);
+      final existing = await transactions.get(id);
+      if (existing == null) return jsonError(404, 'transaction not found');
+
+      RecurrenceMode? recurrenceMode;
+      if (body.containsKey('recurrenceMode')) {
+        recurrenceMode = RecurrenceMode.parse(requireString(body, 'recurrenceMode'));
+      }
+      EndMode? endMode;
+      if (body.containsKey('endMode')) {
+        endMode = EndMode.parse(requireString(body, 'endMode'));
+      }
+      RecurrenceUnit? unit;
+      if (body.containsKey('unit')) {
+        final u = body['unit'];
+        unit = u == null ? null : RecurrenceUnit.parse(u.toString());
+      }
+
+      final clearInterval = body.containsKey('interval') && body['interval'] == null;
+      final clearUnit = body.containsKey('unit') && body['unit'] == null;
+      final clearEndDate = body.containsKey('endDate') && body['endDate'] == null;
+      final clearCount =
+          body.containsKey('occurrenceCount') && body['occurrenceCount'] == null;
+
+      final transaction = await transactions.update(
+        id,
+        name: optionalString(body, 'name'),
+        direction: body.containsKey('direction')
+            ? Direction.parse(requireString(body, 'direction'))
+            : null,
+        amount: body.containsKey('amount') ? parseDecimal(body['amount']) : null,
+        startDate: body.containsKey('startDate')
+            ? parseDate(requireString(body, 'startDate'))
+            : null,
+        recurrenceMode: recurrenceMode,
+        interval: optionalInt(body, 'interval'),
+        unit: unit,
+        endMode: endMode,
+        endDate: body.containsKey('endDate') && body['endDate'] != null
+            ? parseDate(body['endDate'].toString())
+            : null,
+        occurrenceCount: optionalInt(body, 'occurrenceCount'),
+        enabled: optionalBool(body, 'enabled'),
+        clearInterval: clearInterval,
+        clearUnit: clearUnit,
+        clearEndDate: clearEndDate,
+        clearOccurrenceCount: clearCount,
+      );
+      return jsonOk(transaction!.toJson());
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  router.delete('/<id>', (Request request, String id) async {
+    final ok = await transactions.delete(id);
+    if (!ok) return jsonError(404, 'transaction not found');
+    return Response(204);
+  });
+
+  router.put('/<id>/skips/<date>', (Request request, String id, String date) async {
+    try {
+      final transaction = await transactions.get(id);
+      if (transaction == null) return jsonError(404, 'transaction not found');
+      final body = await readJsonObject(request);
+      final skipped = body['skipped'];
+      if (skipped is! bool) {
+        return jsonError(400, 'skipped must be a boolean');
+      }
+      final d = parseDate(date);
+      await transactions.setSkip(id, d, skipped);
+      return jsonOk({
+        'transactionId': id,
+        'date': formatDate(d),
+        'skipped': skipped,
+      });
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  return router;
+}
+
+class ParsedTransactionBody {
+  ParsedTransactionBody({
+    required this.name,
+    required this.direction,
+    required this.amount,
+    required this.startDate,
+    required this.recurrenceMode,
+    this.interval,
+    this.unit,
+    required this.endMode,
+    this.endDate,
+    this.occurrenceCount,
+    required this.enabled,
+  });
+
+  final String name;
+  final Direction direction;
+  final Decimal amount;
+  final DateTime startDate;
+  final RecurrenceMode recurrenceMode;
+  final int? interval;
+  final RecurrenceUnit? unit;
+  final EndMode endMode;
+  final DateTime? endDate;
+  final int? occurrenceCount;
+  final bool enabled;
+}
+
+ParsedTransactionBody parseTransactionBody(Map<String, dynamic> body) {
+  final recurrenceMode =
+      RecurrenceMode.parse(optionalString(body, 'recurrenceMode') ?? 'once');
+  final endMode = EndMode.parse(optionalString(body, 'endMode') ?? 'never');
+  final unitRaw = optionalString(body, 'unit');
+
+  return ParsedTransactionBody(
+    name: optionalString(body, 'name') ?? '',
+    direction: Direction.parse(requireString(body, 'direction')),
+    amount: parseDecimal(body['amount']),
+    startDate: parseDate(requireString(body, 'startDate')),
+    recurrenceMode: recurrenceMode,
+    interval: optionalInt(body, 'interval'),
+    unit: unitRaw == null ? null : RecurrenceUnit.parse(unitRaw),
+    endMode: endMode,
+    endDate: optionalString(body, 'endDate') == null
+        ? null
+        : parseDate(body['endDate'].toString()),
+    occurrenceCount: optionalInt(body, 'occurrenceCount'),
+    enabled: optionalBool(body, 'enabled') ?? true,
+  );
+}

@@ -1,0 +1,19 @@
+ALTER TABLE streams RENAME TO transactions;
+ALTER TABLE transactions RENAME CONSTRAINT streams_once_or_every TO transactions_once_or_every;
+ALTER TABLE transactions RENAME CONSTRAINT streams_end_fields TO transactions_end_fields;
+ALTER INDEX streams_account_id_idx RENAME TO transactions_account_id_idx;
+ALTER TABLE transactions RENAME CONSTRAINT streams_pkey TO transactions_pkey;
+ALTER TABLE transactions RENAME CONSTRAINT streams_account_id_fkey TO transactions_account_id_fkey;
+ALTER TABLE transactions RENAME CONSTRAINT streams_direction_check TO transactions_direction_check;
+ALTER TABLE transactions RENAME CONSTRAINT streams_amount_check TO transactions_amount_check;
+ALTER TABLE transactions RENAME CONSTRAINT streams_recurrence_mode_check TO transactions_recurrence_mode_check;
+ALTER TABLE transactions RENAME CONSTRAINT streams_interval_check TO transactions_interval_check;
+ALTER TABLE transactions RENAME CONSTRAINT streams_unit_check TO transactions_unit_check;
+ALTER TABLE transactions RENAME CONSTRAINT streams_end_mode_check TO transactions_end_mode_check;
+ALTER TABLE transactions RENAME CONSTRAINT streams_occurrence_count_check TO transactions_occurrence_count_check;
+
+ALTER TABLE accounts RENAME COLUMN stream_order TO transaction_order;
+
+ALTER TABLE skipped_occurrences RENAME COLUMN stream_id TO transaction_id;
+ALTER TABLE skipped_occurrences
+  RENAME CONSTRAINT skipped_occurrences_stream_id_fkey TO skipped_occurrences_transaction_id_fkey;

@@ -1,0 +1,32 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Dart / Flutter
+.dart_tool/
+.pub-cache/
+build/
+coverage/
+.flutter-plugins
+.flutter-plugins-dependencies
+server/bin/*.exe
+
+# Dev process files (server PID and log from `make dev`)
+.dev/
+*.log
+
+# IDE / editors
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local postgres data (if ever mounted as a bind mount)
+postgres-data/
+pgdata/
+data/postgres/
