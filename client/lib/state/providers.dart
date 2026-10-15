@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api_client.dart';
@@ -22,8 +23,9 @@ final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
   return TransactionRepository(ref.watch(apiClientProvider));
 });
 
-final projectsProvider =
-    AsyncNotifierProvider<ProjectsNotifier, List<Project>>(ProjectsNotifier.new);
+final projectsProvider = AsyncNotifierProvider<ProjectsNotifier, List<Project>>(
+  ProjectsNotifier.new,
+);
 
 class ProjectsNotifier extends AsyncNotifier<List<Project>> {
   @override
@@ -32,7 +34,7 @@ class ProjectsNotifier extends AsyncNotifier<List<Project>> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
+    state = AsyncLoading<List<Project>>().copyWithPrevious(state);
     state = await AsyncValue.guard(
       () => ref.read(projectRepositoryProvider).list(),
     );
@@ -48,9 +50,7 @@ class ProjectsNotifier extends AsyncNotifier<List<Project>> {
   Future<void> rename(String id, String name) async {
     final updated = await ref.read(projectRepositoryProvider).rename(id, name);
     final current = state.valueOrNull ?? [];
-    state = AsyncData([
-      for (final p in current) p.id == id ? updated : p,
-    ]);
+    state = AsyncData([for (final p in current) p.id == id ? updated : p]);
   }
 
   Future<void> delete(String id) async {
@@ -72,8 +72,8 @@ final projectProvider = FutureProvider.family<Project, String>((ref, id) async {
 
 final accountsProvider =
     AsyncNotifierProvider.family<AccountsNotifier, List<Account>, String>(
-  AccountsNotifier.new,
-);
+      AccountsNotifier.new,
+    );
 
 class AccountsNotifier extends FamilyAsyncNotifier<List<Account>, String> {
   @override
@@ -82,15 +82,16 @@ class AccountsNotifier extends FamilyAsyncNotifier<List<Account>, String> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
+    state = AsyncLoading<List<Account>>().copyWithPrevious(state);
     state = await AsyncValue.guard(
       () => ref.read(accountRepositoryProvider).listForProject(arg),
     );
   }
 
   Future<Account> create(Account draft) async {
-    final created =
-        await ref.read(accountRepositoryProvider).create(arg, draft);
+    final created = await ref
+        .read(accountRepositoryProvider)
+        .create(arg, draft);
     final current = state.valueOrNull ?? [];
     state = AsyncData([...current, created]);
     return created;
@@ -116,33 +117,39 @@ final accountProvider = FutureProvider.family<Account, String>((ref, id) {
 });
 
 final transactionsProvider =
-    AsyncNotifierProvider.family<TransactionsNotifier, List<Transaction>, String>(
-  TransactionsNotifier.new,
-);
+    AsyncNotifierProvider.family<
+      TransactionsNotifier,
+      List<Transaction>,
+      String
+    >(TransactionsNotifier.new);
 
-class TransactionsNotifier extends FamilyAsyncNotifier<List<Transaction>, String> {
+class TransactionsNotifier
+    extends FamilyAsyncNotifier<List<Transaction>, String> {
   @override
   Future<List<Transaction>> build(String accountId) {
     return ref.read(transactionRepositoryProvider).listForAccount(accountId);
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
+    state = AsyncLoading<List<Transaction>>().copyWithPrevious(state);
     state = await AsyncValue.guard(
       () => ref.read(transactionRepositoryProvider).listForAccount(arg),
     );
   }
 
   Future<Transaction> create(Transaction draft) async {
-    final created =
-        await ref.read(transactionRepositoryProvider).create(arg, draft);
+    final created = await ref
+        .read(transactionRepositoryProvider)
+        .create(arg, draft);
     final current = state.valueOrNull ?? [];
     state = AsyncData([...current, created]);
     return created;
   }
 
   Future<void> updateTransaction(Transaction transaction) async {
-    final updated = await ref.read(transactionRepositoryProvider).update(transaction);
+    final updated = await ref
+        .read(transactionRepositoryProvider)
+        .update(transaction);
     final current = state.valueOrNull ?? [];
     state = AsyncData([
       for (final s in current) s.id == transaction.id ? updated : s,
@@ -160,16 +167,15 @@ class TransactionsNotifier extends FamilyAsyncNotifier<List<Transaction>, String
     DateTime date, {
     required bool skipped,
   }) async {
-    await ref.read(transactionRepositoryProvider).skipOccurrence(
-          transactionId,
-          date,
-          skipped: skipped,
-        );
+    await ref
+        .read(transactionRepositoryProvider)
+        .skipOccurrence(transactionId, date, skipped: skipped);
   }
 
   Future<void> reorder(List<String> transactionIds) async {
-    final account =
-        await ref.read(accountRepositoryProvider).reorderTransactions(arg, transactionIds);
+    final account = await ref
+        .read(accountRepositoryProvider)
+        .reorderTransactions(arg, transactionIds);
     ref.invalidate(accountProvider(arg));
     final byId = {for (final s in state.valueOrNull ?? []) s.id: s};
     state = AsyncData([
@@ -203,11 +209,25 @@ class BalanceQuery {
   int get hashCode => Object.hash(accountId, from, to);
 }
 
-final balanceProvider =
-    FutureProvider.family<BalanceSeries, BalanceQuery>((ref, query) {
-  return ref.read(accountRepositoryProvider).balance(
-        query.accountId,
-        from: query.from,
-        to: query.to,
-      );
+final balanceProvider = FutureProvider.family<BalanceSeries, BalanceQuery>((
+  ref,
+  query,
+) {
+  return ref
+      .read(accountRepositoryProvider)
+      .balance(query.accountId, from: query.from, to: query.to);
+});
+
+/// Closing balance today for an account (null when there are no points).
+final todayBalanceProvider = FutureProvider.family<Decimal?, String>((
+  ref,
+  accountId,
+) async {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final series = await ref.watch(
+    balanceProvider(BalanceQuery(accountId: accountId, from: today, to: today))
+        .future,
+  );
+  return series.points.isEmpty ? null : series.points.last.closingBalance;
 });

@@ -32,7 +32,8 @@ Future<SolveResult?> showSolveSheet(
         ),
         child: SolveSheet(
           accountId: accountId,
-          initial: initial ??
+          initial:
+              initial ??
               SolveRequest(
                 name: 'Planned transaction',
                 direction: TransactionDirection.debit,
@@ -193,7 +194,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
       if (!mounted || seq != _requestSeq) return;
       setState(() {
         _result = null;
-        _error = error is ApiException ? error.message : error.toString();
+        _error = friendlyError(error);
       });
     } finally {
       if (mounted && seq == _requestSeq) setState(() => _solving = false);
@@ -319,11 +320,14 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
             _IntField(
               controller: _interval,
               label: 'Every',
-              suffix: unitLabel(_unit, _parseInt(_interval) ??
-                  values?.interval ??
-                  1),
+              suffix: unitLabel(
+                _unit,
+                _parseInt(_interval) ?? values?.interval ?? 1,
+              ),
               help: 'Leave blank to find the spacing that fits',
-              calculated: _isSolved(SolveVar.interval) ? values?.interval : null,
+              calculated: _isSolved(SolveVar.interval)
+                  ? values?.interval
+                  : null,
               wanted: _isWanted(SolveVar.interval),
               error: _intError(_interval),
               onChanged: _changed,
@@ -413,7 +417,9 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     if (result == null || transaction == null) return;
     final named = transaction.copyWith(
       accountId: widget.accountId,
-      name: _name.text.trim().isEmpty ? 'Planned transaction' : _name.text.trim(),
+      name: _name.text.trim().isEmpty
+          ? 'Planned transaction'
+          : _name.text.trim(),
       direction: _direction,
     );
 
@@ -435,7 +441,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = error is ApiException ? error.message : error.toString();
+          _error = friendlyError(error);
         });
       }
     } finally {
@@ -608,10 +614,7 @@ InputDecoration _decoration(
     labelText: label,
     floatingLabelBehavior: hint != null ? FloatingLabelBehavior.always : null,
     hintText: hint,
-    hintStyle: TextStyle(
-      color: scheme.primary,
-      fontStyle: FontStyle.italic,
-    ),
+    hintStyle: TextStyle(color: scheme.primary, fontStyle: FontStyle.italic),
     helperText: helper,
     helperStyle: _helperStyle(
       context,
@@ -685,28 +688,29 @@ class _DateField extends StatelessWidget {
       borderRadius: BorderRadius.circular(4),
       child: InputDecorator(
         isEmpty: !hasValue && calc == null,
-        decoration: _decoration(
-          context,
-          label: label,
-          hasValue: hasValue,
-          wanted: wanted,
-          hint: calc == null ? null : formatDate(calc),
-          helper: _helperFor(
-            hasValue: hasValue,
-            wanted: wanted,
-            help: 'Tap to change',
-            calculated: calc == null ? null : formatDate(calc),
-          ),
-          onClear: () => onChanged(null),
-        ).copyWith(
-          suffixIcon: hasValue
-              ? IconButton(
-                  tooltip: 'Clear — calculate instead',
-                  icon: const Icon(Icons.close),
-                  onPressed: () => onChanged(null),
-                )
-              : Icon(Icons.calendar_today_outlined, color: scheme.outline),
-        ),
+        decoration:
+            _decoration(
+              context,
+              label: label,
+              hasValue: hasValue,
+              wanted: wanted,
+              hint: calc == null ? null : formatDate(calc),
+              helper: _helperFor(
+                hasValue: hasValue,
+                wanted: wanted,
+                help: 'Tap to change',
+                calculated: calc == null ? null : formatDate(calc),
+              ),
+              onClear: () => onChanged(null),
+            ).copyWith(
+              suffixIcon: hasValue
+                  ? IconButton(
+                      tooltip: 'Clear — calculate instead',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => onChanged(null),
+                    )
+                  : Icon(Icons.calendar_today_outlined, color: scheme.outline),
+            ),
         child: Text(
           hasValue
               ? formatDate(value!)

@@ -38,6 +38,7 @@ class BalanceChart extends StatefulWidget {
     required this.currency,
     required this.seedDate,
     this.lossThreshold = 0,
+    this.fitIncludesThreshold = false,
     required this.viewStart,
     required this.visibleDays,
     required this.onViewportChanged,
@@ -51,7 +52,11 @@ class BalanceChart extends StatefulWidget {
     this.onFitRequested,
     this.onZoomStep,
     this.transactions = const {},
+    this.onOccurrenceTap,
   });
+
+  /// Click on one or more occurrence dots (several when they overlap).
+  final ValueChanged<List<Occurrence>>? onOccurrenceTap;
 
   /// Transactions by id, for the occurrence hover tooltip.
   final Map<String, Transaction> transactions;
@@ -78,6 +83,9 @@ class BalanceChart extends StatefulWidget {
 
   /// Closing balances at or below this value are drawn as a loss.
   final double lossThreshold;
+
+  /// Whether balance fits stretch to include the loss threshold line.
+  final bool fitIncludesThreshold;
   final DateTime viewStart;
   final double visibleDays;
   final ViewportChanged onViewportChanged;
@@ -135,6 +143,9 @@ class _BalanceChartState extends State<BalanceChart> {
   bool _holdSelect = false;
   static const Duration _holdDelay = Duration(milliseconds: 420);
   bool _overAdd = false;
+
+  /// Pointer is over an occurrence dot (click opens its series).
+  bool _overDot = false;
   final FocusNode _focus = FocusNode(debugLabel: 'BalanceChart');
 
   static const double _addButtonSize = 28;
@@ -156,7 +167,11 @@ class _BalanceChartState extends State<BalanceChart> {
     if (_yRange != null) return _yRange;
     final visible = _visible();
     if (visible == null) return null;
-    return _yRange = paddedRange(visible.extents.min, visible.extents.max);
+    return _yRange = paddedRange(
+      visible.extents.min,
+      visible.extents.max,
+      include: widget.fitIncludesThreshold ? [widget.lossThreshold] : const [],
+    );
   }
 
   void _setYRange(BalanceExtents range) {
@@ -318,6 +333,13 @@ class _BalanceChartState extends State<BalanceChart> {
       widget.onCreateOnDay(addDay);
       return;
     }
+    if (!dragged && widget.onOccurrenceTap != null) {
+      final hits = _dotsAt(_layout, localPosition);
+      if (hits.isNotEmpty) {
+        widget.onOccurrenceTap!([for (final d in hits) d.occurrence]);
+        return;
+      }
+    }
     if (!dragged) {
       final day = _dayAt(localPosition.dx);
       final onDay = widget.series.occurrences
@@ -476,7 +498,7 @@ class _BalanceChartState extends State<BalanceChart> {
         ? SystemMouseCursors.precise
         : _pointer != null && _dragged
         ? SystemMouseCursors.grabbing
-        : _overAdd
+        : _overAdd || _overDot
         ? SystemMouseCursors.click
         : SystemMouseCursors.grab;
 
@@ -513,6 +535,7 @@ class _BalanceChartState extends State<BalanceChart> {
                         currency: widget.currency,
                         seedDate: widget.seedDate,
                         lossThreshold: widget.lossThreshold,
+                        fitIncludesThreshold: widget.fitIncludesThreshold,
                         viewStart: widget.viewStart,
                         visibleDays: widget.visibleDays,
                         selectAnchor: _selecting ? _selectAnchor : null,
@@ -701,37 +724,45 @@ class _BalanceChartState extends State<BalanceChart> {
     return _dotsMemo = dots;
   }
 
-  void _updateDotHover(ChartLayout layout, Offset pos) {
-    if (!layout.plot.inflate(6).contains(pos)) {
-      _hoverDots.value = null;
-      return;
-    }
+  /// Dots under [pos]: the nearest one plus any drawn on top of it.
+  List<_Dot> _dotsAt(ChartLayout layout, Offset pos) {
+    if (!layout.plot.inflate(6).contains(pos)) return const [];
     final hits = <_Dot>[];
     for (final dot in _dots(layout)) {
       // Forgiving: at least 9px even for tiny zoomed-out dots.
       final r = math.max(dot.radius + 5, 9.0);
       if ((dot.center - pos).distanceSquared <= r * r) hits.add(dot);
     }
-    if (hits.isEmpty) {
-      if (_hoverDots.value != null) _hoverDots.value = null;
-      return;
-    }
+    if (hits.isEmpty) return const [];
     // Several dots under the pointer: list the overlapping ones; with
-    // readable stacks, show only the nearest.
+    // readable stacks, take only the nearest.
     final nearest = hits.reduce(
       (a, b) =>
           (a.center - pos).distanceSquared <= (b.center - pos).distanceSquared
           ? a
           : b,
     );
-    final overlapping = hits
-        .where((d) => (d.center - nearest.center).distance < 2)
-        .toList();
+    return [
+      nearest,
+      for (final d in hits)
+        if (!identical(d, nearest) && (d.center - nearest.center).distance < 2)
+          d,
+    ];
+  }
+
+  void _updateDotHover(ChartLayout layout, Offset pos) {
+    final overlapping = _dotsAt(layout, pos);
+    if (overlapping.isEmpty) {
+      if (_hoverDots.value != null) _hoverDots.value = null;
+      if (_overDot) setState(() => _overDot = false);
+      return;
+    }
+    if (!_overDot) setState(() => _overDot = true);
     final current = _hoverDots.value;
     if (current != null && listEquals(current.dots, overlapping)) {
       return;
     }
-    _hoverDots.value = _DotTip(overlapping, nearest.center);
+    _hoverDots.value = _DotTip(overlapping, overlapping.first.center);
   }
 
   Widget _tooltip(ThemeData theme, _DotTip tip) {
@@ -777,12 +808,8 @@ class _BalanceChartState extends State<BalanceChart> {
                   style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: o.skipped
-                        ? const Color(0xFF5C6B68)
-                        : Color.lerp(
-                            debit ? AppTheme.debitColor : AppTheme.creditColor,
-                            Colors.black,
-                            0.35,
-                          ),
+                        ? AppTheme.textFaint
+                        : (debit ? AppTheme.debitColor : AppTheme.creditColor),
                     decoration: o.skipped ? TextDecoration.lineThrough : null,
                   ),
                 ),
@@ -803,12 +830,12 @@ class _BalanceChartState extends State<BalanceChart> {
                 status.join(' · '),
                 style: small.copyWith(
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xFF8A5A00),
+                  color: AppTheme.warning,
                 ),
               ),
             Text(
               'Balance after: ${formatMoneyAmount(dot.balanceAfter, widget.currency)}',
-              style: small.copyWith(color: const Color(0xFF5C6B68)),
+              style: small.copyWith(color: AppTheme.textFaint),
             ),
           ],
         ),
@@ -830,24 +857,63 @@ class _BalanceChartState extends State<BalanceChart> {
     var top = tip.anchor.dy - 20;
     if (top + estHeight > _size.height - 4) top = _size.height - estHeight - 4;
     top = _clampEdge(top, 4, _size.height - 40);
-    return Positioned(
-      left: left,
-      top: top,
-      width: width,
+    final ring = tip.dots.first.radius + 5;
+    return Positioned.fill(
       child: IgnorePointer(
-        child: Material(
-          key: const ValueKey('occurrence-tooltip'),
-          elevation: 6,
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(10),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: children,
+        child: Stack(
+          children: [
+            // Highlight ring on the hovered dot.
+            Positioned(
+              left: tip.anchor.dx - ring,
+              top: tip.anchor.dy - ring,
+              width: ring * 2,
+              height: ring * 2,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppTheme.accent.withValues(alpha: 0.18),
+                  border: Border.all(color: AppTheme.accent, width: 1.5),
+                ),
+              ),
             ),
-          ),
+            Positioned(
+              left: left,
+              top: top,
+              width: width,
+              child: _tooltipCard(theme, children),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tooltipCard(ThemeData theme, List<Widget> children) {
+    final small = theme.textTheme.bodySmall ?? const TextStyle();
+    return Material(
+      key: const ValueKey('occurrence-tooltip'),
+      elevation: 10,
+      color: AppTheme.overlay,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppTheme.borderStrong),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ...children,
+            const SizedBox(height: 8),
+            Text(
+              'Click to edit series',
+              style: small.copyWith(
+                color: AppTheme.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -873,7 +939,7 @@ class _BalanceChartState extends State<BalanceChart> {
             color: theme.colorScheme.primary,
             shape: const CircleBorder(),
             child: const Center(
-              child: Icon(Icons.add, color: Colors.white, size: 18),
+              child: Icon(Icons.add, color: AppTheme.onAccent, size: 18),
             ),
           ),
         ),
@@ -906,7 +972,7 @@ class ChartLayout {
   final bool showDayLane;
   final bool showDayLabels;
 
-  static const double gutter = 96;
+  static const double gutter = 112;
   static const double right = 12;
   static const double top = 8;
 
@@ -958,40 +1024,48 @@ class ChartLayout {
   }
 }
 
+// Muted, dark-tuned hues for month lanes (white text stays readable).
 const _monthColors = <Color>[
-  Color(0xFF1E4D78),
-  Color(0xFF0B5F5A),
-  Color(0xFF2E6B45),
-  Color(0xFF8C5A28),
-  Color(0xFFA34538),
-  Color(0xFF8A3E62),
-  Color(0xFF3A568C),
-  Color(0xFF1F6E78),
-  Color(0xFF5A6828),
-  Color(0xFFB06A22),
-  Color(0xFF6A4634),
-  Color(0xFF3E4C63),
+  Color(0xFF24476B),
+  Color(0xFF1D5A55),
+  Color(0xFF2C5A3E),
+  Color(0xFF6A4B26),
+  Color(0xFF6E3532),
+  Color(0xFF5E3253),
+  Color(0xFF34477A),
+  Color(0xFF1F5866),
+  Color(0xFF4C5626),
+  Color(0xFF7A5020),
+  Color(0xFF543A30),
+  Color(0xFF36435A),
 ];
 
+/// Alternating week lane fills.
 const _weekColors = <Color>[
-  Color(0xFFF6E3B8),
-  Color(0xFFD9EBD3),
-  Color(0xFFF8D7CC),
-  Color(0xFFD9E4F5),
+  Color(0xFF1A222D),
+  Color(0xFF151C25),
+  Color(0xFF1A222D),
+  Color(0xFF151C25),
 ];
 
+/// Day columns: weekdays sit on the plot colour, weekends a touch lighter.
 const _dayColors = <Color>[
-  Color(0xFFD5E4F2),
-  Color(0xFFD8F0E4),
-  Color(0xFFFFF1CC),
-  Color(0xFFF9DCC8),
-  Color(0xFFF6D0D4),
-  Color(0xFFE4D7F4),
-  Color(0xFFE7E5E0),
+  Color(0xFF131921),
+  Color(0xFF131921),
+  Color(0xFF131921),
+  Color(0xFF131921),
+  Color(0xFF131921),
+  Color(0xFF19212B),
+  Color(0xFF19212B),
 ];
+
+const _plotBg = Color(0xFF131921);
+const _laneText = Color(0xFFC6CEDA);
+const _lineColor = AppTheme.accent;
+const _gridColor = Color(0xFF243040);
 
 Color _yearColor(int index) =>
-    index.isEven ? const Color(0xFF1E4D78) : const Color(0xFF0B5F5A);
+    index.isEven ? const Color(0xFF24476B) : const Color(0xFF1D5A55);
 
 Color _monthColor(int month) => _monthColors[(month - 1).clamp(0, 11)];
 
@@ -1005,6 +1079,7 @@ class _BalanceChartPainter extends CustomPainter {
     required this.currency,
     required this.seedDate,
     required this.lossThreshold,
+    this.fitIncludesThreshold = false,
     required this.viewStart,
     required this.visibleDays,
     required this.selectAnchor,
@@ -1026,6 +1101,7 @@ class _BalanceChartPainter extends CustomPainter {
   final BalanceSeries series;
   final String currency;
   final DateTime seedDate;
+  final bool fitIncludesThreshold;
   final double lossThreshold;
   final DateTime viewStart;
   final double visibleDays;
@@ -1067,7 +1143,12 @@ class _BalanceChartPainter extends CustomPainter {
     }
 
     final range =
-        yRange ?? paddedRange(visible.extents.min, visible.extents.max);
+        yRange ??
+        paddedRange(
+          visible.extents.min,
+          visible.extents.max,
+          include: fitIncludesThreshold ? [lossThreshold] : const [],
+        );
     final scale = _YScale(range.min, range.max, layout.plot);
     _paintGrid(canvas, layout, scale, visible.extents);
     _paintSelection(canvas, layout, viewEnd);
@@ -1094,12 +1175,17 @@ class _BalanceChartPainter extends CustomPainter {
         : monthSegments(viewStart, viewEnd);
     for (final segment in segments) {
       final color = switch (segment.lane) {
-        AxisLane.year => _yearColor(segment.colorIndex).withValues(alpha: 0.12),
+        AxisLane.year => Color.alphaBlend(
+          _yearColor(segment.colorIndex).withValues(alpha: 0.10),
+          _plotBg,
+        ),
         AxisLane.day => _dayColor(segment.colorIndex),
-        AxisLane.week => _weekColor(segment.colorIndex),
-        AxisLane.month => _monthColor(
-          segment.colorIndex,
-        ).withValues(alpha: 0.16),
+        AxisLane.week =>
+          segment.colorIndex.isEven ? _plotBg : const Color(0xFF161D26),
+        AxisLane.month => Color.alphaBlend(
+          _monthColor(segment.colorIndex).withValues(alpha: 0.10),
+          _plotBg,
+        ),
       };
       _fillSegment(
         canvas,
@@ -1120,7 +1206,7 @@ class _BalanceChartPainter extends CustomPainter {
     DateTime viewEnd,
   ) {
     final monthPaint = Paint()
-      ..color = const Color(0xFF1A2422).withValues(alpha: 0.28)
+      ..color = const Color(0xFF3A4757)
       ..strokeWidth = 1;
     final boundaries = useYearLane(layout.plot.width, visibleDays)
         ? yearSegments(viewStart, viewEnd)
@@ -1136,7 +1222,7 @@ class _BalanceChartPainter extends CustomPainter {
     }
     if (!layout.showWeekLane) return;
     final weekPaint = Paint()
-      ..color = const Color(0xFF1A2422).withValues(alpha: 0.12)
+      ..color = const Color(0xFF222C38)
       ..strokeWidth = 1;
     for (final segment in weekSegments(viewStart, viewEnd)) {
       final x = layout.xOf(segment.start, viewStart, visibleDays);
@@ -1238,7 +1324,7 @@ class _BalanceChartPainter extends CustomPainter {
           return '';
         },
         (segment) => _weekColor(segment.colorIndex),
-        const Color(0xFF1A2422),
+        _laneText,
         'Week',
       );
     }
@@ -1259,7 +1345,7 @@ class _BalanceChartPainter extends CustomPainter {
           return ordinal;
         },
         (segment) => _dayColor(segment.colorIndex),
-        const Color(0xFF1A2422),
+        _laneText,
         'Day',
         rotateWhenTight: true,
       );
@@ -1278,7 +1364,7 @@ class _BalanceChartPainter extends CustomPainter {
     String laneName, {
     bool rotateWhenTight = false,
   }) {
-    canvas.drawRect(band, Paint()..color = const Color(0xFFE7EEEC));
+    canvas.drawRect(band, Paint()..color = const Color(0xFF10151C));
     canvas.save();
     canvas.clipRect(band);
     for (final segment in segments) {
@@ -1340,7 +1426,7 @@ class _BalanceChartPainter extends CustomPainter {
     BalanceExtents extents,
   ) {
     final grid = Paint()
-      ..color = const Color(0xFF1A2422).withValues(alpha: 0.08)
+      ..color = _gridColor
       ..strokeWidth = 1;
     final digits = moneyDigitsForSpan(extents.min, extents.max);
     final minY = scale.yOf(extents.min);
@@ -1369,7 +1455,7 @@ class _BalanceChartPainter extends CustomPainter {
         Offset(layout.plot.left, y),
         Offset(layout.plot.right, y),
         Paint()
-          ..color = const Color(0xFF1A2422).withValues(alpha: 0.35)
+          ..color = const Color(0xFF4A5868)
           ..strokeWidth = 1,
       );
       if ((y - minY).abs() >= 22 && (y - maxY).abs() >= 22) {
@@ -1384,7 +1470,7 @@ class _BalanceChartPainter extends CustomPainter {
     }
 
     final extentPaint = Paint()
-      ..color = const Color(0xFF0B5F5A).withValues(alpha: 0.55)
+      ..color = AppTheme.accent.withValues(alpha: 0.35)
       ..strokeWidth = 1;
     bool onPlot(double y) => y >= layout.plot.top && y <= layout.plot.bottom;
     if (onPlot(maxY)) {
@@ -1501,10 +1587,7 @@ class _BalanceChartPainter extends CustomPainter {
         Rect.fromLTWH(left - 3, top - 1, painter.width + 6, painter.height + 2),
         const Radius.circular(4),
       );
-      canvas.drawRRect(
-        bg,
-        Paint()..color = const Color(0xFFF3F0E8).withValues(alpha: 0.92),
-      );
+      canvas.drawRRect(bg, Paint()..color = AppTheme.raised);
     }
     painter.paint(canvas, Offset(left, top));
     painter.dispose();
@@ -1531,9 +1614,9 @@ class _BalanceChartPainter extends CustomPainter {
       layout,
       seed,
       viewEnd,
-      color: const Color(0xFF5C6B68).withValues(alpha: 0.8),
+      color: AppTheme.violet.withValues(alpha: 0.7),
       label: 'Seed',
-      labelColor: const Color(0xFF5C6B68),
+      labelColor: AppTheme.violet,
       dashed: true,
       alignLeft: true,
     );
@@ -1607,7 +1690,7 @@ class _BalanceChartPainter extends CustomPainter {
     );
     canvas.drawRect(
       rect,
-      Paint()..color = AppTheme.mint.withValues(alpha: 0.22),
+      Paint()..color = AppTheme.violet.withValues(alpha: 0.18),
     );
   }
 
@@ -1617,7 +1700,8 @@ class _BalanceChartPainter extends CustomPainter {
     if (anchor == null || end == null) return;
     final start = anchor.isBefore(end) ? anchor : end;
     final finish = anchor.isBefore(end) ? end : anchor;
-    final text = '${formatDate(start)} → ${formatDate(finish)}';
+    final text =
+        '${DateFormat('d MMM y').format(start)} → ${DateFormat('d MMM y').format(finish)}';
     final painter = TextPainter(
       text: TextSpan(text: text, style: strongStyle.copyWith(fontSize: 12)),
       textDirection: TextDirection.ltr,
@@ -1631,10 +1715,7 @@ class _BalanceChartPainter extends CustomPainter {
       ),
       const Radius.circular(8),
     );
-    canvas.drawRRect(
-      rect,
-      Paint()..color = const Color(0xFFFFFFF2).withValues(alpha: 0.94),
-    );
+    canvas.drawRRect(rect, Paint()..color = AppTheme.overlay);
     painter.paint(canvas, Offset(rect.left + 8, rect.top + 4));
     painter.dispose();
   }
@@ -1718,6 +1799,16 @@ class _BalanceChartPainter extends CustomPainter {
 
     canvas.save();
     canvas.clipRect(layout.plot);
+    // Gradient area under the line: strong near the top of the plot,
+    // fading out towards the bottom.
+    Paint gradientFill(Color c) => Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [c.withValues(alpha: 0.30), c.withValues(alpha: 0.03)],
+      ).createShader(layout.plot);
+    final areaFill = gradientFill(_lineColor);
+    final lossFill = gradientFill(AppTheme.debitColor);
     for (final plateau in plateaus) {
       if (plateau.x1 <= plateau.x0) continue;
       final y = scale.yOf(plateau.value);
@@ -1727,13 +1818,7 @@ class _BalanceChartPainter extends CustomPainter {
         ..lineTo(plateau.x1, layout.plot.bottom)
         ..lineTo(plateau.x0, layout.plot.bottom)
         ..close();
-      canvas.drawPath(
-        fill,
-        Paint()
-          ..color = _isLoss(plateau.value)
-              ? AppTheme.debitColor.withValues(alpha: 0.22)
-              : const Color(0xFF0B5F5A).withValues(alpha: 0.1),
-      );
+      canvas.drawPath(fill, _isLoss(plateau.value) ? lossFill : areaFill);
     }
 
     final thresholdY = scale.yOf(lossThreshold);
@@ -1744,6 +1829,25 @@ class _BalanceChartPainter extends CustomPainter {
         Paint()
           ..color = AppTheme.debitColor.withValues(alpha: 0.55)
           ..strokeWidth = 1,
+      );
+      final tp = TextPainter(
+        text: TextSpan(
+          text: 'Alert ≤ ${formatMoneyAmount(lossThreshold, currency)}',
+          style: TextStyle(
+            color: AppTheme.debitColor.withValues(alpha: 0.9),
+            fontSize: 10.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final above = thresholdY - tp.height - 3 >= layout.plot.top;
+      tp.paint(
+        canvas,
+        Offset(
+          layout.plot.right - tp.width - 8,
+          above ? thresholdY - tp.height - 3 : thresholdY + 3,
+        ),
       );
     }
 
@@ -1756,7 +1860,7 @@ class _BalanceChartPainter extends CustomPainter {
       canvas.drawPath(
         path,
         Paint()
-          ..color = loss ? AppTheme.debitColor : const Color(0xFF0B5F5A)
+          ..color = loss ? AppTheme.debitColor : _lineColor
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.4
           ..strokeJoin = StrokeJoin.round
@@ -1791,7 +1895,7 @@ class _BalanceChartPainter extends CustomPainter {
       final painter = TextPainter(
         text: TextSpan(
           text: text,
-          style: strongStyle.copyWith(fontSize: 11, color: Colors.white),
+          style: strongStyle.copyWith(fontSize: 11, color: AppTheme.onAccent),
         ),
         textDirection: TextDirection.ltr,
         maxLines: 1,
@@ -1805,7 +1909,7 @@ class _BalanceChartPainter extends CustomPainter {
           Rect.fromLTWH(left, y, w, h),
           Radius.circular(h / 2),
         ),
-        Paint()..color = const Color(0xFF0B5F5A).withValues(alpha: 0.85),
+        Paint()..color = AppTheme.accent.withValues(alpha: 0.9),
       );
       painter.paint(canvas, Offset(left + 8, y + 3));
       painter.dispose();
@@ -1878,14 +1982,14 @@ class _BalanceChartPainter extends CustomPainter {
           center,
           radius,
           Paint()
-            ..color = Colors.white
+            ..color = _plotBg
             ..style = PaintingStyle.fill,
         );
         canvas.drawCircle(
           center,
           radius,
           Paint()
-            ..color = const Color(0xFF9AA5A1)
+            ..color = AppTheme.textFaint
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.4,
         );
@@ -1900,9 +2004,9 @@ class _BalanceChartPainter extends CustomPainter {
           center,
           radius,
           Paint()
-            ..color = const Color(0xFF0B5F5A)
+            ..color = _plotBg
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1,
+            ..strokeWidth = 1.5,
         );
       }
       final rawName = transactionNames[occurrence.transactionId];
@@ -1961,7 +2065,7 @@ class _BalanceChartPainter extends CustomPainter {
       fontSize: fontSize,
       height: 1.0,
       fontWeight: FontWeight.w600,
-      color: const Color(0xFF1A2422),
+      color: AppTheme.text,
     );
     final probe = TextPainter(
       text: TextSpan(text: 'Mg', style: style),
@@ -1982,7 +2086,7 @@ class _BalanceChartPainter extends CustomPainter {
       });
       if (crowded) continue;
       final vertexStyle = vertex.skipped
-          ? style.copyWith(color: const Color(0xFF5C6B68))
+          ? style.copyWith(color: AppTheme.textFaint)
           : style;
       final amount = TextPainter(
         text: TextSpan(
@@ -1992,8 +2096,8 @@ class _BalanceChartPainter extends CustomPainter {
             color: vertex.skipped
                 ? null
                 : vertex.debit
-                ? Color.lerp(AppTheme.debitColor, Colors.black, 0.35)
-                : Color.lerp(AppTheme.creditColor, Colors.black, 0.35),
+                ? AppTheme.debitColor
+                : AppTheme.creditColor,
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -2146,16 +2250,19 @@ class _BalanceChartPainter extends CustomPainter {
     _ChartVertex vertex,
   ) {
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(4));
-    canvas.drawRRect(rrect, Paint()..color = const Color(0xFFF3F0E8));
+    canvas.drawRRect(
+      rrect,
+      Paint()..color = AppTheme.raised.withValues(alpha: 0.94),
+    );
     canvas.drawRRect(
       rrect,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1
-        ..color = const Color(0x331A2422),
+        ..color = AppTheme.border,
     );
     final accent = vertex.skipped
-        ? const Color(0xFF9AA5A1)
+        ? AppTheme.textFaint
         : vertex.debit
         ? AppTheme.debitColor
         : AppTheme.creditColor;
@@ -2230,6 +2337,7 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.currency != currency ||
         oldDelegate.seedDate != seedDate ||
         oldDelegate.lossThreshold != lossThreshold ||
+        oldDelegate.fitIncludesThreshold != fitIncludesThreshold ||
         oldDelegate.viewStart != viewStart ||
         oldDelegate.visibleDays != visibleDays ||
         oldDelegate.selectAnchor != selectAnchor ||
@@ -2249,11 +2357,13 @@ class _BalanceChartPainter extends CustomPainter {
 /// Y-axis money: compact (A\$1.5M) once values reach millions so labels
 /// fit the gutter instead of being cut off.
 String _axisMoney(double value, String currency, int digits, double scaleMax) {
-  if (scaleMax >= 1e6 && value.abs() >= 1) {
+  // Six-figure labels no longer fit the axis gutter ("max A$556,123"):
+  // switch to compact (A$556.1K, A$1.25M).
+  if (scaleMax >= 1e5 && value.abs() >= 1e5) {
     return NumberFormat.compactCurrency(
       name: currency,
       symbol: MoneyText.symbolFor(currency),
-      decimalDigits: 2,
+      decimalDigits: value.abs() >= 1e6 ? 2 : 1,
     ).format(value);
   }
   return formatMoneyAmount(

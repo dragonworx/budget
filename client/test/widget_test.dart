@@ -5,6 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   testWidgets('BudgetApp builds', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: BudgetApp()));
-    expect(find.text('Budget Tool'), findsOneWidget);
+    expect(find.text('Budget'), findsOneWidget);
   });
 }

@@ -75,22 +75,27 @@ void main() {
     expect(visible.extents.max, 30);
   });
 
-  test('padded range always includes zero and the data extremes', () {
-    final positive = paddedRange(100, 200);
-    expect(positive.min, lessThan(0));
-    expect(positive.max, greaterThan(200));
+  test('padded range fits the data, pulling in extras only on request', () {
+    final positive = paddedRange(59000, 74000);
+    expect(positive.min, inInclusiveRange(55000, 59000));
+    expect(positive.max, inInclusiveRange(74000, 78000));
+
+    final withZero = paddedRange(100, 200, include: const [0]);
+    expect(withZero.min, lessThan(0));
+    expect(withZero.max, greaterThan(200));
 
     final negative = paddedRange(-200, -40);
     expect(negative.min, lessThan(-200));
-    expect(negative.max, greaterThan(0));
+    expect(negative.max, inExclusiveRange(-40, 0));
 
     final mixed = paddedRange(-25, 80);
     expect(mixed.min, lessThan(-25));
     expect(mixed.max, greaterThan(80));
 
     final flat = paddedRange(50, 50);
-    expect(flat.min, lessThan(0));
+    expect(flat.min, lessThan(50));
     expect(flat.max, greaterThan(50));
+    expect(flat.min, greaterThan(0));
 
     final zero = paddedRange(0, 0);
     expect(zero.min, lessThan(0));

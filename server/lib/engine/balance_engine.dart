@@ -43,9 +43,11 @@ class BalanceEngine {
       rangeStart = seed;
     }
 
+    // Generate from the seed: occurrences before the requested window still
+    // move the opening balance. Only in-window ones are returned.
     final occurrences = OccurrenceGenerator.generate(
       transactions: transactions,
-      from: rangeStart,
+      from: seed,
       to: rangeEnd,
       skipped: skipped,
     );
@@ -97,6 +99,12 @@ class BalanceEngine {
       cursor = cursor.add(const Duration(days: 1));
     }
 
-    return BalanceSeries(points: points, occurrences: occurrences);
+    return BalanceSeries(
+      points: points,
+      occurrences: [
+        for (final o in occurrences)
+          if (CalendarMath.compare(o.date, rangeStart) >= 0) o,
+      ],
+    );
   }
 }

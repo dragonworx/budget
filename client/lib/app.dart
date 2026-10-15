@@ -10,10 +10,7 @@ import 'theme/app_theme.dart';
 final _router = GoRouter(
   initialLocation: '/',
   routes: [
-    GoRoute(
-      path: '/',
-      builder: (context, state) => const ProjectsPage(),
-    ),
+    GoRoute(path: '/', builder: (context, state) => const ProjectsPage()),
     GoRoute(
       path: '/projects/:projectId',
       builder: (context, state) {
@@ -39,7 +36,8 @@ class BudgetApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Budget Tool',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
+      theme: AppTheme.dark(),
+      themeMode: ThemeMode.dark,
       routerConfig: _router,
     );
   }

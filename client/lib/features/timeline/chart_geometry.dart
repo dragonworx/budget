@@ -135,12 +135,24 @@ VisibleBalance? visibleBalance({
 /// The top fits the data max (or zero, when every balance is negative).
 /// The bottom fits whichever of the data min and zero is lower. Padding
 /// keeps those edges off the plot border, so zero stays on screen.
-BalanceExtents paddedRange(double min, double max) {
-  final low = math.min(min, 0);
-  final high = math.max(max, 0);
+/// Balance range that fits [min]..[max] with breathing room. Values in
+/// [include] (e.g. zero or the loss threshold) are pulled in only when the
+/// caller asks, so fits follow the data instead of being squashed.
+BalanceExtents paddedRange(
+  double min,
+  double max, {
+  Iterable<double> include = const [],
+}) {
+  var low = min;
+  var high = max;
+  for (final v in include) {
+    low = math.min(low, v);
+    high = math.max(high, v);
+  }
   final span = high - low;
   if (span.abs() < 1e-9) {
-    return const BalanceExtents(-1, 1);
+    final pad = math.max(1.0, high.abs() * 0.1);
+    return BalanceExtents(low - pad, high + pad);
   }
   final pad = span * 0.12;
   return BalanceExtents(low - pad, high + pad);
@@ -600,3 +612,20 @@ const double zoomStep = 1.25;
 /// Whether another zoom step in that direction would change the span.
 bool canZoomIn(double visibleDays) => visibleDays > minVisibleDays + 1e-6;
 bool canZoomOut(double visibleDays) => visibleDays < maxVisibleDays - 1e-6;
+
+/// Human description of a visible span of [days], e.g. "10 weeks".
+String describeSpan(double days) {
+  String n(num v, String unit) {
+    final r = v.round();
+    return '$r $unit${r == 1 ? '' : 's'}';
+  }
+
+  if (days < 13.5) return n(days, 'day');
+  if (days < 88) return n(days / 7, 'week');
+  if (days < 700) return n(days / 30.44, 'month');
+  final years = days / 365.25;
+  final rounded = (years * 2).round() / 2;
+  return rounded == rounded.roundToDouble()
+      ? n(rounded, 'year')
+      : '${rounded.toStringAsFixed(1)} years';
+}

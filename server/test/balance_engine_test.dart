@@ -65,6 +65,25 @@ void main() {
       expect(series.points.first.closingBalance, Decimal.parse('150'));
     });
 
+    test('window after the seed still counts earlier occurrences', () {
+      final series = BalanceEngine.compute(
+        seedBalance: Decimal.parse('100'),
+        seedDate: DateTime.utc(2024, 1, 1),
+        transactions: [
+          _credit(
+            id: 'c1',
+            amount: Decimal.parse('50'),
+            date: DateTime.utc(2024, 1, 5),
+          ),
+        ],
+        transactionOrder: ['c1'],
+        from: DateTime.utc(2024, 2, 1),
+        to: DateTime.utc(2024, 2, 1),
+      );
+      expect(series.points.single.closingBalance, Decimal.parse('150'));
+      expect(series.occurrences, isEmpty);
+    });
+
     test('does not emit points before seedDate', () {
       final series = BalanceEngine.compute(
         seedBalance: Decimal.parse('10'),

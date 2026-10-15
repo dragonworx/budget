@@ -13,4 +13,15 @@ void main() {
     expect(formatSignedAmount(1360000, 'AUD'), '+A\$1.36M');
     expect(formatSignedAmount(-2500000, 'AUD'), '−A\$2.5M');
   });
+
+  test('parses typed money input leniently', () {
+    expect(parseMoneyInput('1,250.50').toString(), '1250.5');
+    expect(parseMoneyInput(' A\$2 500 ').toString(), '2500');
+    expect(parseMoneyInput('-120.5').toString(), '-120.5');
+    expect(parseMoneyInput('\$-3').toString(), '-3');
+    expect(parseMoneyInput('.5').toString(), '0.5');
+    expect(parseMoneyInput('abc'), isNull);
+    expect(parseMoneyInput('1.2.3'), isNull);
+    expect(parseMoneyInput(''), isNull);
+  });
 }

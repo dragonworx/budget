@@ -3,19 +3,24 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/confirm_dialog.dart';
+import '../../widgets/account_dialog.dart';
 import '../../widgets/money_text.dart';
+import '../../widgets/ui.dart';
+import '../transactions/editor_outcome.dart';
 import '../transactions/import_dialog.dart';
 import '../transactions/solve_sheet.dart';
 import '../transactions/transaction_editor.dart';
+import '../transactions/transactions_panel.dart';
 import 'balance_chart.dart';
 import 'chart_geometry.dart';
 import 'fit_ranges.dart';
+import 'occurrence_info.dart';
 import 'zoom_level.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
@@ -41,6 +46,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Bumped by "Fit" to refit the chart's balance range to the data in view.
   int _fitToken = 0;
+
+  /// Balance fits also stretch to the loss-threshold line.
+  bool _fitThreshold = false;
 
   @override
   void initState() {
@@ -83,10 +91,14 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   void _invalidateBalance() {
     ref.invalidate(balanceProvider(_query));
+    ref.invalidate(todayBalanceProvider(widget.accountId));
   }
 
+  /// Puts [day] a third of the way in and refits the balance to the view
+  /// (the balance scale is otherwise fixed while panning).
   void _centerOn(DateTime day) {
     _onViewport(addDays(dateOnly(day), -_visibleDays / 3), _visibleDays);
+    setState(() => _fitToken++);
   }
 
   /// One smooth zoom step about the centre of the view: [direction] -1
@@ -122,16 +134,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     super.dispose();
   }
 
-  String get _spanLabel {
-    for (final level in ZoomLevel.values) {
-      if ((level.visibleDays - _visibleDays).abs() < 0.6) return level.label;
-    }
-    final days = _visibleDays;
-    if (days < 21) return '${days.round()} days';
-    if (days < 90) return '${(days / 7).round()} wk';
-    if (days < 700) return '${(days / 30.44).round()} mo';
-    return '${(days / 365).toStringAsFixed(1)} yr';
-  }
+  /// The visible time span in words (what the zoom buttons change).
+  String get _spanLabel => describeSpan(_visibleDays);
 
   /// Applies a Fit menu choice. Time fits go through [_onViewport], which
   /// widens the fetched window to cover the new view; the chart then refits
@@ -145,7 +149,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       case FitMode.all:
       case FitMode.horizontal:
         final transactions =
-            ref.read(transactionsProvider(widget.accountId)).asData?.value ??
+            ref.read(transactionsProvider(widget.accountId)).valueOrNull ??
             const <Transaction>[];
         final range = accountDataRange(
           seedDate: account.seedDate,
@@ -160,6 +164,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     }
     if (span != null) _onViewport(span.start, span.days);
     if (mode.fitsBalance) setState(() => _fitToken++);
+  }
+
+  /// Centres [day] and refits the balance to what is then in view.
+  void _jumpTo(DateTime day) {
+    _onViewport(addDays(dateOnly(day), 0.5 - _visibleDays / 2), _visibleDays);
+    setState(() => _fitToken++);
   }
 
   void _onViewport(DateTime start, double visibleDays) {
@@ -200,10 +210,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(
-              error is ApiException ? error.message : error.toString(),
-              textAlign: TextAlign.center,
-            ),
+            child: Text(friendlyError(error), textAlign: TextAlign.center),
           ),
         ),
       ),
@@ -227,172 +234,66 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             transaction.id: transaction.name,
         };
 
+        final transactions =
+            ref.watch(transactionsProvider(widget.accountId)).valueOrNull ??
+            const <Transaction>[];
+        final todayPoint = series == null
+            ? null
+            : _closingNear(series.points, DateTime.now());
+
         return Scaffold(
           appBar: AppBar(
+            toolbarHeight: 68,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
+              tooltip: 'Back to accounts',
+              icon: const Icon(Icons.arrow_back_rounded),
               onPressed: () => _goBack(context, account.projectId),
             ),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(account.name),
-                if (series == null)
-                  Text(
-                    'Seed ${formatDate(account.seedDate)}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  )
-                else
-                  Builder(
-                    builder: (context) {
-                      final todayPoint = _closingNear(
-                        series.points,
-                        DateTime.now(),
-                      );
-                      if (todayPoint == null) {
-                        return Text(
-                          'Seed ${formatDate(account.seedDate)}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        );
-                      }
-                      final loss =
-                          todayPoint.closingBalance <= account.lossThreshold;
-                      return MoneyText(
-                        todayPoint.closingBalance,
-                        currency: account.currency,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: loss ? AppTheme.debitColor : null,
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ),
+            titleSpacing: 4,
+            title: _AccountHeader(account: account, todayPoint: todayPoint),
             actions: [
-              TextButton.icon(
+              IconButton(
+                tooltip: 'Import transactions (JSON)',
                 onPressed: () => _openImport(context, account),
-                icon: const Icon(Icons.file_upload_outlined, size: 18),
-                label: const Text('Import'),
+                icon: const Icon(Icons.file_upload_outlined),
               ),
-              TextButton(
-                onPressed: () => _openTransactionsSheet(context, account),
-                child: const Text('Transactions'),
+              IconButton(
+                key: const ValueKey('account-settings'),
+                tooltip: 'Account settings: seed balance, date, threshold',
+                onPressed: () => _editAccount(context, account),
+                icon: const Icon(Icons.tune_rounded),
               ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                key: const ValueKey('open-transactions'),
+                onPressed: () => _openTransactionsPanel(context, account),
+                icon: const Icon(Icons.list_alt_rounded, size: 18),
+                label: Text('Transactions · ${transactions.length}'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                key: const ValueKey('new-transaction'),
+                onPressed: () => _openEditor(context, account),
+                icon: const Icon(Icons.add_rounded, size: 20),
+                label: const Text('New transaction'),
+              ),
+              const SizedBox(width: 16),
             ],
           ),
           body: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: canZoomIn(_visibleDays)
-                          ? () => _zoomStep(-1)
-                          : null,
-                      icon: const Icon(Icons.zoom_in),
-                      label: const Text('In'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: canZoomOut(_visibleDays)
-                          ? () => _zoomStep(1)
-                          : null,
-                      icon: const Icon(Icons.zoom_out),
-                      label: const Text('Out'),
-                    ),
-                    Chip(
-                      label: Text(_spanLabel),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    Text(
-                      '${formatDate(dateOnly(_viewStart))} → ${formatDate(dateOnly(addDays(_viewStart, _visibleDays)))}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    PopupMenuButton<FitMode>(
-                      tooltip: 'Fit the view',
-                      onSelected: (mode) => _fit(mode, account),
-                      itemBuilder: (context) => [
-                        for (final mode in FitMode.values)
-                          PopupMenuItem(
-                            value: mode,
-                            child: Row(
-                              children: [
-                                Expanded(child: Text(mode.label)),
-                                const SizedBox(width: 24),
-                                Text(
-                                  mode.shortcut,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                      child: IgnorePointer(
-                        child: OutlinedButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.fit_screen_outlined, size: 18),
-                          label: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('Fit'),
-                              Icon(Icons.arrow_drop_down, size: 18),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _centerOn(DateTime.now()),
-                      icon: const Icon(Icons.today),
-                      label: const Text('Today'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _centerOn(account.seedDate),
-                      icon: const Icon(Icons.flag_outlined),
-                      label: const Text('Seed'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () async {
-                        final result = await showSolveSheet(
-                          context,
-                          accountId: widget.accountId,
-                        );
-                        if (result != null && context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                result.message ??
-                                    'Created ${result.transaction?.name.isNotEmpty == true ? result.transaction!.name : 'transaction'}',
-                              ),
-                            ),
-                          );
-                          _invalidateBalance();
-                        }
-                      },
-                      icon: const Icon(Icons.calculate_outlined),
-                      label: const Text('Solve'),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text(
-                  'Drag or arrow keys to pan · scroll or +/− to zoom time · Alt+scroll zooms balance · Shift+scroll pans balance · Fit menu: F vertical · A all · H horizontal · W week · M month · Shift-drag selects a range · click a day to add, a dot to inspect',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: _toolbar(context, account),
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.65),
+                      color: AppTheme.surface,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFD5DEDB)),
+                      border: Border.all(color: AppTheme.border),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(15),
@@ -401,43 +302,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               loading: () => const Center(
                                 child: CircularProgressIndicator(),
                               ),
-                              error: (error, _) => Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        'Could not load balance',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleMedium,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        error is ApiException
-                                            ? error.message
-                                            : error.toString(),
-                                        textAlign: TextAlign.center,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall,
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        'Window ${formatDate(_dataFrom)} → ${formatDate(_dataTo)}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall,
-                                      ),
-                                      const SizedBox(height: 12),
-                                      FilledButton(
-                                        onPressed: _invalidateBalance,
-                                        child: const Text('Retry'),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                              error: (error, _) => _BalanceError(
+                                message: friendlyError(error),
+                                onRetry: _invalidateBalance,
                               ),
                               data: (_) => const SizedBox.shrink(),
                             )
@@ -453,12 +320,19 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                   seedDate: account.seedDate,
                                   lossThreshold: account.lossThreshold
                                       .toDouble(),
+                                  fitIncludesThreshold: _fitThreshold,
                                   viewStart: _viewStart,
                                   visibleDays: _visibleDays,
                                   onViewportChanged: _onViewport,
+                                  onOccurrenceTap: (hits) =>
+                                      _onOccurrencesTapped(
+                                        context,
+                                        account,
+                                        hits,
+                                      ),
                                   onDayTap: (day, onDay) {
                                     if (onDay.isNotEmpty) {
-                                      _inspectOccurrences(
+                                      _openDayPicker(
                                         context,
                                         account,
                                         day,
@@ -472,41 +346,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                       _createOnceOnDay(context, day),
                                   transactionNames: transactionNames,
                                   transactions: {
-                                    for (final t
-                                        in ref
-                                                .watch(
-                                                  transactionsProvider(
-                                                    widget.accountId,
-                                                  ),
-                                                )
-                                                .asData
-                                                ?.value ??
-                                            const <Transaction>[])
-                                      t.id: t,
+                                    for (final t in transactions) t.id: t,
                                   },
                                   dataFrom: _seriesCacheQuery?.from,
                                   dataThrough: _seriesCacheQuery?.to,
-                                  onRangeSelected: (start, end) async {
-                                    final result = await showSolveSheet(
-                                      context,
-                                      accountId: widget.accountId,
-                                      startDate: start,
-                                      endDate: end,
-                                    );
-                                    if (result != null && context.mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            result.message ??
-                                                'Created ${result.transaction?.name.isNotEmpty == true ? result.transaction!.name : 'transaction'}',
-                                          ),
-                                        ),
-                                      );
-                                      _invalidateBalance();
-                                    }
-                                  },
+                                  onRangeSelected: (start, end) =>
+                                      _solveRange(context, start, end),
                                 ),
                                 if (balanceAsync.isLoading)
                                   const Positioned(
@@ -523,11 +368,501 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                   ),
                 ),
               ),
+              const _TipsBar(),
             ],
           ),
         );
       },
     );
+  }
+
+  // ---------------------------------------------------------------- toolbar
+
+  Widget _toolbar(BuildContext context, Account account) {
+    final theme = Theme.of(context);
+    final end = dateOnly(addDays(_viewStart, _visibleDays));
+    return Row(
+      children: [
+        // Zoom group: − [span] +
+        Container(
+          decoration: AppTheme.panel(color: AppTheme.raised, r: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                key: const ValueKey('zoom-in'),
+                tooltip: 'Zoom in (+)',
+                onPressed: canZoomIn(_visibleDays) ? () => _zoomStep(-1) : null,
+                icon: const Icon(Icons.zoom_in_rounded),
+              ),
+              Container(width: 1, height: 22, color: AppTheme.border),
+              SizedBox(
+                width: 84,
+                child: Text(
+                  _spanLabel,
+                  key: const ValueKey('span-label'),
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelLarge,
+                ),
+              ),
+              Container(width: 1, height: 22, color: AppTheme.border),
+              IconButton(
+                key: const ValueKey('zoom-out'),
+                tooltip: 'Zoom out (−)',
+                onPressed: canZoomOut(_visibleDays) ? () => _zoomStep(1) : null,
+                icon: const Icon(Icons.zoom_out_rounded),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Tooltip(
+          message: 'Jump to a date',
+          child: OutlinedButton.icon(
+            key: const ValueKey('jump-to-date'),
+            onPressed: () => _jumpToDate(context),
+            icon: const Icon(Icons.calendar_month_rounded, size: 18),
+            label: Text(
+              '${_shortDate(dateOnly(_viewStart))}  →  ${_shortDate(end)}',
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        PopupMenuButton<Object>(
+          key: const ValueKey('fit-menu'),
+          tooltip: 'Fit the view',
+          onSelected: (choice) {
+            if (choice is FitMode) {
+              _fit(choice, account);
+            } else {
+              setState(() {
+                _fitThreshold = !_fitThreshold;
+                _fitToken++;
+              });
+            }
+          },
+          position: PopupMenuPosition.under,
+          itemBuilder: (context) => [
+            for (final mode in FitMode.values)
+              PopupMenuItem(
+                value: mode,
+                child: Row(
+                  children: [
+                    Icon(_fitIcon(mode), size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(mode.label)),
+                    const SizedBox(width: 24),
+                    KeyCap(mode.shortcut),
+                  ],
+                ),
+              ),
+            const PopupMenuDivider(),
+            PopupMenuItem<Object>(
+              key: const ValueKey('fit-threshold'),
+              value: 'threshold',
+              child: Row(
+                children: [
+                  Icon(
+                    _fitThreshold
+                        ? Icons.check_box_rounded
+                        : Icons.check_box_outline_blank_rounded,
+                    size: 18,
+                    color: _fitThreshold ? AppTheme.accent : null,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Keep alert line (${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}) in fits',
+                  ),
+                ],
+              ),
+            ),
+          ],
+          child: IgnorePointer(
+            child: OutlinedButton.icon(
+              onPressed: () {},
+              icon: const Icon(Icons.fit_screen_rounded, size: 18),
+              label: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Fit'),
+                  SizedBox(width: 2),
+                  Icon(Icons.expand_more_rounded, size: 18),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: () => _centerOn(DateTime.now()),
+          icon: const Icon(Icons.today_rounded, size: 18),
+          label: const Text('Today'),
+        ),
+        const SizedBox(width: 8),
+        Tooltip(
+          message: 'Go to the seed date (start of the balance)',
+          child: OutlinedButton.icon(
+            onPressed: () => _centerOn(account.seedDate),
+            icon: const Icon(
+              Icons.flag_rounded,
+              size: 18,
+              color: AppTheme.violet,
+            ),
+            label: const Text('Seed'),
+          ),
+        ),
+        const Spacer(),
+        Tooltip(
+          message: 'Plan a transaction from a target total',
+          child: TextButton.icon(
+            onPressed: () => _solve(context),
+            icon: const Icon(Icons.calculate_outlined, size: 18),
+            label: const Text('Plan'),
+          ),
+        ),
+        IconButton(
+          key: const ValueKey('shortcuts-help'),
+          tooltip: 'Keyboard and mouse shortcuts',
+          onPressed: () => _showShortcuts(context),
+          icon: const Icon(Icons.keyboard_rounded),
+        ),
+      ],
+    );
+  }
+
+  IconData _fitIcon(FitMode mode) => switch (mode) {
+    FitMode.all => Icons.fit_screen_rounded,
+    FitMode.vertical => Icons.height_rounded,
+    FitMode.horizontal => Icons.width_full_rounded,
+    FitMode.week => Icons.view_week_rounded,
+    FitMode.month => Icons.calendar_view_month_rounded,
+  };
+
+  String _shortDate(DateTime d) => DateFormat('d MMM y').format(d);
+
+  Future<void> _jumpToDate(BuildContext context) async {
+    final center = dateOnly(addDays(_viewStart, _visibleDays / 2));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: center,
+      firstDate: DateTime(1970),
+      lastDate: DateTime(2100),
+      helpText: 'Jump to date',
+    );
+    if (picked == null) return;
+    _jumpTo(picked);
+  }
+
+  Future<void> _showShortcuts(BuildContext context) {
+    Widget row(List<String> keys, String what) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 170,
+            child: Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [for (final k in keys) KeyCap(k)],
+            ),
+          ),
+          Expanded(child: Text(what)),
+        ],
+      ),
+    );
+    Widget head(String t) => Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 4),
+      child: Text(
+        t.toUpperCase(),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          letterSpacing: 1,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.textFaint,
+        ),
+      ),
+    );
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Timeline shortcuts'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                head('Navigate'),
+                row(['Drag'], 'Pan time and balance'),
+                row(['←', '→'], 'Pan time'),
+                row(['↑', '↓'], 'Pan balance'),
+                row(['Scroll'], 'Zoom time at the cursor'),
+                row(['+', '−'], 'Zoom time around the centre'),
+                row(['Shift', 'Scroll'], 'Pan balance'),
+                row(['Alt', 'Scroll'], 'Zoom balance'),
+                head('Fit'),
+                row(['F'], 'Fit balance to what is in view'),
+                row(['A'], 'Fit all data'),
+                row(['H'], 'Fit all data horizontally'),
+                row(['W'], 'Fit the week at the centre'),
+                row(['M'], 'Fit the month at the centre'),
+                head('Transactions'),
+                row(['Click dot'], 'Edit that transaction series'),
+                row(['Hover day', '+'], 'Add a one-off on that day'),
+                row(['Shift', 'Drag'], 'Select a range to plan a series'),
+                row(['Ctrl', 'Enter'], 'Save in the editor'),
+                row(['Esc'], 'Close the editor'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ----------------------------------------------------------- transactions
+
+  Set<DateTime> _skipsFor(String transactionId) => {
+    for (final o in _seriesCache?.occurrences ?? const <Occurrence>[])
+      if (o.transactionId == transactionId && o.skipped) dateOnly(o.date),
+  };
+
+  /// One place every create / edit path goes through, so the timeline
+  /// always refreshes afterwards (skips can change even on cancel).
+  Future<void> _openEditor(
+    BuildContext context,
+    Account account, {
+    Transaction? existing,
+    DateTime? initialDate,
+    DateTime? focusDate,
+    bool onceOnly = false,
+  }) async {
+    final result = await showTransactionEditor(
+      context,
+      accountId: widget.accountId,
+      existing: existing,
+      initialDate: initialDate,
+      focusDate: focusDate,
+      onceOnly: onceOnly,
+      currency: account.currency,
+      skippedDates: existing == null ? const {} : _skipsFor(existing.id),
+    );
+    _invalidateBalance();
+    if (!context.mounted) return;
+    _report(context, result);
+  }
+
+  void _report(BuildContext context, EditorOutcome? outcome) {
+    reportEditorOutcome(
+      context,
+      ref,
+      accountId: widget.accountId,
+      outcome: outcome,
+      onChanged: _invalidateBalance,
+    );
+  }
+
+  Transaction? _transaction(String id) {
+    for (final t
+        in ref.read(transactionsProvider(widget.accountId)).valueOrNull ??
+            const <Transaction>[]) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
+
+  void _onOccurrencesTapped(
+    BuildContext context,
+    Account account,
+    List<Occurrence> hits,
+  ) {
+    final ids = hits.map((o) => o.transactionId).toSet();
+    if (ids.length == 1) {
+      final t = _transaction(ids.first);
+      if (t != null) {
+        _openEditor(
+          context,
+          account,
+          existing: t,
+          focusDate: dateOnly(hits.first.date),
+        );
+        return;
+      }
+    }
+    _openDayPicker(context, account, dateOnly(hits.first.date), hits);
+  }
+
+  /// Several occurrences on one day: pick which series to open.
+  Future<void> _openDayPicker(
+    BuildContext context,
+    Account account,
+    DateTime day,
+    List<Occurrence> onDay,
+  ) async {
+    final picked = await showModalBottomSheet<Object>(
+      context: context,
+      constraints: const BoxConstraints(maxWidth: 560),
+      builder: (context) {
+        final theme = Theme.of(context);
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  formatOccurrenceDate(day),
+                  style: theme.textTheme.titleLarge,
+                ),
+                Text(
+                  '${onDay.length} occurrence${onDay.length == 1 ? '' : 's'} · pick one to edit its series',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                for (final occ in onDay) ...[
+                  Builder(
+                    builder: (context) {
+                      final t = _transaction(occ.transactionId);
+                      final amount = occ.signedDelta.toDouble();
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Material(
+                          color: AppTheme.raised,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: const BorderSide(color: AppTheme.border),
+                          ),
+                          child: ListTile(
+                            leading: DirectionBadge(
+                              credit: amount >= 0,
+                              muted: occ.skipped,
+                            ),
+                            title: Text(
+                              t == null || t.name.isEmpty
+                                  ? 'Transaction'
+                                  : t.name,
+                            ),
+                            subtitle: Text(
+                              [
+                                if (t != null) describeRecurrence(t),
+                                if (occ.skipped) 'Skipped',
+                              ].join(' · '),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  formatSignedAmount(amount, account.currency),
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: occ.skipped
+                                        ? AppTheme.textFaint
+                                        : amount < 0
+                                        ? AppTheme.debitColor
+                                        : AppTheme.creditColor,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Icon(Icons.chevron_right_rounded),
+                              ],
+                            ),
+                            onTap: () => Navigator.pop(context, occ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+                const SizedBox(height: 6),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context, 'add'),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Add a one-off on this day'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!context.mounted || picked == null) return;
+    if (picked == 'add') {
+      await _createOnceOnDay(context, day);
+    } else if (picked is Occurrence) {
+      final t = _transaction(picked.transactionId);
+      if (t != null) {
+        await _openEditor(context, account, existing: t, focusDate: day);
+      }
+    }
+  }
+
+  Future<void> _solve(BuildContext context) async {
+    final result = await showSolveSheet(context, accountId: widget.accountId);
+    if (result != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.message ??
+                'Created ${result.transaction?.name.isNotEmpty == true ? result.transaction!.name : 'transaction'}',
+          ),
+        ),
+      );
+      _invalidateBalance();
+    }
+  }
+
+  Future<void> _solveRange(
+    BuildContext context,
+    DateTime start,
+    DateTime end,
+  ) async {
+    final result = await showSolveSheet(
+      context,
+      accountId: widget.accountId,
+      startDate: start,
+      endDate: end,
+    );
+    if (result != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.message ??
+                'Created ${result.transaction?.name.isNotEmpty == true ? result.transaction!.name : 'transaction'}',
+          ),
+        ),
+      );
+      _invalidateBalance();
+    }
+  }
+
+  Future<void> _editAccount(BuildContext context, Account account) async {
+    final edited = await showAccountDialog(
+      context,
+      projectId: account.projectId,
+      existing: account,
+    );
+    if (edited == null) return;
+    try {
+      await ref
+          .read(accountsProvider(account.projectId).notifier)
+          .updateAccount(edited);
+      ref.invalidate(accountProvider(widget.accountId));
+      _invalidateBalance();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Account updated')));
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
+      }
+    }
   }
 
   void _goBack(BuildContext context, String? projectId) {
@@ -541,168 +876,31 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   Future<void> _createOnceOnDay(BuildContext context, DateTime day) async {
-    final saved = await showTransactionEditor(
+    final account = ref.read(accountProvider(widget.accountId)).valueOrNull;
+    if (account == null) return;
+    await _openEditor(context, account, initialDate: day, onceOnly: true);
+  }
+
+  Future<void> _openTransactionsPanel(
+    BuildContext context,
+    Account account,
+  ) async {
+    await showSidePanel<void>(
       context,
-      accountId: widget.accountId,
-      initialDate: day,
-      onceOnly: true,
-    );
-    if (saved != null) _invalidateBalance();
-  }
-
-  Future<void> _inspectOccurrences(
-    BuildContext context,
-    Account account,
-    DateTime day,
-    List<Occurrence> onDay,
-  ) async {
-    final transactions = ref
-        .read(transactionsProvider(widget.accountId))
-        .valueOrNull;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  formatDate(day),
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                for (final occ in onDay) ...[
-                  Builder(
-                    builder: (context) {
-                      Transaction? transaction;
-                      if (transactions != null) {
-                        for (final s in transactions) {
-                          if (s.id == occ.transactionId) {
-                            transaction = s;
-                            break;
-                          }
-                        }
-                      }
-                      final name = transaction?.name.isNotEmpty == true
-                          ? transaction!.name
-                          : 'Transaction';
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(name),
-                        subtitle: Text(
-                          '${occ.skipped ? 'Skipped · ' : ''}'
-                          'Δ ${occ.signedDelta}'
-                          '${transaction == null ? '' : ' · ${transaction.direction.name}'}',
-                        ),
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (value) async {
-                            final notifier = ref.read(
-                              transactionsProvider(widget.accountId).notifier,
-                            );
-                            try {
-                              if (value == 'edit' && transaction != null) {
-                                Navigator.pop(context);
-                                final saved = await showTransactionEditor(
-                                  this.context,
-                                  accountId: widget.accountId,
-                                  existing: transaction,
-                                );
-                                if (saved != null) _invalidateBalance();
-                              } else if (value == 'skip') {
-                                await notifier.setSkip(
-                                  occ.transactionId,
-                                  day,
-                                  skipped: !occ.skipped,
-                                );
-                                if (context.mounted) Navigator.pop(context);
-                                _invalidateBalance();
-                              } else if (value == 'delete' &&
-                                  transaction != null) {
-                                final toDelete = transaction;
-                                final ok = await showConfirmDialog(
-                                  context,
-                                  title: 'Delete transaction?',
-                                  message:
-                                      '“$name” will be removed permanently.',
-                                );
-                                if (!ok) return;
-                                await notifier.delete(toDelete.id);
-                                if (context.mounted) Navigator.pop(context);
-                                _invalidateBalance();
-                              }
-                            } catch (error) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      error is ApiException
-                                          ? error.message
-                                          : error.toString(),
-                                    ),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            if (transaction != null)
-                              const PopupMenuItem(
-                                value: 'edit',
-                                child: Text('Edit transaction'),
-                              ),
-                            PopupMenuItem(
-                              value: 'skip',
-                              child: Text(
-                                occ.skipped
-                                    ? 'Unskip occurrence'
-                                    : 'Skip occurrence',
-                              ),
-                            ),
-                            if (transaction != null)
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: Text('Delete transaction'),
-                              ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ],
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _createOnceOnDay(this.context, day);
-                  },
-                  child: const Text('Add one-time transaction on this day'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _openTransactionsSheet(
-    BuildContext context,
-    Account account,
-  ) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) {
-        return _TransactionsSheet(
-          accountId: widget.accountId,
-          onChanged: _invalidateBalance,
-        );
-      },
+      width: 520,
+      label: 'Transactions',
+      builder: (panelContext) => TransactionsPanel(
+        account: account,
+        skipsFor: _skipsFor,
+        onPanelClosed: (outcome) {
+          if (context.mounted) _report(context, outcome);
+        },
+        onLocate: (date) {
+          Navigator.of(panelContext).pop();
+          _jumpTo(date);
+        },
+        onChanged: _invalidateBalance,
+      ),
     );
   }
 
@@ -722,217 +920,139 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 }
 
-class _TransactionsSheet extends ConsumerWidget {
-  const _TransactionsSheet({required this.accountId, required this.onChanged});
+class _AccountHeader extends StatelessWidget {
+  const _AccountHeader({required this.account, required this.todayPoint});
 
-  final String accountId;
-  final VoidCallback onChanged;
+  final Account account;
+  final BalancePoint? todayPoint;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final transactionsAsync = ref.watch(transactionsProvider(accountId));
-    final accountAsync = ref.watch(accountProvider(accountId));
-
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.65,
-      minChildSize: 0.4,
-      maxChildSize: 0.92,
-      builder: (context, controller) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final today = todayPoint?.closingBalance;
+    final loss = today != null && today <= account.lossThreshold;
+    return Row(
+      children: [
+        Flexible(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Transactions',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Add transaction',
-                    onPressed: () async {
-                      final saved = await showTransactionEditor(
-                        context,
-                        accountId: accountId,
-                      );
-                      if (saved != null) onChanged();
-                    },
-                    icon: const Icon(Icons.add),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: transactionsAsync.when(
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (error, _) => Center(
-                    child: Text(
-                      error is ApiException ? error.message : error.toString(),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  data: (transactions) {
-                    if (transactions.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text('No transactions yet'),
-                            const SizedBox(height: 12),
-                            FilledButton(
-                              onPressed: () async {
-                                final saved = await showTransactionEditor(
-                                  context,
-                                  accountId: accountId,
-                                );
-                                if (saved != null) onChanged();
-                              },
-                              child: const Text('Create transaction'),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    final order =
-                        accountAsync.valueOrNull?.transactionOrder ?? [];
-                    final ordered = _orderedTransactions(transactions, order);
-
-                    return ReorderableListView.builder(
-                      scrollController: controller,
-                      itemCount: ordered.length,
-                      onReorderItem: (oldIndex, newIndex) async {
-                        final ids = ordered.map((s) => s.id).toList();
-                        final id = ids.removeAt(oldIndex);
-                        ids.insert(newIndex, id);
-                        try {
-                          await ref
-                              .read(transactionsProvider(accountId).notifier)
-                              .reorder(ids);
-                          onChanged();
-                        } catch (error) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  error is ApiException
-                                      ? error.message
-                                      : error.toString(),
-                                ),
-                              ),
-                            );
-                          }
-                        }
-                      },
-                      itemBuilder: (context, index) {
-                        final transaction = ordered[index];
-                        return ListTile(
-                          key: ValueKey(transaction.id),
-                          leading: ReorderableDragStartListener(
-                            index: index,
-                            child: const Icon(Icons.drag_handle),
-                          ),
-                          title: Text(
-                            transaction.name.isEmpty
-                                ? 'Untitled'
-                                : transaction.name,
-                          ),
-                          subtitle: Text(
-                            '${transaction.direction.name} · ${transaction.amount} · '
-                            '${transaction.recurrenceMode == RecurrenceMode.once ? 'once' : 'every ${transaction.interval} ${transaction.unit?.name}'}'
-                            '${transaction.enabled ? '' : ' · disabled'}',
-                          ),
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (value) async {
-                              final notifier = ref.read(
-                                transactionsProvider(accountId).notifier,
-                              );
-                              try {
-                                if (value == 'edit') {
-                                  final saved = await showTransactionEditor(
-                                    context,
-                                    accountId: accountId,
-                                    existing: transaction,
-                                  );
-                                  if (saved != null) onChanged();
-                                } else if (value == 'toggle') {
-                                  await notifier.updateTransaction(
-                                    transaction.copyWith(
-                                      enabled: !transaction.enabled,
-                                    ),
-                                  );
-                                  onChanged();
-                                } else if (value == 'delete') {
-                                  final ok = await showConfirmDialog(
-                                    context,
-                                    title: 'Delete transaction?',
-                                    message:
-                                        '“${transaction.name.isEmpty ? 'Untitled' : transaction.name}” will be removed.',
-                                  );
-                                  if (!ok) return;
-                                  await notifier.delete(transaction.id);
-                                  onChanged();
-                                }
-                              } catch (error) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        error is ApiException
-                                            ? error.message
-                                            : error.toString(),
-                                      ),
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(
-                                value: 'edit',
-                                child: Text('Edit'),
-                              ),
-                              PopupMenuItem(
-                                value: 'toggle',
-                                child: Text(
-                                  transaction.enabled ? 'Disable' : 'Enable',
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: Text('Delete'),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
+              Tooltip(
+                message: account.name,
+                waitDuration: const Duration(milliseconds: 500),
+                child: Text(
+                  account.name,
+                  style: theme.textTheme.titleLarge,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+              ),
+              Text(
+                'Seed ${formatMoneyAmount(account.seedBalance.toDouble(), account.currency, decimalDigits: 2)} on ${DateFormat('d MMM y').format(account.seedDate)} · ${account.currency}',
+                style: theme.textTheme.bodySmall,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
-        );
-      },
+        ),
+        if (today != null) ...[
+          const SizedBox(width: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: AppTheme.panel(
+              color: loss ? AppTheme.debitSoft : AppTheme.raised,
+              r: 10,
+              edge: loss
+                  ? AppTheme.debitColor.withValues(alpha: 0.4)
+                  : AppTheme.border,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'TODAY',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    letterSpacing: 1,
+                    color: AppTheme.textFaint,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  formatMoneyAmount(
+                    today.toDouble(),
+                    account.currency,
+                    decimalDigits: 2,
+                  ),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: loss ? AppTheme.debitColor : AppTheme.text,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
+}
 
-  List<Transaction> _orderedTransactions(
-    List<Transaction> transactions,
-    List<String> order,
-  ) {
-    final byId = {for (final s in transactions) s.id: s};
-    final out = <Transaction>[];
-    for (final id in order) {
-      final s = byId.remove(id);
-      if (s != null) out.add(s);
-    }
-    out.addAll(byId.values);
-    return out;
+class _BalanceError extends StatelessWidget {
+  const _BalanceError({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => EmptyState(
+    error: true,
+    icon: Icons.cloud_off_rounded,
+    title: 'Could not load the balance',
+    message: message,
+    action: OutlinedButton.icon(
+      onPressed: onRetry,
+      icon: const Icon(Icons.refresh_rounded, size: 18),
+      label: const Text('Retry'),
+    ),
+  );
+}
+
+/// One-line, low-key reminder of the main interactions.
+class _TipsBar extends StatelessWidget {
+  const _TipsBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelSmall;
+    Widget tip(IconData icon, String text) => Padding(
+      padding: const EdgeInsets.only(right: 18),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppTheme.textFaint),
+          const SizedBox(width: 5),
+          Text(text, style: style),
+        ],
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            tip(Icons.ads_click_rounded, 'Click a dot to edit its series'),
+            tip(
+              Icons.add_circle_outline_rounded,
+              'Hover a day, click + to add',
+            ),
+            tip(Icons.pan_tool_alt_outlined, 'Drag to pan'),
+            tip(Icons.mouse_outlined, 'Scroll to zoom'),
+            tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
+          ],
+        ),
+      ),
+    );
   }
 }

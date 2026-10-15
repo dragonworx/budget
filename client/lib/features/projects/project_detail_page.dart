@@ -1,14 +1,16 @@
-import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../theme/app_theme.dart';
 import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/account_dialog.dart';
 import '../../widgets/money_text.dart';
+import '../../widgets/ui.dart';
 
 class ProjectDetailPage extends ConsumerWidget {
   const ProjectDetailPage({super.key, required this.projectId});
@@ -20,136 +22,117 @@ class ProjectDetailPage extends ConsumerWidget {
     final projectAsync = ref.watch(projectProvider(projectId));
     final accountsAsync = ref.watch(accountsProvider(projectId));
 
+    final count = accountsAsync.valueOrNull?.length;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          tooltip: 'All projects',
+          icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => context.go('/'),
         ),
-        title: Text(
-          projectAsync.valueOrNull?.name ?? 'Project',
-        ),
+        titleSpacing: 4,
+        title: const Text('Projects'),
         actions: [
           IconButton(
             tooltip: 'Refresh',
             onPressed: () =>
                 ref.read(accountsProvider(projectId).notifier).refresh(),
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded),
           ),
+          const SizedBox(width: 12),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _editAccount(context, ref),
-        icon: const Icon(Icons.add),
-        label: const Text('Add account'),
-      ),
-      body: accountsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(_errorMessage(error), textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                OutlinedButton(
-                  onPressed: () =>
-                      ref.read(accountsProvider(projectId).notifier).refresh(),
-                  child: const Text('Retry'),
-                ),
+      body: PageBody(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            PageHeading(
+              eyebrow: 'Project',
+              title: projectAsync.valueOrNull?.name ?? '…',
+              subtitle: count == null || count == 0
+                  ? null
+                  : '$count account${count == 1 ? '' : 's'} · open one to plan its balance over time',
+              actions: [
+                if (count != 0)
+                  FilledButton.icon(
+                    key: const ValueKey('add-account'),
+                    onPressed: () => _editAccount(context, ref),
+                    icon: const Icon(Icons.add_rounded, size: 20),
+                    label: const Text('Add account'),
+                  ),
               ],
             ),
-          ),
-        ),
-        data: (accounts) {
-          if (accounts.isEmpty) {
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'No accounts yet',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Add an account with a seed balance to open the timeline.',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 24),
-                      FilledButton.icon(
-                        onPressed: () => _editAccount(context, ref),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add account'),
-                      ),
-                    ],
+            Expanded(
+              child: accountsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, _) => EmptyState(
+                  error: true,
+                  icon: Icons.cloud_off_rounded,
+                  title: 'Could not load accounts',
+                  message: _errorMessage(error),
+                  action: OutlinedButton.icon(
+                    onPressed: () => ref
+                        .read(accountsProvider(projectId).notifier)
+                        .refresh(),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Retry'),
                   ),
                 ),
-              ),
-            );
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-            itemCount: accounts.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (context, index) {
-              final account = accounts[index];
-              return ListTile(
-                tileColor: Colors.white.withValues(alpha: 0.55),
-                title: Text(account.name),
-                subtitle: Row(
-                  children: [
-                    MoneyText(account.seedBalance, currency: account.currency),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        '· seed ${formatDate(account.seedDate)} · ${account.currency}'
-                        ' · loss ≤ ${account.lossThreshold}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
+                data: (accounts) {
+                  if (accounts.isEmpty) {
+                    return EmptyState(
+                      icon: Icons.account_balance_wallet_rounded,
+                      title: 'No accounts yet',
+                      message: 'Add an account with a starting (seed) balance, then plan its transactions on the timeline.',
+                      action: FilledButton.icon(
+                        onPressed: () => _editAccount(context, ref),
+                        icon: const Icon(Icons.add_rounded, size: 20),
+                        label: const Text('Add account'),
                       ),
-                    ),
-                  ],
-                ),
-                trailing: PopupMenuButton<_AccountAction>(
-                  onSelected: (action) async {
-                    switch (action) {
-                      case _AccountAction.edit:
-                        await _editAccount(context, ref, existing: account);
-                      case _AccountAction.delete:
-                        await _deleteAccount(context, ref, account);
-                      case _AccountAction.timeline:
-                        context.go('/accounts/${account.id}/timeline');
-                    }
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: _AccountAction.timeline,
-                      child: Text('Open timeline'),
-                    ),
-                    PopupMenuItem(
-                      value: _AccountAction.edit,
-                      child: Text('Edit'),
-                    ),
-                    PopupMenuItem(
-                      value: _AccountAction.delete,
-                      child: Text('Delete'),
-                    ),
-                  ],
-                ),
-                onTap: () => context.go('/accounts/${account.id}/timeline'),
-              );
-            },
-          );
-        },
+                    );
+                  }
+                  return LayoutBuilder(
+                    builder: (context, c) {
+                      final cols = c.maxWidth >= 900
+                          ? 3
+                          : c.maxWidth >= 600
+                          ? 2
+                          : 1;
+                      const gap = 16.0;
+                      final w = (c.maxWidth - 48 - gap * (cols - 1)) / cols;
+                      return SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+                        child: Wrap(
+                          spacing: gap,
+                          runSpacing: gap,
+                          children: [
+                            for (final account in accounts)
+                              SizedBox(
+                                width: w,
+                                child: _AccountCard(
+                                  account: account,
+                                  onOpen: () => context.go(
+                                    '/accounts/${account.id}/timeline',
+                                  ),
+                                  onEdit: () => _editAccount(
+                                    context,
+                                    ref,
+                                    existing: account,
+                                  ),
+                                  onDelete: () =>
+                                      _deleteAccount(context, ref, account),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -159,12 +142,10 @@ class ProjectDetailPage extends ConsumerWidget {
     WidgetRef ref, {
     Account? existing,
   }) async {
-    final result = await showDialog<Account>(
-      context: context,
-      builder: (context) => _AccountDialog(
-        projectId: projectId,
-        existing: existing,
-      ),
+    final result = await showAccountDialog(
+      context,
+      projectId: projectId,
+      existing: existing,
     );
     if (result == null) return;
     try {
@@ -176,9 +157,8 @@ class ProjectDetailPage extends ConsumerWidget {
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_errorMessage(error))),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_errorMessage(error))));
       }
     }
   }
@@ -198,186 +178,207 @@ class ProjectDetailPage extends ConsumerWidget {
       await ref.read(accountsProvider(projectId).notifier).delete(account.id);
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_errorMessage(error))),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_errorMessage(error))));
       }
     }
   }
 }
 
-enum _AccountAction { edit, delete, timeline }
+enum _AccountAction { edit, delete }
 
-class _AccountDialog extends StatefulWidget {
-  const _AccountDialog({required this.projectId, this.existing});
+class _AccountCard extends ConsumerWidget {
+  const _AccountCard({
+    required this.account,
+    required this.onOpen,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
-  final String projectId;
-  final Account? existing;
+  final Account account;
+  final VoidCallback onOpen;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
-  State<_AccountDialog> createState() => _AccountDialogState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final today = ref.watch(todayBalanceProvider(account.id));
+    final value = today.valueOrNull;
+    final low = value != null && value <= account.lossThreshold;
+    String money(num v) =>
+        formatMoneyAmount(v, account.currency, decimalDigits: 2);
+    return Material(
+      color: AppTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        key: ValueKey('account-card-${account.id}'),
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const IconTile(Icons.account_balance_wallet_rounded),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Tooltip(
+                      message: account.name,
+                      waitDuration: const Duration(milliseconds: 500),
+                      child: Text(
+                        account.name,
+                        style: theme.textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Pill(account.currency),
+                  const SizedBox(width: 4),
+                  PopupMenuButton<_AccountAction>(
+                    tooltip: 'Account actions',
+                    padding: EdgeInsets.zero,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    iconSize: 20,
+                    icon: const Icon(Icons.more_vert_rounded),
+                    onSelected: (action) => switch (action) {
+                      _AccountAction.edit => onEdit(),
+                      _AccountAction.delete => onDelete(),
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: _AccountAction.edit,
+                        child: ListTile(
+                          leading: Icon(Icons.tune_rounded),
+                          title: Text('Account settings'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: _AccountAction.delete,
+                        child: ListTile(
+                          leading: Icon(Icons.delete_outline_rounded),
+                          title: Text('Delete account'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'BALANCE TODAY',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  letterSpacing: 1,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textFaint,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Padding(
+                padding: EdgeInsets.zero,
+                child: SizedBox(
+                  height: 34,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      today.isLoading && value == null
+                          ? '—'
+                          : value == null
+                          ? 'No data'
+                          : money(value.toDouble()),
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: low ? AppTheme.debitColor : AppTheme.text,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+              Padding(
+                padding: EdgeInsets.zero,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _Fact(
+                        label:
+                            'Seed · ${DateFormat('d MMM y').format(account.seedDate)}',
+                        value: money(account.seedBalance.toDouble()),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    _Fact(
+                      label: 'Alert at',
+                      value: '≤ ${money(account.lossThreshold.toDouble())}',
+                      alignEnd: true,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Spacer(),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    onPressed: onOpen,
+                    iconAlignment: IconAlignment.end,
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                    label: const Text('Open timeline'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _AccountDialogState extends State<_AccountDialog> {
-  late final TextEditingController _name;
-  late final TextEditingController _currency;
-  late final TextEditingController _seedBalance;
-  late final TextEditingController _lossThreshold;
-  late DateTime _seedDate;
-
-  @override
-  void initState() {
-    super.initState();
-    final existing = widget.existing;
-    _name = TextEditingController(text: existing?.name ?? '');
-    _currency = TextEditingController(
-      text: existing?.currency ??
-          (NumberFormat.simpleCurrency().currencyName ?? 'USD'),
-    );
-    _seedBalance = TextEditingController(
-      text: existing?.seedBalance.toString() ?? '0',
-    );
-    _lossThreshold = TextEditingController(
-      text: existing?.lossThreshold.toString() ?? '0',
-    );
-    _seedDate = existing?.seedDate ?? DateTime.now();
-  }
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _currency.dispose();
-    _seedBalance.dispose();
-    _lossThreshold.dispose();
-    super.dispose();
-  }
+class _Fact extends StatelessWidget {
+  const _Fact({
+    required this.label,
+    required this.value,
+    this.alignEnd = false,
+  });
+  final String label;
+  final String value;
+  final bool alignEnd;
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.existing == null ? 'New account' : 'Edit account'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: 'Name'),
-              autofocus: true,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _currency,
-              decoration: const InputDecoration(
-                labelText: 'Currency',
-                helperText: 'ISO 4217 (e.g. USD, AUD)',
-              ),
-              textCapitalization: TextCapitalization.characters,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _seedBalance,
-              decoration: const InputDecoration(labelText: 'Seed balance'),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _lossThreshold,
-              decoration: const InputDecoration(
-                labelText: 'Loss threshold',
-                helperText: 'Balances at or below this are filled in red.',
-              ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Seed date'),
-              subtitle: Text(formatDate(_seedDate)),
-              trailing: const Icon(Icons.calendar_today_outlined),
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _seedDate,
-                  firstDate: DateTime(1970),
-                  lastDate: DateTime(2100),
-                );
-                if (picked != null) setState(() => _seedDate = picked);
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Save'),
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      children: [
+        Text(label, style: theme.textTheme.labelSmall),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: theme.textTheme.bodyMedium?.copyWith(color: AppTheme.text),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
   }
-
-  void _submit() {
-    final name = _name.text.trim();
-    final currency = _currency.text.trim().toUpperCase();
-    if (name.isEmpty || currency.length != 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Name and a 3-letter currency are required')),
-      );
-      return;
-    }
-    Decimal balance;
-    try {
-      balance = Decimal.parse(_seedBalance.text.trim());
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid seed balance')),
-      );
-      return;
-    }
-    final lossText = _lossThreshold.text.trim();
-    final Decimal lossThreshold;
-    if (lossText.isEmpty) {
-      lossThreshold = Decimal.zero;
-    } else {
-      try {
-        lossThreshold = Decimal.parse(lossText);
-      } catch (_) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a valid loss threshold')),
-        );
-        return;
-      }
-    }
-
-    final existing = widget.existing;
-    final account = Account(
-      id: existing?.id ?? '',
-      projectId: widget.projectId,
-      name: name,
-      currency: currency,
-      seedBalance: balance,
-      seedDate: _seedDate,
-      lossThreshold: lossThreshold,
-      transactionOrder: existing?.transactionOrder ?? const [],
-      displayOrder: existing?.displayOrder ?? 0,
-    );
-    Navigator.of(context).pop(account);
-  }
 }
 
-String _errorMessage(Object error) {
-  if (error is ApiException) return error.message;
-  return error.toString();
-}
+String _errorMessage(Object error) => friendlyError(error);
