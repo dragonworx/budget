@@ -125,6 +125,21 @@ class TransactionRepository {
 
   Future<void> delete(String id) => _api.delete('/api/transactions/$id');
 
+  /// Bulk import of a pasted `TransactionImport[]` (raw text; fences are
+  /// stripped server-side). With [dryRun] only validates and previews.
+  /// Throws [ApiException] (status 400, `details` per-item issues) if invalid.
+  Future<Map<String, dynamic>> import(
+    String accountId,
+    String raw, {
+    bool dryRun = false,
+  }) async {
+    final data = await _api.post(
+      '/api/accounts/$accountId/transactions/import${dryRun ? '?dryRun=true' : ''}',
+      body: raw,
+    );
+    return data as Map<String, dynamic>;
+  }
+
   Future<void> skipOccurrence(
     String transactionId,
     DateTime date, {

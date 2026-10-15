@@ -8,14 +8,14 @@ import 'config.dart';
 Future<Connection> openConnection(Config config) async {
   final uri = Uri.parse(config.databaseUrl);
   final userInfo = uri.userInfo.split(':');
-  final username = userInfo.isNotEmpty ? Uri.decodeComponent(userInfo.first) : '';
+  final username =
+      userInfo.isNotEmpty ? Uri.decodeComponent(userInfo.first) : '';
   final password = userInfo.length > 1
       ? Uri.decodeComponent(userInfo.sublist(1).join(':'))
       : '';
 
-  final database = uri.path.isNotEmpty
-      ? uri.path.replaceFirst('/', '')
-      : 'budget';
+  final database =
+      uri.path.isNotEmpty ? uri.path.replaceFirst('/', '') : 'budget';
 
   return Connection.open(
     Endpoint(
@@ -25,8 +25,10 @@ Future<Connection> openConnection(Config config) async {
       username: username,
       password: password,
     ),
-    settings: const ConnectionSettings(
-      sslMode: SslMode.disable,
+    settings: ConnectionSettings(
+      sslMode: (uri.queryParameters['sslmode'] ?? 'disable') == 'disable'
+          ? SslMode.disable
+          : SslMode.require,
     ),
   );
 }

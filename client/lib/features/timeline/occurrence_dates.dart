@@ -22,7 +22,8 @@ List<DateTime> estimateOccurrenceDates(
   final limit = transaction.endMode == EndMode.count
       ? (transaction.occurrenceCount ?? maxCount).clamp(1, maxCount)
       : maxCount;
-  final endCap = transaction.endMode == EndMode.untilDate && transaction.endDate != null
+  final endCap =
+      transaction.endMode == EndMode.untilDate && transaction.endDate != null
       ? dateOnly(transaction.endDate!)
       : through != null
       ? dateOnly(through)
@@ -40,7 +41,9 @@ List<DateTime> estimateOccurrenceDates(
         i >= transaction.occurrenceCount!) {
       break;
     }
-    cursor = _addInterval(cursor, interval, unit);
+    // Anchored on the start (as the server does), so Jan 31 monthly gives
+    // Feb 28, Mar 31, Apr 30 rather than drifting to the 28th.
+    cursor = _addInterval(start, interval * i, unit);
     // Safety for runaway loops.
     if (i > 5000) break;
   }
@@ -50,9 +53,9 @@ List<DateTime> estimateOccurrenceDates(
 DateTime _addInterval(DateTime date, int interval, RecurrenceUnit unit) {
   switch (unit) {
     case RecurrenceUnit.days:
-      return date.add(Duration(days: interval));
+      return DateTime(date.year, date.month, date.day + interval);
     case RecurrenceUnit.weeks:
-      return date.add(Duration(days: 7 * interval));
+      return DateTime(date.year, date.month, date.day + 7 * interval);
     case RecurrenceUnit.months:
       return _addMonths(date, interval);
     case RecurrenceUnit.years:

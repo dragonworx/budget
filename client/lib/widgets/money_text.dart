@@ -71,3 +71,18 @@ String formatMoneyAmount(num amount, String currency, {int? decimalDigits}) {
     decimalDigits: digits,
   ).format(amount);
 }
+
+/// A single transaction's amount, signed by direction: "+A$1,830" for a
+/// credit, "−A$22.99" for a debit. Compact ("+A$1.36M") from a million up.
+String formatSignedAmount(num signedAmount, String currency) {
+  final abs = signedAmount.abs();
+  final text = abs >= 1e6
+      ? NumberFormat.compactCurrency(
+          name: currency,
+          symbol: MoneyText.symbolFor(currency),
+          decimalDigits: 2,
+        ).format(abs)
+      : formatMoneyAmount(abs, currency);
+  if (abs == 0) return text;
+  return '${signedAmount < 0 ? '−' : '+'}$text';
+}

@@ -3,6 +3,7 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import '../domain/models.dart';
+import '../domain/transaction_import.dart';
 import '../repo/account_repo.dart';
 import '../repo/transaction_repo.dart';
 import 'balance.dart';
@@ -16,14 +17,16 @@ Router buildAccountsApi(Connection conn) {
   final transactions = TransactionRepo(conn);
   final router = Router();
 
-  router.get('/<accountId>/transactions', (Request request, String accountId) async {
+  router.get('/<accountId>/transactions',
+      (Request request, String accountId) async {
     final account = await accounts.get(accountId);
     if (account == null) return jsonError(404, 'account not found');
     final items = await transactions.listByAccount(accountId);
     return jsonOk({'transactions': items.map((s) => s.toJson()).toList()});
   });
 
-  router.post('/<accountId>/transactions', (Request request, String accountId) async {
+  router.post('/<accountId>/transactions',
+      (Request request, String accountId) async {
     try {
       final account = await accounts.get(accountId);
       if (account == null) return jsonError(404, 'account not found');
@@ -52,10 +55,58 @@ Router buildAccountsApi(Connection conn) {
     }
   });
 
+  // Bulk import (see docs in transaction_import.dart). Body: the raw paste —
+  // a JSON array of TransactionImport, a single object, or either wrapped in
+  // a ```json fence. `?dryRun=true` validates and returns the preview only.
+  // All-or-nothing: any invalid item -> 400 with per-item `issues`, nothing
+  // written. Items whose `id` already exists in this account are skipped.
+  router.post('/<accountId>/transactions/import',
+      (Request request, String accountId) async {
+    final account = await accounts.get(accountId);
+    if (account == null) return jsonError(404, 'account not found');
+    final dryRun = request.url.queryParameters['dryRun'] == 'true';
+    final raw = await request.readAsString();
+    try {
+      final items = parseImport(raw);
+      if (dryRun) {
+        final existing = (await transactions.listByAccount(accountId))
+            .map((t) => t.id)
+            .toSet();
+        final dupes = [
+          for (final i in items)
+            if (i.id != null && existing.contains(i.id)) i.index
+        ];
+        return jsonOk({
+          'dryRun': true,
+          'items': items
+              .map((i) => {...i.toJson(), 'exists': dupes.contains(i.index)})
+              .toList(),
+          'toCreate': items.length - dupes.length,
+          'toSkip': dupes.length,
+        });
+      }
+      final result = await conn
+          .runTx((tx) => TransactionRepo(tx).importItems(accountId, items));
+      return jsonOk({
+        'created': result.created.length,
+        'skipped': result.skipped.length,
+        'createdIds': result.created,
+        'skippedIds': result.skipped,
+      }, status: result.created.isEmpty ? 200 : 201);
+    } on ImportValidationException catch (e) {
+      return jsonError(400,
+          'Import rejected: ${e.issues.length} problem(s); nothing was imported',
+          details: e.issues
+              .map((i) => {...i.toJson(), 'text': i.toString()})
+              .toList());
+    }
+  });
+
   attachBalanceRoutes(router, conn);
   attachSolveRoutes(router, conn);
 
-  router.patch('/<id>/reorder-transactions', (Request request, String id) async {
+  router.patch('/<id>/reorder-transactions',
+      (Request request, String id) async {
     try {
       final body = await readJsonObject(request);
       final raw = body['transactionIds'];
@@ -84,8 +135,9 @@ Router buildAccountsApi(Connection conn) {
         id,
         name: optionalString(body, 'name'),
         currency: optionalString(body, 'currency'),
-        seedBalance:
-            body.containsKey('seedBalance') ? parseDecimal(body['seedBalance']) : null,
+        seedBalance: body.containsKey('seedBalance')
+            ? parseDecimal(body['seedBalance'])
+            : null,
         lossThreshold: body.containsKey('lossThreshold')
             ? parseDecimal(body['lossThreshold'])
             : null,

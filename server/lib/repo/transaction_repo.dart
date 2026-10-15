@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../domain/enums.dart';
 import '../domain/models.dart';
+import '../domain/transaction_import.dart';
 
 class TransactionRepo {
   TransactionRepo(this._conn);
@@ -137,8 +138,9 @@ class TransactionRepo {
     final nextInterval = clearInterval ? null : (interval ?? existing.interval);
     final nextUnit = clearUnit ? null : (unit ?? existing.unit);
     final nextEndDate = clearEndDate ? null : (endDate ?? existing.endDate);
-    final nextCount =
-        clearOccurrenceCount ? null : (occurrenceCount ?? existing.occurrenceCount);
+    final nextCount = clearOccurrenceCount
+        ? null
+        : (occurrenceCount ?? existing.occurrenceCount);
     final nextAmount = amount ?? existing.amount;
 
     _validateShape(
@@ -209,7 +211,102 @@ class TransactionRepo {
     return rows.isNotEmpty;
   }
 
-  Future<void> setSkip(String transactionId, DateTime date, bool skipped) async {
+  /// Inserts validated import [items] into [accountId]. Call inside a DB
+  /// transaction (all-or-nothing). Items whose `id` already exists in this
+  /// account are skipped unchanged (idempotent re-import); an `id` owned by
+  /// another account is an error. New rows are appended to the account's
+  /// transaction_order in array order; skippedDates go to skipped_occurrences.
+  Future<({List<String> created, List<String> skipped})> importItems(
+    String accountId,
+    List<ImportItem> items,
+  ) async {
+    final ids = [
+      for (final i in items)
+        if (i.id != null) i.id!
+    ];
+    final owners = <String, String>{};
+    if (ids.isNotEmpty) {
+      final rows = await _conn.execute(
+        Sql.named(
+            'SELECT id::text, account_id::text FROM transactions WHERE id = ANY (@ids::uuid[])'),
+        parameters: {'ids': ids},
+      );
+      for (final r in rows) {
+        owners[r[0] as String] = r[1] as String;
+      }
+    }
+    final conflicts = [
+      for (final i in items)
+        if (i.id != null && owners[i.id] != null && owners[i.id] != accountId)
+          ImportIssue(i.index, 'id',
+              'already used by a transaction in another account'),
+    ];
+    if (conflicts.isNotEmpty) throw ImportValidationException(conflicts);
+
+    final created = <String>[], skipped = <String>[];
+    for (final item in items) {
+      if (item.id != null && owners.containsKey(item.id)) {
+        skipped.add(item.id!);
+        continue;
+      }
+      _validateShape(
+        recurrenceMode: item.recurrenceMode,
+        interval: item.interval,
+        unit: item.unit,
+        endMode: item.endMode,
+        endDate: item.endDate,
+        occurrenceCount: item.occurrenceCount,
+        amount: item.amount,
+      );
+      final id = item.id ?? _uuid.v4();
+      await _conn.execute(
+        Sql.named('''
+          INSERT INTO transactions (
+            id, account_id, name, direction, amount, start_date,
+            recurrence_mode, interval, unit, end_mode, end_date,
+            occurrence_count, enabled
+          ) VALUES (
+            @id, @accountId, @name, @direction, @amount, @startDate,
+            @recurrenceMode, @interval, @unit, @endMode, @endDate,
+            @occurrenceCount, @enabled
+          )
+        '''),
+        parameters: {
+          'id': id,
+          'accountId': accountId,
+          'name': item.name,
+          'direction': item.direction.name,
+          'amount': item.amount.toString(),
+          'startDate': _date(item.startDate),
+          'recurrenceMode': item.recurrenceMode.name,
+          'interval': item.interval,
+          'unit': item.unit?.name,
+          'endMode': item.endMode.apiName,
+          'endDate': item.endDate == null ? null : _date(item.endDate!),
+          'occurrenceCount': item.occurrenceCount,
+          'enabled': item.enabled,
+        },
+      );
+      for (final d in item.skippedDates) {
+        await setSkip(id, d, true);
+      }
+      created.add(id);
+    }
+    if (created.isNotEmpty) {
+      await _conn.execute(
+        Sql.named('''
+          UPDATE accounts
+          SET transaction_order = transaction_order || @ids::uuid[]
+          WHERE id = @accountId
+        '''),
+        parameters: {'accountId': accountId, 'ids': created},
+      );
+    }
+    return (created: created, skipped: skipped);
+  }
+
+  Future<void> setSkip(
+      String transactionId, DateTime date, bool skipped) async {
     final d = _date(date);
     if (skipped) {
       await _conn.execute(

@@ -24,11 +24,54 @@ String ordinalDay(int day) {
   return '$day$suffix';
 }
 
-/// Adds a fractional number of days without snapping to midnight.
-DateTime addDays(DateTime date, double days) {
-  final micros = (days * Duration.microsecondsPerDay).round();
-  return date.add(Duration(microseconds: micros));
+/// Continuous day coordinate of [date]'s wall-clock time: whole days since
+/// 1970-01-01 plus the fraction of the day elapsed.
+///
+/// Every calendar day is exactly 1.0 wide, even across daylight-saving
+/// changes where a local day lasts 23 or 25 hours. All chart X math goes
+/// through this, so day cells, occurrence dots and axis labels agree.
+double dayCoord(DateTime date) {
+  final midnightUtc = DateTime.utc(date.year, date.month, date.day);
+  final whole =
+      midnightUtc.millisecondsSinceEpoch ~/ Duration.millisecondsPerDay;
+  final micros =
+      date.hour * Duration.microsecondsPerHour +
+      date.minute * Duration.microsecondsPerMinute +
+      date.second * Duration.microsecondsPerSecond +
+      date.millisecond * Duration.microsecondsPerMillisecond +
+      date.microsecond;
+  return whole + micros / Duration.microsecondsPerDay;
 }
+
+/// Local wall-clock time at day coordinate [coord] (inverse of [dayCoord]).
+DateTime dateFromDayCoord(double coord) {
+  final whole = coord.floor();
+  final micros = ((coord - whole) * Duration.microsecondsPerDay).round();
+  final day = DateTime.utc(1970).add(Duration(days: whole));
+  return DateTime(
+    day.year,
+    day.month,
+    day.day,
+    micros ~/ Duration.microsecondsPerHour,
+    micros % Duration.microsecondsPerHour ~/ Duration.microsecondsPerMinute,
+    micros % Duration.microsecondsPerMinute ~/ Duration.microsecondsPerSecond,
+    micros %
+        Duration.microsecondsPerSecond ~/
+        Duration.microsecondsPerMillisecond,
+    micros % Duration.microsecondsPerMillisecond,
+  );
+}
+
+/// Adds a fractional number of calendar days without snapping to midnight.
+///
+/// Uses calendar days, not 24-hour durations, so a DST change inside the
+/// span does not shift the result by an hour (and onto the wrong date).
+DateTime addDays(DateTime date, double days) =>
+    dateFromDayCoord(dayCoord(date) + days);
+
+/// [date] moved by whole calendar days, at local midnight.
+DateTime addCalendarDays(DateTime date, int days) =>
+    DateTime(date.year, date.month, date.day + days);
 
 /// Min and max closing balances that are actually on screen.
 class BalanceExtents {
@@ -103,6 +146,37 @@ BalanceExtents paddedRange(double min, double max) {
   return BalanceExtents(low - pad, high + pad);
 }
 
+/// Smallest and largest balance span the vertical zoom allows.
+const double minBalanceSpan = 0.05;
+const double maxBalanceSpan = 1e13;
+
+/// Vertical view [range] after dragging the content down by [dyPx] pixels
+/// (negative drags up) on a plot [plotHeight] tall. The span is unchanged.
+BalanceExtents panBalanceRange(
+  BalanceExtents range,
+  double dyPx,
+  double plotHeight,
+) {
+  if (plotHeight <= 0 || dyPx == 0) return range;
+  final shift = dyPx / plotHeight * (range.max - range.min);
+  return BalanceExtents(range.min + shift, range.max + shift);
+}
+
+/// Vertical view [range] scaled by [factor] (>1 zooms out) around the balance
+/// at [anchorFraction] of the range (0 = bottom, 1 = top), which stays put.
+BalanceExtents zoomBalanceRange(
+  BalanceExtents range,
+  double factor,
+  double anchorFraction,
+) {
+  if (factor <= 0 || !factor.isFinite) return range;
+  final span = range.max - range.min;
+  final next = (span * factor).clamp(minBalanceSpan, maxBalanceSpan).toDouble();
+  final t = anchorFraction.clamp(0.0, 1.0);
+  final anchor = range.min + t * span;
+  return BalanceExtents(anchor - t * next, anchor + (1 - t) * next);
+}
+
 /// How many fraction digits keep the visible span readable.
 int moneyDigitsForSpan(double min, double max) {
   final span = (max - min).abs();
@@ -110,7 +184,7 @@ int moneyDigitsForSpan(double min, double max) {
   return 0;
 }
 
-enum AxisLane { month, week, day }
+enum AxisLane { year, month, week, day }
 
 class AxisSegment {
   const AxisSegment({
@@ -150,16 +224,40 @@ List<AxisSegment> monthSegments(DateTime viewStart, DateTime viewEnd) {
   return out;
 }
 
+/// Whole calendar years overlapping the view. [AxisSegment.colorIndex]
+/// alternates 0/1 so neighbouring years are distinguishable.
+List<AxisSegment> yearSegments(DateTime viewStart, DateTime viewEnd) {
+  if (!viewStart.isBefore(viewEnd)) return const [];
+  var cursor = DateTime(viewStart.year);
+  final out = <AxisSegment>[];
+  while (cursor.isBefore(viewEnd) && out.length < 400) {
+    final next = DateTime(cursor.year + 1);
+    out.add(
+      AxisSegment(
+        start: cursor,
+        end: next,
+        lane: AxisLane.year,
+        colorIndex: cursor.year.isEven ? 0 : 1,
+      ),
+    );
+    cursor = next;
+  }
+  return out;
+}
+
+/// Whether months are too narrow to label, so the top lane shows years.
+bool useYearLane(double plotWidth, double visibleDays) =>
+    plotWidth / math.max(visibleDays, 0.001) * 30.44 < 34;
+
 List<AxisSegment> weekSegments(DateTime viewStart, DateTime viewEnd) {
   if (!viewStart.isBefore(viewEnd)) return const [];
   final startDay = dateOnly(viewStart);
-  var cursor = startDay.subtract(
-    Duration(days: startDay.weekday - DateTime.monday),
-  );
+  var cursor = addCalendarDays(startDay, DateTime.monday - startDay.weekday);
   final out = <AxisSegment>[];
   while (cursor.isBefore(viewEnd) && out.length < 2000) {
-    final next = cursor.add(const Duration(days: 7));
-    final weeks = cursor.difference(DateTime(1970, 1, 5)).inDays ~/ 7;
+    final next = addCalendarDays(cursor, 7);
+    final weeks =
+        (dayCoord(cursor) - dayCoord(DateTime(1970, 1, 5))).round() ~/ 7;
     final index = ((weeks % 4) + 4) % 4;
     out.add(
       AxisSegment(
@@ -179,7 +277,7 @@ List<AxisSegment> daySegments(DateTime viewStart, DateTime viewEnd) {
   var cursor = dateOnly(viewStart);
   final out = <AxisSegment>[];
   while (cursor.isBefore(viewEnd) && out.length < 800) {
-    final next = cursor.add(const Duration(days: 1));
+    final next = addCalendarDays(cursor, 1);
     out.add(
       AxisSegment(
         start: cursor,
@@ -254,7 +352,8 @@ double vertexLabelTextBudget({
   required List<Offset> anchors,
 }) {
   if (maxText < minText || labelHeight <= 0 || pad < 0) return 0;
-  final toRight = side == VertexLabelSide.aboveRight ||
+  final toRight =
+      side == VertexLabelSide.aboveRight ||
       side == VertexLabelSide.besideRight ||
       side == VertexLabelSide.belowRight;
   final gap = radius + 3;
@@ -457,11 +556,11 @@ Rect _vertexLabelBand(
 ) {
   final gap = radius + 3;
   final top = switch (side) {
-    VertexLabelSide.aboveRight || VertexLabelSide.aboveLeft =>
-      center.dy - gap - labelHeight,
+    VertexLabelSide.aboveRight ||
+    VertexLabelSide.aboveLeft => center.dy - gap - labelHeight,
     VertexLabelSide.belowRight => center.dy + radius + 2,
-    VertexLabelSide.besideRight || VertexLabelSide.besideLeft =>
-      center.dy - labelHeight / 2,
+    VertexLabelSide.besideRight ||
+    VertexLabelSide.besideLeft => center.dy - labelHeight / 2,
   };
   return Rect.fromLTWH(plot.left, top, plot.width, labelHeight);
 }
@@ -479,3 +578,25 @@ int _firstAnchorAtOrAfter(List<Offset> anchors, double x) {
   }
   return lo;
 }
+
+/// Zoom factor per In/Out button press or +/− key (smooth, small steps).
+const double zoomStep = 1.25;
+
+/// View after zooming [visibleDays] by [factor] (>1 zooms out) about the
+/// centre of the view starting at [viewStart]. The span is clamped to the
+/// zoom limits first, so the centre date stays fixed even at a limit.
+({DateTime start, double days}) zoomAboutCenter(
+  DateTime viewStart,
+  double visibleDays,
+  double factor,
+) {
+  final center = dayCoord(viewStart) + visibleDays / 2;
+  final days = (visibleDays * factor)
+      .clamp(minVisibleDays, maxVisibleDays)
+      .toDouble();
+  return (start: dateFromDayCoord(center - days / 2), days: days);
+}
+
+/// Whether another zoom step in that direction would change the span.
+bool canZoomIn(double visibleDays) => visibleDays > minVisibleDays + 1e-6;
+bool canZoomOut(double visibleDays) => visibleDays < maxVisibleDays - 1e-6;

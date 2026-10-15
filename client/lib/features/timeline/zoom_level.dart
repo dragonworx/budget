@@ -49,9 +49,12 @@ DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
 /// Days since a fixed epoch — stable X coordinate for the chart.
 double dateToX(DateTime d) {
-  final day = dateOnly(d);
-  return day.difference(DateTime(1970, 1, 1)).inDays.toDouble();
+  // UTC midnights: every day is 24h, so DST cannot drop or repeat a day.
+  return DateTime.utc(
+    d.year,
+    d.month,
+    d.day,
+  ).difference(DateTime.utc(1970)).inDays.toDouble();
 }
 
-DateTime xToDate(double x) =>
-    DateTime(1970, 1, 1).add(Duration(days: x.round()));
+DateTime xToDate(double x) => DateTime(1970, 1, 1 + x.round());

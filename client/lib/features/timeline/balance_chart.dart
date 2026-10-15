@@ -4,12 +4,15 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
 import 'chart_geometry.dart';
+import 'fit_ranges.dart';
+import 'occurrence_info.dart';
 import 'zoom_level.dart';
 
 typedef DayTap = void Function(DateTime day, List<Occurrence> onDay);
@@ -19,8 +22,15 @@ typedef CreateOnDay = void Function(DateTime day);
 
 /// Step chart of closing balance with a calendar axis.
 ///
-/// Click-drag pans. The mouse wheel and trackpad pinch zoom around the
-/// pointer. Long-press then drag selects a date range.
+/// The balance (Y) range is explicit view state: fitted once when the chart
+/// first shows data (or on [fitToken] change), then changed only by the
+/// user. Panning or zooming time never rescales it, so a balance level keeps
+/// its height on screen.
+///
+/// Click-drag pans time and balance. The mouse wheel and trackpad pinch zoom
+/// time around the pointer; Alt+wheel zooms balance; Shift+wheel pans
+/// balance. Shift-drag (or long-press then drag) selects a date range.
+/// With focus: arrow keys pan, +/- zoom time, F fits balances.
 class BalanceChart extends StatefulWidget {
   const BalanceChart({
     super.key,
@@ -35,9 +45,34 @@ class BalanceChart extends StatefulWidget {
     required this.onRangeSelected,
     required this.onCreateOnDay,
     this.transactionNames = const {},
+    this.dataFrom,
+    this.dataThrough,
+    this.fitToken = 0,
+    this.onFitRequested,
+    this.onZoomStep,
+    this.transactions = const {},
   });
 
+  /// Transactions by id, for the occurrence hover tooltip.
+  final Map<String, Transaction> transactions;
+
+  /// +/− keys: one centred zoom step (-1 in, +1 out). Falls back to an
+  /// unanimated centred zoom when null.
+  final ValueChanged<int>? onZoomStep;
+
+  /// Keyboard shortcuts for the Fit menu (A, H, W, M). F is handled here.
+  final ValueChanged<FitMode>? onFitRequested;
+
   final BalanceSeries series;
+
+  /// Changing this refits the balance range to the data in view.
+  final int fitToken;
+
+  /// First and last day [series] was computed for. The line is not drawn
+  /// past them, so a stale series never shows a flat, made-up balance while
+  /// a wider window is still loading.
+  final DateTime? dataFrom;
+  final DateTime? dataThrough;
   final String currency;
   final DateTime seedDate;
 
@@ -71,12 +106,72 @@ class _BalanceChartState extends State<BalanceChart> {
   double _lastScale = 1;
   final ValueNotifier<DateTime?> _hoverDay = ValueNotifier(null);
 
-  static const double _addButtonSize = 36;
+  /// Dots under the mouse (several when they overlap) and where it is.
+  final ValueNotifier<_DotTip?> _hoverDots = ValueNotifier(null);
+
+  /// Day of the hover "+" button the current press started on, if any.
+  DateTime? _downOnAdd;
+
+  /// Browser timestamp of the press, and whether its selection came from the
+  /// long-press timer (rather than shift-drag).
+  Duration _downTime = Duration.zero;
+
+  /// Visible balance range; null until fitted to the first data shown.
+  BalanceExtents? _yRange;
+
+  /// Set by a fit whose time range is not loaded yet; the balance range is
+  /// refit again once [BalanceChart.dataFrom]..dataThrough covers the view.
+  bool _fitAwaitingData = false;
+
+  bool get _dataCoversView {
+    final from = widget.dataFrom, through = widget.dataThrough;
+    if (from == null || through == null) return false;
+    final start = dayCoord(widget.viewStart);
+    return dayCoord(from) <= start + 1e-6 &&
+        dayCoord(through) + 1 >= start + widget.visibleDays - 1e-6;
+  }
+
+  BalanceExtents? _originY;
+  bool _holdSelect = false;
+  static const Duration _holdDelay = Duration(milliseconds: 420);
+  bool _overAdd = false;
+  final FocusNode _focus = FocusNode(debugLabel: 'BalanceChart');
+
+  static const double _addButtonSize = 28;
+
+  @override
+  void didUpdateWidget(covariant BalanceChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fitToken != widget.fitToken) {
+      _yRange = null;
+      _fitAwaitingData = !_dataCoversView;
+    } else if (_fitAwaitingData && _dataCoversView) {
+      _yRange = null;
+      _fitAwaitingData = false;
+    }
+  }
+
+  /// Current balance range, fitting it to the data in view the first time.
+  BalanceExtents? _ensureYRange() {
+    if (_yRange != null) return _yRange;
+    final visible = _visible();
+    if (visible == null) return null;
+    return _yRange = paddedRange(visible.extents.min, visible.extents.max);
+  }
+
+  void _setYRange(BalanceExtents range) {
+    if (!range.min.isFinite || !range.max.isFinite) return;
+    setState(() => _yRange = range);
+  }
+
+  void _fitY() => setState(() => _yRange = null);
 
   @override
   void dispose() {
     _holdTimer?.cancel();
     _hoverDay.dispose();
+    _hoverDots.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -91,15 +186,38 @@ class _BalanceChartState extends State<BalanceChart> {
     if ((event.buttons & kPrimaryButton) == 0) return;
     _pointer = event.pointer;
     _downPos = event.localPosition;
+    _downTime = event.timeStamp;
+    _holdSelect = false;
+    _focus.requestFocus();
+    // The "+" button ignores pointers so it never blocks a pan or zoom that
+    // starts on it; a plain click on it is resolved in [_finishPointer].
+    final hovered = _hoverDay.value;
+    final addRect = hovered == null ? null : _dayButtonRect(_layout, hovered);
+    _downOnAdd = addRect != null && addRect.contains(event.localPosition)
+        ? hovered
+        : null;
     _hoverDay.value = null;
+    _hoverDots.value = null;
     _originStart = widget.viewStart;
     _originDays = widget.visibleDays;
+    _originY = _ensureYRange();
     _dragged = false;
     _holdTimer?.cancel();
-    _holdTimer = Timer(const Duration(milliseconds: 420), () {
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      final day = _dayAt(event.localPosition.dx);
+      setState(() {
+        _selecting = true;
+        _selectAnchor = day;
+        _selectEnd = day;
+      });
+      return;
+    }
+    _holdTimer = Timer(_holdDelay, () {
       if (!mounted || _pointer != event.pointer || _downPos == null) return;
+      if (_dragged) return;
       final day = _dayAt(_downPos!.dx);
       setState(() {
+        _holdSelect = true;
         _selecting = true;
         _selectAnchor = day;
         _selectEnd = day;
@@ -117,7 +235,18 @@ class _BalanceChartState extends State<BalanceChart> {
     final dy = event.localPosition.dy - origin.dy;
     if (!_dragged && dx * dx + dy * dy > 16) {
       _dragged = true;
-      if (!_selecting) _holdTimer?.cancel();
+      _holdTimer?.cancel();
+      // A slow frame can let the hold timer fire before queued move events
+      // are handled. Judge by when the move really happened: moving before
+      // the hold delay is a pan, not a range selection.
+      if (_holdSelect && event.timeStamp - _downTime < _holdDelay) {
+        setState(() {
+          _selecting = false;
+          _holdSelect = false;
+          _selectAnchor = null;
+          _selectEnd = null;
+        });
+      }
     }
 
     if (_selecting) {
@@ -129,6 +258,10 @@ class _BalanceChartState extends State<BalanceChart> {
     final width = _layout.plot.width;
     if (width <= 0) return;
     final days = -dx / width * _originDays;
+    final originY = _originY;
+    if (originY != null) {
+      _setYRange(panBalanceRange(originY, dy, _layout.plot.height));
+    }
     widget.onViewportChanged(addDays(originStart, days), _originDays);
   }
 
@@ -142,6 +275,7 @@ class _BalanceChartState extends State<BalanceChart> {
     _holdTimer?.cancel();
     _pointer = null;
     _downPos = null;
+    _downOnAdd = null;
     _lastScale = 1;
     if (_selecting || _dragged) {
       setState(() {
@@ -178,6 +312,12 @@ class _BalanceChartState extends State<BalanceChart> {
       widget.onRangeSelected(anchor, end);
       return;
     }
+    final addDay = _downOnAdd;
+    _downOnAdd = null;
+    if (!dragged && addDay != null) {
+      widget.onCreateOnDay(addDay);
+      return;
+    }
     if (!dragged) {
       final day = _dayAt(localPosition.dx);
       final onDay = widget.series.occurrences
@@ -207,6 +347,30 @@ class _BalanceChartState extends State<BalanceChart> {
     final dy = event.scrollDelta.dy;
     final width = _layout.plot.width;
     if (width <= 0) return;
+    final keys = HardwareKeyboard.instance;
+    final range = _ensureYRange();
+    if (range != null && keys.isShiftPressed) {
+      // Browsers often turn Shift+wheel into a horizontal delta.
+      final delta = dy != 0 ? dy : dx;
+      if (delta != 0) {
+        _setYRange(panBalanceRange(range, -delta, _layout.plot.height));
+      }
+      return;
+    }
+    if (range != null && keys.isAltPressed && dy != 0) {
+      final plot = _layout.plot;
+      final fraction = plot.height <= 0
+          ? 0.5
+          : (plot.bottom - event.localPosition.dy) / plot.height;
+      _setYRange(
+        zoomBalanceRange(
+          range,
+          math.exp(dy.clamp(-400.0, 400.0) * 0.0016),
+          fraction,
+        ),
+      );
+      return;
+    }
     if (dx.abs() > dy.abs() && dx != 0) {
       final days = dx / width * widget.visibleDays;
       widget.onViewportChanged(
@@ -234,6 +398,65 @@ class _BalanceChartState extends State<BalanceChart> {
     _zoomAt(event.localPosition.dx, factor);
   }
 
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    final span = widget.visibleDays;
+    void pan(double fraction) => widget.onViewportChanged(
+      addDays(widget.viewStart, span * fraction),
+      span,
+    );
+    final center = _layout.plot.center.dx;
+    final range = _ensureYRange();
+    if (range != null &&
+        (key == LogicalKeyboardKey.arrowUp ||
+            key == LogicalKeyboardKey.arrowDown)) {
+      final h = _layout.plot.height;
+      final up = key == LogicalKeyboardKey.arrowUp;
+      _setYRange(panBalanceRange(range, (up ? 0.15 : -0.15) * h, h));
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyF) {
+      _fitY();
+      return KeyEventResult.handled;
+    }
+    final fitKeys = {
+      LogicalKeyboardKey.keyA: FitMode.all,
+      LogicalKeyboardKey.keyH: FitMode.horizontal,
+      LogicalKeyboardKey.keyW: FitMode.week,
+      LogicalKeyboardKey.keyM: FitMode.month,
+    };
+    final fitMode = fitKeys[key];
+    if (fitMode != null &&
+        widget.onFitRequested != null &&
+        !HardwareKeyboard.instance.isControlPressed &&
+        !HardwareKeyboard.instance.isMetaPressed) {
+      widget.onFitRequested!(fitMode);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      pan(-0.15);
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      pan(0.15);
+    } else if (key == LogicalKeyboardKey.equal ||
+        key == LogicalKeyboardKey.add ||
+        key == LogicalKeyboardKey.numpadAdd) {
+      widget.onZoomStep != null
+          ? widget.onZoomStep!(-1)
+          : _zoomAt(center, 1 / zoomStep);
+    } else if (key == LogicalKeyboardKey.minus ||
+        key == LogicalKeyboardKey.numpadSubtract) {
+      widget.onZoomStep != null
+          ? widget.onZoomStep!(1)
+          : _zoomAt(center, zoomStep);
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
   void _zoomAt(double localDx, double factor) {
     final layout = _layout;
     final width = layout.plot.width;
@@ -253,58 +476,87 @@ class _BalanceChartState extends State<BalanceChart> {
         ? SystemMouseCursors.precise
         : _pointer != null && _dragged
         ? SystemMouseCursors.grabbing
+        : _overAdd
+        ? SystemMouseCursors.click
         : SystemMouseCursors.grab;
 
-    return MouseRegion(
-      cursor: cursor,
-      onHover: _onHover,
-      onExit: (_) => _hoverDay.value = null,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          _size = Size(constraints.maxWidth, constraints.maxHeight);
-          return Stack(
-            children: [
-              Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: _onPointerDown,
-                onPointerMove: _onPointerMove,
-                onPointerUp: _onPointerUp,
-                onPointerCancel: _onPointerCancel,
-                onPointerSignal: _onPointerSignal,
-                child: CustomPaint(
-                  painter: _BalanceChartPainter(
-                    series: widget.series,
-                    currency: widget.currency,
-                    seedDate: widget.seedDate,
-                    lossThreshold: widget.lossThreshold,
-                    viewStart: widget.viewStart,
-                    visibleDays: widget.visibleDays,
-                    selectAnchor: _selecting ? _selectAnchor : null,
-                    selectEnd: _selecting ? _selectEnd : null,
-                    labelStyle: theme.textTheme.bodySmall ?? const TextStyle(),
-                    strongStyle:
-                        (theme.textTheme.labelMedium ?? const TextStyle())
-                            .copyWith(fontWeight: FontWeight.w700),
-                    laneStyle: (theme.textTheme.labelSmall ?? const TextStyle())
-                        .copyWith(fontWeight: FontWeight.w600),
-                    transactionNames: widget.transactionNames,
-                    textScaler: MediaQuery.textScalerOf(context),
-                  ),
-                  child: const SizedBox.expand(),
-                ),
-              ),
-              ValueListenableBuilder<DateTime?>(
-                valueListenable: _hoverDay,
-                builder: (context, day, _) {
-                  if (day == null || _pointer != null || _selecting) {
-                    return const SizedBox.shrink();
-                  }
-                  return _addButton(theme, day);
-                },
-              ),
-            ],
-          );
+    return Focus(
+      focusNode: _focus,
+      onKeyEvent: _onKey,
+      autofocus: true,
+      child: MouseRegion(
+        cursor: cursor,
+        onHover: _onHover,
+        onExit: (_) {
+          _hoverDay.value = null;
+          _hoverDots.value = null;
+          if (_overAdd) setState(() => _overAdd = false);
         },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            _size = Size(constraints.maxWidth, constraints.maxHeight);
+            final yRange = _ensureYRange();
+            return Stack(
+              children: [
+                Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerDown: _onPointerDown,
+                  onPointerMove: _onPointerMove,
+                  onPointerUp: _onPointerUp,
+                  onPointerCancel: _onPointerCancel,
+                  onPointerSignal: _onPointerSignal,
+                  // Own layer: moving the hover "+" button must not repaint the chart.
+                  child: RepaintBoundary(
+                    child: CustomPaint(
+                      painter: _BalanceChartPainter(
+                        series: widget.series,
+                        currency: widget.currency,
+                        seedDate: widget.seedDate,
+                        lossThreshold: widget.lossThreshold,
+                        viewStart: widget.viewStart,
+                        visibleDays: widget.visibleDays,
+                        selectAnchor: _selecting ? _selectAnchor : null,
+                        selectEnd: _selecting ? _selectEnd : null,
+                        labelStyle:
+                            theme.textTheme.bodySmall ?? const TextStyle(),
+                        strongStyle:
+                            (theme.textTheme.labelMedium ?? const TextStyle())
+                                .copyWith(fontWeight: FontWeight.w700),
+                        laneStyle:
+                            (theme.textTheme.labelSmall ?? const TextStyle())
+                                .copyWith(fontWeight: FontWeight.w600),
+                        transactionNames: widget.transactionNames,
+                        textScaler: MediaQuery.textScalerOf(context),
+                        dataFrom: widget.dataFrom,
+                        dataThrough: widget.dataThrough,
+                        yRange: yRange,
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                ),
+                ValueListenableBuilder<DateTime?>(
+                  valueListenable: _hoverDay,
+                  builder: (context, day, _) {
+                    if (day == null || _pointer != null || _selecting) {
+                      return const SizedBox.shrink();
+                    }
+                    return _addButton(theme, day);
+                  },
+                ),
+                ValueListenableBuilder<_DotTip?>(
+                  valueListenable: _hoverDots,
+                  builder: (context, tip, _) {
+                    if (tip == null || _pointer != null || _selecting) {
+                      return const SizedBox.shrink();
+                    }
+                    return _tooltip(theme, tip);
+                  },
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -313,41 +565,57 @@ class _BalanceChartState extends State<BalanceChart> {
     if (_pointer != null || _size == Size.zero) return;
     final pos = event.localPosition;
     final layout = _layout;
-    if (!layout.plot.contains(pos)) {
+    _updateDotHover(layout, pos);
+    final axisBottom =
+        (layout.dayBand ?? layout.weekBand ?? layout.monthBand).bottom;
+    final inColumns =
+        pos.dx >= layout.plot.left &&
+        pos.dx <= layout.plot.right &&
+        pos.dy >= layout.plot.top &&
+        pos.dy <= axisBottom;
+    if (!inColumns) {
       if (_hoverDay.value != null) _hoverDay.value = null;
+      if (_overAdd) setState(() => _overAdd = false);
       return;
     }
     final under = layout.dateAt(pos.dx, widget.viewStart, widget.visibleDays);
     final current = _hoverDay.value;
-    if (current == under) return;
     final rect = current == null ? null : _dayButtonRect(layout, current);
-    if (rect != null && rect.contains(pos)) return;
+    final overAdd = rect != null && rect.contains(pos);
+    if (overAdd != _overAdd) setState(() => _overAdd = overAdd);
+    if (current == under || overAdd) return;
     _hoverDay.value = under;
   }
 
-  /// Y of the balance step drawn through [day], using the same scale as the line.
-  double? _balanceLineY(ChartLayout layout, DateTime day) {
-    final visible = visibleBalance(
-      points: widget.series.points,
-      viewStart: widget.viewStart,
-      viewEnd: addDays(widget.viewStart, widget.visibleDays),
-      seedDate: widget.seedDate,
+  // Hover runs on every mouse move; recomputing the visible window (a sort of
+  // the whole series) each time made hovering a multi-year view stutter.
+  VisibleBalance? _visibleMemo;
+  Object? _visibleMemoKey;
+
+  VisibleBalance? _visible() {
+    final key = (
+      widget.series,
+      widget.viewStart,
+      widget.visibleDays,
+      widget.seedDate,
     );
-    if (visible == null) return null;
-    double? value;
-    for (final sample in visible.samples) {
-      if (dateOnly(sample.date).isAfter(day)) break;
-      value = sample.closingBalance.toDouble();
+    if (_visibleMemoKey != key) {
+      _visibleMemoKey = key;
+      _visibleMemo = visibleBalance(
+        points: widget.series.points,
+        viewStart: widget.viewStart,
+        viewEnd: addDays(widget.viewStart, widget.visibleDays),
+        seedDate: widget.seedDate,
+      );
     }
-    if (value == null) return null;
-    final padded = paddedRange(visible.extents.min, visible.extents.max);
-    return _YScale(padded.min, padded.max, layout.plot).yOf(value);
+    return _visibleMemo;
   }
 
-  /// Centered across [day], on the balance line. Null when that day has no line.
+  /// In the hovered [day]'s column of the bottom (day) axis row, so it never
+  /// covers the line or its dots.
   Rect? _dayButtonRect(ChartLayout layout, DateTime day) {
-    final lineY = _balanceLineY(layout, day);
-    if (lineY == null) return null;
+    final band = layout.dayBand ?? layout.weekBand ?? layout.monthBand;
+    final size = _addButtonSize;
     final leftEdge = layout.xOf(day, widget.viewStart, widget.visibleDays);
     final rightEdge = layout.xOf(
       addDays(day, 1),
@@ -355,38 +623,257 @@ class _BalanceChartState extends State<BalanceChart> {
       widget.visibleDays,
     );
     final left = _clampEdge(
-      (leftEdge + rightEdge) / 2 - _addButtonSize / 2,
-      layout.plot.left + 4,
-      layout.plot.right - _addButtonSize - 4,
+      (leftEdge + rightEdge) / 2 - size / 2,
+      layout.plot.left,
+      layout.plot.right - size,
     );
-    final top = lineY - _addButtonSize / 2;
-    return Rect.fromLTWH(left, top, _addButtonSize, _addButtonSize);
+    final top = _clampEdge(
+      band.center.dy - size / 2,
+      layout.plot.bottom,
+      (_size.height - size).toDouble(),
+    );
+    return Rect.fromLTWH(left, top, size, size);
+  }
+
+  List<_Dot>? _dotsMemo;
+  Object? _dotsKey;
+
+  /// Occurrence dots as the painter draws them (same x, y, stacking, radius).
+  List<_Dot> _dots(ChartLayout layout) {
+    final range = _ensureYRange();
+    final key = (
+      widget.series,
+      widget.viewStart,
+      widget.visibleDays,
+      range,
+      layout.plot,
+      widget.seedDate,
+    );
+    if (_dotsKey == key && _dotsMemo != null) return _dotsMemo!;
+    _dotsKey = key;
+    final dots = <_Dot>[];
+    if (range == null) return _dotsMemo = dots;
+    final scale = _YScale(range.min, range.max, layout.plot);
+    final seed = dateOnly(widget.seedDate);
+    final viewEnd = addDays(widget.viewStart, widget.visibleDays);
+    final closes = <DateTime, double>{
+      for (final p in widget.series.points)
+        dateOnly(p.date): p.closingBalance.toDouble(),
+    };
+    final dayTotals = <DateTime, double>{};
+    for (final o in widget.series.occurrences) {
+      if (o.skipped) continue;
+      final d = dateOnly(o.date);
+      dayTotals[d] = (dayTotals[d] ?? 0) + o.signedDelta.toDouble();
+    }
+    final running = <DateTime, double>{};
+    final counts = <DateTime, int>{};
+    final dayPx = layout.plot.width / math.max(widget.visibleDays, 0.001);
+    final radius = dayPx > 28
+        ? 4.5
+        : dayPx > 12
+        ? 3.4
+        : 2.2;
+    for (final o in widget.series.occurrences) {
+      final day = dateOnly(o.date);
+      if (day.isBefore(seed) ||
+          !addCalendarDays(day, 1).isAfter(widget.viewStart) ||
+          day.isAfter(viewEnd)) {
+        continue;
+      }
+      final close = closes[day];
+      if (close == null) continue;
+      final stack = counts[day] ?? 0;
+      counts[day] = stack + 1;
+      final lift = dayPx >= 8 ? stack * (radius * 2 + 2) : 0.0;
+      final x = layout.xOf(
+        addDays(day, 0.5),
+        widget.viewStart,
+        widget.visibleDays,
+      );
+      // Balance right after this one: day's opening plus deltas so far.
+      final after =
+          (running[day] ?? close - (dayTotals[day] ?? 0)) +
+          (o.skipped ? 0 : o.signedDelta.toDouble());
+      running[day] = after;
+      dots.add(_Dot(Offset(x, scale.yOf(close) - lift), radius, o, after));
+    }
+    return _dotsMemo = dots;
+  }
+
+  void _updateDotHover(ChartLayout layout, Offset pos) {
+    if (!layout.plot.inflate(6).contains(pos)) {
+      _hoverDots.value = null;
+      return;
+    }
+    final hits = <_Dot>[];
+    for (final dot in _dots(layout)) {
+      // Forgiving: at least 9px even for tiny zoomed-out dots.
+      final r = math.max(dot.radius + 5, 9.0);
+      if ((dot.center - pos).distanceSquared <= r * r) hits.add(dot);
+    }
+    if (hits.isEmpty) {
+      if (_hoverDots.value != null) _hoverDots.value = null;
+      return;
+    }
+    // Several dots under the pointer: list the overlapping ones; with
+    // readable stacks, show only the nearest.
+    final nearest = hits.reduce(
+      (a, b) =>
+          (a.center - pos).distanceSquared <= (b.center - pos).distanceSquared
+          ? a
+          : b,
+    );
+    final overlapping = hits
+        .where((d) => (d.center - nearest.center).distance < 2)
+        .toList();
+    final current = _hoverDots.value;
+    if (current != null && listEquals(current.dots, overlapping)) {
+      return;
+    }
+    _hoverDots.value = _DotTip(overlapping, nearest.center);
+  }
+
+  Widget _tooltip(ThemeData theme, _DotTip tip) {
+    const width = 260.0;
+    final shown = tip.dots.take(5).toList();
+    final more = tip.dots.length - shown.length;
+    final small = theme.textTheme.bodySmall ?? const TextStyle();
+    final children = <Widget>[];
+    for (final dot in shown) {
+      final o = dot.occurrence;
+      final t = widget.transactions[o.transactionId];
+      final rawName = t?.name ?? widget.transactionNames[o.transactionId];
+      final name = rawName == null || rawName.trim().isEmpty
+          ? 'Transaction'
+          : rawName.trim();
+      final amount = o.signedDelta.toDouble();
+      final debit = amount < 0;
+      final status = [
+        if (o.skipped) 'Skipped',
+        if (t != null && !t.enabled) 'Disabled',
+      ];
+      if (children.isNotEmpty) children.add(const Divider(height: 12));
+      children.add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  formatSignedAmount(amount, widget.currency),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: o.skipped
+                        ? const Color(0xFF5C6B68)
+                        : Color.lerp(
+                            debit ? AppTheme.debitColor : AppTheme.creditColor,
+                            Colors.black,
+                            0.35,
+                          ),
+                    decoration: o.skipped ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(formatOccurrenceDate(o.date), style: small),
+            if (t != null)
+              Text(
+                [
+                  describeRecurrence(t),
+                  ?occurrenceOrdinal(t, o.date),
+                ].join(' · '),
+                style: small,
+              ),
+            if (status.isNotEmpty)
+              Text(
+                status.join(' · '),
+                style: small.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF8A5A00),
+                ),
+              ),
+            Text(
+              'Balance after: ${formatMoneyAmount(dot.balanceAfter, widget.currency)}',
+              style: small.copyWith(color: const Color(0xFF5C6B68)),
+            ),
+          ],
+        ),
+      );
+    }
+    if (more > 0) {
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text('+$more more on this day', style: small),
+        ),
+      );
+    }
+    final estHeight = 30.0 + shown.length * 84.0 + (more > 0 ? 20 : 0);
+    // Right of the dot, flipping left / up near the edges.
+    var left = tip.anchor.dx + 14;
+    if (left + width > _size.width - 4) left = tip.anchor.dx - 14 - width;
+    left = _clampEdge(left, 4, _size.width - width - 4);
+    var top = tip.anchor.dy - 20;
+    if (top + estHeight > _size.height - 4) top = _size.height - estHeight - 4;
+    top = _clampEdge(top, 4, _size.height - 40);
+    return Positioned(
+      left: left,
+      top: top,
+      width: width,
+      child: IgnorePointer(
+        child: Material(
+          key: const ValueKey('occurrence-tooltip'),
+          elevation: 6,
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _addButton(ThemeData theme, DateTime day) {
     final rect = _dayButtonRect(_layout, day);
     if (rect == null) return const SizedBox.shrink();
     final label = 'New transaction on ${formatDate(day)}';
+    // Purely visual: clicks, drags and wheel events fall through to the
+    // chart's Listener, which treats a click inside this rect as "create".
     return Positioned(
       left: rect.left,
       top: rect.top,
       width: _addButtonSize,
       height: _addButtonSize,
-      child: Tooltip(
-        message: label,
-        waitDuration: const Duration(milliseconds: 400),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
+      child: IgnorePointer(
+        child: Semantics(
+          button: true,
+          label: label,
           child: Material(
             elevation: 4,
             color: theme.colorScheme.primary,
             shape: const CircleBorder(),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: () => widget.onCreateOnDay(day),
-              child: const Center(
-                child: Icon(Icons.add, color: Colors.white, size: 22),
-              ),
+            child: const Center(
+              child: Icon(Icons.add, color: Colors.white, size: 18),
             ),
           ),
         ),
@@ -461,8 +948,7 @@ class ChartLayout {
   }
 
   double xOf(DateTime date, DateTime viewStart, double visibleDays) {
-    final days =
-        date.difference(viewStart).inMicroseconds / Duration.microsecondsPerDay;
+    final days = dayCoord(date) - dayCoord(viewStart);
     return plot.left + days / visibleDays * plot.width;
   }
 
@@ -504,6 +990,9 @@ const _dayColors = <Color>[
   Color(0xFFE7E5E0),
 ];
 
+Color _yearColor(int index) =>
+    index.isEven ? const Color(0xFF1E4D78) : const Color(0xFF0B5F5A);
+
 Color _monthColor(int month) => _monthColors[(month - 1).clamp(0, 11)];
 
 Color _weekColor(int index) => _weekColors[index.clamp(0, 3)];
@@ -525,8 +1014,15 @@ class _BalanceChartPainter extends CustomPainter {
     required this.laneStyle,
     required this.transactionNames,
     required this.textScaler,
+    this.dataFrom,
+    this.dataThrough,
+    this.yRange,
   });
 
+  /// Balance range shown top to bottom. Null falls back to fitting the view.
+  final BalanceExtents? yRange;
+  final DateTime? dataFrom;
+  final DateTime? dataThrough;
   final BalanceSeries series;
   final String currency;
   final DateTime seedDate;
@@ -570,14 +1066,16 @@ class _BalanceChartPainter extends CustomPainter {
       return;
     }
 
-    final padded = paddedRange(visible.extents.min, visible.extents.max);
-    final scale = _YScale(padded.min, padded.max, layout.plot);
+    final range =
+        yRange ?? paddedRange(visible.extents.min, visible.extents.max);
+    final scale = _YScale(range.min, range.max, layout.plot);
     _paintGrid(canvas, layout, scale, visible.extents);
     _paintSelection(canvas, layout, viewEnd);
     _paintMarkers(canvas, layout, viewEnd, seed);
     _paintSeries(canvas, layout, scale, visible, seed, viewEnd);
     _paintOccurrences(canvas, layout, scale, viewEnd, seed);
     _paintYLabels(canvas, layout, scale, visible.extents);
+    _paintOffscreenHints(canvas, layout, scale, visible.extents);
     if (selectAnchor != null && selectEnd != null) {
       _paintSelectionLabel(canvas, layout);
     }
@@ -586,13 +1084,17 @@ class _BalanceChartPainter extends CustomPainter {
   void _paintPlotBands(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
     canvas.save();
     canvas.clipRect(layout.plot);
+    final years = useYearLane(layout.plot.width, visibleDays);
     final segments = layout.showDayLabels
         ? daySegments(viewStart, viewEnd)
         : layout.showWeekLane
         ? weekSegments(viewStart, viewEnd)
+        : years
+        ? yearSegments(viewStart, viewEnd)
         : monthSegments(viewStart, viewEnd);
     for (final segment in segments) {
       final color = switch (segment.lane) {
+        AxisLane.year => _yearColor(segment.colorIndex).withValues(alpha: 0.12),
         AxisLane.day => _dayColor(segment.colorIndex),
         AxisLane.week => _weekColor(segment.colorIndex),
         AxisLane.month => _monthColor(
@@ -620,7 +1122,10 @@ class _BalanceChartPainter extends CustomPainter {
     final monthPaint = Paint()
       ..color = const Color(0xFF1A2422).withValues(alpha: 0.28)
       ..strokeWidth = 1;
-    for (final segment in monthSegments(viewStart, viewEnd)) {
+    final boundaries = useYearLane(layout.plot.width, visibleDays)
+        ? yearSegments(viewStart, viewEnd)
+        : monthSegments(viewStart, viewEnd);
+    for (final segment in boundaries) {
       final x = layout.xOf(segment.start, viewStart, visibleDays);
       if (x <= layout.plot.left + 0.5 || x >= layout.plot.right) continue;
       canvas.drawLine(
@@ -646,21 +1151,79 @@ class _BalanceChartPainter extends CustomPainter {
   }
 
   void _paintAxes(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
+    if (useYearLane(layout.plot.width, visibleDays)) {
+      _paintLane(
+        canvas,
+        layout,
+        layout.monthBand,
+        yearSegments(viewStart, viewEnd),
+        viewEnd,
+        (segment, width) => width >= 30
+            ? '${segment.start.year}'
+            : width >= 18
+            ? "'${'${segment.start.year % 100}'.padLeft(2, '0')}"
+            : '',
+        (segment) => _yearColor(segment.colorIndex),
+        Colors.white,
+        'Year',
+      );
+    } else {
+      _paintMonthLane(canvas, layout, viewEnd);
+    }
+    _paintRestOfAxes(canvas, layout, viewEnd);
+  }
+
+  void _paintMonthLane(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
+    final months = monthSegments(viewStart, viewEnd);
+    final firstVisible = months.isEmpty ? null : months.first.start;
+    // Year on January and on the first visible month, so the axis alone
+    // says which year you are looking at.
+    String withYear(AxisSegment segment, String text, String year) =>
+        segment.start.month == 1 || segment.start == firstVisible
+        ? '$text $year'
+        : text;
     _paintLane(
       canvas,
       layout,
       layout.monthBand,
-      monthSegments(viewStart, viewEnd),
+      months,
       viewEnd,
       (segment, width) {
-        if (width >= 96) return DateFormat.MMMM().format(segment.start);
-        if (width >= 40) return DateFormat.MMM().format(segment.start);
+        final year = '${segment.start.year}';
+        if (width >= 130) {
+          return withYear(
+            segment,
+            DateFormat.MMMM().format(segment.start),
+            year,
+          );
+        }
+        if (width >= 72) {
+          return withYear(
+            segment,
+            DateFormat.MMM().format(segment.start),
+            year,
+          );
+        }
+        if (width >= 40) {
+          final short = "'${'${segment.start.year % 100}'.padLeft(2, '0')}";
+          return withYear(
+            segment,
+            DateFormat.MMM().format(segment.start),
+            short,
+          );
+        }
+        if (width >= 14) {
+          return DateFormat.MMM().format(segment.start).substring(0, 1);
+        }
         return '';
       },
       (segment) => _monthColor(segment.colorIndex),
       Colors.white,
       'Month',
     );
+  }
+
+  void _paintRestOfAxes(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
     final weekBand = layout.weekBand;
     if (weekBand != null) {
       _paintLane(
@@ -795,7 +1358,7 @@ class _BalanceChartPainter extends CustomPainter {
         canvas,
         layout,
         y,
-        formatMoneyAmount(value, currency, decimalDigits: digits),
+        _axisMoney(value, currency, digits, _absMax(extents)),
         labelStyle,
       );
     }
@@ -814,7 +1377,7 @@ class _BalanceChartPainter extends CustomPainter {
           canvas,
           layout,
           y,
-          formatMoneyAmount(0, currency, decimalDigits: digits),
+          _axisMoney(0, currency, digits, _absMax(extents)),
           labelStyle,
         );
       }
@@ -823,12 +1386,15 @@ class _BalanceChartPainter extends CustomPainter {
     final extentPaint = Paint()
       ..color = const Color(0xFF0B5F5A).withValues(alpha: 0.55)
       ..strokeWidth = 1;
-    canvas.drawLine(
-      Offset(layout.plot.left, maxY),
-      Offset(layout.plot.right, maxY),
-      extentPaint,
-    );
-    if (!extents.isFlat) {
+    bool onPlot(double y) => y >= layout.plot.top && y <= layout.plot.bottom;
+    if (onPlot(maxY)) {
+      canvas.drawLine(
+        Offset(layout.plot.left, maxY),
+        Offset(layout.plot.right, maxY),
+        extentPaint,
+      );
+    }
+    if (!extents.isFlat && onPlot(minY)) {
       canvas.drawLine(
         Offset(layout.plot.left, minY),
         Offset(layout.plot.right, minY),
@@ -845,15 +1411,50 @@ class _BalanceChartPainter extends CustomPainter {
   ) {
     final digits = moneyDigitsForSpan(extents.min, extents.max);
     final maxLabel =
-        'max ${formatMoneyAmount(extents.max, currency, decimalDigits: digits)}';
+        'max ${_axisMoney(extents.max, currency, digits, _absMax(extents))}';
     final maxY = scale.yOf(extents.max);
+    bool onPlot(double y) => y >= layout.plot.top && y <= layout.plot.bottom;
     if (extents.isFlat) {
-      _paintYText(canvas, layout, maxY, maxLabel, strongStyle, emphasize: true);
+      if (onPlot(maxY)) {
+        _paintYText(
+          canvas,
+          layout,
+          maxY,
+          maxLabel,
+          strongStyle,
+          emphasize: true,
+        );
+      }
       return;
     }
     final minLabel =
-        'min ${formatMoneyAmount(extents.min, currency, decimalDigits: digits)}';
+        'min ${_axisMoney(extents.min, currency, digits, _absMax(extents))}';
     final minY = scale.yOf(extents.min);
+    // Off-plot extents are reported by the edge hints instead; a label pinned
+    // to the edge would claim the wrong height.
+    if (!onPlot(maxY) || !onPlot(minY)) {
+      if (onPlot(maxY)) {
+        _paintYText(
+          canvas,
+          layout,
+          maxY,
+          maxLabel,
+          strongStyle,
+          emphasize: true,
+        );
+      }
+      if (onPlot(minY)) {
+        _paintYText(
+          canvas,
+          layout,
+          minY,
+          minLabel,
+          strongStyle,
+          emphasize: true,
+        );
+      }
+      return;
+    }
     if ((maxY - minY).abs() < 28) {
       _paintYText(
         canvas,
@@ -949,7 +1550,7 @@ class _BalanceChartPainter extends CustomPainter {
     bool dashed = false,
     bool alignLeft = false,
   }) {
-    final next = dateOnly(date).add(const Duration(days: 1));
+    final next = addCalendarDays(date, 1);
     if (!next.isAfter(viewStart) || dateOnly(date).isAfter(viewEnd)) return;
     final x = layout.xOf(date, viewStart, visibleDays);
     if (x < layout.plot.left || x > layout.plot.right) return;
@@ -1046,8 +1647,18 @@ class _BalanceChartPainter extends CustomPainter {
     DateTime seed,
     DateTime viewEnd,
   ) {
-    final drawStart = viewStart.isBefore(seed) ? seed : viewStart;
-    if (!drawStart.isBefore(viewEnd)) return;
+    var drawStart = viewStart.isBefore(seed) ? seed : viewStart;
+    final from = dataFrom;
+    if (from != null && drawStart.isBefore(from) && !from.isBefore(seed)) {
+      drawStart = from;
+    }
+    var drawEnd = viewEnd;
+    final through = dataThrough;
+    if (through != null) {
+      final coverEnd = addCalendarDays(through, 1);
+      if (coverEnd.isBefore(drawEnd)) drawEnd = coverEnd;
+    }
+    if (!drawStart.isBefore(drawEnd)) return;
 
     BalancePoint? carry;
     final jumps = <BalancePoint>[];
@@ -1065,7 +1676,7 @@ class _BalanceChartPainter extends CustomPainter {
         .clamp(layout.plot.left, layout.plot.right)
         .toDouble();
     final endX = layout
-        .xOf(viewEnd, viewStart, visibleDays)
+        .xOf(drawEnd, viewStart, visibleDays)
         .clamp(layout.plot.left, layout.plot.right)
         .toDouble();
 
@@ -1075,7 +1686,7 @@ class _BalanceChartPainter extends CustomPainter {
     var cursor = startX;
     for (final jump in jumps) {
       final jx = layout
-          .xOf(dateOnly(jump.date), viewStart, visibleDays)
+          .xOf(_stepAt(jump.date), viewStart, visibleDays)
           .clamp(layout.plot.left, layout.plot.right)
           .toDouble();
       final next = jump.closingBalance.toDouble();
@@ -1168,6 +1779,57 @@ class _BalanceChartPainter extends CustomPainter {
 
   bool _isLoss(double value) => value <= lossThreshold;
 
+  /// Chips at the top / bottom edge when balances in view lie beyond the
+  /// vertical range, so clipped data is noticed (drag or Shift+wheel to it).
+  void _paintOffscreenHints(
+    Canvas canvas,
+    ChartLayout layout,
+    _YScale scale,
+    BalanceExtents extents,
+  ) {
+    void chip(String text, bool top) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: strongStyle.copyWith(fontSize: 11, color: Colors.white),
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+      final w = painter.width + 16;
+      final h = painter.height + 6;
+      final left = layout.plot.center.dx - w / 2;
+      final y = top ? layout.plot.top + 4 : layout.plot.bottom - h - 4;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(left, y, w, h),
+          Radius.circular(h / 2),
+        ),
+        Paint()..color = const Color(0xFF0B5F5A).withValues(alpha: 0.85),
+      );
+      painter.paint(canvas, Offset(left + 8, y + 3));
+      painter.dispose();
+    }
+
+    if (extents.max > scale.yMax) {
+      chip('▲ up to ${formatMoneyAmount(extents.max, currency)} above', true);
+    }
+    if (extents.min < scale.yMin) {
+      chip(
+        '▼ down to ${formatMoneyAmount(extents.min, currency)} below',
+        false,
+      );
+    }
+  }
+
+  double _absMax(BalanceExtents extents) =>
+      math.max(extents.min.abs(), extents.max.abs());
+
+  /// Where a day's balance change is drawn: the middle of its day cell, so
+  /// the step and its dots sit inside the labelled day instead of on the
+  /// boundary shared with the previous day.
+  DateTime _stepAt(DateTime date) => addDays(dateOnly(date), 0.5);
+
   void _paintOccurrences(
     Canvas canvas,
     ChartLayout layout,
@@ -1190,25 +1852,11 @@ class _BalanceChartPainter extends CustomPainter {
     final counts = <int, int>{};
     final vertices = <_ChartVertex>[];
 
-    // Opening balance of each day with occurrences: close minus that day's
-    // applied deltas, so same-day vertices can show a running balance.
-    final dayTotals = <int, double>{};
-    for (final occurrence in series.occurrences) {
-      if (occurrence.skipped) continue;
-      final key = dateOnly(occurrence.date).millisecondsSinceEpoch;
-      dayTotals[key] = (dayTotals[key] ?? 0) + occurrence.signedDelta.toDouble();
-    }
-    final openings = <int, double>{
-      for (final entry in dayTotals.entries)
-        if (closes[entry.key] != null) entry.key: closes[entry.key]! - entry.value,
-    };
-    final running = <int, double>{};
-
     canvas.save();
     canvas.clipRect(layout.plot);
     for (final occurrence in series.occurrences) {
       final day = dateOnly(occurrence.date);
-      final nextDay = day.add(const Duration(days: 1));
+      final nextDay = addCalendarDays(day, 1);
       if (day.isBefore(seed) ||
           !nextDay.isAfter(viewStart) ||
           day.isAfter(viewEnd)) {
@@ -1219,8 +1867,11 @@ class _BalanceChartPainter extends CustomPainter {
       final key = day.millisecondsSinceEpoch;
       final stack = counts[key] ?? 0;
       counts[key] = stack + 1;
-      final x = layout.xOf(day, viewStart, visibleDays);
-      final y = scale.yOf(yValue) - stack * (radius * 2 + 2);
+      final x = layout.xOf(_stepAt(day), viewStart, visibleDays);
+      // Stack same-day dots only when a day is wide enough to read them;
+      // zoomed out, stacks look like stray points far off the line.
+      final lift = dayPx >= 8 ? stack * (radius * 2 + 2) : 0.0;
+      final y = scale.yOf(yValue) - lift;
       final center = Offset(x, y);
       if (occurrence.skipped) {
         canvas.drawCircle(
@@ -1258,16 +1909,12 @@ class _BalanceChartPainter extends CustomPainter {
       final name = rawName == null
           ? ''
           : (rawName.trim().isEmpty ? 'Transaction' : rawName.trim());
-      // Occurrences are in engine order, so this is the balance right after
-      // this one applied (skipped occurrences leave the balance unchanged).
-      final delta = occurrence.skipped ? 0.0 : occurrence.signedDelta.toDouble();
-      running[key] = (running[key] ?? openings[key] ?? yValue) + delta;
       vertices.add(
         _ChartVertex(
           center: center,
           radius: radius,
           name: name,
-          balance: running[key]!,
+          amount: occurrence.signedDelta.toDouble(),
           skipped: occurrence.skipped,
           debit: occurrence.signedDelta.toDouble() < 0,
         ),
@@ -1339,8 +1986,15 @@ class _BalanceChartPainter extends CustomPainter {
           : style;
       final amount = TextPainter(
         text: TextSpan(
-          text: formatMoneyAmount(vertex.balance, currency),
-          style: vertexStyle.copyWith(fontWeight: FontWeight.w800),
+          text: formatSignedAmount(vertex.amount, currency),
+          style: vertexStyle.copyWith(
+            fontWeight: FontWeight.w800,
+            color: vertex.skipped
+                ? null
+                : vertex.debit
+                ? Color.lerp(AppTheme.debitColor, Colors.black, 0.35)
+                : Color.lerp(AppTheme.creditColor, Colors.black, 0.35),
+          ),
         ),
         textDirection: TextDirection.ltr,
         maxLines: 1,
@@ -1369,7 +2023,7 @@ class _BalanceChartPainter extends CustomPainter {
       double heightFor(TextPainter? name) =>
           amount.height + (name?.height ?? 0) + 4;
 
-      // Prefer a label with the transaction name; fall back to the balance alone.
+      // Prefer a label with the transaction name; fall back to the amount alone.
       var drawn = false;
       for (final withName in vertex.name.isEmpty ? [false] : [true, false]) {
         for (final side in VertexLabelSide.values) {
@@ -1456,7 +2110,7 @@ class _BalanceChartPainter extends CustomPainter {
     final rects = <Rect>[];
     void add(DateTime date, String label, {bool alignLeft = false}) {
       final day = dateOnly(date);
-      final next = day.add(const Duration(days: 1));
+      final next = addCalendarDays(day, 1);
       if (!next.isAfter(viewStart) || day.isAfter(_viewEnd)) return;
       final x = layout.xOf(day, viewStart, visibleDays);
       if (x < layout.plot.left || x > layout.plot.right) return;
@@ -1584,8 +2238,29 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.strongStyle != strongStyle ||
         oldDelegate.laneStyle != laneStyle ||
         oldDelegate.textScaler != textScaler ||
+        oldDelegate.dataFrom != dataFrom ||
+        oldDelegate.yRange?.min != yRange?.min ||
+        oldDelegate.yRange?.max != yRange?.max ||
+        oldDelegate.dataThrough != dataThrough ||
         !mapEquals(oldDelegate.transactionNames, transactionNames);
   }
+}
+
+/// Y-axis money: compact (A\$1.5M) once values reach millions so labels
+/// fit the gutter instead of being cut off.
+String _axisMoney(double value, String currency, int digits, double scaleMax) {
+  if (scaleMax >= 1e6 && value.abs() >= 1) {
+    return NumberFormat.compactCurrency(
+      name: currency,
+      symbol: MoneyText.symbolFor(currency),
+      decimalDigits: 2,
+    ).format(value);
+  }
+  return formatMoneyAmount(
+    value,
+    currency,
+    decimalDigits: scaleMax >= 1e6 ? 0 : digits,
+  );
 }
 
 class _ChartVertex {
@@ -1593,7 +2268,7 @@ class _ChartVertex {
     required this.center,
     required this.radius,
     required this.name,
-    required this.balance,
+    required this.amount,
     required this.skipped,
     required this.debit,
   });
@@ -1601,11 +2276,12 @@ class _ChartVertex {
   final Offset center;
   final double radius;
 
-  /// Empty when the transaction has no known name; the balance is still shown.
+  /// Empty when the transaction has no known name; the amount is still shown.
   final String name;
 
-  /// Account balance right after this occurrence.
-  final double balance;
+  /// This occurrence's own signed amount (+ credit, − debit). Shown even
+  /// when skipped (greyed); the running balance is read off the axis.
+  final double amount;
   final bool skipped;
   final bool debit;
 }
@@ -1623,4 +2299,20 @@ class _YScale {
     final t = (value - yMin) / span;
     return plot.bottom - t * plot.height;
   }
+}
+
+class _Dot {
+  const _Dot(this.center, this.radius, this.occurrence, this.balanceAfter);
+  final Offset center;
+  final double radius;
+  final Occurrence occurrence;
+
+  /// Account balance right after this occurrence applied.
+  final double balanceAfter;
+}
+
+class _DotTip {
+  const _DotTip(this.dots, this.anchor);
+  final List<_Dot> dots;
+  final Offset anchor;
 }
