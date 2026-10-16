@@ -14,13 +14,7 @@ enum FitMode {
   vertical('Fit vertical', 'F'),
 
   /// Time to all of the account's data; balance untouched.
-  horizontal('Fit horizontal', 'H'),
-
-  /// Time and balance to the Monday-start week containing the view centre.
-  week('Fit week', 'W'),
-
-  /// Time and balance to the calendar month containing the view centre.
-  month('Fit month', 'M');
+  horizontal('Fit horizontal', 'H');
 
   const FitMode(this.label, this.shortcut);
   final String label;
@@ -108,16 +102,17 @@ TimeSpan monthContaining(DateTime moment) {
   return (first: first, last: last);
 }
 
-/// Time span showing days [first]..[last] inclusive with ~3% padding each
-/// side (at least half a day), clamped to the chart's zoom limits around
-/// the range's centre.
-TimeSpan paddedTimeSpan(DateTime first, DateTime last) {
+/// Time span for days [first]..[last] inclusive: [first] at the left edge
+/// (no leading padding) and [last] fully visible at the right. Ranges
+/// shorter than the minimum zoom extend to the right; longer than the
+/// maximum are cut at the right.
+TimeSpan dataTimeSpan(DateTime first, DateTime last) {
   final data = calendarDaysBetween(first, last) + 1.0;
-  final pad = math.max(0.5, data * 0.03);
-  var days = data + pad * 2;
-  var startCoord = dayCoord(dateOnly(first)) - pad;
-  final clamped = days.clamp(minVisibleDays, maxVisibleDays).toDouble();
-  startCoord += (days - clamped) / 2;
-  days = clamped;
-  return TimeSpan(dateFromDayCoord(startCoord), days);
+  final days = data.clamp(minVisibleDays, maxVisibleDays).toDouble();
+  return TimeSpan(dateOnly(first), days);
 }
+
+/// Last calendar day visible in a view starting at [start] spanning [days]
+/// (the end is exclusive: a 7-day view from Monday ends on Sunday).
+DateTime lastVisibleDay(DateTime start, double days) =>
+    dateOnly(addDays(start, math.max(0, days - 1e-6)));

@@ -10,7 +10,9 @@ build() {
   if flutter build web --release --pwa-strategy=none --dart-define=API_BASE_URL= -o "$out" 2>&1 | grep -v '^$' | tail -4 && [ -f "$out/main.dart.js" ]; then
     ln -sfn "$(basename "$out")" build/web-live.tmp && mv -T build/web-live.tmp build/web-live
     ls -d build/web-[0-9]* | sort | head -n -2 | xargs -r rm -rf   # keep current + previous
-    echo "--- $(date +%T) live in $((SECONDS - t0))s — reload the browser"
+    local live=$((SECONDS - t0)) tun
+    tun=$(ENSURE_SRC=build ../tunnel-ensure.sh | tail -1)   # one public request per build
+    echo "--- $(date +%T) live in ${live}s — $tun — reload the browser"
   else echo "--- $(date +%T) BUILD FAILED; previous build still live"; fi
 }
 mkdir -p build; touch build/.rebuild; build

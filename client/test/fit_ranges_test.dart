@@ -114,18 +114,31 @@ void main() {
   });
 
   test('padded time span pads and respects zoom limits', () {
-    final s = paddedTimeSpan(DateTime(2026, 1, 1), DateTime(2026, 12, 31));
-    expect(s.days, greaterThan(365));
-    expect(dayCoord(s.start), lessThan(dayCoord(DateTime(2026, 1, 1))));
-    expect(dayCoord(s.end), greaterThan(dayCoord(DateTime(2027, 1, 1))));
-    final one = paddedTimeSpan(DateTime(2026, 5, 5), DateTime(2026, 5, 5));
+    final s = dataTimeSpan(DateTime(2026, 1, 1), DateTime(2026, 12, 31));
+    // First day exactly at the left edge, last day fully visible.
+    expect(s.start, DateTime(2026, 1, 1));
+    expect(s.days, 365);
+    expect(dateOnlyEq(s.end, DateTime(2027, 1, 1)), isTrue);
+    final one = dataTimeSpan(DateTime(2026, 5, 5), DateTime(2026, 5, 5));
     expect(one.days, minVisibleDays);
-    expect(
-      dayCoord(one.start) + one.days / 2,
-      closeTo(dayCoord(DateTime(2026, 5, 5)) + 0.5, 1e-6),
-    );
-    final huge = paddedTimeSpan(DateTime(1990, 1, 1), DateTime(2030, 1, 1));
+    expect(one.start, DateTime(2026, 5, 5));
+    final huge = dataTimeSpan(DateTime(1990, 1, 1), DateTime(2030, 1, 1));
     expect(huge.days, maxVisibleDays);
+    expect(huge.start, DateTime(1990, 1, 1));
+  });
+
+  test('week / month fits start exactly at the unit start', () {
+    final w = weekContaining(DateTime(2025, 11, 27, 15));
+    expect(w.start, DateTime(2025, 11, 24)); // Monday
+    expect(w.days, 7);
+    expect(lastVisibleDay(w.start, w.days), DateTime(2025, 11, 30));
+    final m = monthContaining(DateTime(2025, 11, 15));
+    expect(m.start, DateTime(2025, 11, 1));
+    expect(lastVisibleDay(m.start, m.days), DateTime(2025, 11, 30));
+    // Across the April DST change (Sydney) the span is still whole days.
+    final a = monthContaining(DateTime(2026, 4, 10));
+    expect(a.days, 30);
+    expect(lastVisibleDay(a.start, a.days), DateTime(2026, 4, 30));
   });
 }
 

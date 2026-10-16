@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -91,10 +93,26 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
   _Editing? _editing;
   var _listScroll = ScrollController();
 
+  /// List order when the editor opened, so undoing a delete restores the
+  /// series at the same position.
+  List<String> _orderAtOpen = const [];
+
+  /// Rows deleted from the list, hidden while the server call runs.
+  final Set<String> _hidden = {};
+
+  /// Series just edited / created: briefly highlighted and scrolled to.
+  String? _highlightId;
+  final _highlightKey = GlobalKey();
+  Timer? _highlightTimer;
+
   void _open(Transaction? t) {
     // Keep the list's scroll position for when the editor returns.
     final offset = _listScroll.hasClients ? _listScroll.offset : 0.0;
     final old = _listScroll;
+    _orderAtOpen = _ordered(
+      ref.read(transactionsProvider(widget.account.id)).valueOrNull ?? const [],
+      watch: false,
+    ).map((x) => x.id).toList();
     setState(() {
       _editing = _Editing(t);
       _listScroll = ScrollController(initialScrollOffset: offset);
@@ -102,8 +120,66 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
     Future.delayed(const Duration(seconds: 1), old.dispose);
   }
 
+  /// Deletes [t] straight from the list (swipe or row menu); the snackbar's
+  /// Undo recreates it at the same position with its skips.
+  Future<void> _deleteFromList(BuildContext context, Transaction t) async {
+    final notifier = ref.read(transactionsProvider(widget.account.id).notifier);
+    final order = _ordered(
+      ref.read(transactionsProvider(widget.account.id)).valueOrNull ?? const [],
+      watch: false,
+    ).map((x) => x.id).toList();
+    final skips = widget.skipsFor(t.id);
+    // Hide at once (a swiped row must leave the tree immediately).
+    setState(() => _hidden.add(t.id));
+    try {
+      await notifier.delete(t.id);
+    } catch (e) {
+      if (mounted) setState(() => _hidden.remove(t.id));
+      _error(e);
+      return;
+    }
+    widget.onChanged();
+    if (!context.mounted) return;
+    reportEditorOutcome(
+      context,
+      ref,
+      accountId: widget.account.id,
+      outcome: EditorOutcome(
+        action: EditorAction.deleted,
+        transaction: t,
+        skippedBefore: skips,
+      ),
+      onChanged: widget.onChanged,
+      orderBefore: order,
+    );
+  }
+
   void _editorDone(BuildContext context, EditorOutcome? outcome) {
-    setState(() => _editing = null);
+    final edited = outcome != null && outcome.action != EditorAction.deleted
+        ? outcome.transaction.id
+        : _editing?.transaction?.id;
+    _highlightTimer?.cancel();
+    setState(() {
+      _editing = null;
+      _highlightId = outcome?.action == EditorAction.deleted ? null : edited;
+    });
+    if (_highlightId != null) {
+      // Bring the row into view once the list is back, then fade the mark.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _highlightKey.currentContext;
+        if (ctx != null && ctx.mounted) {
+          Scrollable.ensureVisible(
+            ctx,
+            alignment: 0.3,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
+      _highlightTimer = Timer(const Duration(milliseconds: 2200), () {
+        if (mounted) setState(() => _highlightId = null);
+      });
+    }
     widget.onChanged();
     reportEditorOutcome(
       context,
@@ -111,6 +187,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
       accountId: widget.account.id,
       outcome: outcome,
       onChanged: widget.onChanged,
+      orderBefore: _orderAtOpen,
     );
   }
 
@@ -118,17 +195,21 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
   void dispose() {
     _search.dispose();
     _listScroll.dispose();
+    _highlightTimer?.cancel();
     super.dispose();
   }
 
-  List<Transaction> _ordered(List<Transaction> items) {
+  List<Transaction> _ordered(List<Transaction> items, {bool watch = true}) {
+    final account = watch
+        ? ref.watch(accountProvider(widget.account.id))
+        : ref.read(accountProvider(widget.account.id));
     final order =
-        ref
-            .watch(accountProvider(widget.account.id))
-            .valueOrNull
-            ?.transactionOrder ??
+        account.valueOrNull?.transactionOrder ??
         widget.account.transactionOrder;
-    final byId = {for (final t in items) t.id: t};
+    final byId = {
+      for (final t in items)
+        if (!watch || !_hidden.contains(t.id)) t.id: t,
+    };
     return [for (final id in order) ?byId.remove(id), ...byId.values];
   }
 
@@ -221,7 +302,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
               child: TextField(
                 key: const ValueKey('transactions-search'),
                 controller: _search,
-                autofocus: true,
+                autofocus: MediaQuery.sizeOf(context).width >= 600,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   isDense: true,
@@ -303,10 +384,13 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
     }
     Widget row(int index, Transaction t) => _TxRow(
       key: ValueKey(t.id),
+      highlightKey: t.id == _highlightId ? _highlightKey : null,
+      highlighted: t.id == _highlightId,
       transaction: t,
       currency: widget.account.currency,
       index: canReorder ? index : null,
       onTap: () => _open(t),
+      onDelete: () => _deleteFromList(context, t),
       onLocate: () {
         final d = nextOccurrence(t, DateTime.now());
         if (d != null) widget.onLocate(d);
@@ -361,14 +445,20 @@ class _TxRow extends StatelessWidget {
     required this.onTap,
     required this.onLocate,
     required this.onToggle,
+    required this.onDelete,
+    this.highlighted = false,
+    this.highlightKey,
   });
 
+  final bool highlighted;
+  final Key? highlightKey;
   final Transaction transaction;
   final String currency;
   final int? index;
   final VoidCallback onTap;
   final VoidCallback onLocate;
   final ValueChanged<bool> onToggle;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -377,87 +467,181 @@ class _TxRow extends StatelessWidget {
     final credit = t.direction == TransactionDirection.credit;
     final amount = t.amount.toDouble() * (credit ? 1 : -1);
     final next = nextOccurrence(t, DateTime.now());
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: Material(
-        color: AppTheme.raised,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: AppTheme.border),
+    final touch = MediaQuery.sizeOf(context).width < 600;
+    final name = t.name.isEmpty ? 'Untitled' : t.name;
+    // Swipe left to delete (undo in the snackbar, so no confirm). Needs a
+    // long, deliberate swipe so a scroll or tap never deletes.
+    return Dismissible(
+      key: ValueKey('dismiss-${t.id}'),
+      direction: DismissDirection.endToStart,
+      dismissThresholds: const {DismissDirection.endToStart: 0.5},
+      background: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppTheme.debitColor.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: EdgeInsets.only(right: 20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Delete', style: TextStyle(fontWeight: FontWeight.w700)),
+                  SizedBox(width: 8),
+                  Icon(Icons.delete_outline_rounded),
+                ],
+              ),
+            ),
+          ),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
-            child: Row(
-              children: [
-                if (index != null)
-                  ReorderableDragStartListener(
-                    index: index!,
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 4),
-                      child: Icon(
-                        Icons.drag_indicator_rounded,
-                        size: 18,
-                        color: AppTheme.textFaint,
+      ),
+      onDismissed: (_) => onDelete(),
+      child: Padding(
+        key: highlightKey,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+        child: Material(
+          color: highlighted
+              ? Color.alphaBlend(
+                  AppTheme.accent.withValues(alpha: 0.12),
+                  AppTheme.raised,
+                )
+              : AppTheme.raised,
+          animationDuration: const Duration(milliseconds: 400),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: highlighted ? AppTheme.accent : AppTheme.border,
+              width: highlighted ? 1.5 : 1,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+              child: Row(
+                children: [
+                  if (index != null)
+                    ReorderableDragStartListener(
+                      index: index!,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          Icons.drag_indicator_rounded,
+                          size: 18,
+                          color: AppTheme.textFaint,
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox(width: 8),
+                  DirectionBadge(credit: credit, muted: !t.enabled),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          t.name.isEmpty ? 'Untitled' : t.name,
+                          maxLines: 1,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: t.enabled ? null : AppTheme.textFaint,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          [
+                            describeRecurrence(t),
+                            ?scheduleHint(t, DateTime.now()),
+                          ].join(' · '),
+                          style: theme.textTheme.bodySmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    formatSignedAmount(amount, currency),
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: !t.enabled
+                          ? AppTheme.textFaint
+                          : credit
+                          ? AppTheme.creditColor
+                          : AppTheme.debitColor,
+                    ),
+                  ),
+                  if (touch)
+                    SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: PopupMenuButton<String>(
+                        key: ValueKey('row-menu-${t.id}'),
+                        tooltip: 'More for $name',
+                        icon: const Icon(Icons.more_vert_rounded, size: 20),
+                        color: AppTheme.overlay,
+                        onSelected: (v) =>
+                            v == 'delete' ? onDelete() : onLocate(),
+                        itemBuilder: (_) => [
+                          PopupMenuItem(
+                            value: 'locate',
+                            enabled: next != null,
+                            child: const ListTile(
+                              leading: Icon(Icons.my_location_rounded),
+                              title: Text('Show on timeline'),
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: ListTile(
+                              leading: Icon(
+                                Icons.delete_outline_rounded,
+                                color: AppTheme.debitColor,
+                              ),
+                              title: const Text('Delete'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else ...[
+                    IconButton(
+                      tooltip: 'Show on timeline',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: next == null ? null : onLocate,
+                      icon: const Icon(Icons.my_location_rounded, size: 18),
+                    ),
+                    IconButton(
+                      key: ValueKey('row-delete-${t.id}'),
+                      tooltip: 'Delete $name',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: onDelete,
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    ),
+                  ],
+                  Tooltip(
+                    message: t.enabled
+                        ? 'Included in balance'
+                        : 'Excluded from balance',
+                    // Tap toggles; horizontal drags fall through to the
+                    // row's Dismissible instead of flipping the switch.
+                    child: GestureDetector(
+                      key: ValueKey('row-switch-${t.id}'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onToggle(!t.enabled),
+                      child: IgnorePointer(
+                        child: Transform.scale(
+                          scale: touch ? 0.9 : 0.8,
+                          child: Switch(value: t.enabled, onChanged: onToggle),
+                        ),
                       ),
                     ),
-                  )
-                else
-                  const SizedBox(width: 8),
-                DirectionBadge(credit: credit, muted: !t.enabled),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        t.name.isEmpty ? 'Untitled' : t.name,
-                        maxLines: 1,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: t.enabled ? null : AppTheme.textFaint,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        [
-                          describeRecurrence(t),
-                          ?scheduleHint(t, DateTime.now()),
-                        ].join(' · '),
-                        style: theme.textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  formatSignedAmount(amount, currency),
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: !t.enabled
-                        ? AppTheme.textFaint
-                        : credit
-                        ? AppTheme.creditColor
-                        : AppTheme.debitColor,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Show on timeline',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: next == null ? null : onLocate,
-                  icon: const Icon(Icons.my_location_rounded, size: 18),
-                ),
-                Tooltip(
-                  message: t.enabled
-                      ? 'Included in balance'
-                      : 'Excluded from balance',
-                  child: Transform.scale(
-                    scale: 0.8,
-                    child: Switch(value: t.enabled, onChanged: onToggle),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

@@ -69,10 +69,7 @@ class AccountRepository {
   }) async {
     final data = await _api.get(
       '/api/accounts/$accountId/balance',
-      query: {
-        'from': formatDate(from),
-        'to': formatDate(to),
-      },
+      query: {'from': formatDate(from), 'to': formatDate(to)},
     );
     return BalanceSeries.fromJson(data);
   }
@@ -158,8 +155,14 @@ List<Map<String, dynamic>> _asList(dynamic data) {
     return data.cast<Map<String, dynamic>>();
   }
   if (data is Map<String, dynamic>) {
-    final nested = data['items'] ?? data['data'] ?? data['projects'] ??
-        data['accounts'] ?? data['transactions'] ?? data['points'] ?? data['balances'];
+    final nested =
+        data['items'] ??
+        data['data'] ??
+        data['projects'] ??
+        data['accounts'] ??
+        data['transactions'] ??
+        data['points'] ??
+        data['balances'];
     if (nested is List) {
       return nested.cast<Map<String, dynamic>>();
     }

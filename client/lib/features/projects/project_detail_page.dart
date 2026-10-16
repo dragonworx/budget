@@ -142,6 +142,20 @@ class ProjectDetailPage extends ConsumerWidget {
     WidgetRef ref, {
     Account? existing,
   }) async {
+    final notifier = ref.read(accountsProvider(projectId).notifier);
+    if (existing == null) {
+      // Create inside the dialog (errors keep it open), then open the new
+      // account's timeline; pushed so back returns here.
+      final created = await showAccountDialog(
+        context,
+        projectId: projectId,
+        onSave: notifier.create,
+      );
+      if (created != null && context.mounted) {
+        context.push('/accounts/${created.id}/timeline');
+      }
+      return;
+    }
     final result = await showAccountDialog(
       context,
       projectId: projectId,
@@ -149,12 +163,7 @@ class ProjectDetailPage extends ConsumerWidget {
     );
     if (result == null) return;
     try {
-      final notifier = ref.read(accountsProvider(projectId).notifier);
-      if (existing == null) {
-        await notifier.create(result);
-      } else {
-        await notifier.updateAccount(result);
-      }
+      await notifier.updateAccount(result);
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)

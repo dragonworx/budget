@@ -20,7 +20,7 @@ import '../transactions/transactions_panel.dart';
 import 'balance_chart.dart';
 import 'chart_geometry.dart';
 import 'fit_ranges.dart';
-import 'occurrence_info.dart';
+import 'view_units.dart';
 import 'zoom_level.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
@@ -32,8 +32,13 @@ class TimelinePage extends ConsumerStatefulWidget {
   ConsumerState<TimelinePage> createState() => _TimelinePageState();
 }
 
-class _TimelinePageState extends ConsumerState<TimelinePage>
-    with SingleTickerProviderStateMixin {
+class _TimelinePageState extends ConsumerState<TimelinePage> {
+  /// Selected view unit per account (kept while the app is open).
+  static final Map<String, ViewUnit> _unitByAccount = {};
+
+  /// Always one selected; − / + step through [ViewUnit.values].
+  ViewUnit _unit = ViewUnit.month;
+
   late DateTime _dataFrom;
   late DateTime _dataTo;
   late DateTime _viewStart;
@@ -46,6 +51,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Bumped by "Fit" to refit the chart's balance range to the data in view.
   int _fitToken = 0;
+  int _zeroToken = 0;
 
   /// Balance fits also stretch to the loss-threshold line.
   bool _fitThreshold = false;
@@ -66,7 +72,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _seriesCacheQuery = null;
     final today = dateOnly(DateTime.now());
     final seed = dateOnly(account.seedDate);
-    _viewStart = addCalendarDays(seed, -7);
+    _unit = _unitByAccount[account.id] ?? ViewUnit.month;
+    final first = _unit.spanContaining(seed);
+    _viewStart = first.start;
+    _visibleDays = first.days;
     _dataFrom = addCalendarDays(_viewStart, -30);
     final horizon = math.max(120, _visibleDays.ceil());
     _dataTo = addCalendarDays(today.isAfter(seed) ? today : seed, horizon);
@@ -101,48 +110,47 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     setState(() => _fitToken++);
   }
 
-  /// One smooth zoom step about the centre of the view: [direction] -1
-  /// zooms in by [zoomStep], +1 zooms out. Animated over a few frames.
+  /// − / +: the previous / next view unit (smaller / larger), about the
+  /// centre of the view. [direction] -1 zooms in, +1 zooms out. Instant.
   void _zoomStep(int direction) {
-    final factor = direction < 0 ? 1 / zoomStep : zoomStep;
-    final target = zoomAboutCenter(_viewStart, _visibleDays, factor);
-    _zoomAnim?.stop();
-    final fromDays = _visibleDays;
-    final center = dayCoord(_viewStart) + _visibleDays / 2;
-    final controller = _zoomAnim ??= AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 140),
-    );
-    controller.removeListener(_zoomTick ?? () {});
-    _zoomTick = () {
-      final t = Curves.easeOut.transform(controller.value);
-      // Interpolate the span geometrically so in/out feel symmetric.
-      final days = fromDays * math.pow(target.days / fromDays, t);
-      _onViewport(dateFromDayCoord(center - days / 2), days.toDouble());
-    };
-    controller
-      ..addListener(_zoomTick!)
-      ..forward(from: 0);
+    final i = (_unit.index + direction).clamp(0, ViewUnit.values.length - 1);
+    _selectUnit(ViewUnit.values[i]);
   }
 
-  AnimationController? _zoomAnim;
-  VoidCallback? _zoomTick;
-
-  @override
-  void dispose() {
-    _zoomAnim?.dispose();
-    super.dispose();
+  /// Selects [unit] and shows exactly the unit containing the view centre,
+  /// its start leftmost, refitting the balance (like the old Fit week).
+  void _selectUnit(ViewUnit unit) {
+    final center = addDays(_viewStart, _visibleDays / 2);
+    final span = unit.spanContaining(center);
+    _setUnit(unit);
+    _onViewport(span.start, span.days);
+    setState(() => _fitToken++);
   }
 
-  /// The visible time span in words (what the zoom buttons change).
-  String get _spanLabel => describeSpan(_visibleDays);
+  /// ◀ (-1) / ▶ (1): one unit back / forward, snapped to unit starts.
+  void _shift(int n) {
+    final span = _unit.step(_viewStart, n);
+    _onViewport(span.start, span.days);
+    setState(() => _fitToken++);
+  }
+
+  void _setUnit(ViewUnit unit) {
+    _unit = unit;
+    _unitByAccount[widget.accountId] = unit;
+  }
+
+  /// Pans / wheel / pinch from the chart. A changed span (zoom) reselects the
+  /// unit that best matches it, so the dropdown is never empty.
+  void _onChartViewport(DateTime start, double days) {
+    if ((days - _visibleDays).abs() > 1e-6) _setUnit(ViewUnit.nearest(days));
+    _onViewport(start, days);
+  }
 
   /// Applies a Fit menu choice. Time fits go through [_onViewport], which
   /// widens the fetched window to cover the new view; the chart then refits
   /// the balance range once that data has loaded.
   void _fit(FitMode mode, Account account) {
     TimeSpan? span;
-    final center = addDays(_viewStart, _visibleDays / 2);
     switch (mode) {
       case FitMode.vertical:
         break;
@@ -156,14 +164,17 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           transactions: transactions,
           today: DateTime.now(),
         );
-        span = paddedTimeSpan(range.first, range.last);
-      case FitMode.week:
-        span = weekContaining(center);
-      case FitMode.month:
-        span = monthContaining(center);
+        span = dataTimeSpan(range.first, range.last);
     }
-    if (span != null) _onViewport(span.start, span.days);
-    if (mode.fitsBalance) setState(() => _fitToken++);
+    if (span != null) {
+      _setUnit(ViewUnit.nearest(span.days));
+      _onViewport(span.start, span.days);
+    }
+    if (mode.fitsBalance) {
+      setState(() => _fitToken++);
+    } else {
+      setState(() => _zeroToken++); // keep the zero line in view
+    }
   }
 
   /// Centres [day] and refits the balance to what is then in view.
@@ -241,54 +252,128 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             ? null
             : _closingNear(series.points, DateTime.now());
 
+        final compact = MediaQuery.sizeOf(context).width < 600;
         return Scaffold(
           appBar: AppBar(
-            toolbarHeight: 68,
+            toolbarHeight: compact ? 60 : 68,
             leading: IconButton(
-              tooltip: 'Back to accounts',
+              key: const ValueKey('timeline-back'),
+              tooltip: 'Back to project',
               icon: const Icon(Icons.arrow_back_rounded),
               onPressed: () => _goBack(context, account.projectId),
             ),
-            titleSpacing: 4,
-            title: _AccountHeader(account: account, todayPoint: todayPoint),
-            actions: [
-              IconButton(
-                tooltip: 'Import transactions (JSON)',
-                onPressed: () => _openImport(context, account),
-                icon: const Icon(Icons.file_upload_outlined),
-              ),
-              IconButton(
-                key: const ValueKey('account-settings'),
-                tooltip: 'Account settings: seed balance, date, threshold',
-                onPressed: () => _editAccount(context, account),
-                icon: const Icon(Icons.tune_rounded),
-              ),
-              const SizedBox(width: 6),
-              OutlinedButton.icon(
-                key: const ValueKey('open-transactions'),
-                onPressed: () => _openTransactionsPanel(context, account),
-                icon: const Icon(Icons.list_alt_rounded, size: 18),
-                label: Text('Transactions · ${transactions.length}'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                key: const ValueKey('new-transaction'),
-                onPressed: () => _openEditor(context, account),
-                icon: const Icon(Icons.add_rounded, size: 20),
-                label: const Text('New transaction'),
-              ),
-              const SizedBox(width: 16),
-            ],
+            titleSpacing: compact ? 0 : 4,
+            title: _AccountHeader(
+              account: account,
+              todayPoint: todayPoint,
+              compact: compact,
+            ),
+            actions: compact
+                ? [
+                    IconButton(
+                      key: const ValueKey('open-transactions'),
+                      tooltip: 'Transactions (${transactions.length})',
+                      onPressed: () => _openTransactionsPanel(context, account),
+                      icon: Badge.count(
+                        count: transactions.length,
+                        backgroundColor: AppTheme.accent,
+                        textColor: AppTheme.onAccent,
+                        child: const Icon(Icons.list_alt_rounded),
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      key: const ValueKey('timeline-more'),
+                      tooltip: 'More',
+                      icon: const Icon(Icons.more_vert_rounded),
+                      onSelected: (v) {
+                        switch (v) {
+                          case 'import':
+                            _openImport(context, account);
+                          case 'settings':
+                            _editAccount(context, account);
+                          case 'plan':
+                            _solve(context);
+                          case 'shortcuts':
+                            _showShortcuts(context);
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'settings',
+                          child: ListTile(
+                            leading: Icon(Icons.tune_rounded),
+                            title: Text('Account settings'),
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'import',
+                          child: ListTile(
+                            leading: Icon(Icons.file_upload_outlined),
+                            title: Text('Import transactions'),
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'plan',
+                          child: ListTile(
+                            leading: Icon(Icons.calculate_outlined),
+                            title: Text('Plan from a target'),
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'shortcuts',
+                          child: ListTile(
+                            leading: Icon(Icons.help_outline_rounded),
+                            title: Text('Gestures & shortcuts'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 4),
+                  ]
+                : [
+                    IconButton(
+                      tooltip: 'Import transactions (JSON)',
+                      onPressed: () => _openImport(context, account),
+                      icon: const Icon(Icons.file_upload_outlined),
+                    ),
+                    IconButton(
+                      key: const ValueKey('account-settings'),
+                      tooltip:
+                          'Account settings: seed balance, date, threshold',
+                      onPressed: () => _editAccount(context, account),
+                      icon: const Icon(Icons.tune_rounded),
+                    ),
+                    const SizedBox(width: 6),
+                    OutlinedButton.icon(
+                      key: const ValueKey('open-transactions'),
+                      onPressed: () => _openTransactionsPanel(context, account),
+                      icon: const Icon(Icons.list_alt_rounded, size: 18),
+                      label: Text('Transactions · ${transactions.length}'),
+                    ),
+                    const SizedBox(width: 16),
+                  ],
           ),
           body: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: _toolbar(context, account),
+                padding: EdgeInsets.fromLTRB(
+                  compact ? 8 : 16,
+                  compact ? 6 : 12,
+                  compact ? 8 : 16,
+                  0,
+                ),
+                child: compact
+                    ? _compactToolbar(context, account)
+                    : _toolbar(context, account),
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 8 : 16,
+                    compact ? 6 : 10,
+                    compact ? 8 : 16,
+                    6,
+                  ),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: AppTheme.surface,
@@ -313,35 +398,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                 BalanceChart(
                                   key: ValueKey(account.id),
                                   fitToken: _fitToken,
+                                  zeroToken: _zeroToken,
                                   onFitRequested: (mode) => _fit(mode, account),
                                   onZoomStep: _zoomStep,
+                                  onShift: _shift,
                                   series: series,
                                   currency: account.currency,
                                   seedDate: account.seedDate,
+                                  seedBalance: account.seedBalance.toDouble(),
                                   lossThreshold: account.lossThreshold
                                       .toDouble(),
                                   fitIncludesThreshold: _fitThreshold,
                                   viewStart: _viewStart,
                                   visibleDays: _visibleDays,
-                                  onViewportChanged: _onViewport,
-                                  onOccurrenceTap: (hits) =>
-                                      _onOccurrencesTapped(
-                                        context,
-                                        account,
-                                        hits,
-                                      ),
-                                  onDayTap: (day, onDay) {
-                                    if (onDay.isNotEmpty) {
-                                      _openDayPicker(
-                                        context,
-                                        account,
-                                        day,
-                                        onDay,
-                                      );
-                                    } else {
-                                      _createOnceOnDay(context, day);
-                                    }
-                                  },
+                                  onViewportChanged: _onChartViewport,
                                   onCreateOnDay: (day) =>
                                       _createOnceOnDay(context, day),
                                   transactionNames: transactionNames,
@@ -366,7 +436,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                   ),
                 ),
               ),
-              const _TipsBar(),
+              _TipsBar(compact: compact),
             ],
           ),
         );
@@ -378,41 +448,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   Widget _toolbar(BuildContext context, Account account) {
     final theme = Theme.of(context);
-    final end = dateOnly(addDays(_viewStart, _visibleDays));
+    final end = lastVisibleDay(_viewStart, _visibleDays);
     return Row(
       children: [
-        // Zoom group: − [span] +
-        Container(
-          decoration: AppTheme.panel(color: AppTheme.raised, r: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                key: const ValueKey('zoom-in'),
-                tooltip: 'Zoom in (+)',
-                onPressed: canZoomIn(_visibleDays) ? () => _zoomStep(-1) : null,
-                icon: const Icon(Icons.zoom_in_rounded),
-              ),
-              Container(width: 1, height: 22, color: AppTheme.border),
-              SizedBox(
-                width: 84,
-                child: Text(
-                  _spanLabel,
-                  key: const ValueKey('span-label'),
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.labelLarge,
-                ),
-              ),
-              Container(width: 1, height: 22, color: AppTheme.border),
-              IconButton(
-                key: const ValueKey('zoom-out'),
-                tooltip: 'Zoom out (−)',
-                onPressed: canZoomOut(_visibleDays) ? () => _zoomStep(1) : null,
-                icon: const Icon(Icons.zoom_out_rounded),
-              ),
-            ],
-          ),
-        ),
+        _unitGroup(theme, compact: false),
         const SizedBox(width: 8),
         Tooltip(
           message: 'Jump to a date',
@@ -426,70 +465,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           ),
         ),
         const SizedBox(width: 8),
-        PopupMenuButton<Object>(
-          key: const ValueKey('fit-menu'),
-          tooltip: 'Fit the view',
-          onSelected: (choice) {
-            if (choice is FitMode) {
-              _fit(choice, account);
-            } else {
-              setState(() {
-                _fitThreshold = !_fitThreshold;
-                _fitToken++;
-              });
-            }
-          },
-          position: PopupMenuPosition.under,
-          itemBuilder: (context) => [
-            for (final mode in FitMode.values)
-              PopupMenuItem(
-                value: mode,
-                child: Row(
-                  children: [
-                    Icon(_fitIcon(mode), size: 18),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text(mode.label)),
-                    const SizedBox(width: 24),
-                    KeyCap(mode.shortcut),
-                  ],
-                ),
-              ),
-            const PopupMenuDivider(),
-            PopupMenuItem<Object>(
-              key: const ValueKey('fit-threshold'),
-              value: 'threshold',
-              child: Row(
-                children: [
-                  Icon(
-                    _fitThreshold
-                        ? Icons.check_box_rounded
-                        : Icons.check_box_outline_blank_rounded,
-                    size: 18,
-                    color: _fitThreshold ? AppTheme.accent : null,
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'Keep alert line (${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}) in fits',
-                  ),
-                ],
-              ),
-            ),
-          ],
-          child: IgnorePointer(
-            child: OutlinedButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.fit_screen_rounded, size: 18),
-              label: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Fit'),
-                  SizedBox(width: 2),
-                  Icon(Icons.expand_more_rounded, size: 18),
-                ],
-              ),
-            ),
-          ),
-        ),
+        _fitMenu(account, compact: false),
         const SizedBox(width: 8),
         OutlinedButton.icon(
           onPressed: () => _centerOn(DateTime.now()),
@@ -528,12 +504,240 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
+  /// Unit picker with − / + (desktop) and ◀ ▶ shift buttons beside it.
+  Widget _unitGroup(ThemeData theme, {required bool compact}) {
+    final i = _unit.index;
+    Widget divider() => Container(width: 1, height: 22, color: AppTheme.border);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          decoration: AppTheme.panel(color: AppTheme.raised, r: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!compact) ...[
+                IconButton(
+                  key: const ValueKey('zoom-out'),
+                  tooltip: 'Larger unit (−)',
+                  onPressed: i < ViewUnit.values.length - 1
+                      ? () => _zoomStep(1)
+                      : null,
+                  icon: const Icon(Icons.zoom_out_rounded),
+                ),
+                divider(),
+              ],
+              PopupMenuButton<ViewUnit>(
+                key: const ValueKey('unit-menu'),
+                tooltip: 'View unit',
+                initialValue: _unit,
+                position: PopupMenuPosition.under,
+                onSelected: _selectUnit,
+                itemBuilder: (context) => [
+                  for (final u in ViewUnit.values)
+                    CheckedPopupMenuItem(
+                      value: u,
+                      checked: u == _unit,
+                      child: Text(u.label),
+                    ),
+                ],
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: 44,
+                    minWidth: compact ? 88 : 104,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _unit.label,
+                          key: const ValueKey('span-label'),
+                          style: theme.textTheme.labelLarge,
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(Icons.expand_more_rounded, size: 18),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (!compact) ...[
+                divider(),
+                IconButton(
+                  key: const ValueKey('zoom-in'),
+                  tooltip: 'Smaller unit (+)',
+                  onPressed: i > 0 ? () => _zoomStep(-1) : null,
+                  icon: const Icon(Icons.zoom_in_rounded),
+                ),
+              ],
+            ],
+          ),
+        ),
+        SizedBox(width: compact ? 2 : 6),
+        Container(
+          decoration: AppTheme.panel(color: AppTheme.raised, r: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                key: const ValueKey('shift-left'),
+                tooltip: 'Back one ${_unit.label.toLowerCase()} ([)',
+                onPressed: () => _shift(-1),
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+              divider(),
+              IconButton(
+                key: const ValueKey('shift-right'),
+                tooltip: 'Forward one ${_unit.label.toLowerCase()} (])',
+                onPressed: () => _shift(1),
+                icon: const Icon(Icons.chevron_right_rounded),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _fitMenu(Account account, {required bool compact}) {
+    return PopupMenuButton<Object>(
+      key: const ValueKey('fit-menu'),
+      tooltip: 'Fit the view',
+      onSelected: (choice) {
+        if (choice is FitMode) {
+          _fit(choice, account);
+        } else if (choice == 'today') {
+          _centerOn(DateTime.now());
+        } else if (choice == 'seed') {
+          _centerOn(account.seedDate);
+        } else {
+          setState(() {
+            _fitThreshold = !_fitThreshold;
+            _fitToken++;
+          });
+        }
+      },
+      position: PopupMenuPosition.under,
+      itemBuilder: (context) => [
+        for (final mode in FitMode.values)
+          PopupMenuItem(
+            value: mode,
+            child: Row(
+              children: [
+                Icon(_fitIcon(mode), size: 18),
+                const SizedBox(width: 10),
+                Expanded(child: Text(mode.label)),
+                const SizedBox(width: 24),
+                KeyCap(mode.shortcut),
+              ],
+            ),
+          ),
+        if (compact) ...[
+          const PopupMenuDivider(),
+          const PopupMenuItem<Object>(
+            value: 'today',
+            child: Row(
+              children: [
+                Icon(Icons.today_rounded, size: 18),
+                SizedBox(width: 10),
+                Text('Go to today'),
+              ],
+            ),
+          ),
+          const PopupMenuItem<Object>(
+            value: 'seed',
+            child: Row(
+              children: [
+                Icon(Icons.flag_rounded, size: 18, color: AppTheme.violet),
+                SizedBox(width: 10),
+                Text('Go to seed date'),
+              ],
+            ),
+          ),
+        ],
+        const PopupMenuDivider(),
+        PopupMenuItem<Object>(
+          key: const ValueKey('fit-threshold'),
+          value: 'threshold',
+          child: Row(
+            children: [
+              Icon(
+                _fitThreshold
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
+                size: 18,
+                color: _fitThreshold ? AppTheme.accent : null,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Keep alert line (${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}) in fits',
+              ),
+            ],
+          ),
+        ),
+      ],
+      child: compact
+          ? const SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(Icons.fit_screen_rounded),
+            )
+          : IgnorePointer(
+              child: OutlinedButton.icon(
+                onPressed: () {},
+                icon: const Icon(Icons.fit_screen_rounded, size: 18),
+                label: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Fit'),
+                    SizedBox(width: 2),
+                    Icon(Icons.expand_more_rounded, size: 18),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  /// Phone toolbar: zoom, date range (tap to jump), fit, and a menu with
+  /// Today / Seed. Everything is at least 44px tall.
+  Widget _compactToolbar(BuildContext context, Account account) {
+    final theme = Theme.of(context);
+    final end = lastVisibleDay(_viewStart, _visibleDays);
+    final fmt = DateFormat('d MMM yy');
+    return Row(
+      children: [
+        _unitGroup(theme, compact: true),
+        const SizedBox(width: 6),
+        Expanded(
+          child: OutlinedButton(
+            key: const ValueKey('jump-to-date'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            onPressed: () => _jumpToDate(context),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                '${fmt.format(dateOnly(_viewStart))} → ${fmt.format(end)}',
+                maxLines: 1,
+              ),
+            ),
+          ),
+        ),
+        _fitMenu(account, compact: true),
+      ],
+    );
+  }
+
   IconData _fitIcon(FitMode mode) => switch (mode) {
     FitMode.all => Icons.fit_screen_rounded,
     FitMode.vertical => Icons.height_rounded,
     FitMode.horizontal => Icons.width_full_rounded,
-    FitMode.week => Icons.view_week_rounded,
-    FitMode.month => Icons.calendar_view_month_rounded,
   };
 
   String _shortDate(DateTime d) => DateFormat('d MMM y').format(d);
@@ -595,17 +799,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 row(['←', '→'], 'Pan time'),
                 row(['↑', '↓'], 'Pan balance'),
                 row(['Scroll'], 'Zoom time at the cursor'),
-                row(['+', '−'], 'Zoom time around the centre'),
+                row(['+', '−'], 'Smaller / larger view unit'),
+                row(['[', ']'], 'Back / forward one unit'),
                 row(['Shift', 'Scroll'], 'Pan balance'),
                 row(['Alt', 'Scroll'], 'Zoom balance'),
                 head('Fit'),
                 row(['F'], 'Fit balance to what is in view'),
                 row(['A'], 'Fit all data'),
                 row(['H'], 'Fit all data horizontally'),
-                row(['W'], 'Fit the week at the centre'),
-                row(['M'], 'Fit the month at the centre'),
                 head('Transactions'),
-                row(['Click dot'], 'Edit that transaction series'),
+                row(['Click dot'], 'Show that occurrence’s details'),
                 row(['Hover day', '+'], 'Add a one-off on that day'),
                 row(['Drag dates'], 'Drag along the date axis, release to add'),
                 row(['Tap dates'], 'Add a one-off on that day'),
@@ -665,140 +868,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       outcome: outcome,
       onChanged: _invalidateBalance,
     );
-  }
-
-  Transaction? _transaction(String id) {
-    for (final t
-        in ref.read(transactionsProvider(widget.accountId)).valueOrNull ??
-            const <Transaction>[]) {
-      if (t.id == id) return t;
-    }
-    return null;
-  }
-
-  void _onOccurrencesTapped(
-    BuildContext context,
-    Account account,
-    List<Occurrence> hits,
-  ) {
-    final ids = hits.map((o) => o.transactionId).toSet();
-    if (ids.length == 1) {
-      final t = _transaction(ids.first);
-      if (t != null) {
-        _openEditor(
-          context,
-          account,
-          existing: t,
-          focusDate: dateOnly(hits.first.date),
-        );
-        return;
-      }
-    }
-    _openDayPicker(context, account, dateOnly(hits.first.date), hits);
-  }
-
-  /// Several occurrences on one day: pick which series to open.
-  Future<void> _openDayPicker(
-    BuildContext context,
-    Account account,
-    DateTime day,
-    List<Occurrence> onDay,
-  ) async {
-    final picked = await showModalBottomSheet<Object>(
-      context: context,
-      constraints: const BoxConstraints(maxWidth: 560),
-      builder: (context) {
-        final theme = Theme.of(context);
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  formatOccurrenceDate(day),
-                  style: theme.textTheme.titleLarge,
-                ),
-                Text(
-                  '${onDay.length} occurrence${onDay.length == 1 ? '' : 's'} · pick one to edit its series',
-                  style: theme.textTheme.bodySmall,
-                ),
-                const SizedBox(height: 12),
-                for (final occ in onDay) ...[
-                  Builder(
-                    builder: (context) {
-                      final t = _transaction(occ.transactionId);
-                      final amount = occ.signedDelta.toDouble();
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Material(
-                          color: AppTheme.raised,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: const BorderSide(color: AppTheme.border),
-                          ),
-                          child: ListTile(
-                            leading: DirectionBadge(
-                              credit: amount >= 0,
-                              muted: occ.skipped,
-                            ),
-                            title: Text(
-                              t == null || t.name.isEmpty
-                                  ? 'Transaction'
-                                  : t.name,
-                            ),
-                            subtitle: Text(
-                              [
-                                if (t != null) describeRecurrence(t),
-                                if (occ.skipped) 'Skipped',
-                              ].join(' · '),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  formatSignedAmount(amount, account.currency),
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: occ.skipped
-                                        ? AppTheme.textFaint
-                                        : amount < 0
-                                        ? AppTheme.debitColor
-                                        : AppTheme.creditColor,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                const Icon(Icons.chevron_right_rounded),
-                              ],
-                            ),
-                            onTap: () => Navigator.pop(context, occ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-                const SizedBox(height: 6),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context, 'add'),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('Add a one-off on this day'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    if (!context.mounted || picked == null) return;
-    if (picked == 'add') {
-      await _createOnceOnDay(context, day);
-    } else if (picked is Occurrence) {
-      final t = _transaction(picked.transactionId);
-      if (t != null) {
-        await _openEditor(context, account, existing: t, focusDate: day);
-      }
-    }
   }
 
   Future<void> _solve(BuildContext context) async {
@@ -897,10 +966,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 }
 
 class _AccountHeader extends StatelessWidget {
-  const _AccountHeader({required this.account, required this.todayPoint});
+  const _AccountHeader({
+    required this.account,
+    required this.todayPoint,
+    this.compact = false,
+  });
 
   final Account account;
   final BalancePoint? todayPoint;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -919,20 +993,35 @@ class _AccountHeader extends StatelessWidget {
                 waitDuration: const Duration(milliseconds: 500),
                 child: Text(
                   account.name,
-                  style: theme.textTheme.titleLarge,
+                  style: compact
+                      ? theme.textTheme.titleMedium
+                      : theme.textTheme.titleLarge,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Text(
-                'Seed ${formatMoneyAmount(account.seedBalance.toDouble(), account.currency, decimalDigits: 2)} on ${DateFormat('d MMM y').format(account.seedDate)} · ${account.currency}',
-                style: theme.textTheme.bodySmall,
-                overflow: TextOverflow.ellipsis,
-              ),
+              if (compact && today != null)
+                Text(
+                  'Today ${formatMoneyAmount(today.toDouble(), account.currency, decimalDigits: 2)}',
+                  key: const ValueKey('header-today'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: loss ? AppTheme.debitColor : AppTheme.textMuted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              else
+                Text(
+                  'Seed ${formatMoneyAmount(account.seedBalance.toDouble(), account.currency, decimalDigits: 2)} on ${DateFormat('d MMM y').format(account.seedDate)} · ${account.currency}',
+                  style: theme.textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
             ],
           ),
         ),
-        if (today != null) ...[
+        if (today != null && !compact) ...[
           const SizedBox(width: 16),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -996,7 +1085,8 @@ class _BalanceError extends StatelessWidget {
 
 /// One-line, low-key reminder of the main interactions.
 class _TipsBar extends StatelessWidget {
-  const _TipsBar();
+  const _TipsBar({this.compact = false});
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1018,14 +1108,26 @@ class _TipsBar extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            tip(
-              Icons.ads_click_rounded,
-              'Click or tap a dot to edit its series',
-            ),
-            tip(Icons.swipe_right_alt_rounded, 'Drag or tap the dates to add'),
-            tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
-            tip(Icons.mouse_outlined, 'Scroll or pinch to zoom'),
-            tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
+            if (compact) ...[
+              tip(Icons.ads_click_rounded, 'Tap near a dot for details'),
+              tip(
+                Icons.add_circle_outline_rounded,
+                'Tap or drag the dates to add',
+              ),
+              tip(Icons.touch_app_outlined, 'Drag near dots for details'),
+              tip(Icons.chevron_right_rounded, '◀ ▶ step one unit'),
+              tip(Icons.pinch_outlined, 'Pinch to zoom'),
+            ] else ...[
+              tip(Icons.ads_click_rounded, 'Click or tap a dot for details'),
+              tip(
+                Icons.swipe_right_alt_rounded,
+                'Drag or tap the dates to add',
+              ),
+              tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
+              tip(Icons.view_week_rounded, 'Pick a unit, ◀ ▶ to step'),
+              tip(Icons.mouse_outlined, 'Scroll or pinch to zoom'),
+              tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
+            ],
           ],
         ),
       ),

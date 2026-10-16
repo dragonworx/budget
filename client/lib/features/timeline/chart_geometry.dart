@@ -5,7 +5,7 @@ import '../../data/models.dart';
 import 'zoom_level.dart';
 
 /// Closest zoom the wheel can reach, in days across the viewport.
-const double minVisibleDays = 3;
+const double minVisibleDays = 1;
 
 /// Farthest zoom the wheel can reach, in days across the viewport.
 const double maxVisibleDays = 7300;
@@ -629,3 +629,258 @@ String describeSpan(double days) {
       ? n(rounded, 'year')
       : '${rounded.toStringAsFixed(1)} years';
 }
+
+/// Touch scrub: how close (logical px) a drag must start to a dot to scrub
+/// its tooltip instead of panning the view.
+const double scrubStartRadius = touchVertexHitRadius;
+
+/// Hit radius around a vertex for a finger tap / scrub start (a fingertip
+/// target, ~44 logical px) and for a precise mouse click.
+const double touchVertexHitRadius = 44;
+const double mouseVertexHitRadius = 18;
+
+/// Vertex hit radius for a pointer of [kind]: generous for touch / stylus,
+/// precise for a mouse or trackpad.
+double vertexHitRadius(PointerDeviceKind kind) => switch (kind) {
+  PointerDeviceKind.mouse || PointerDeviceKind.trackpad => mouseVertexHitRadius,
+  _ => touchVertexHitRadius,
+};
+
+/// While scrubbing, a finger farther than this from every dot keeps the
+/// last tooltip rather than jumping to a distant one.
+const double scrubMaxDistance = 96;
+
+/// Index of the point nearest [pos] by 2D distance, or null when there are
+/// none or the nearest is farther than [maxDistance]. Ties keep the earlier.
+int? nearestPointIndex(
+  List<Offset> points,
+  Offset pos, {
+  double maxDistance = double.infinity,
+}) {
+  int? best;
+  var bestD = double.infinity;
+  for (var i = 0; i < points.length; i++) {
+    final d = (points[i] - pos).distanceSquared;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  if (best == null) return null;
+  if (maxDistance.isFinite && bestD > maxDistance * maxDistance) return null;
+  return best;
+}
+
+/// Top-left of a [size] tooltip for a finger at [finger]: centred above it
+/// with [lift] clearance so the finger never covers it; flips below when
+/// there is no room above; clamped inside [bounds] with [margin].
+Offset touchTooltipOrigin({
+  required Offset finger,
+  required Size size,
+  required Size bounds,
+  double lift = 56,
+  double margin = 4,
+}) {
+  var left = finger.dx - size.width / 2;
+  var top = finger.dy - lift - size.height;
+  if (top < margin) top = finger.dy + lift;
+  final maxLeft = math.max(margin, bounds.width - size.width - margin);
+  final maxTop = math.max(margin, bounds.height - size.height - margin);
+  left = left.clamp(margin, maxLeft).toDouble();
+  top = top.clamp(margin, maxTop).toDouble();
+  return Offset(left, top);
+}
+
+/// Min and max closing balance of [points] on or after [seedDate] (the
+/// whole loaded series), or null when there are none.
+BalanceExtents? balanceExtentsFrom(
+  List<BalancePoint> points,
+  DateTime seedDate,
+) {
+  final seed = dateOnly(seedDate);
+  double? minV, maxV;
+  for (final p in points) {
+    if (dateOnly(p.date).isBefore(seed)) continue;
+    final v = p.closingBalance.toDouble();
+    if (minV == null || v < minV) minV = v;
+    if (maxV == null || v > maxV) maxV = v;
+  }
+  return minV == null ? null : BalanceExtents(minV, maxV!);
+}
+
+/// Height of the day lane when day labels show: two horizontal lines
+/// (weekday over numeral).
+const double dayLaneLabelHeight = 30;
+
+/// How day cells are labelled on the date axis.
+enum DayLabelForm {
+  /// "Wed" over "23rd".
+  full,
+
+  /// "W" over "23".
+  compact,
+
+  /// Numeral only ("23") on every [DayLabelPlan.every]th day; no weekday.
+  sparse,
+}
+
+class DayLabelPlan {
+  const DayLabelPlan(this.form, [this.every = 1]);
+  final DayLabelForm form;
+
+  /// Label every Nth day (1 = every day).
+  final int every;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DayLabelPlan && other.form == form && other.every == every;
+  @override
+  int get hashCode => Object.hash(form, every);
+  @override
+  String toString() => 'DayLabelPlan($form, every $every)';
+}
+
+/// Picks the day label form for [cellWidth] px day cells from measured text
+/// widths: [fullWidth] = widest of "Wed" / "28th", [compactWidth] = widest of
+/// "W" / "28", [numeralWidth] = widest bare numeral. [pad] is the clearance
+/// kept between neighbouring labels. Too narrow even for numerals: label
+/// every 2nd, 3rd or 7th day (Mondays) so they never overlap.
+DayLabelPlan dayLabelPlan({
+  required double cellWidth,
+  required double fullWidth,
+  required double compactWidth,
+  double? numeralWidth,
+  double pad = 4,
+}) {
+  if (cellWidth >= fullWidth + pad) {
+    return const DayLabelPlan(DayLabelForm.full);
+  }
+  if (cellWidth >= compactWidth + pad) {
+    return const DayLabelPlan(DayLabelForm.compact);
+  }
+  final need = (numeralWidth ?? compactWidth) + pad;
+  for (final n in const [2, 3, 7]) {
+    if (cellWidth * n >= need) return DayLabelPlan(DayLabelForm.sparse, n);
+  }
+  return const DayLabelPlan(DayLabelForm.sparse, 14);
+}
+
+/// Whether [day] carries a label when labelling every [every]th day:
+/// Mondays for weekly thinning; otherwise a pan-stable day-number rhythm.
+bool dayLabelled(DateTime day, int every) {
+  if (every <= 1) return true;
+  if (every % 7 == 0) {
+    final weeks =
+        (dayCoord(day).round() - dayCoord(DateTime(2024, 1, 1)).round()) ~/ 7;
+    return day.weekday == DateTime.monday && weeks % (every ~/ 7) == 0;
+  }
+  return dayCoord(day).round() % every == 0;
+}
+
+/// Opacity of the faint day separator lines for [dayPx] pixels per day:
+/// none below 10px, fading in linearly to full strength at 16px.
+double dayLineOpacity(double dayPx) {
+  if (!dayPx.isFinite || dayPx < 10) return 0;
+  return ((dayPx - 10) / 6).clamp(0.0, 1.0) * 0.85 + 0.15;
+}
+
+/// Which axis a two-finger pinch scales, from the fingers' separation at the
+/// start of the pinch.
+enum PinchAxis { time, balance, both }
+
+/// Fingers within 30° of vertical scale the balance axis only; within 30° of
+/// horizontal, time only; in between (diagonal), both.
+PinchAxis pinchAxisFor(Offset separation) {
+  final dx = separation.dx.abs(), dy = separation.dy.abs();
+  if (dx < 1e-6 && dy < 1e-6) return PinchAxis.time;
+  final angle = math.atan2(dy, dx) * 180 / math.pi; // 0 = horizontal
+  if (angle >= 60) return PinchAxis.balance;
+  if (angle <= 30) return PinchAxis.time;
+  return PinchAxis.both;
+}
+
+/// [range] widened (if needed) so balance 0 is inside it, with a little
+/// headroom past zero so the zero line is not on the plot edge.
+BalanceExtents includeZero(BalanceExtents range) {
+  if (range.min <= 0 && range.max >= 0) return range;
+  final span = math.max(range.max, 0.0) - math.min(range.min, 0.0);
+  final pad = span * 0.04;
+  return range.min > 0
+      ? BalanceExtents(-pad, range.max)
+      : BalanceExtents(range.min, pad);
+}
+
+/// Factor for one press of the y-scale buttons.
+const double yScaleStep = 1.25;
+
+/// Half-size of the opening-balance diamond for a transaction dot [radius]:
+/// a touch larger so it reads as the start of the line.
+double seedVertexRadius(double radius) => math.max(4.0, radius + 1.8);
+
+/// Leader line from a vertex label box [rect] to its dot at [center] with
+/// [radius]: from the nearest point on the box to the dot's edge. Null when
+/// the label sits right against the dot (gap under [minGap]) or covers it.
+(Offset, Offset)? labelLeader(
+  Rect rect,
+  Offset center,
+  double radius, {
+  double minGap = 4,
+}) {
+  final from = Offset(
+    center.dx.clamp(rect.left, rect.right).toDouble(),
+    center.dy.clamp(rect.top, rect.bottom).toDouble(),
+  );
+  final d = center - from;
+  final dist = d.distance;
+  if (dist <= radius + minGap) return null;
+  final to = center - d / dist * (radius + 1);
+  return (from, to);
+}
+
+/// All occurrences on one calendar day, drawn as a single vertex.
+class DayGroup {
+  DayGroup(this.day, this.all);
+  final DateTime day;
+
+  /// Every occurrence that day, in series order (skipped ones included).
+  final List<Occurrence> all;
+
+  /// Occurrences that count (not skipped).
+  List<Occurrence> get active => [
+    for (final o in all)
+      if (!o.skipped) o,
+  ];
+
+  /// Every occurrence that day is skipped: drawn hollow / faint.
+  bool get allSkipped => active.isEmpty;
+
+  /// Badge number: active occurrences, or all of them when all are skipped.
+  int get count => allSkipped ? all.length : active.length;
+
+  /// Net of the counted occurrences (skipped ones when all are skipped).
+  double get net => (allSkipped ? all : active).fold(
+    0.0,
+    (sum, o) => sum + o.signedDelta.toDouble(),
+  );
+
+  bool get hasCredit => active.any((o) => o.signedDelta.toDouble() > 0);
+  bool get hasDebit => active.any((o) => o.signedDelta.toDouble() < 0);
+
+  /// Both money in and out that day.
+  bool get mixed => hasCredit && hasDebit;
+}
+
+/// Groups occurrences by calendar day (DST-safe), keeping first-seen order
+/// within a day; days ascending.
+List<DayGroup> groupByDay(Iterable<Occurrence> occurrences) {
+  final byDay = <DateTime, List<Occurrence>>{};
+  for (final o in occurrences) {
+    byDay.putIfAbsent(dateOnly(o.date), () => []).add(o);
+  }
+  final days = byDay.keys.toList()..sort();
+  return [for (final d in days) DayGroup(d, byDay[d]!)];
+}
+
+/// Width of the label's count chip around a number [textWidth] wide:
+/// at least round (min 18), with 5px side padding.
+double countPillWidth(double textWidth) => math.max(18, textWidth + 10);

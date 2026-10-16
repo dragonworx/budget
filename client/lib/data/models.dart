@@ -34,11 +34,7 @@ Decimal parseMoney(dynamic value) {
 String moneyToJson(Decimal value) => value.toString();
 
 class Project {
-  const Project({
-    required this.id,
-    required this.name,
-    this.createdAt,
-  });
+  const Project({required this.id, required this.name, this.createdAt});
 
   final String id;
   final String name;
@@ -53,10 +49,10 @@ class Project {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        if (createdAt != null) 'createdAt': createdAt!.toUtc().toIso8601String(),
-      };
+    'id': id,
+    'name': name,
+    if (createdAt != null) 'createdAt': createdAt!.toUtc().toIso8601String(),
+  };
 
   Project copyWith({String? id, String? name, DateTime? createdAt}) {
     return Project(
@@ -93,7 +89,8 @@ class Account {
   final int displayOrder;
 
   factory Account.fromJson(Map<String, dynamic> json) {
-    final order = json['transactionOrder'] ?? json['transaction_order'] ?? const [];
+    final order =
+        json['transactionOrder'] ?? json['transaction_order'] ?? const [];
     final loss = json['lossThreshold'] ?? json['loss_threshold'];
     return Account(
       id: json['id'] as String,
@@ -109,33 +106,33 @@ class Account {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'projectId': projectId,
-        'name': name,
-        'currency': currency,
-        'seedBalance': moneyToJson(seedBalance),
-        'seedDate': formatDate(seedDate),
-        'lossThreshold': moneyToJson(lossThreshold),
-        'transactionOrder': transactionOrder,
-        'displayOrder': displayOrder,
-      };
+    'id': id,
+    'projectId': projectId,
+    'name': name,
+    'currency': currency,
+    'seedBalance': moneyToJson(seedBalance),
+    'seedDate': formatDate(seedDate),
+    'lossThreshold': moneyToJson(lossThreshold),
+    'transactionOrder': transactionOrder,
+    'displayOrder': displayOrder,
+  };
 
   Map<String, dynamic> toCreateJson() => {
-        'name': name,
-        'currency': currency,
-        'seedBalance': moneyToJson(seedBalance),
-        'seedDate': formatDate(seedDate),
-        'lossThreshold': moneyToJson(lossThreshold),
-      };
+    'name': name,
+    'currency': currency,
+    'seedBalance': moneyToJson(seedBalance),
+    'seedDate': formatDate(seedDate),
+    'lossThreshold': moneyToJson(lossThreshold),
+  };
 
   Map<String, dynamic> toPatchJson() => {
-        'name': name,
-        'currency': currency,
-        'seedBalance': moneyToJson(seedBalance),
-        'seedDate': formatDate(seedDate),
-        'lossThreshold': moneyToJson(lossThreshold),
-        'transactionOrder': transactionOrder,
-      };
+    'name': name,
+    'currency': currency,
+    'seedBalance': moneyToJson(seedBalance),
+    'seedDate': formatDate(seedDate),
+    'lossThreshold': moneyToJson(lossThreshold),
+    'transactionOrder': transactionOrder,
+  };
 
   Account copyWith({
     String? id,
@@ -271,14 +268,18 @@ class Transaction {
       recurrenceMode = RecurrenceMode.fromJson(recurrence['mode'] as String);
       interval = recurrence['interval'] as int?;
       final unitRaw = recurrence['unit'];
-      unit = unitRaw == null ? null : RecurrenceUnit.fromJson(unitRaw as String);
+      unit = unitRaw == null
+          ? null
+          : RecurrenceUnit.fromJson(unitRaw as String);
     } else {
       recurrenceMode = RecurrenceMode.fromJson(
         (json['recurrenceMode'] ?? json['recurrence_mode']) as String,
       );
       interval = json['interval'] as int?;
       final unitRaw = json['unit'];
-      unit = unitRaw == null ? null : RecurrenceUnit.fromJson(unitRaw as String);
+      unit = unitRaw == null
+          ? null
+          : RecurrenceUnit.fromJson(unitRaw as String);
     }
 
     EndMode endMode;
@@ -320,34 +321,34 @@ class Transaction {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'accountId': accountId,
-        'name': name,
-        'direction': direction.toJson(),
-        'amount': moneyToJson(amount),
-        'startDate': formatDate(startDate),
-        'recurrenceMode': recurrenceMode.toJson(),
-        'interval': interval,
-        'unit': unit?.toJson(),
-        'endMode': endMode.toJson(),
-        'endDate': endDate == null ? null : formatDate(endDate!),
-        'occurrenceCount': occurrenceCount,
-        'enabled': enabled,
-      };
+    'id': id,
+    'accountId': accountId,
+    'name': name,
+    'direction': direction.toJson(),
+    'amount': moneyToJson(amount),
+    'startDate': formatDate(startDate),
+    'recurrenceMode': recurrenceMode.toJson(),
+    'interval': interval,
+    'unit': unit?.toJson(),
+    'endMode': endMode.toJson(),
+    'endDate': endDate == null ? null : formatDate(endDate!),
+    'occurrenceCount': occurrenceCount,
+    'enabled': enabled,
+  };
 
   Map<String, dynamic> toCreateJson() => {
-        'name': name,
-        'direction': direction.toJson(),
-        'amount': moneyToJson(amount),
-        'startDate': formatDate(startDate),
-        'recurrenceMode': recurrenceMode.toJson(),
-        if (interval != null) 'interval': interval,
-        if (unit != null) 'unit': unit!.toJson(),
-        'endMode': endMode.toJson(),
-        if (endDate != null) 'endDate': formatDate(endDate!),
-        if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
-        'enabled': enabled,
-      };
+    'name': name,
+    'direction': direction.toJson(),
+    'amount': moneyToJson(amount),
+    'startDate': formatDate(startDate),
+    'recurrenceMode': recurrenceMode.toJson(),
+    if (interval != null) 'interval': interval,
+    if (unit != null) 'unit': unit!.toJson(),
+    'endMode': endMode.toJson(),
+    if (endDate != null) 'endDate': formatDate(endDate!),
+    if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
+    'enabled': enabled,
+  };
 
   Transaction copyWith({
     String? id,
@@ -380,18 +381,16 @@ class Transaction {
       unit: clearUnit ? null : (unit ?? this.unit),
       endMode: endMode ?? this.endMode,
       endDate: clearEndDate ? null : (endDate ?? this.endDate),
-      occurrenceCount:
-          clearOccurrenceCount ? null : (occurrenceCount ?? this.occurrenceCount),
+      occurrenceCount: clearOccurrenceCount
+          ? null
+          : (occurrenceCount ?? this.occurrenceCount),
       enabled: enabled ?? this.enabled,
     );
   }
 }
 
 class BalancePoint {
-  const BalancePoint({
-    required this.date,
-    required this.closingBalance,
-  });
+  const BalancePoint({required this.date, required this.closingBalance});
 
   final DateTime date;
   final Decimal closingBalance;
@@ -424,7 +423,8 @@ class Occurrence {
 
   factory Occurrence.fromJson(Map<String, dynamic> json) {
     return Occurrence(
-      transactionId: (json['transactionId'] ?? json['transaction_id']) as String,
+      transactionId:
+          (json['transactionId'] ?? json['transaction_id']) as String,
       date: parseDate(json['date']),
       signedDelta: parseMoney(
         json['signedDelta'] ?? json['signed_delta'] ?? '0',
@@ -435,10 +435,7 @@ class Occurrence {
 }
 
 class BalanceSeries {
-  const BalanceSeries({
-    required this.points,
-    this.occurrences = const [],
-  });
+  const BalanceSeries({required this.points, this.occurrences = const []});
 
   final List<BalancePoint> points;
   final List<Occurrence> occurrences;
@@ -540,18 +537,32 @@ class SolveRequest {
   final Decimal? targetTotal;
   final RoundingMode rounding;
 
+  SolveRequest withDefaults({DateTime? startDate, int? interval}) =>
+      SolveRequest(
+        name: name,
+        direction: direction,
+        unit: unit,
+        startDate: startDate ?? this.startDate,
+        endDate: endDate,
+        amount: amount,
+        interval: interval ?? this.interval,
+        occurrenceCount: occurrenceCount,
+        targetTotal: targetTotal,
+        rounding: rounding,
+      );
+
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'direction': direction.toJson(),
-        'unit': unit.toJson(),
-        if (startDate != null) 'startDate': formatDate(startDate!),
-        if (endDate != null) 'endDate': formatDate(endDate!),
-        if (amount != null) 'amount': moneyToJson(amount!),
-        if (interval != null) 'interval': interval,
-        if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
-        if (targetTotal != null) 'targetTotal': moneyToJson(targetTotal!),
-        'rounding': rounding.toJson(),
-      };
+    'name': name,
+    'direction': direction.toJson(),
+    'unit': unit.toJson(),
+    if (startDate != null) 'startDate': formatDate(startDate!),
+    if (endDate != null) 'endDate': formatDate(endDate!),
+    if (amount != null) 'amount': moneyToJson(amount!),
+    if (interval != null) 'interval': interval,
+    if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
+    if (targetTotal != null) 'targetTotal': moneyToJson(targetTotal!),
+    'rounding': rounding.toJson(),
+  };
 }
 
 class SolveValues {

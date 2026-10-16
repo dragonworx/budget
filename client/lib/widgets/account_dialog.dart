@@ -6,24 +6,33 @@ import '../data/models.dart';
 import 'money_text.dart';
 
 /// New / edit account dialog (name, currency, seed balance + date, loss
-/// threshold). Returns the edited account, not yet saved.
+/// threshold). Returns the edited account, not yet saved — unless [onSave]
+/// is given: then Save runs it inside the dialog (staying open with the error
+/// shown if it throws) and returns its result.
 Future<Account?> showAccountDialog(
   BuildContext context, {
   required String projectId,
   Account? existing,
+  Future<Account> Function(Account draft)? onSave,
 }) {
   return showDialog<Account>(
     context: context,
     builder: (context) =>
-        AccountDialog(projectId: projectId, existing: existing),
+        AccountDialog(projectId: projectId, existing: existing, onSave: onSave),
   );
 }
 
 class AccountDialog extends StatefulWidget {
-  const AccountDialog({super.key, required this.projectId, this.existing});
+  const AccountDialog({
+    super.key,
+    required this.projectId,
+    this.existing,
+    this.onSave,
+  });
 
   final String projectId;
   final Account? existing;
+  final Future<Account> Function(Account draft)? onSave;
 
   @override
   State<AccountDialog> createState() => _AccountDialogState();
@@ -39,6 +48,9 @@ class _AccountDialogState extends State<AccountDialog> {
   String? _currencyError;
   String? _balanceError;
   String? _lossError;
+
+  String? _saveError;
+  bool _saving = false;
 
   /// After the first Save attempt, errors update as you type.
   bool _submitted = false;
@@ -75,6 +87,7 @@ class _AccountDialogState extends State<AccountDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.existing == null ? 'New account' : 'Edit account'),
+      scrollable: true,
       content: SizedBox(
         width: 420,
         child: Column(
@@ -167,13 +180,22 @@ class _AccountDialogState extends State<AccountDialog> {
         ),
       ),
       actions: [
+        if (_saveError != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              _saveError!,
+              key: const ValueKey('account-save-error'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
         FilledButton(
           key: const ValueKey('account-save'),
-          onPressed: _submit,
+          onPressed: _saving ? null : _submit,
           child: Text(widget.existing == null ? 'Create account' : 'Save'),
         ),
       ],
@@ -215,7 +237,7 @@ class _AccountDialogState extends State<AccountDialog> {
     }
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     _submitted = true;
     if (!_validate()) return;
     final name = _name.text.trim();
@@ -237,6 +259,24 @@ class _AccountDialogState extends State<AccountDialog> {
       transactionOrder: existing?.transactionOrder ?? const [],
       displayOrder: existing?.displayOrder ?? 0,
     );
-    Navigator.of(context).pop(account);
+    final onSave = widget.onSave;
+    if (onSave == null) {
+      Navigator.of(context).pop(account);
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
+    try {
+      final saved = await onSave(account);
+      if (mounted) Navigator.of(context).pop(saved);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _saveError = 'Couldn’t save: $error';
+      });
+    }
   }
 }

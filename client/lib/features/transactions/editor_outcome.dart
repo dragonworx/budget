@@ -52,6 +52,7 @@ void reportEditorOutcome(
   required String accountId,
   required EditorOutcome? outcome,
   required VoidCallback onChanged,
+  List<String>? orderBefore,
 }) {
   final text = describeOutcome(outcome);
   if (text == null || outcome == null) return;
@@ -71,6 +72,12 @@ void reportEditorOutcome(
           );
           for (final d in o.skippedBefore) {
             await notifier.setSkip(again.id, d, skipped: true);
+          }
+          // Put it back where it was in the list.
+          if (orderBefore != null && orderBefore.contains(id)) {
+            await notifier.reorder([
+              for (final x in orderBefore) x == id ? again.id : x,
+            ]);
           }
         case EditorAction.saved:
           if (o.previous != null) await notifier.updateTransaction(o.previous!);

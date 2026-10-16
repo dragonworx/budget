@@ -49,7 +49,6 @@ Future<_Harness> _pump(WidgetTester tester) async {
                 h.visibleDays = days;
                 h.viewports.add(start);
               }),
-              onDayTap: (_, _) {},
               onCreateOnDay: h.created.add,
             ),
           ),

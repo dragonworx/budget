@@ -6,6 +6,7 @@ import 'package:budget_client/features/timeline/occurrence_dates.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -123,8 +124,11 @@ class _TxRepo extends TransactionRepository {
   }
 }
 
-Future<_Store> _pump(WidgetTester tester) async {
-  tester.view.physicalSize = const Size(1440, 900);
+Future<_Store> _pump(
+  WidgetTester tester, {
+  Size size = const Size(1440, 900),
+}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   // The test font (Ahem) is much wider than the app's fonts.
   tester.platformDispatcher.textScaleFactorTestValue = 0.75;
@@ -144,24 +148,33 @@ Future<_Store> _pump(WidgetTester tester) async {
   return store;
 }
 
-/// Simulates the chart reporting a click on [id]'s dot nearest today.
-Future<DateTime> _clickDot(WidgetTester tester, String id) async {
-  final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
-  final occ = chart.series.occurrences.firstWhere(
-    (o) => o.transactionId == id && !o.date.isBefore(_day),
-  );
-  chart.onOccurrenceTap!([occ]);
+/// Opens [name]'s series in the editor through the Transactions panel
+/// (the only edit path: taps on the chart just show info).
+Future<void> _editFromPanel(WidgetTester tester, String name) async {
+  await tester.tap(find.byKey(const ValueKey('open-transactions')));
   await tester.pumpAndSettle();
-  return occ.date;
+  await tester.tap(find.text(name));
+  await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('dot click opens that series with the occurrence focused', (
-    tester,
-  ) async {
+  testWidgets('taps on the chart never create or edit', (tester) async {
+    final store = await _pump(tester);
+    final chart = find.byType(BalanceChart);
+    final box = tester.getRect(chart);
+    for (final f in const [0.3, 0.5, 0.7]) {
+      await tester.tapAt(Offset(box.left + box.width * f, box.center.dy));
+      await tester.pumpAndSettle();
+    }
+    expect(find.byKey(const ValueKey('editor-save')), findsNothing);
+    expect(find.text('Pick one to edit its series'), findsNothing);
+    expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('panel row opens the editor for that series', (tester) async {
     await _pump(tester);
-    await _clickDot(tester, 'salary');
-    expect(find.byKey(const ValueKey('focus-banner')), findsOneWidget);
+    await _editFromPanel(tester, 'Salary');
     final name = tester.widget<TextField>(
       find.descendant(
         of: find.byKey(const ValueKey('editor-name')),
@@ -169,21 +182,22 @@ void main() {
       ),
     );
     expect(name.controller!.text, 'Salary');
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('editing the frequency saves and refreshes the timeline', (
     tester,
   ) async {
     final store = await _pump(tester);
-    await _clickDot(tester, 'rent');
+    await _editFromPanel(tester, 'Rent');
     final balanceCalls = store.calls.where((c) => c == 'balance').length;
-    await tester.enterText(
-      find.descendant(
-        of: find.byKey(const ValueKey('editor-interval')),
-        matching: find.byType(TextField),
-      ),
-      '2',
-    );
+    // Rent is weekly: the preset shows; switch to Fortnightly.
+    await tester.tap(find.byKey(const ValueKey('editor-frequency-weekly')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fortnightly').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('editor-interval')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('editor-save')));
     await tester.pumpAndSettle();
     expect(store.calls, contains('update rent 2 weeks'));
@@ -193,36 +207,7 @@ void main() {
       greaterThan(balanceCalls),
     );
     expect(find.byKey(const ValueKey('focus-banner')), findsNothing);
-  });
-
-  testWidgets('skip then close reports a skip (not a save) with undo', (
-    tester,
-  ) async {
-    final store = await _pump(tester);
-    await _clickDot(tester, 'rent');
-    await tester.tap(find.byKey(const ValueKey('skip-occurrence')));
-    await tester.pumpAndSettle();
-    expect(store.calls, contains('skip rent true'));
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Skipped'), findsOneWidget);
-    expect(find.textContaining('Saved'), findsNothing);
-    await tester.tap(find.text('Undo'));
-    await tester.pumpAndSettle();
-    expect(store.calls, contains('skip rent false'));
-  });
-
-  testWidgets('skip and unskip again reports nothing', (tester) async {
-    final store = await _pump(tester);
-    await _clickDot(tester, 'rent');
-    await tester.tap(find.byKey(const ValueKey('skip-occurrence')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('skip-occurrence')));
-    await tester.pumpAndSettle();
-    expect(store.calls.where((c) => c.startsWith('skip')), hasLength(2));
-    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-    await tester.pumpAndSettle();
-    expect(find.byType(SnackBar), findsNothing);
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('delete asks to confirm, updates the count, and can be undone', (
@@ -230,7 +215,7 @@ void main() {
   ) async {
     final store = await _pump(tester);
     expect(find.text('Transactions · 2'), findsOneWidget);
-    await _clickDot(tester, 'rent');
+    await _editFromPanel(tester, 'Rent');
     await tester.tap(find.byKey(const ValueKey('editor-delete')));
     await tester.pumpAndSettle();
     expect(find.text('Delete this series?'), findsOneWidget);
@@ -249,11 +234,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.calls, contains('create Rent'));
     expect(find.text('Transactions · 2'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('unsaved edits ask before discarding', (tester) async {
     await _pump(tester);
-    await _clickDot(tester, 'rent');
+    await _editFromPanel(tester, 'Rent');
     await tester.enterText(
       find.descendant(
         of: find.byKey(const ValueKey('editor-name')),
@@ -267,6 +253,7 @@ void main() {
     await tester.tap(find.text('Cancel').last);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('editor-save')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
   });
 
   testWidgets('transactions panel opens the editor in place, back returns', (
@@ -292,7 +279,9 @@ void main() {
     tester,
   ) async {
     final store = await _pump(tester);
-    await tester.tap(find.byKey(const ValueKey('new-transaction')));
+    await tester.tap(find.byKey(const ValueKey('open-transactions')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('panel-new-transaction')));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.descendant(
@@ -313,5 +302,189 @@ void main() {
     expect(store.calls, contains('create Coffee'));
     expect(find.text('Created “Coffee”'), findsOneWidget);
     expect(find.text('Transactions · 3'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  for (final size in const [Size(360, 740), Size(375, 812), Size(412, 839)]) {
+    testWidgets('phone ${size.width.toInt()}px: compact header, no overflow, '
+        'panel creates', (tester) async {
+      final store = await _pump(tester, size: size);
+      // Layout overflows surface as test exceptions; none expected.
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey('new-transaction')), findsNothing);
+      expect(find.byKey(const ValueKey('timeline-back')), findsOneWidget);
+      final back = tester.getSize(find.byKey(const ValueKey('timeline-back')));
+      expect(back.height, greaterThanOrEqualTo(44));
+      await tester.tap(find.byKey(const ValueKey('timeline-more')));
+      await tester.pumpAndSettle();
+      expect(find.text('Account settings'), findsOneWidget);
+      expect(find.text('Import transactions'), findsOneWidget);
+      await tester.tapAt(const Offset(5, 400));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('open-transactions')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('panel-new-transaction')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-name')),
+          matching: find.byType(TextField),
+        ),
+        'Tea',
+      );
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-amount')),
+          matching: find.byType(TextField),
+        ),
+        '3',
+      );
+      await tester.ensureVisible(find.byKey(const ValueKey('editor-save')));
+      await tester.tap(find.byKey(const ValueKey('editor-save')));
+      await tester.pumpAndSettle();
+      expect(store.calls, contains('create Tea'));
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 2));
+    });
+  }
+
+  testWidgets('unit dropdown, − / + and ◀ ▶ snap the view instantly', (
+    tester,
+  ) async {
+    await _pump(tester);
+    BalanceChart chart() =>
+        tester.widget<BalanceChart>(find.byType(BalanceChart));
+    expect(find.text('Month'), findsOneWidget);
+    final start = chart().viewStart;
+    expect(start.day, 1);
+    await tester.tap(find.byKey(const ValueKey('shift-right')));
+    await tester.pump();
+    expect(chart().viewStart, DateTime(start.year, start.month + 1));
+    await tester.tap(find.byKey(const ValueKey('shift-left')));
+    await tester.tap(find.byKey(const ValueKey('shift-left')));
+    await tester.pump();
+    expect(chart().viewStart, DateTime(start.year, start.month - 1));
+    await tester.tap(find.byKey(const ValueKey('zoom-in')));
+    await tester.pump();
+    expect(find.text('3 weeks'), findsOneWidget);
+    expect(chart().viewStart.weekday, DateTime.monday);
+    expect(chart().visibleDays, 21);
+    await tester.tap(find.byKey(const ValueKey('unit-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Year').last);
+    await tester.pumpAndSettle();
+    expect(chart().viewStart.month, 1);
+    expect(chart().viewStart.day, 1);
+    expect(chart().visibleDays, anyOf(365, 366));
+  });
+
+  testWidgets('no dot tooltip after a pinch, whichever finger lifts last', (
+    tester,
+  ) async {
+    await _pump(tester, size: const Size(412, 839));
+    final plot = tester.getRect(find.byType(BalanceChart));
+    final tip = find.textContaining('Balance end of day');
+    // Find a spot where a plain tap shows a dot's info.
+    Offset? spot;
+    for (var fy = 0.1; fy < 0.8 && spot == null; fy += 0.03) {
+      for (var fx = 0.3; fx < 0.98 && spot == null; fx += 0.04) {
+        final p = Offset(
+          plot.left + plot.width * fx,
+          plot.top + plot.height * fy,
+        );
+        await tester.tapAt(p, kind: PointerDeviceKind.touch);
+        await tester.pump();
+        if (tip.evaluate().isNotEmpty) spot = p;
+        await tester.pump(const Duration(seconds: 6));
+      }
+    }
+    expect(spot, isNotNull, reason: 'a tap should reveal some dot');
+    for (final firstUp in [0, 1]) {
+      final a = await tester.startGesture(spot!, kind: PointerDeviceKind.touch);
+      final b = await tester.startGesture(
+        spot + const Offset(0, 40),
+        kind: PointerDeviceKind.touch,
+        pointer: 7,
+      );
+      for (var i = 1; i <= 5; i++) {
+        await b.moveTo(spot + Offset(0, 40.0 + i * 12));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pump(const Duration(milliseconds: 800)); // past long-press
+      final gestures = [a, b];
+      await gestures[firstUp].up();
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(tip, findsNothing);
+      await gestures[1 - firstUp].up();
+      await tester.pump();
+      expect(tip, findsNothing, reason: 'release after pinch shows no tip');
+      await tester.pump(const Duration(seconds: 6));
+    }
+  });
+
+  testWidgets('seed vertex shows the opening balance on tap, nothing else', (
+    tester,
+  ) async {
+    final store = await _pump(tester);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Seed').first);
+    await tester.pumpAndSettle();
+    final plot = tester.getRect(find.byType(BalanceChart));
+    final tip = find.byKey(const ValueKey('seed-tooltip'));
+    var found = false;
+    for (var fx = 0.0; fx < 0.9 && !found; fx += 0.01) {
+      for (var fy = 0.05; fy < 0.85 && !found; fy += 0.04) {
+        await tester.tapAt(
+          Offset(
+            plot.left + 112 + (plot.width - 140) * fx,
+            plot.top + plot.height * fy,
+          ),
+          kind: PointerDeviceKind.touch,
+        );
+        await tester.pump();
+        found = tip.evaluate().isNotEmpty;
+        if (!found) await tester.pump(const Duration(seconds: 6));
+      }
+    }
+    expect(found, isTrue, reason: 'tapping the seed vertex shows its card');
+    expect(find.text('Opening balance'), findsOneWidget);
+    expect(find.byKey(const ValueKey('editor-save')), findsNothing);
+    expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('list trash button deletes at once and Undo restores', (
+    tester,
+  ) async {
+    final store = await _pump(tester);
+    await tester.tap(find.byKey(const ValueKey('open-transactions')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('row-delete-rent')));
+    await tester.pumpAndSettle();
+    expect(store.calls, contains('delete rent'));
+    expect(find.text('Delete this series?'), findsNothing);
+    expect(find.text('Deleted “Rent”'), findsOneWidget);
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(store.calls, contains('create Rent'));
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('phone: swipe left deletes; a short swipe does not', (
+    tester,
+  ) async {
+    final store = await _pump(tester, size: const Size(360, 740));
+    await tester.tap(find.byKey(const ValueKey('open-transactions')));
+    await tester.pumpAndSettle();
+    final row = find.byKey(const ValueKey('dismiss-rent'));
+    await tester.drag(row, const Offset(-60, 0));
+    await tester.pumpAndSettle();
+    expect(store.calls.where((c) => c.startsWith('delete')), isEmpty);
+    await tester.drag(row, const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(store.calls, contains('delete rent'));
+    expect(find.text('Deleted “Rent”'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 5));
   });
 }

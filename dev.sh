@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Dev env: Postgres + Dart API (auto-restart) + Flutter web + proxy (:8000) + ngrok tunnel, all in tmux session "budget".
-# Usage: ./dev.sh start|stop|status|reload|restart|url|logs
+# Usage: ./dev.sh start|stop|status|reload|restart|url|logs|watchdog
+# The watchdog window (tunnel-watchdog.sh) auto-restarts ngrok / proxy / API; log: /workspace/dev-logs/watchdog.log
 #
 # Web modes (WEB_MODE env, default "release"):
 #   release  web-watch.sh builds `flutter build web --release` and rebuilds on any change under
@@ -32,7 +33,8 @@ start)
     tmux new-window -t $S -n web "$ROOT/web-watch.sh 2>&1 | tee $LOGS/flutter.log"
   fi
   tmux new-window -t $S -n proxy "WEB_MODE=$WEB_MODE node $ROOT/dev-proxy.js 2>&1 | tee $LOGS/proxy.log"
-  tmux new-window -t $S -n tunnel "ngrok http 127.0.0.1:$PROXY_PORT --log=stdout > $LOGS/tunnel.log 2>&1"
+  tmux new-window -t $S -n tunnel "$ROOT/tunnel-run.sh"   # restarts ngrok on exit
+  tmux new-window -d -t $S -n watchdog "WEB_MODE=$WEB_MODE $ROOT/tunnel-watchdog.sh"
   for i in $(seq 1 30); do [ -n "$("$0" url)" ] && break; sleep 1; done
   "$0" url ;;
 stop) tmux kill-session -t $S 2>/dev/null || true; "$PGBIN/pg_ctl" -D "$PGDATA" stop >/dev/null 2>&1 || true; echo stopped ;;
@@ -42,7 +44,12 @@ reload)   # debug: hot reload; release: force a rebuild now (changes rebuild aut
 restart)  # full restart of all processes (keeps Postgres + the same ngrok URL on this account)
   tmux kill-session -t $S 2>/dev/null || true; sleep 1; "$0" start ;;
 logs) tail -n ${2:-15} $LOGS/flutter.log ;;
-status) tmux list-windows -t $S 2>/dev/null || echo "not running"; "$PGBIN/pg_ctl" -D "$PGDATA" status | head -1 ;;
+status) tmux list-windows -t $S 2>/dev/null || echo "not running"; "$PGBIN/pg_ctl" -D "$PGDATA" status | head -1
+  echo "watchdog:"; tail -n 3 $LOGS/watchdog.log 2>/dev/null || echo "  (no log)" ;;
+watchdog)  # (re)start just the watchdog window in a running session
+  tmux kill-window -t $S:watchdog 2>/dev/null || true
+  tmux new-window -d -t $S -n watchdog "WEB_MODE=$WEB_MODE $ROOT/tunnel-watchdog.sh"; echo "watchdog started" ;;
+tunnel) ENSURE_SRC=manual "$ROOT/tunnel-ensure.sh" ;;   # check public /health; restart ngrok if down
 url) curl -s 127.0.0.1:4040/api/tunnels 2>/dev/null | grep -o '"public_url":"https://[^"]*' | cut -d'"' -f4 | head -1 ;;
-*) echo "usage: [WEB_MODE=debug] $0 start|stop|status|reload|restart|url|logs"; exit 1 ;;
+*) echo "usage: [WEB_MODE=debug] $0 start|stop|status|reload|restart|url|tunnel|logs|watchdog"; exit 1 ;;
 esac

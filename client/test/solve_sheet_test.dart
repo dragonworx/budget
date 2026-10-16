@@ -109,4 +109,40 @@ void main() {
     expect(find.text('Rounded from the 1000 target.'), findsOneWidget);
     expect(tester.widget<FilledButton>(create).onPressed, isNotNull);
   });
+
+  testWidgets('Plan (credit-only) has no debit option and plans a credit', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final repo = _FakeRepo();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [accountRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SolveSheet(
+              accountId: 'acc',
+              creditOnly: true,
+              initial: SolveRequest(
+                name: 'Planned income',
+                direction: TransactionDirection.debit,
+                unit: RecurrenceUnit.weeks,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Debit'), findsNothing);
+    expect(find.text('Credit'), findsNothing);
+    expect(find.text('Plan income'), findsOneWidget);
+    expect(repo.requests, isNotEmpty);
+    expect(
+      repo.requests.every((r) => r.direction == TransactionDirection.credit),
+      isTrue,
+    );
+  });
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
+import '../../data/frequency.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
@@ -35,13 +36,13 @@ Future<SolveResult?> showSolveSheet(
           initial:
               initial ??
               SolveRequest(
-                name: 'Planned transaction',
-                direction: TransactionDirection.debit,
+                name: 'Planned income',
+                direction: TransactionDirection.credit,
                 unit: RecurrenceUnit.weeks,
-                interval: 1,
-                startDate: startDate ?? DateTime.now(),
+                startDate: startDate,
                 endDate: endDate,
               ),
+          creditOnly: initial == null,
           saveOnCommit: saveOnCommit,
         ),
       );
@@ -55,11 +56,15 @@ class SolveSheet extends ConsumerStatefulWidget {
     required this.accountId,
     required this.initial,
     this.saveOnCommit = true,
+    this.creditOnly = false,
   });
 
   final String accountId;
   final SolveRequest initial;
   final bool saveOnCommit;
+
+  /// The Plan feature: always a credit, no direction choice.
+  final bool creditOnly;
 
   @override
   ConsumerState<SolveSheet> createState() => _SolveSheetState();
@@ -84,6 +89,10 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
   SolveResult? _result;
   String? _error;
 
+  /// Blank fields filled with a default (start today, every 1) because
+  /// nothing else determines them; shown as auto like calculated fields.
+  Set<SolveVar> _defaulted = const {};
+
   @override
   void initState() {
     super.initState();
@@ -93,11 +102,16 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     _total = TextEditingController(text: i.targetTotal?.toString() ?? '');
     _interval = TextEditingController(text: i.interval?.toString() ?? '');
     _count = TextEditingController(text: i.occurrenceCount?.toString() ?? '');
-    _direction = i.direction;
+    _direction = widget.creditOnly ? TransactionDirection.credit : i.direction;
     _unit = i.unit;
     _rounding = i.rounding;
     _startDate = i.startDate;
     _endDate = i.endDate;
+    final typed = int.tryParse(_interval.text.trim());
+    _freqCustom =
+        typed != null &&
+        FrequencyPreset.of(once: false, interval: typed, unit: _unit) ==
+            FrequencyPreset.custom;
     _scheduleSolve(immediate: true);
   }
 
@@ -143,7 +157,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
       _intError(_count) != null;
 
   SolveRequest _request() => SolveRequest(
-    name: _name.text.trim().isEmpty ? 'Planned transaction' : _name.text.trim(),
+    name: _name.text.trim().isEmpty ? widget.initial.name : _name.text.trim(),
     direction: _direction,
     unit: _unit,
     startDate: _startDate,
@@ -182,12 +196,16 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     }
     setState(() => _solving = true);
     try {
-      final result = await ref
-          .read(accountRepositoryProvider)
-          .solve(widget.accountId, _request());
+      final repo = ref.read(accountRepositoryProvider);
+      final (result, defaulted) = await solveWithDefaults(
+        _request(),
+        (r) => repo.solve(widget.accountId, r),
+        today: DateTime.now(),
+      );
       if (!mounted || seq != _requestSeq) return;
       setState(() {
         _result = result;
+        _defaulted = defaulted;
         _error = null;
       });
     } catch (error) {
@@ -201,7 +219,77 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     }
   }
 
-  bool _isSolved(SolveVar v) => _result?.solved.contains(v) ?? false;
+  /// Custom… chosen: show the unit + Every inputs.
+  bool _freqCustom = false;
+
+  /// Frequency presets; a blank Every is auto (✦) and shows the matching
+  /// preset for the calculated / assumed spacing.
+  Widget _frequencyField(int? autoInterval) {
+    final typed = _parseInt(_interval);
+    final FrequencyPreset? value = _freqCustom
+        ? FrequencyPreset.custom
+        : (typed == null
+              ? null
+              : FrequencyPreset.of(once: false, interval: typed, unit: _unit));
+    final auto = _isSolved(SolveVar.interval) ? autoInterval : null;
+    final autoPreset = auto == null
+        ? null
+        : FrequencyPreset.of(once: false, interval: auto, unit: _unit);
+    final autoLabel = autoPreset == null
+        ? null
+        : (autoPreset == FrequencyPreset.custom
+              ? 'Every $auto ${unitLabel(_unit, auto!)}'
+              : autoPreset.label);
+    final scheme = Theme.of(context).colorScheme;
+    return DropdownButtonFormField<FrequencyPreset>(
+      key: ValueKey('plan-frequency-${value?.name}-$autoLabel'),
+      initialValue: value,
+      isExpanded: true,
+      hint: autoLabel == null
+          ? null
+          : Text(
+              autoLabel,
+              style: TextStyle(
+                color: scheme.primary,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+      decoration: _decoration(
+        context,
+        label: 'Frequency',
+        hasValue: value != null,
+        wanted: _isWanted(SolveVar.interval),
+        hint: autoLabel,
+        helper: _helperFor(
+          hasValue: value != null,
+          wanted: _isWanted(SolveVar.interval),
+          help: 'Clear to have the spacing calculated',
+          calculated: autoLabel,
+        ),
+        onClear: () {
+          _freqCustom = false;
+          _interval.clear();
+          _changed();
+        },
+      ).copyWith(hintText: null),
+      items: [
+        for (final p in [...FrequencyPreset.repeating, FrequencyPreset.custom])
+          DropdownMenuItem(value: p, child: Text(p.label)),
+      ],
+      onChanged: (p) {
+        if (p == null) return;
+        _freqCustom = p == FrequencyPreset.custom;
+        if (p.repeats) {
+          _interval.text = '${p.interval}';
+          _unit = p.unit!;
+        }
+        _changed();
+      },
+    );
+  }
+
+  bool _isSolved(SolveVar v) =>
+      (_result?.solved.contains(v) ?? false) || _defaulted.contains(v);
 
   bool _isWanted(SolveVar v) =>
       _result != null &&
@@ -221,12 +309,20 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Plan a transaction', style: theme.textTheme.headlineSmall),
+            Text(
+              widget.creditOnly ? 'Plan income' : 'Plan a transaction',
+              style: theme.textTheme.headlineSmall,
+            ),
             const SizedBox(height: 4),
             Text(
-              'Fill in what you know and leave the rest blank — blank fields '
-              'are calculated. Any four of start date, total, increment, '
-              'frequency, count and end date determine the transaction.',
+              widget.creditOnly
+                  ? 'Plan money coming in. Fill in what you know — blank '
+                        'fields are calculated (✦) and update as you type. '
+                        'Clear a field to have it calculated again.'
+                  : 'Fill in what you know and leave the rest blank — blank '
+                        'fields are calculated. Any four of start date, total, '
+                        'increment, frequency, count and end date determine '
+                        'the transaction.',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
@@ -234,27 +330,29 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
               controller: _name,
               decoration: const InputDecoration(labelText: 'Name'),
             ),
-            const SizedBox(height: 12),
-            SegmentedButton<TransactionDirection>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: TransactionDirection.credit,
-                  label: Text('Credit'),
-                  icon: Icon(Icons.arrow_upward),
-                ),
-                ButtonSegment(
-                  value: TransactionDirection.debit,
-                  label: Text('Debit'),
-                  icon: Icon(Icons.arrow_downward),
-                ),
-              ],
-              selected: {_direction},
-              onSelectionChanged: (value) {
-                _direction = value.first;
-                _changed();
-              },
-            ),
+            if (!widget.creditOnly) ...[
+              const SizedBox(height: 12),
+              SegmentedButton<TransactionDirection>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: TransactionDirection.credit,
+                    label: Text('Credit'),
+                    icon: Icon(Icons.arrow_upward),
+                  ),
+                  ButtonSegment(
+                    value: TransactionDirection.debit,
+                    label: Text('Debit'),
+                    icon: Icon(Icons.arrow_downward),
+                  ),
+                ],
+                selected: {_direction},
+                onSelectionChanged: (value) {
+                  _direction = value.first;
+                  _changed();
+                },
+              ),
+            ],
             const SizedBox(height: 16),
             _DateField(
               label: 'Start date',
@@ -291,47 +389,52 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
               onChanged: _changed,
             ),
             const SizedBox(height: 16),
-            Text('Frequency', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 8),
-            SegmentedButton<RecurrenceUnit>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: RecurrenceUnit.days, label: Text('Daily')),
-                ButtonSegment(
-                  value: RecurrenceUnit.weeks,
-                  label: Text('Weekly'),
-                ),
-                ButtonSegment(
-                  value: RecurrenceUnit.months,
-                  label: Text('Monthly'),
-                ),
-                ButtonSegment(
-                  value: RecurrenceUnit.years,
-                  label: Text('Yearly'),
-                ),
-              ],
-              selected: {_unit},
-              onSelectionChanged: (value) {
-                _unit = value.first;
-                _changed();
-              },
-            ),
-            const SizedBox(height: 12),
-            _IntField(
-              controller: _interval,
-              label: 'Every',
-              suffix: unitLabel(
-                _unit,
-                _parseInt(_interval) ?? values?.interval ?? 1,
+            _frequencyField(values?.interval),
+            if (_freqCustom) ...[
+              const SizedBox(height: 12),
+              SegmentedButton<RecurrenceUnit>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: RecurrenceUnit.days,
+                    label: Text('Daily'),
+                  ),
+                  ButtonSegment(
+                    value: RecurrenceUnit.weeks,
+                    label: Text('Weekly'),
+                  ),
+                  ButtonSegment(
+                    value: RecurrenceUnit.months,
+                    label: Text('Monthly'),
+                  ),
+                  ButtonSegment(
+                    value: RecurrenceUnit.years,
+                    label: Text('Yearly'),
+                  ),
+                ],
+                selected: {_unit},
+                onSelectionChanged: (value) {
+                  _unit = value.first;
+                  _changed();
+                },
               ),
-              help: 'Leave blank to find the spacing that fits',
-              calculated: _isSolved(SolveVar.interval)
-                  ? values?.interval
-                  : null,
-              wanted: _isWanted(SolveVar.interval),
-              error: _intError(_interval),
-              onChanged: _changed,
-            ),
+              const SizedBox(height: 12),
+              _IntField(
+                controller: _interval,
+                label: 'Every',
+                suffix: unitLabel(
+                  _unit,
+                  _parseInt(_interval) ?? values?.interval ?? 1,
+                ),
+                help: 'Leave blank to find the spacing that fits',
+                calculated: _isSolved(SolveVar.interval)
+                    ? values?.interval
+                    : null,
+                wanted: _isWanted(SolveVar.interval),
+                error: _intError(_interval),
+                onChanged: _changed,
+              ),
+            ],
             const SizedBox(height: 12),
             _IntField(
               controller: _count,
@@ -391,6 +494,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
               solving: _solving,
               direction: _direction,
               unit: _unit,
+              defaulted: _defaulted,
             ),
             const SizedBox(height: 20),
             FilledButton(
@@ -417,9 +521,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     if (result == null || transaction == null) return;
     final named = transaction.copyWith(
       accountId: widget.accountId,
-      name: _name.text.trim().isEmpty
-          ? 'Planned transaction'
-          : _name.text.trim(),
+      name: _name.text.trim().isEmpty ? widget.initial.name : _name.text.trim(),
       direction: _direction,
     );
 
@@ -731,8 +833,10 @@ class _StatusPanel extends StatelessWidget {
     required this.solving,
     required this.direction,
     required this.unit,
+    this.defaulted = const {},
   });
 
+  final Set<SolveVar> defaulted;
   final SolveResult? result;
   final String? error;
   final bool solving;
@@ -821,6 +925,11 @@ class _StatusPanel extends StatelessWidget {
             'Calculated: ${_joinAnd(r.solved.map((s) => s.label).toList())}.',
             style: theme.textTheme.bodySmall,
           ),
+        if (defaulted.isNotEmpty)
+          Text(
+            'Assumed: ${_joinAnd([for (final d in defaulted) d == SolveVar.startDate ? 'starting today' : 'every 1 ${unitLabel(unit, 1)}'])} — enter a value to change.',
+            style: theme.textTheme.bodySmall,
+          ),
         if (dates.length > 1) ...[
           const SizedBox(height: 8),
           Wrap(
@@ -882,4 +991,46 @@ String _join(List<String> items, String word) {
   if (items.isEmpty) return '';
   if (items.length == 1) return items.first;
   return '${items.sublist(0, items.length - 1).join(', ')} $word ${items.last}';
+}
+
+/// Solves [user] (only what the user entered). If that is incomplete and the
+/// start date or spacing is still unknown, retries with sensible defaults
+/// (start today, every 1 unit) for those — they then show as auto values
+/// like any calculated field, and typing a value takes them over.
+/// Returns the result and which fields were defaulted.
+Future<(SolveResult, Set<SolveVar>)> solveWithDefaults(
+  SolveRequest user,
+  Future<SolveResult> Function(SolveRequest request) solve, {
+  required DateTime today,
+}) async {
+  final first = await solve(user);
+  if (first.isComplete) return (first, const <SolveVar>{});
+  final canStart =
+      user.startDate == null && !first.solved.contains(SolveVar.startDate);
+  final canInterval =
+      user.interval == null && !first.solved.contains(SolveVar.interval);
+  final start = DateTime(today.year, today.month, today.day);
+  // Fewest assumptions first: spacing alone (so a start can be calculated
+  // back from the end), then start alone, then both.
+  final options = <Set<SolveVar>>[
+    if (canInterval) {SolveVar.interval},
+    if (canStart) {SolveVar.startDate},
+    if (canInterval && canStart) {SolveVar.interval, SolveVar.startDate},
+  ];
+  (SolveResult, Set<SolveVar>)? fallback;
+  for (final option in options) {
+    try {
+      final r = await solve(
+        user.withDefaults(
+          startDate: option.contains(SolveVar.startDate) ? start : null,
+          interval: option.contains(SolveVar.interval) ? 1 : null,
+        ),
+      );
+      if (r.isComplete) return (r, option);
+      fallback = (r, option);
+    } catch (_) {
+      // These defaults conflict with what was entered; try the next.
+    }
+  }
+  return fallback ?? (first, const <SolveVar>{});
 }

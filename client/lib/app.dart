@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -39,6 +40,10 @@ class BudgetApp extends ConsumerWidget {
       theme: AppTheme.dark(),
       themeMode: ThemeMode.dark,
       routerConfig: _router,
+      // Australian English: dd/MM/yyyy in date pickers and inputs.
+      locale: const Locale('en', 'AU'),
+      supportedLocales: const [Locale('en', 'AU'), Locale('en', 'US')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
     );
   }
 }

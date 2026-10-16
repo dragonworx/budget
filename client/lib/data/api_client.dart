@@ -69,6 +69,8 @@ class ApiClient {
   Map<String, String> _headers() => {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
+    // Always fetch live data (a cached list would resurrect deleted items).
+    'Cache-Control': 'no-cache',
   };
 
   dynamic _decode(http.Response response, {bool allowEmpty = false}) {

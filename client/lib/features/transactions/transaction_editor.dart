@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/api_client.dart';
+import '../../data/frequency.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
@@ -153,6 +154,13 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         ? RecurrenceMode.once
         : (existing?.recurrenceMode ?? RecurrenceMode.every);
     _unit = existing?.unit ?? RecurrenceUnit.months;
+    _custom =
+        FrequencyPreset.of(
+          once: _recurrenceMode == RecurrenceMode.once,
+          interval: int.tryParse(_interval.text.trim()) ?? 1,
+          unit: _unit,
+        ) ==
+        FrequencyPreset.custom;
     _endMode = existing?.endMode ?? EndMode.never;
     if (existing == null && _recurrenceMode == RecurrenceMode.once) {
       _endMode = EndMode.never;
@@ -585,6 +593,46 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
+  /// Custom… chosen (or the series matches no preset): show Every N unit.
+  bool _custom = false;
+
+  FrequencyPreset get _preset => _custom
+      ? FrequencyPreset.custom
+      : FrequencyPreset.of(
+          once: _recurrenceMode == RecurrenceMode.once,
+          interval: _intervalValue,
+          unit: _unit,
+        );
+
+  Widget _frequencyDropdown() {
+    return DropdownButtonFormField<FrequencyPreset>(
+      key: ValueKey('editor-frequency-${_preset.name}'),
+      initialValue: _preset,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Repeats'),
+      dropdownColor: AppTheme.overlay,
+      items: [
+        for (final p in FrequencyPreset.values)
+          DropdownMenuItem(value: p, child: Text(p.label)),
+      ],
+      onChanged: (p) => setState(() {
+        if (p == null) return;
+        _custom = p == FrequencyPreset.custom;
+        if (p == FrequencyPreset.once) {
+          _recurrenceMode = RecurrenceMode.once;
+          _endMode = EndMode.never;
+          _endDateError = null;
+        } else {
+          _recurrenceMode = RecurrenceMode.every;
+          if (p.repeats) {
+            _interval.text = '${p.interval}';
+            _unit = p.unit!;
+          }
+        }
+      }),
+    );
+  }
+
   Widget _scheduleSection(ThemeData theme) {
     final repeating = _recurrenceMode == RecurrenceMode.every;
     return SectionCard(
@@ -604,30 +652,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             onPicked: (d) => setState(() => _startDate = d),
           ),
           const SizedBox(height: 12),
-          SegmentedButton<RecurrenceMode>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(
-                value: RecurrenceMode.once,
-                label: Text('One-off'),
-                icon: Icon(Icons.looks_one_outlined, size: 18),
-              ),
-              ButtonSegment(
-                value: RecurrenceMode.every,
-                label: Text('Repeats'),
-                icon: Icon(Icons.repeat_rounded, size: 18),
-              ),
-            ],
-            selected: {_recurrenceMode},
-            onSelectionChanged: (value) => setState(() {
-              _recurrenceMode = value.first;
-              if (_recurrenceMode == RecurrenceMode.once) {
-                _endMode = EndMode.never;
-                _endDateError = null;
-              }
-            }),
-          ),
-          if (repeating) ...[
+          _frequencyDropdown(),
+          if (repeating && _custom) ...[
             const SizedBox(height: 14),
             Row(
               children: [
@@ -673,6 +699,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                     key: const ValueKey('editor-unit'),
                     initialValue: _unit,
                     isDense: true,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       isDense: true,
                       contentPadding: EdgeInsets.symmetric(
@@ -685,7 +712,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                       for (final unit in RecurrenceUnit.values)
                         DropdownMenuItem(
                           value: unit,
-                          child: Text(_unitPlural(unit, _intervalValue)),
+                          child: Text(
+                            _unitPlural(unit, _intervalValue),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                     ],
                     onChanged: (u) => setState(() => _unit = u ?? _unit),
@@ -693,6 +723,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                 ),
               ],
             ),
+          ],
+          if (repeating) ...[
             const SizedBox(height: 14),
             Text('Ends', style: theme.textTheme.bodySmall),
             const SizedBox(height: 6),
@@ -824,7 +856,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               if (draft.recurrenceMode == RecurrenceMode.every &&
                   draft.endMode == EndMode.never)
                 'Repeats with no end',
-              if (!_isNew) 'Click a date to skip or restore it',
+              if (!_isNew) 'Tap a date to skip or restore it',
             ].join(' · '),
             style: theme.textTheme.bodySmall,
           ),
@@ -1057,6 +1089,13 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       }
       _interval.text = '${transaction.interval ?? 1}';
       _unit = transaction.unit ?? _unit;
+      _custom =
+          FrequencyPreset.of(
+            once: false,
+            interval: transaction.interval,
+            unit: _unit,
+          ) ==
+          FrequencyPreset.custom;
       _endMode = transaction.endMode;
       _endDate = transaction.endDate;
       if (transaction.occurrenceCount != null) {
