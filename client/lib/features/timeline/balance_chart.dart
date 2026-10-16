@@ -16,7 +16,6 @@ import 'occurrence_info.dart';
 import 'zoom_level.dart';
 
 typedef DayTap = void Function(DateTime day, List<Occurrence> onDay);
-typedef RangeSelect = void Function(DateTime start, DateTime end);
 typedef ViewportChanged = void Function(DateTime viewStart, double visibleDays);
 typedef CreateOnDay = void Function(DateTime day);
 
@@ -29,7 +28,12 @@ typedef CreateOnDay = void Function(DateTime day);
 ///
 /// Click-drag pans time and balance. The mouse wheel and trackpad pinch zoom
 /// time around the pointer; Alt+wheel zooms balance; Shift+wheel pans
-/// balance. Shift-drag (or long-press then drag) selects a date range.
+/// balance. Touch: drag pans, pinch zooms time at the pinch focus.
+///
+/// Pressing on the date axis (month/week/day lanes) picks a date instead:
+/// a bubble, guide line and day highlight follow the pointer, the view
+/// auto-scrolls near the plot edges, and releasing calls [onCreateOnDay]
+/// for that day. Dragging well above the axis, or Esc, cancels.
 /// With focus: arrow keys pan, +/- zoom time, F fits balances.
 class BalanceChart extends StatefulWidget {
   const BalanceChart({
@@ -43,7 +47,6 @@ class BalanceChart extends StatefulWidget {
     required this.visibleDays,
     required this.onViewportChanged,
     required this.onDayTap,
-    required this.onRangeSelected,
     required this.onCreateOnDay,
     this.transactionNames = const {},
     this.dataFrom,
@@ -90,7 +93,6 @@ class BalanceChart extends StatefulWidget {
   final double visibleDays;
   final ViewportChanged onViewportChanged;
   final DayTap onDayTap;
-  final RangeSelect onRangeSelected;
   final CreateOnDay onCreateOnDay;
 
   /// Occurrence transaction id to display name. Missing ids are left unlabeled.
@@ -107,10 +109,26 @@ class _BalanceChartState extends State<BalanceChart> {
   DateTime? _originStart;
   double _originDays = 70;
   bool _dragged = false;
-  bool _selecting = false;
-  DateTime? _selectAnchor;
-  DateTime? _selectEnd;
+  _Gesture _mode = _Gesture.none;
   Timer? _holdTimer;
+
+  /// Live positions of pointers that are down (two = pinch).
+  final Map<int, Offset> _down = {};
+
+  /// Pinch start: finger distance, focus x, and the view at that moment.
+  double _pinchDist = 1;
+  double _pinchFocusX = 0;
+
+  /// Date picking on the axis: the picked day, where the pointer is, and
+  /// whether it was dragged far enough off the axis to cancel.
+  DateTime? _pickDay;
+  Offset? _pickPos;
+  bool _pickCancelled = false;
+  bool _pickTouch = false;
+  Timer? _autoScroll;
+
+  /// A long-press on a dot (touch) shows its tooltip instead of opening it.
+  bool _longPressTip = false;
   double _lastScale = 1;
   final ValueNotifier<DateTime?> _hoverDay = ValueNotifier(null);
 
@@ -119,10 +137,6 @@ class _BalanceChartState extends State<BalanceChart> {
 
   /// Day of the hover "+" button the current press started on, if any.
   DateTime? _downOnAdd;
-
-  /// Browser timestamp of the press, and whether its selection came from the
-  /// long-press timer (rather than shift-drag).
-  Duration _downTime = Duration.zero;
 
   /// Visible balance range; null until fitted to the first data shown.
   BalanceExtents? _yRange;
@@ -140,8 +154,10 @@ class _BalanceChartState extends State<BalanceChart> {
   }
 
   BalanceExtents? _originY;
-  bool _holdSelect = false;
-  static const Duration _holdDelay = Duration(milliseconds: 420);
+  static const Duration _holdDelay = Duration(milliseconds: 450);
+
+  /// How far above the axis a pick drag goes before it counts as cancelled.
+  static const double pickCancelMargin = 56;
   bool _overAdd = false;
 
   /// Pointer is over an occurrence dot (click opens its series).
@@ -184,6 +200,7 @@ class _BalanceChartState extends State<BalanceChart> {
   @override
   void dispose() {
     _holdTimer?.cancel();
+    _autoScroll?.cancel();
     _hoverDay.dispose();
     _hoverDots.dispose();
     _focus.dispose();
@@ -197,17 +214,25 @@ class _BalanceChartState extends State<BalanceChart> {
   }
 
   void _onPointerDown(PointerDownEvent event) {
-    if (_pointer != null) return;
-    if ((event.buttons & kPrimaryButton) == 0) return;
+    final touch = event.kind != PointerDeviceKind.mouse;
+    if (!touch && (event.buttons & kPrimaryButton) == 0) return;
+    _down[event.pointer] = event.localPosition;
+    if (_pointer != null) {
+      // A second finger turns a pending pan into a pinch (not while picking).
+      if (touch && _down.length == 2 && _mode != _Gesture.pick) {
+        _startPinch();
+      }
+      return;
+    }
     _pointer = event.pointer;
     _downPos = event.localPosition;
-    _downTime = event.timeStamp;
-    _holdSelect = false;
     _focus.requestFocus();
+    _longPressTip = false;
+    final layout = _layout;
     // The "+" button ignores pointers so it never blocks a pan or zoom that
     // starts on it; a plain click on it is resolved in [_finishPointer].
     final hovered = _hoverDay.value;
-    final addRect = hovered == null ? null : _dayButtonRect(_layout, hovered);
+    final addRect = hovered == null ? null : _dayButtonRect(layout, hovered);
     _downOnAdd = addRect != null && addRect.contains(event.localPosition)
         ? hovered
         : null;
@@ -218,29 +243,54 @@ class _BalanceChartState extends State<BalanceChart> {
     _originY = _ensureYRange();
     _dragged = false;
     _holdTimer?.cancel();
-    if (HardwareKeyboard.instance.isShiftPressed) {
-      final day = _dayAt(event.localPosition.dx);
+    if (layout.axis.contains(event.localPosition)) {
+      _downOnAdd = null;
       setState(() {
-        _selecting = true;
-        _selectAnchor = day;
-        _selectEnd = day;
+        _mode = _Gesture.pick;
+        _pickTouch = touch;
+        _pickCancelled = false;
+        _pickPos = event.localPosition;
+        _pickDay = _dayAt(event.localPosition.dx);
       });
       return;
     }
-    _holdTimer = Timer(_holdDelay, () {
-      if (!mounted || _pointer != event.pointer || _downPos == null) return;
-      if (_dragged) return;
-      final day = _dayAt(_downPos!.dx);
-      setState(() {
-        _holdSelect = true;
-        _selecting = true;
-        _selectAnchor = day;
-        _selectEnd = day;
+    _mode = _Gesture.pan;
+    if (touch) {
+      // Long-press on a dot shows its tooltip (there is no hover on touch).
+      _holdTimer = Timer(_holdDelay, () {
+        if (!mounted || _pointer != event.pointer || _dragged) return;
+        final pos = _downPos;
+        if (pos == null) return;
+        final hits = _dotsAt(_layout, pos);
+        if (hits.isEmpty) return;
+        _longPressTip = true;
+        _hoverDots.value = _DotTip(hits, hits.first.center);
       });
+    }
+  }
+
+  void _startPinch() {
+    _holdTimer?.cancel();
+    final pts = _down.values.toList();
+    _pinchDist = math.max(1, (pts[0] - pts[1]).distance);
+    _pinchFocusX = (pts[0].dx + pts[1].dx) / 2;
+    _originStart = widget.viewStart;
+    _originDays = widget.visibleDays;
+    _hoverDots.value = null;
+    _longPressTip = false;
+    setState(() {
+      _mode = _Gesture.pinch;
+      _dragged = true;
     });
   }
 
   void _onPointerMove(PointerMoveEvent event) {
+    if (!_down.containsKey(event.pointer)) return;
+    _down[event.pointer] = event.localPosition;
+    if (_mode == _Gesture.pinch) {
+      _updatePinch();
+      return;
+    }
     if (event.pointer != _pointer) return;
     final origin = _downPos;
     final originStart = _originStart;
@@ -248,27 +298,21 @@ class _BalanceChartState extends State<BalanceChart> {
 
     final dx = event.localPosition.dx - origin.dx;
     final dy = event.localPosition.dy - origin.dy;
-    if (!_dragged && dx * dx + dy * dy > 16) {
+    final slop = event.kind == PointerDeviceKind.mouse ? 4.0 : 10.0;
+    if (!_dragged && dx * dx + dy * dy > slop * slop) {
       _dragged = true;
       _holdTimer?.cancel();
-      // A slow frame can let the hold timer fire before queued move events
-      // are handled. Judge by when the move really happened: moving before
-      // the hold delay is a pan, not a range selection.
-      if (_holdSelect && event.timeStamp - _downTime < _holdDelay) {
-        setState(() {
-          _selecting = false;
-          _holdSelect = false;
-          _selectAnchor = null;
-          _selectEnd = null;
-        });
+      if (_longPressTip) {
+        _longPressTip = false;
+        _hoverDots.value = null;
       }
     }
 
-    if (_selecting) {
-      setState(() => _selectEnd = _dayAt(event.localPosition.dx));
+    if (_mode == _Gesture.pick) {
+      _updatePick(event.localPosition);
       return;
     }
-    if (!_dragged) return;
+    if (!_dragged || _longPressTip) return;
 
     final width = _layout.plot.width;
     if (width <= 0) return;
@@ -280,55 +324,132 @@ class _BalanceChartState extends State<BalanceChart> {
     widget.onViewportChanged(addDays(originStart, days), _originDays);
   }
 
+  void _updatePinch() {
+    if (_down.length < 2) return;
+    final originStart = _originStart;
+    if (originStart == null) return;
+    final pts = _down.values.take(2).toList();
+    final dist = math.max(1.0, (pts[0] - pts[1]).distance);
+    final focusX = (pts[0].dx + pts[1].dx) / 2;
+    final view = pinchView(
+      layout: _layout,
+      originStart: originStart,
+      originDays: _originDays,
+      startDistance: _pinchDist,
+      distance: dist,
+      startFocusX: _pinchFocusX,
+      focusX: focusX,
+    );
+    widget.onViewportChanged(view.$1, view.$2);
+  }
+
+  void _updatePick(Offset pos) {
+    final layout = _layout;
+    final cancelled = pos.dy < layout.axis.top - pickCancelMargin;
+    setState(() {
+      _pickPos = pos;
+      _pickCancelled = cancelled;
+      _pickDay = layout.dateAt(pos.dx, widget.viewStart, widget.visibleDays);
+    });
+    final depth = cancelled ? 0.0 : layout.edgeDepth(pos.dx);
+    if (depth == 0) {
+      _autoScroll?.cancel();
+      _autoScroll = null;
+    } else {
+      _autoScroll ??= Timer.periodic(
+        const Duration(milliseconds: 16),
+        (_) => _autoScrollTick(),
+      );
+    }
+  }
+
+  /// One auto-scroll frame while picking near (or past) a plot edge.
+  void _autoScrollTick() {
+    final pos = _pickPos;
+    if (!mounted || _mode != _Gesture.pick || pos == null || _pickCancelled) {
+      _autoScroll?.cancel();
+      _autoScroll = null;
+      return;
+    }
+    final layout = _layout;
+    final depth = layout.edgeDepth(pos.dx);
+    if (depth == 0) {
+      _autoScroll?.cancel();
+      _autoScroll = null;
+      return;
+    }
+    final delta = autoScrollDays(depth, widget.visibleDays) * 0.016;
+    final start = addDays(widget.viewStart, delta);
+    widget.onViewportChanged(start, widget.visibleDays);
+    setState(() {
+      _pickDay = layout.dateAt(pos.dx, start, widget.visibleDays);
+    });
+  }
+
+  void _endPick({required bool commit}) {
+    _autoScroll?.cancel();
+    _autoScroll = null;
+    final day = _pickDay;
+    final ok = commit && !_pickCancelled && day != null;
+    setState(() {
+      _mode = _Gesture.none;
+      _pickDay = null;
+      _pickPos = null;
+      _pickCancelled = false;
+    });
+    if (ok) widget.onCreateOnDay(day);
+  }
+
   void _onPointerUp(PointerUpEvent event) {
+    _down.remove(event.pointer);
+    if (_mode == _Gesture.pinch) {
+      // Stay out of tap / pan handling until every finger is up.
+      if (_down.isEmpty) _reset();
+      return;
+    }
     if (event.pointer != _pointer) return;
     _finishPointer(event.localPosition);
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
+    _down.remove(event.pointer);
+    if (_mode == _Gesture.pinch) {
+      if (_down.isEmpty) _reset();
+      return;
+    }
     if (event.pointer != _pointer) return;
+    if (_mode == _Gesture.pick) _endPick(commit: false);
+    _reset();
+  }
+
+  void _reset() {
     _holdTimer?.cancel();
     _pointer = null;
     _downPos = null;
     _downOnAdd = null;
     _lastScale = 1;
-    if (_selecting || _dragged) {
-      setState(() {
-        _selecting = false;
-        _selectAnchor = null;
-        _selectEnd = null;
-        _dragged = false;
-      });
-    }
+    if (_longPressTip) _hoverDots.value = null;
+    _longPressTip = false;
+    setState(() {
+      _mode = _Gesture.none;
+      _dragged = false;
+    });
   }
 
   void _finishPointer(Offset localPosition) {
     _holdTimer?.cancel();
-    final selecting = _selecting;
+    final mode = _mode;
     final dragged = _dragged;
-    var anchor = _selectAnchor;
-    var end = _selectEnd;
-    _pointer = null;
-    _downPos = null;
-    _lastScale = 1;
-    setState(() {
-      _selecting = false;
-      _selectAnchor = null;
-      _selectEnd = null;
-      _dragged = false;
-    });
-
-    if (selecting && anchor != null && end != null) {
-      if (end.isBefore(anchor)) {
-        final swap = anchor;
-        anchor = end;
-        end = swap;
-      }
-      widget.onRangeSelected(anchor, end);
+    final longPress = _longPressTip;
+    if (mode == _Gesture.pick) {
+      _endPick(commit: true);
+      _reset();
       return;
     }
+    _reset();
+    if (longPress) return;
+
     final addDay = _downOnAdd;
-    _downOnAdd = null;
     if (!dragged && addDay != null) {
       widget.onCreateOnDay(addDay);
       return;
@@ -425,6 +546,10 @@ class _BalanceChartState extends State<BalanceChart> {
       return KeyEventResult.ignored;
     }
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape && _mode == _Gesture.pick) {
+      _endPick(commit: false);
+      return KeyEventResult.handled;
+    }
     final span = widget.visibleDays;
     void pan(double fraction) => widget.onViewportChanged(
       addDays(widget.viewStart, span * fraction),
@@ -494,8 +619,8 @@ class _BalanceChartState extends State<BalanceChart> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cursor = _selecting
-        ? SystemMouseCursors.precise
+    final cursor = _mode == _Gesture.pick
+        ? SystemMouseCursors.resizeColumn
         : _pointer != null && _dragged
         ? SystemMouseCursors.grabbing
         : _overAdd || _overDot
@@ -538,8 +663,6 @@ class _BalanceChartState extends State<BalanceChart> {
                         fitIncludesThreshold: widget.fitIncludesThreshold,
                         viewStart: widget.viewStart,
                         visibleDays: widget.visibleDays,
-                        selectAnchor: _selecting ? _selectAnchor : null,
-                        selectEnd: _selecting ? _selectEnd : null,
                         labelStyle:
                             theme.textTheme.bodySmall ?? const TextStyle(),
                         strongStyle:
@@ -558,10 +681,12 @@ class _BalanceChartState extends State<BalanceChart> {
                     ),
                   ),
                 ),
+                if (_mode == _Gesture.pick && _pickDay != null)
+                  ..._pickOverlay(theme),
                 ValueListenableBuilder<DateTime?>(
                   valueListenable: _hoverDay,
                   builder: (context, day, _) {
-                    if (day == null || _pointer != null || _selecting) {
+                    if (day == null || _pointer != null) {
                       return const SizedBox.shrink();
                     }
                     return _addButton(theme, day);
@@ -570,7 +695,7 @@ class _BalanceChartState extends State<BalanceChart> {
                 ValueListenableBuilder<_DotTip?>(
                   valueListenable: _hoverDots,
                   builder: (context, tip, _) {
-                    if (tip == null || _pointer != null || _selecting) {
+                    if (tip == null || (_pointer != null && !_longPressTip)) {
                       return const SizedBox.shrink();
                     }
                     return _tooltip(theme, tip);
@@ -582,6 +707,91 @@ class _BalanceChartState extends State<BalanceChart> {
         ),
       ),
     );
+  }
+
+  /// Guide line, day highlight and floating date bubble while picking.
+  List<Widget> _pickOverlay(ThemeData theme) {
+    final layout = _layout;
+    final day = _pickDay!;
+    final pos = _pickPos ?? layout.axis.center;
+    final x0 = layout.xOf(day, widget.viewStart, widget.visibleDays);
+    final x1 = layout.xOf(
+      addDays(day, 1),
+      widget.viewStart,
+      widget.visibleDays,
+    );
+    final left = x0.clamp(layout.plot.left, layout.plot.right).toDouble();
+    final right = x1.clamp(layout.plot.left, layout.plot.right).toDouble();
+    final cx = (left + right) / 2;
+    final cancelled = _pickCancelled;
+    final color = cancelled ? AppTheme.textFaint : AppTheme.accent;
+    const bubbleW = 168.0, bubbleH = 52.0;
+    // Above the finger on touch so it stays visible; just above the cursor
+    // otherwise. Clamped inside the chart.
+    final lift = _pickTouch ? 84.0 : 56.0;
+    final bx = (cx - bubbleW / 2)
+        .clamp(4.0, math.max(4.0, _size.width - bubbleW - 4))
+        .toDouble();
+    final by = (pos.dy - lift - bubbleH / 2)
+        .clamp(4.0, math.max(4.0, _size.height - bubbleH - 4))
+        .toDouble();
+    return [
+      Positioned(
+        left: left,
+        top: layout.plot.top,
+        width: math.max(2, right - left),
+        height: layout.axis.bottom - layout.plot.top,
+        child: IgnorePointer(
+          child: ColoredBox(color: color.withValues(alpha: 0.14)),
+        ),
+      ),
+      Positioned(
+        left: cx - 1,
+        top: layout.plot.top,
+        width: 2,
+        height: layout.axis.bottom - layout.plot.top,
+        child: IgnorePointer(child: ColoredBox(color: color)),
+      ),
+      Positioned(
+        left: bx,
+        top: by,
+        width: bubbleW,
+        height: bubbleH,
+        child: IgnorePointer(
+          child: Material(
+            key: const ValueKey('pick-bubble'),
+            elevation: 10,
+            color: cancelled ? AppTheme.overlay : AppTheme.accent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    formatOccurrenceDate(day),
+                    key: const ValueKey('pick-date'),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: cancelled ? AppTheme.textMuted : AppTheme.onAccent,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    cancelled ? 'Release to cancel' : 'Release to add here',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cancelled
+                          ? AppTheme.textFaint
+                          : AppTheme.onAccent.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
   }
 
   void _onHover(PointerHoverEvent event) {
@@ -1018,6 +1228,22 @@ class ChartLayout {
     return plot.left + days / visibleDays * plot.width;
   }
 
+  /// The date axis (all lanes) under the plot, where a press picks a date.
+  Rect get axis => Rect.fromLTRB(
+    plot.left,
+    plot.bottom,
+    plot.right,
+    (dayBand ?? weekBand ?? monthBand).bottom,
+  );
+
+  /// How far [x] is inside the auto-scroll zone at either plot edge:
+  /// negative toward the left edge, positive toward the right, 0 inside.
+  double edgeDepth(double x, {double zone = 40}) {
+    if (x < plot.left + zone) return -(plot.left + zone - x);
+    if (x > plot.right - zone) return x - (plot.right - zone);
+    return 0;
+  }
+
   DateTime dateAt(double localDx, DateTime viewStart, double visibleDays) {
     final fraction = ((localDx - plot.left) / plot.width).clamp(0.0, 1.0);
     return dateOnly(addDays(viewStart, fraction * visibleDays));
@@ -1082,8 +1308,6 @@ class _BalanceChartPainter extends CustomPainter {
     this.fitIncludesThreshold = false,
     required this.viewStart,
     required this.visibleDays,
-    required this.selectAnchor,
-    required this.selectEnd,
     required this.labelStyle,
     required this.strongStyle,
     required this.laneStyle,
@@ -1105,8 +1329,6 @@ class _BalanceChartPainter extends CustomPainter {
   final double lossThreshold;
   final DateTime viewStart;
   final double visibleDays;
-  final DateTime? selectAnchor;
-  final DateTime? selectEnd;
   final TextStyle labelStyle;
   final TextStyle strongStyle;
   final TextStyle laneStyle;
@@ -1151,15 +1373,11 @@ class _BalanceChartPainter extends CustomPainter {
         );
     final scale = _YScale(range.min, range.max, layout.plot);
     _paintGrid(canvas, layout, scale, visible.extents);
-    _paintSelection(canvas, layout, viewEnd);
     _paintMarkers(canvas, layout, viewEnd, seed);
     _paintSeries(canvas, layout, scale, visible, seed, viewEnd);
     _paintOccurrences(canvas, layout, scale, viewEnd, seed);
     _paintYLabels(canvas, layout, scale, visible.extents);
     _paintOffscreenHints(canvas, layout, scale, visible.extents);
-    if (selectAnchor != null && selectEnd != null) {
-      _paintSelectionLabel(canvas, layout);
-    }
   }
 
   void _paintPlotBands(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
@@ -1669,54 +1887,6 @@ class _BalanceChartPainter extends CustomPainter {
         layout.plot.top + 2,
       ),
     );
-    painter.dispose();
-  }
-
-  void _paintSelection(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
-    final anchor = selectAnchor;
-    final end = selectEnd;
-    if (anchor == null || end == null) return;
-    final start = anchor.isBefore(end) ? anchor : end;
-    final finish = anchor.isBefore(end) ? end : anchor;
-    final x1 = layout.xOf(start, viewStart, visibleDays);
-    final x2 = layout.xOf(addDays(finish, 1), viewStart, visibleDays);
-    final rect = Rect.fromLTRB(
-      x1.clamp(layout.plot.left, layout.plot.right),
-      layout.plot.top,
-      x2.clamp(layout.plot.left, layout.plot.right),
-      layout.dayBand?.bottom ??
-          layout.weekBand?.bottom ??
-          layout.monthBand.bottom,
-    );
-    canvas.drawRect(
-      rect,
-      Paint()..color = AppTheme.violet.withValues(alpha: 0.18),
-    );
-  }
-
-  void _paintSelectionLabel(Canvas canvas, ChartLayout layout) {
-    final anchor = selectAnchor;
-    final end = selectEnd;
-    if (anchor == null || end == null) return;
-    final start = anchor.isBefore(end) ? anchor : end;
-    final finish = anchor.isBefore(end) ? end : anchor;
-    final text =
-        '${DateFormat('d MMM y').format(start)} → ${DateFormat('d MMM y').format(finish)}';
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: strongStyle.copyWith(fontSize: 12)),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final rect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(
-        layout.plot.left + 8,
-        layout.plot.top + 6,
-        painter.width + 16,
-        painter.height + 8,
-      ),
-      const Radius.circular(8),
-    );
-    canvas.drawRRect(rect, Paint()..color = AppTheme.overlay);
-    painter.paint(canvas, Offset(rect.left + 8, rect.top + 4));
     painter.dispose();
   }
 
@@ -2340,8 +2510,6 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.fitIncludesThreshold != fitIncludesThreshold ||
         oldDelegate.viewStart != viewStart ||
         oldDelegate.visibleDays != visibleDays ||
-        oldDelegate.selectAnchor != selectAnchor ||
-        oldDelegate.selectEnd != selectEnd ||
         oldDelegate.labelStyle != labelStyle ||
         oldDelegate.strongStyle != strongStyle ||
         oldDelegate.laneStyle != laneStyle ||
@@ -2425,4 +2593,36 @@ class _DotTip {
   const _DotTip(this.dots, this.anchor);
   final List<_Dot> dots;
   final Offset anchor;
+}
+
+enum _Gesture { none, pan, pick, pinch }
+
+/// Auto-scroll speed in days per second for a pointer [depth] px into (or
+/// past) an edge zone; negative scrolls back in time. Scales with depth and
+/// the visible span, capped so it stays controllable.
+double autoScrollDays(double depth, double visibleDays) {
+  final strength = (depth.abs() / 40).clamp(0.0, 3.0);
+  return depth.sign * visibleDays * 0.5 * strength;
+}
+
+/// View after a two-finger pinch: zooms time by the change in finger
+/// distance, keeping the date under the starting focus under the current
+/// focus (so the pinch also pans).
+(DateTime, double) pinchView({
+  required ChartLayout layout,
+  required DateTime originStart,
+  required double originDays,
+  required double startDistance,
+  required double distance,
+  required double startFocusX,
+  required double focusX,
+}) {
+  final width = layout.plot.width;
+  final days = (originDays * startDistance / math.max(1.0, distance))
+      .clamp(minVisibleDays, maxVisibleDays)
+      .toDouble();
+  final f0 = ((startFocusX - layout.plot.left) / width).clamp(0.0, 1.0);
+  final f1 = ((focusX - layout.plot.left) / width).clamp(0.0, 1.0);
+  final anchor = addDays(originStart, f0 * originDays);
+  return (addDays(anchor, -f1 * days), days);
 }

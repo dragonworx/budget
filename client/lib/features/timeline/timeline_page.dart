@@ -350,8 +350,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                   },
                                   dataFrom: _seriesCacheQuery?.from,
                                   dataThrough: _seriesCacheQuery?.to,
-                                  onRangeSelected: (start, end) =>
-                                      _solveRange(context, start, end),
                                 ),
                                 if (balanceAsync.isLoading)
                                   const Positioned(
@@ -592,7 +590,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 head('Navigate'),
-                row(['Drag'], 'Pan time and balance'),
+                row(['Drag'], 'Pan time and balance (on the chart)'),
+                row(['Pinch'], 'Zoom time (touch)'),
                 row(['←', '→'], 'Pan time'),
                 row(['↑', '↓'], 'Pan balance'),
                 row(['Scroll'], 'Zoom time at the cursor'),
@@ -608,9 +607,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 head('Transactions'),
                 row(['Click dot'], 'Edit that transaction series'),
                 row(['Hover day', '+'], 'Add a one-off on that day'),
-                row(['Shift', 'Drag'], 'Select a range to plan a series'),
+                row(['Drag dates'], 'Drag along the date axis, release to add'),
+                row(['Tap dates'], 'Add a one-off on that day'),
                 row(['Ctrl', 'Enter'], 'Save in the editor'),
-                row(['Esc'], 'Close the editor'),
+                row(['Esc'], 'Cancel a date drag / close the editor'),
               ],
             ),
           ),
@@ -803,30 +803,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   Future<void> _solve(BuildContext context) async {
     final result = await showSolveSheet(context, accountId: widget.accountId);
-    if (result != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.message ??
-                'Created ${result.transaction?.name.isNotEmpty == true ? result.transaction!.name : 'transaction'}',
-          ),
-        ),
-      );
-      _invalidateBalance();
-    }
-  }
-
-  Future<void> _solveRange(
-    BuildContext context,
-    DateTime start,
-    DateTime end,
-  ) async {
-    final result = await showSolveSheet(
-      context,
-      accountId: widget.accountId,
-      startDate: start,
-      endDate: end,
-    );
     if (result != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1042,13 +1018,13 @@ class _TipsBar extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            tip(Icons.ads_click_rounded, 'Click a dot to edit its series'),
             tip(
-              Icons.add_circle_outline_rounded,
-              'Hover a day, click + to add',
+              Icons.ads_click_rounded,
+              'Click or tap a dot to edit its series',
             ),
-            tip(Icons.pan_tool_alt_outlined, 'Drag to pan'),
-            tip(Icons.mouse_outlined, 'Scroll to zoom'),
+            tip(Icons.swipe_right_alt_rounded, 'Drag or tap the dates to add'),
+            tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
+            tip(Icons.mouse_outlined, 'Scroll or pinch to zoom'),
             tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
           ],
         ),
