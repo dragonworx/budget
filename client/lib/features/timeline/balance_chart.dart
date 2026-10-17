@@ -13,6 +13,7 @@ import '../../widgets/money_text.dart';
 import 'chart_geometry.dart';
 import 'fit_ranges.dart';
 import 'occurrence_info.dart';
+import 'selection_period.dart';
 import 'zoom_level.dart';
 
 typedef ViewportChanged = void Function(DateTime viewStart, double visibleDays);
@@ -148,6 +149,7 @@ class _BalanceChartState extends State<BalanceChart>
   void _animateY(BalanceExtents target) {
     if (!target.min.isFinite || !target.max.isFinite) return;
     _clearTip();
+    _clearSelection();
     _yFrom = _yRange ?? target;
     _yTo = target;
     _yAnim.forward(from: 0);
@@ -239,6 +241,10 @@ class _BalanceChartState extends State<BalanceChart>
       // Any view navigation (pan, pinch, wheel, zoom, ◀ ▶, Fit, Today)
       // closes the info card and its y-axis highlight.
       _clearTip();
+      if (!_userPanning) {
+        _selA = _selB = null;
+        _selecting = false;
+      }
     }
     final y = _yRange;
     if (oldWidget.zeroToken != widget.zeroToken && y != null) {
@@ -304,12 +310,14 @@ class _BalanceChartState extends State<BalanceChart>
   void _setYRange(BalanceExtents range) {
     if (!range.min.isFinite || !range.max.isFinite) return;
     _clearTip();
+    if (!_userPanning) _clearSelection();
     _yAnim.stop();
     setState(() => _yRange = range);
   }
 
   void _fitY() {
     _clearTip();
+    _clearSelection();
     _yAnim.stop();
     setState(() => _yRange = null);
   }
@@ -353,6 +361,11 @@ class _BalanceChartState extends State<BalanceChart>
     _pointer = event.pointer;
     _downPos = event.localPosition;
     _focus.requestFocus();
+    // A press outside the selection band / card (they sit above this
+    // listener) blurs the selection; that press never shows dot info.
+    // The selection stays through a pan (it is anchored to its dates);
+    // a plain tap here clears it on release.
+    _dismissPress = _selA != null;
     _longPressTip = false;
     final layout = _layout;
     // The "+" button ignores pointers so it never blocks a pan or zoom that
@@ -389,21 +402,145 @@ class _BalanceChartState extends State<BalanceChart>
     _mode = _Gesture.pan;
     _scrubCandidate =
         touch &&
+        !_hasSelection &&
         _nearestDot(layout, event.localPosition, touchVertexHitRadius) != null;
-    if (touch) {
-      // Long-press on a dot shows its tooltip (there is no hover on touch).
-      _holdTimer = Timer(_holdDelay, () {
-        if (!mounted || _pointer != event.pointer || _dragged || _multiTouch) {
-          return;
-        }
-        final pos = _downPos;
-        if (pos == null) return;
-        final hits = _dotsAt(_layout, pos);
-        if (hits.isEmpty) return;
-        _longPressTip = true;
-        _hoverDots.value = _DotTip(hits, hits.first.center);
-      });
+    // Press-and-hold (touch or mouse, within the slop) in empty graph
+    // space enters selection mode; near a dot (44px touch / 18px mouse) a
+    // hold shows that dot's info as before. A quick tap still shows dot
+    // info and an immediate drag still scrubs (near dots) or pans.
+    _holdTimer = Timer(_holdDelay, () {
+      if (!mounted || _pointer != event.pointer || _dragged || _multiTouch) {
+        return;
+      }
+      final pos = _downPos;
+      if (pos == null || !_layout.plot.contains(pos)) return;
+      final layout = _layout;
+      final near = _nearestDot(layout, pos, vertexHitRadius(event.kind));
+      final lineTol = touch ? touchLineHitTolerance : mouseLineHitTolerance;
+      if (near == null && _distanceToLine(layout, pos) <= lineTol) {
+        return; // on the balance line: no selection (and nothing else)
+      }
+      if (near == null) {
+        // Empty graph space only: a hold near a dot keeps showing its info.
+        _startSelection(pos);
+        return;
+      }
+      if (!touch) return; // mouse: hover already shows the dot's info
+      // Touch long-press on a dot shows / pins its tooltip.
+      final hits = [
+        near,
+        for (final d in _dots(layout))
+          if (!identical(d, near) && (d.center - near.center).distance < 2) d,
+      ];
+      _longPressTip = true;
+      _hoverDots.value = _DotTip(hits, near.center);
+    });
+  }
+
+  /// Selection: anchor day and the moving / other edge (unordered).
+  DateTime? _selA;
+  DateTime? _selB;
+
+  /// The hold that created the selection is still down (extending it).
+  bool _selecting = false;
+
+  /// The current press started by blurring a selection.
+  bool _dismissPress = false;
+
+  /// Edge / body drag state for the handles.
+  double _selDragX = 0;
+  DateTime? _selDragA;
+  DateTime? _selDragB;
+
+  bool get _hasSelection => _selA != null;
+
+  /// A one-finger / mouse drag pan is in progress (keeps the selection).
+  bool get _userPanning =>
+      _pointer != null && _mode == _Gesture.pan && _dragged && !_multiTouch;
+
+  /// Screen distance from [pos] to the plotted step line (plateaus and
+  /// vertical steps), mirroring [_BalanceChartPainter._paintSeries].
+  double _distanceToLine(ChartLayout layout, Offset pos) {
+    final range = _ensureYRange();
+    final visible = _visible();
+    if (range == null || visible == null) return double.infinity;
+    final scale = _YScale(range.min, range.max, layout.plot);
+    final seed = dateOnly(widget.seedDate);
+    final viewEnd = addDays(widget.viewStart, widget.visibleDays);
+    var drawStart = widget.viewStart.isBefore(seed) ? seed : widget.viewStart;
+    final from = widget.dataFrom;
+    if (from != null && drawStart.isBefore(from) && !from.isBefore(seed)) {
+      drawStart = from;
     }
+    var drawEnd = viewEnd;
+    final through = widget.dataThrough;
+    if (through != null) {
+      final coverEnd = addCalendarDays(through, 1);
+      if (coverEnd.isBefore(drawEnd)) drawEnd = coverEnd;
+    }
+    if (!drawStart.isBefore(drawEnd)) return double.infinity;
+    double xOf(DateTime d) => layout
+        .xOf(d, widget.viewStart, widget.visibleDays)
+        .clamp(layout.plot.left, layout.plot.right)
+        .toDouble();
+    double? current;
+    final jumps = <BalancePoint>[];
+    for (final p in visible.samples) {
+      if (!dateOnly(p.date).isAfter(drawStart)) {
+        current = p.closingBalance.toDouble();
+      } else {
+        jumps.add(p);
+      }
+    }
+    var best = double.infinity;
+    var cursor = xOf(drawStart);
+    void seg(Offset a, Offset b) =>
+        best = math.min(best, distanceToSegment(pos, a, b));
+    for (final j in jumps) {
+      final jx = xOf(addDays(dateOnly(j.date), 0.5));
+      final next = j.closingBalance.toDouble();
+      if (current != null) {
+        final y = scale.yOf(current);
+        seg(Offset(cursor, y), Offset(jx, y));
+        seg(Offset(jx, y), Offset(jx, scale.yOf(next)));
+      }
+      current = next;
+      cursor = jx;
+    }
+    if (current != null) {
+      final y = scale.yOf(current);
+      seg(Offset(cursor, y), Offset(xOf(drawEnd), y));
+    }
+    return best;
+  }
+
+  void _startSelection(Offset pos) {
+    HapticFeedback.lightImpact();
+    _tapTipTimer?.cancel();
+    _tapTip = false;
+    _stickyTip = false;
+    _longPressTip = false;
+    _scrubCandidate = false;
+    _hoverDots.value = null;
+    final day = _dayAt(pos.dx);
+    setState(() {
+      _mode = _Gesture.select;
+      _selA = day;
+      _selB = day;
+      _selecting = true;
+    });
+  }
+
+  void _clearSelection() {
+    if (_selA == null && !_selecting) return;
+    final apply = mounted;
+    void clear() {
+      _selA = null;
+      _selB = null;
+      _selecting = false;
+    }
+
+    apply ? setState(clear) : clear();
   }
 
   void _startPinch() {
@@ -435,6 +572,16 @@ class _BalanceChartState extends State<BalanceChart>
       return;
     }
     if (event.pointer != _pointer) return;
+    if (_mode == _Gesture.select) {
+      final day = _dayAt(
+        event.localPosition.dx.clamp(
+          _layout.plot.left,
+          _layout.plot.right - 0.5,
+        ),
+      );
+      if (day != _selB) setState(() => _selB = day);
+      return;
+    }
     final origin = _downPos;
     final originStart = _originStart;
     if (origin == null || originStart == null) return;
@@ -603,6 +750,7 @@ class _BalanceChartState extends State<BalanceChart>
     }
     if (event.pointer != _pointer) return;
     if (_mode == _Gesture.pick) _endPick(commit: false);
+    if (_mode == _Gesture.select) setState(() => _selecting = false);
     _reset();
   }
 
@@ -639,6 +787,13 @@ class _BalanceChartState extends State<BalanceChart>
     final mode = _mode;
     final dragged = _dragged;
     final longPress = _longPressTip;
+    final dismiss = _dismissPress;
+    _dismissPress = false;
+    if (mode == _Gesture.select) {
+      setState(() => _selecting = false);
+      _reset();
+      return;
+    }
     if (mode == _Gesture.scrub) {
       _reset();
       return;
@@ -649,7 +804,11 @@ class _BalanceChartState extends State<BalanceChart>
       return;
     }
     _reset();
-    if (longPress) return;
+    if (dismiss && !dragged) {
+      _clearSelection(); // tap outside the band / card
+      return;
+    }
+    if (longPress || dismiss) return;
 
     final addDay = _downOnAdd;
     if (!dragged && addDay != null) {
@@ -786,6 +945,10 @@ class _BalanceChartState extends State<BalanceChart>
       return KeyEventResult.ignored;
     }
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape && _hasSelection) {
+      _clearSelection();
+      return KeyEventResult.handled;
+    }
     if (key == LogicalKeyboardKey.escape && _mode == _Gesture.pick) {
       _endPick(commit: false);
       return KeyEventResult.handled;
@@ -863,7 +1026,7 @@ class _BalanceChartState extends State<BalanceChart>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cursor = _mode == _Gesture.pick
+    final cursor = _mode == _Gesture.pick || _mode == _Gesture.select
         ? SystemMouseCursors.resizeColumn
         : _pointer != null && _dragged
         ? SystemMouseCursors.grabbing
@@ -942,6 +1105,7 @@ class _BalanceChartState extends State<BalanceChart>
                 if (widget.onZoomStep != null) _xScaleControls(theme),
                 if (_mode == _Gesture.pick && _pickDay != null)
                   ..._pickOverlay(theme),
+                if (_selA != null && _selB != null) ..._selectionOverlay(theme),
                 ValueListenableBuilder<DateTime?>(
                   valueListenable: _hoverDay,
                   builder: (context, day, _) {
@@ -973,6 +1137,7 @@ class _BalanceChartState extends State<BalanceChart>
 
   bool _tipShown(_DotTip? tip) =>
       tip != null &&
+      _selA == null &&
       !(_pointer != null &&
           !_longPressTip &&
           !_stickyTip &&
@@ -1259,13 +1424,418 @@ class _BalanceChartState extends State<BalanceChart>
     ];
   }
 
+  /// Shaded band, edge lines, 44px drag handles and the summary card.
+  List<Widget> _selectionOverlay(ThemeData theme) {
+    final layout = _layout;
+    final (s, e) = orderedDays(_selA!, _selB!);
+    final dayPx = layout.plot.width / math.max(widget.visibleDays, 0.001);
+    final rawX0 = layout.xOf(s, widget.viewStart, widget.visibleDays);
+    final rawX1 = layout.xOf(
+      addCalendarDays(e, 1),
+      widget.viewStart,
+      widget.visibleDays,
+    );
+    final x0 = rawX0.clamp(layout.plot.left, layout.plot.right).toDouble();
+    final x1 = rawX1.clamp(layout.plot.left, layout.plot.right).toDouble();
+    final top = layout.plot.top;
+    final height = layout.plot.height;
+    const color = AppTheme.accent;
+    const hit = 44.0;
+    final summary = summarizePeriod(
+      series: widget.series,
+      start: s,
+      end: e,
+      seedDate: widget.seedDate,
+      seedBalance: widget.seedBalance,
+    );
+
+    double centreX(DateTime d) =>
+        layout.xOf(addDays(d, 0.5), widget.viewStart, widget.visibleDays);
+
+    Widget edgeHandle(Key key, double x, bool isStart) => Positioned(
+      left: x - hit / 2,
+      top: top,
+      width: hit,
+      height: height,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.resizeColumn,
+        child: GestureDetector(
+          key: key,
+          behavior: HitTestBehavior.opaque,
+          dragStartBehavior: DragStartBehavior.down,
+          onPanStart: (_) {
+            _clearTip();
+            _selDragX = centreX(isStart ? s : e);
+            _selDragA = isStart ? e : s; // the edge that stays put
+          },
+          onPanUpdate: (d) {
+            _selDragX += d.delta.dx;
+            final day = _dayAt(
+              _selDragX.clamp(layout.plot.left, layout.plot.right - 0.5),
+            );
+            setState(() {
+              _selA = _selDragA;
+              _selB = day;
+            });
+          },
+          child: Center(
+            child: Container(
+              width: 8,
+              height: 36,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.white70, width: 1),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final widgets = <Widget>[
+      Positioned(
+        left: x0,
+        top: top,
+        width: math.max(0, x1 - x0),
+        height: height,
+        child: IgnorePointer(
+          child: Container(
+            key: const ValueKey('selection-band'),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.16),
+              border: Border.symmetric(
+                vertical: BorderSide(
+                  color: color.withValues(alpha: 0.9),
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+    if (!_selecting) {
+      // Always present (possibly 0 wide) so the handles keep their
+      // element (and an in-flight drag) when the band gets narrow.
+      final bodyL = x0 + hit / 2, bodyR = math.max(x0 + hit / 2, x1 - hit / 2);
+      {
+        widgets.add(
+          Positioned(
+            left: bodyL,
+            top: top,
+            width: bodyR - bodyL,
+            height: height,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.move,
+              child: GestureDetector(
+                key: const ValueKey('selection-body'),
+                behavior: HitTestBehavior.opaque,
+                dragStartBehavior: DragStartBehavior.down,
+                onPanStart: (_) {
+                  _selDragX = 0;
+                  _selDragA = s;
+                  _selDragB = e;
+                },
+                onPanUpdate: (d) {
+                  _selDragX += d.delta.dx;
+                  final shift = (_selDragX / math.max(dayPx, 0.001)).round();
+                  setState(() {
+                    _selA = addCalendarDays(_selDragA!, shift);
+                    _selB = addCalendarDays(_selDragB!, shift);
+                  });
+                },
+              ),
+            ),
+          ),
+        );
+      }
+      // Off-screen edges keep a handle pinned at the plot edge.
+      widgets.add(edgeHandle(const ValueKey('selection-start'), x0, true));
+      widgets.add(edgeHandle(const ValueKey('selection-end'), x1, false));
+    }
+    widgets.add(_selectionCard(theme, summary, x0, x1));
+    return widgets;
+  }
+
+  Widget _selectionCard(
+    ThemeData theme,
+    PeriodSummary sum,
+    double x0,
+    double x1,
+  ) {
+    final layout = _layout;
+    final phone = _size.width < 600;
+    final small = theme.textTheme.bodySmall ?? const TextStyle();
+    final label = small.copyWith(color: AppTheme.textMuted);
+    final strong = (theme.textTheme.labelLarge ?? const TextStyle()).copyWith(
+      fontWeight: FontWeight.w800,
+    );
+    final cur = widget.currency;
+    final dm = DateFormat('dd/MM');
+    final range = DateFormat('d MMM y');
+    Color signColor(double v) => v > 0
+        ? AppTheme.creditColor
+        : v < 0
+        ? AppTheme.debitColor
+        : AppTheme.textMuted;
+    Widget row(String name, String detail, Widget value, Key key) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        key: key,
+        children: [
+          Text(name, style: theme.textTheme.labelMedium),
+          const SizedBox(width: 6),
+          Expanded(child: Text(detail, style: label, maxLines: 1)),
+          value,
+        ],
+      ),
+    );
+    final pct = sum.percent;
+    final net = sum.net;
+    final header = Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                sum.days == 1
+                    ? range.format(sum.start)
+                    : '${DateFormat(sum.start.year == sum.end.year ? 'd MMM' : 'd MMM y').format(sum.start)} – ${range.format(sum.end)}',
+                key: const ValueKey('selection-range'),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text('${sum.days} day${sum.days == 1 ? '' : 's'}', style: label),
+            ],
+          ),
+        ),
+        SizedBox(
+          width: 32,
+          height: 32,
+          child: IconButton(
+            key: const ValueKey('selection-close'),
+            tooltip: 'Close selection',
+            padding: EdgeInsets.zero,
+            iconSize: 18,
+            onPressed: _clearSelection,
+            icon: const Icon(Icons.close_rounded),
+          ),
+        ),
+      ],
+    );
+    final stats = <Widget>[
+      row(
+        'Start',
+        'opening ${dm.format(sum.start)}',
+        Text(
+          formatMoneyAmount(sum.startBalance, cur),
+          key: const ValueKey('selection-start-balance'),
+          style: strong,
+        ),
+        const ValueKey('sel-row-start'),
+      ),
+      row(
+        'End',
+        'close ${dm.format(sum.end)}',
+        Text(
+          formatMoneyAmount(sum.endBalance, cur),
+          key: const ValueKey('selection-end-balance'),
+          style: strong,
+        ),
+        const ValueKey('sel-row-end'),
+      ),
+      row(
+        net > 0
+            ? 'Gain'
+            : net < 0
+            ? 'Loss'
+            : 'No change',
+        pct == null || net == 0
+            ? ''
+            : '${net >= 0 ? '+' : '−'}${pct.abs().toStringAsFixed(1)}%',
+        Text(
+          formatSignedAmount(net, cur),
+          key: const ValueKey('selection-net'),
+          style: strong.copyWith(color: signColor(net)),
+        ),
+        const ValueKey('sel-row-net'),
+      ),
+      const Divider(height: 10),
+      row(
+        'Total gains',
+        '',
+        Text(
+          formatSignedAmount(sum.gains, cur),
+          key: const ValueKey('selection-gains'),
+          style: strong.copyWith(color: signColor(sum.gains)),
+        ),
+        const ValueKey('sel-row-gains'),
+      ),
+      row(
+        'Total losses',
+        '',
+        Text(
+          formatSignedAmount(sum.losses, cur),
+          key: const ValueKey('selection-losses'),
+          style: strong.copyWith(color: signColor(sum.losses)),
+        ),
+        const ValueKey('sel-row-losses'),
+      ),
+      const Divider(height: 10),
+    ];
+    final items = <Widget>[
+      for (final o in sum.occurrences) _selectionItem(theme, o, dm, signColor),
+    ];
+    final list = items.isEmpty
+        ? Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text('No transactions in this period', style: label),
+          )
+        : Flexible(
+            child: Scrollbar(
+              child: ListView(
+                key: const ValueKey('selection-list'),
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                children: items,
+              ),
+            ),
+          );
+    final card = Material(
+      key: const ValueKey('selection-card'),
+      elevation: 12,
+      color: AppTheme.raised,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(phone ? 16 : 12),
+        side: const BorderSide(color: Color(0x22FFFFFF)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            header,
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Column(mainAxisSize: MainAxisSize.min, children: stats),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text(
+                'Transactions (${sum.occurrences.length})',
+                style: label.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            list,
+          ],
+        ),
+      ),
+    );
+    if (phone) {
+      // Bottom sheet-like: over the date lanes, leaving the band's upper
+      // part (where the line usually is) visible.
+      final maxH = math.min(_size.height * 0.5, 340.0);
+      return Positioned(
+        left: 6,
+        right: 6,
+        bottom: 6,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: card,
+        ),
+      );
+    }
+    const w = 300.0;
+    final fitsRight = x1 + 12 + w <= _size.width - 8;
+    final fitsLeft = x0 - 12 - w >= layout.plot.left;
+    final left = fitsRight
+        ? x1 + 12
+        : fitsLeft
+        ? x0 - 12 - w
+        : (_size.width - w - 8);
+    return Positioned(
+      left: left.clamp(4.0, math.max(4.0, _size.width - w - 4)).toDouble(),
+      top: layout.plot.top + 8,
+      width: w,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: math.max(160, layout.plot.height - 16),
+        ),
+        child: card,
+      ),
+    );
+  }
+
+  Widget _selectionItem(
+    ThemeData theme,
+    Occurrence o,
+    DateFormat dm,
+    Color Function(double) signColor,
+  ) {
+    final t = widget.transactions[o.transactionId];
+    final rawName = widget.transactionNames[o.transactionId] ?? t?.name;
+    final name = rawName == null || rawName.trim().isEmpty
+        ? 'Transaction'
+        : rawName.trim();
+    final amount = o.signedDelta.toDouble();
+    final transfer = t?.transfer;
+    final small = theme.textTheme.bodySmall ?? const TextStyle();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        key: ValueKey('selection-item-${o.transactionId}-${dm.format(o.date)}'),
+        children: [
+          SizedBox(
+            width: 40,
+            child: Text(
+              dm.format(o.date),
+              style: small.copyWith(color: AppTheme.textMuted),
+            ),
+          ),
+          if (transfer != null) ...[
+            Icon(
+              amount < 0
+                  ? Icons.arrow_forward_rounded
+                  : Icons.arrow_back_rounded,
+              size: 14,
+              color: AppTheme.textMuted,
+            ),
+            const SizedBox(width: 3),
+          ],
+          Expanded(
+            child: Text(
+              transfer != null && transfer.peerAccountName != null
+                  ? '$name ${amount < 0 ? '→' : '←'} ${transfer.peerAccountName}'
+                  : name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelMedium,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            formatSignedAmount(amount, widget.currency),
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: signColor(amount),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _onHover(PointerHoverEvent event) {
     // Touch has no hover (browsers may synthesise one on release).
     if (event.kind == PointerDeviceKind.touch) return;
     if (_pointer != null || _multiTouch || _size == Size.zero) return;
     final pos = event.localPosition;
     final layout = _layout;
-    _updateDotHover(layout, pos);
+    if (!_hasSelection) _updateDotHover(layout, pos);
     final axisBottom =
         (layout.dayBand ?? layout.weekBand ?? layout.monthBand).bottom;
     final inColumns =
@@ -1392,32 +1962,6 @@ class _BalanceChartState extends State<BalanceChart>
       dots.add(_Dot(Offset(x, scale.yOf(close)), radius, g.all, close));
     }
     return _dotsMemo = dots;
-  }
-
-  /// Dots under [pos]: the nearest one plus any drawn on top of it.
-  List<_Dot> _dotsAt(ChartLayout layout, Offset pos) {
-    if (!layout.plot.inflate(6).contains(pos)) return const [];
-    final hits = <_Dot>[];
-    for (final dot in _dots(layout)) {
-      // Forgiving: at least 9px even for tiny zoomed-out dots.
-      final r = math.max(dot.radius + 5, 9.0);
-      if ((dot.center - pos).distanceSquared <= r * r) hits.add(dot);
-    }
-    if (hits.isEmpty) return const [];
-    // Several dots under the pointer: list the overlapping ones; with
-    // readable stacks, take only the nearest.
-    final nearest = hits.reduce(
-      (a, b) =>
-          (a.center - pos).distanceSquared <= (b.center - pos).distanceSquared
-          ? a
-          : b,
-    );
-    return [
-      nearest,
-      for (final d in hits)
-        if (!identical(d, nearest) && (d.center - nearest.center).distance < 2)
-          d,
-    ];
   }
 
   /// Nearest dot to [pos] within [maxDistance], by 2D distance.
@@ -3463,7 +4007,21 @@ class _DotTip {
   final Offset? finger;
 }
 
-enum _Gesture { none, pan, pick, pinch, scrub }
+/// Hold tolerance around the balance line: holds closer than this never
+/// start a selection.
+const double touchLineHitTolerance = 16;
+const double mouseLineHitTolerance = 8;
+
+/// Distance from [p] to the segment [a]–[b].
+double distanceToSegment(Offset p, Offset a, Offset b) {
+  final ab = b - a;
+  final len2 = ab.distanceSquared;
+  if (len2 == 0) return (p - a).distance;
+  final t = (((p - a).dx * ab.dx + (p - a).dy * ab.dy) / len2).clamp(0.0, 1.0);
+  return (p - (a + ab * t)).distance;
+}
+
+enum _Gesture { none, pan, pick, pinch, scrub, select }
 
 /// Auto-scroll speed in days per second for a pointer [depth] px into (or
 /// past) an edge zone; negative scrolls back in time. Scales with depth and
