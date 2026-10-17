@@ -42,7 +42,8 @@ void main() {
 
     test('rejects interval < 1', () {
       expect(
-        () => CalendarMath.add(DateTime.utc(2024, 1, 1), 0, RecurrenceUnit.days),
+        () =>
+            CalendarMath.add(DateTime.utc(2024, 1, 1), 0, RecurrenceUnit.days),
         throwsArgumentError,
       );
     });

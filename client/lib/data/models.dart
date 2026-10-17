@@ -240,12 +240,17 @@ class Transaction {
     this.endDate,
     this.occurrenceCount,
     this.enabled = true,
+    this.transfer,
   });
 
   final String id;
   final String accountId;
   final String name;
   final TransactionDirection direction;
+
+  /// Set when this series is one side of a transfer between accounts.
+  final TransferLink? transfer;
+  bool get isTransfer => transfer != null;
   final Decimal amount;
   final DateTime startDate;
   final RecurrenceMode recurrenceMode;
@@ -317,6 +322,9 @@ class Transaction {
       endDate: endDate,
       occurrenceCount: occurrenceCount,
       enabled: (json['enabled'] as bool?) ?? true,
+      transfer: json['transfer'] is Map<String, dynamic>
+          ? TransferLink.fromJson(json['transfer'] as Map<String, dynamic>)
+          : null,
     );
   }
 
@@ -334,6 +342,7 @@ class Transaction {
     'endDate': endDate == null ? null : formatDate(endDate!),
     'occurrenceCount': occurrenceCount,
     'enabled': enabled,
+    'transfer': transfer?.toJson(),
   };
 
   Map<String, dynamic> toCreateJson() => {
@@ -348,6 +357,8 @@ class Transaction {
     if (endDate != null) 'endDate': formatDate(endDate!),
     if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
     'enabled': enabled,
+    // Always sent: null on a patch turns a transfer back into a plain series.
+    'transferToAccountId': transfer?.peerAccountId,
   };
 
   Transaction copyWith({
@@ -364,12 +375,15 @@ class Transaction {
     DateTime? endDate,
     int? occurrenceCount,
     bool? enabled,
+    TransferLink? transfer,
+    bool clearTransfer = false,
     bool clearInterval = false,
     bool clearUnit = false,
     bool clearEndDate = false,
     bool clearOccurrenceCount = false,
   }) {
     return Transaction(
+      transfer: clearTransfer ? null : (transfer ?? this.transfer),
       id: id ?? this.id,
       accountId: accountId ?? this.accountId,
       name: name ?? this.name,
@@ -387,6 +401,65 @@ class Transaction {
       enabled: enabled ?? this.enabled,
     );
   }
+}
+
+/// The other side of a transfer, as seen from one series.
+class TransferLink {
+  const TransferLink({
+    this.id,
+    this.peerTransactionId,
+    required this.peerAccountId,
+    this.peerAccountName,
+    this.peerProjectId,
+    this.peerProjectName,
+  });
+
+  final String? id;
+  final String? peerTransactionId;
+  final String peerAccountId;
+  final String? peerAccountName;
+  final String? peerProjectId;
+  final String? peerProjectName;
+
+  factory TransferLink.fromJson(Map<String, dynamic> json) => TransferLink(
+    id: json['id'] as String?,
+    peerTransactionId: json['peerTransactionId'] as String?,
+    peerAccountId: (json['peerAccountId'] as String?) ?? '',
+    peerAccountName: json['peerAccountName'] as String?,
+    peerProjectId: json['peerProjectId'] as String?,
+    peerProjectName: json['peerProjectName'] as String?,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'peerTransactionId': peerTransactionId,
+    'peerAccountId': peerAccountId,
+    'peerAccountName': peerAccountName,
+    'peerProjectId': peerProjectId,
+    'peerProjectName': peerProjectName,
+  };
+
+  String get accountLabel => peerAccountName ?? 'another account';
+}
+
+/// "to Savings" / "from Savings" for one side of a transfer.
+String transferPhrase(Transaction t) {
+  final link = t.transfer;
+  if (link == null) return '';
+  final dir = t.direction == TransactionDirection.debit ? 'to' : 'from';
+  return '$dir ${link.accountLabel}';
+}
+
+/// Timeline / popup label: transfers show their direction and the other
+/// account, e.g. "Savings → Joint" (out) / "Savings ← Everyday" (in).
+/// (Plain arrows: the chart font has no ⇄ glyph.)
+String transactionLabel(Transaction t) {
+  final link = t.transfer;
+  if (link == null) return t.name;
+  final arrow = t.direction == TransactionDirection.debit ? '→' : '←';
+  final name = t.name.trim();
+  final tail = '$arrow ${link.accountLabel}';
+  return name.isEmpty ? 'Transfer $tail' : '$name $tail';
 }
 
 class BalancePoint {

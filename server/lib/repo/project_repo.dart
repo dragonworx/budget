@@ -53,6 +53,18 @@ class ProjectRepo {
   }
 
   Future<bool> delete(String id) async {
+    // Transfers into accounts of other projects survive as plain rows.
+    await _conn.execute(
+      Sql.named('''
+        UPDATE transactions SET transfer_id = NULL
+        WHERE account_id NOT IN (SELECT id FROM accounts WHERE project_id = @p::uuid)
+          AND transfer_id IN (
+            SELECT t.transfer_id FROM transactions t
+            JOIN accounts a ON a.id = t.account_id
+            WHERE a.project_id = @p::uuid AND t.transfer_id IS NOT NULL)
+      '''),
+      parameters: {'p': id},
+    );
     final rows = await _conn.execute(
       Sql.named('DELETE FROM projects WHERE id = @id RETURNING id'),
       parameters: {'id': id},

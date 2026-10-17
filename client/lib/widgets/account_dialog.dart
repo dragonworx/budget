@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../data/models.dart';
 import 'money_text.dart';
+import '../theme/app_theme.dart';
 
 /// New / edit account dialog (name, currency, seed balance + date, loss
 /// threshold). Returns the edited account, not yet saved — unless [onSave]
@@ -14,11 +15,16 @@ Future<Account?> showAccountDialog(
   required String projectId,
   Account? existing,
   Future<Account> Function(Account draft)? onSave,
+  int? transactionCount,
 }) {
   return showDialog<Account>(
     context: context,
-    builder: (context) =>
-        AccountDialog(projectId: projectId, existing: existing, onSave: onSave),
+    builder: (context) => AccountDialog(
+      projectId: projectId,
+      existing: existing,
+      onSave: onSave,
+      transactionCount: transactionCount,
+    ),
   );
 }
 
@@ -28,7 +34,12 @@ class AccountDialog extends StatefulWidget {
     required this.projectId,
     this.existing,
     this.onSave,
+    this.transactionCount,
   });
+
+  /// Transactions in the account (for the seed-move note); defaults to the
+  /// account's transaction order length.
+  final int? transactionCount;
 
   final String projectId;
   final Account? existing;
@@ -39,6 +50,21 @@ class AccountDialog extends StatefulWidget {
 }
 
 class _AccountDialogState extends State<AccountDialog> {
+  /// "All N transactions will move by X days" when editing and the seed
+  /// date changed (the server shifts every schedule by the same delta).
+  String? _seedMoveNote() {
+    final existing = widget.existing;
+    if (existing == null) return null;
+    final delta = seedShiftDays(existing.seedDate, _seedDate);
+    if (delta == 0) return null;
+    final n = widget.transactionCount ?? existing.transactionOrder.length;
+    if (n == 0) return null;
+    final days = '${delta.abs()} day${delta.abs() == 1 ? '' : 's'}';
+    final dir = delta > 0 ? 'later' : 'earlier';
+    final what = n == 1 ? 'The 1 transaction' : 'All $n transactions';
+    return '$what will move $days $dir';
+  }
+
   late final TextEditingController _name;
   late final TextEditingController _currency;
   late final TextEditingController _seedBalance;
@@ -176,6 +202,27 @@ class _AccountDialogState extends State<AccountDialog> {
                 child: Text(DateFormat('EEE d MMM y').format(_seedDate)),
               ),
             ),
+            if (_seedMoveNote() case final note?)
+              Padding(
+                key: const ValueKey('seed-move-note'),
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.swap_horiz_rounded,
+                      size: 16,
+                      color: AppTheme.accent,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        note,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -280,3 +327,10 @@ class _AccountDialogState extends State<AccountDialog> {
     }
   }
 }
+
+/// Calendar days from [from] to [to] (date parts only, DST safe).
+int seedShiftDays(DateTime from, DateTime to) => DateTime.utc(
+  to.year,
+  to.month,
+  to.day,
+).difference(DateTime.utc(from.year, from.month, from.day)).inDays;

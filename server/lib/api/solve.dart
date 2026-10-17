@@ -32,7 +32,8 @@ void attachSolveRoutes(Router router, Connection conn) {
         endDate: optionalString(body, 'endDate') == null
             ? null
             : parseDate(body['endDate'].toString()),
-        amount: body.containsKey('amount') ? parseDecimal(body['amount']) : null,
+        amount:
+            body.containsKey('amount') ? parseDecimal(body['amount']) : null,
         interval: optionalInt(body, 'interval'),
         occurrenceCount: optionalInt(body, 'occurrenceCount'),
         targetTotal: body.containsKey('targetTotal')
@@ -48,7 +49,8 @@ void attachSolveRoutes(Router router, Connection conn) {
       final json = result.toJson();
       final transaction = result.transaction;
       if (transaction != null) {
-        json['transaction'] = transaction.copyWith(accountId: accountId).toJson();
+        json['transaction'] =
+            transaction.copyWith(accountId: accountId).toJson();
       }
       return jsonOk(json);
     } on FormatException catch (e) {

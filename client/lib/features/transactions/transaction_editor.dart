@@ -9,6 +9,7 @@ import '../../data/frequency.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/account_picker.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
@@ -117,6 +118,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   late final TextEditingController _interval;
   late final TextEditingController _count;
   late TransactionDirection _direction;
+
+  /// Transfer mode: the series moves money between this account and
+  /// [_transfer]'s account (the far side mirrors it with the opposite sign).
+  late bool _transferMode;
+  TransferLink? _transfer;
+  String? _transferError;
   late RecurrenceMode _recurrenceMode;
   late RecurrenceUnit _unit;
   late EndMode _endMode;
@@ -150,6 +157,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
     _countEdited = existing?.occurrenceCount != null;
     _direction = existing?.direction ?? TransactionDirection.debit;
+    _transfer = existing?.transfer;
+    _transferMode = _transfer != null;
     _recurrenceMode = widget.onceOnly
         ? RecurrenceMode.once
         : (existing?.recurrenceMode ?? RecurrenceMode.every);
@@ -202,6 +211,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       d.endDate,
       d.occurrenceCount,
       d.enabled,
+      d.transfer?.peerAccountId,
     ].join('|');
   }
 
@@ -261,6 +271,66 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           ? (count ?? int.tryParse(_count.text.trim()) ?? 1)
           : null,
       enabled: _enabled,
+      transfer: _transferMode ? _transfer : null,
+    );
+  }
+
+  _Kind get _kind => _transferMode
+      ? _Kind.transfer
+      : (_direction == TransactionDirection.credit
+            ? _Kind.credit
+            : _Kind.debit);
+
+  bool get _receiving => _direction == TransactionDirection.credit;
+
+  Widget _transferField(ThemeData theme) {
+    final link = _transfer;
+    final label = _receiving ? 'From account' : 'To account';
+    return AccountPicker(
+      keyPrefix: 'transfer',
+      title: label,
+      excludeAccountId: widget.accountId,
+      currentAccountId: link?.peerAccountId,
+      onSelected: (a) => setState(() {
+        _transferError = null;
+        _transfer = TransferLink(
+          id: link?.id,
+          peerTransactionId: link?.peerTransactionId,
+          peerAccountId: a.id,
+          peerAccountName: a.name,
+          peerProjectId: a.projectId,
+        );
+      }),
+      builder: (context, open) => InkWell(
+        key: const ValueKey('editor-transfer-account'),
+        onTap: _saving ? null : open,
+        borderRadius: BorderRadius.circular(10),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            errorText: _transferError,
+            prefixIcon: const Icon(Icons.swap_horiz_rounded),
+            suffixIcon: const Icon(Icons.arrow_drop_down_rounded),
+            helperText: link == null
+                ? null
+                : (_receiving
+                      ? 'Mirrors as money out of ${link.accountLabel}'
+                      : 'Arrives as money in to ${link.accountLabel}'),
+          ),
+          child: Text(
+            link == null
+                ? 'Choose project › account'
+                : [
+                    if (link.peerProjectName != null) link.peerProjectName!,
+                    link.accountLabel,
+                  ].join(' › '),
+            style: link == null
+                ? theme.textTheme.bodyLarge?.copyWith(color: AppTheme.textFaint)
+                : theme.textTheme.bodyLarge,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
     );
   }
 
@@ -485,42 +555,76 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
-          SegmentedButton<TransactionDirection>(
+          SegmentedButton<_Kind>(
+            key: const ValueKey('editor-kind'),
             showSelectedIcon: false,
             segments: const [
               ButtonSegment(
-                value: TransactionDirection.credit,
+                value: _Kind.credit,
                 label: Text('Money in'),
                 icon: Icon(Icons.south_west_rounded, size: 18),
               ),
               ButtonSegment(
-                value: TransactionDirection.debit,
+                value: _Kind.debit,
                 label: Text('Money out'),
                 icon: Icon(Icons.north_east_rounded, size: 18),
               ),
+              ButtonSegment(
+                value: _Kind.transfer,
+                label: Text('Transfer', key: ValueKey('editor-kind-transfer')),
+                icon: Icon(Icons.swap_horiz_rounded, size: 18),
+              ),
             ],
-            selected: {_direction},
-            onSelectionChanged: (value) =>
-                setState(() => _direction = value.first),
+            selected: {_kind},
+            onSelectionChanged: (value) => setState(() {
+              switch (value.first) {
+                case _Kind.credit:
+                  _transferMode = false;
+                  _direction = TransactionDirection.credit;
+                case _Kind.debit:
+                  _transferMode = false;
+                  _direction = TransactionDirection.debit;
+                case _Kind.transfer:
+                  _transferMode = true;
+                  // A new transfer sends money out of this account; an
+                  // existing receiving side keeps its direction.
+                  if (widget.existing?.transfer == null) {
+                    _direction = TransactionDirection.debit;
+                  }
+              }
+              _transferError = null;
+            }),
             style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 6),
+              ),
               foregroundColor: WidgetStateProperty.resolveWith((states) {
                 if (!states.contains(WidgetState.selected)) {
                   return AppTheme.textMuted;
                 }
-                return _direction == TransactionDirection.credit
-                    ? AppTheme.creditColor
-                    : AppTheme.debitColor;
+                return switch (_kind) {
+                  _Kind.credit => AppTheme.creditColor,
+                  _Kind.debit => AppTheme.debitColor,
+                  _Kind.transfer => AppTheme.transferColor,
+                };
               }),
               backgroundColor: WidgetStateProperty.resolveWith((states) {
                 if (!states.contains(WidgetState.selected)) {
                   return AppTheme.surface;
                 }
-                return _direction == TransactionDirection.credit
-                    ? AppTheme.creditSoft
-                    : AppTheme.debitSoft;
+                return switch (_kind) {
+                  _Kind.credit => AppTheme.creditSoft,
+                  _Kind.debit => AppTheme.debitSoft,
+                  _Kind.transfer => AppTheme.transferSoft,
+                };
               }),
             ),
           ),
+          if (_transferMode) ...[
+            const SizedBox(height: 12),
+            _transferField(theme),
+          ],
           const SizedBox(height: 12),
           TextFormField(
             key: const ValueKey('editor-amount'),
@@ -939,14 +1043,15 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             onChanged: (value) => setState(() => _enabled = value),
           ),
           const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: _saving ? null : _openPlanner,
-              icon: const Icon(Icons.calculate_outlined, size: 18),
-              label: const Text('Solve from a target total…'),
+          if (!_transferMode)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _saving ? null : _openPlanner,
+                icon: const Icon(Icons.calculate_outlined, size: 18),
+                label: const Text('Solve from a target total…'),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1119,6 +1224,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       setState(() => _endDateError = 'Must be on or after the start date');
       return;
     }
+    if (_transferMode && _transfer == null) {
+      setState(() => _transferError = 'Pick the other account');
+      return;
+    }
 
     final draft = _draft(amount: parseMoneyInput(_amount.text)!).copyWith(
       id: widget.existing?.id ?? const Uuid().v4(),
@@ -1166,3 +1275,5 @@ String _unitPlural(RecurrenceUnit unit, [int count = 2]) {
     RecurrenceUnit.years => one ? 'year' : 'years',
   };
 }
+
+enum _Kind { credit, debit, transfer }

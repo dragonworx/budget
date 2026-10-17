@@ -10,7 +10,8 @@ class Config {
 
   factory Config.fromEnvironment() {
     return Config(
-      databaseUrl: env('DATABASE_URL', 'postgres://budget:budget@localhost:5432/budget'),
+      databaseUrl:
+          env('DATABASE_URL', 'postgres://budget:budget@localhost:5432/budget'),
       host: env('API_HOST', '0.0.0.0'),
       port: int.parse(env('API_PORT', '8080')),
     );

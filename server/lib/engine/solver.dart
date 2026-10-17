@@ -91,14 +91,17 @@ class SolveResult {
 
   Map<String, Object?> toJson() => {
         'status': isComplete ? 'solved' : 'incomplete',
-        'known': [for (final v in SolveVar.values) if (known.contains(v)) v.name],
+        'known': [
+          for (final v in SolveVar.values)
+            if (known.contains(v)) v.name
+        ],
         'solved': [
-          for (final v in SolveVar.values) if (solved.contains(v)) v.name,
+          for (final v in SolveVar.values)
+            if (solved.contains(v)) v.name,
         ],
         'values': values.toJson(),
         if (!isComplete) 'needsMore': needsMore,
-        if (!isComplete)
-          'needsOneOf': [for (final v in needsOneOf) v.name],
+        if (!isComplete) 'needsOneOf': [for (final v in needsOneOf) v.name],
         if (transaction != null) 'transaction': transaction!.toJson(),
         'previewOccurrences':
             previewOccurrences.map((o) => o.toJson()).toList(),
@@ -203,7 +206,10 @@ class TransactionSolver {
       ..interval = req.interval
       ..count = req.occurrenceCount;
 
-    final known = {for (final x in SolveVar.values) if (v.has(x)) x};
+    final known = {
+      for (final x in SolveVar.values)
+        if (v.has(x)) x
+    };
     final solved = <SolveVar>{};
     final used = <_Relation>{};
 
@@ -245,7 +251,8 @@ class TransactionSolver {
       );
     }
 
-    final transaction = _buildTransaction(req, v, endDateKnown: known.contains(SolveVar.endDate));
+    final transaction = _buildTransaction(req, v,
+        endDateKnown: known.contains(SolveVar.endDate));
     v.lastDate = OccurrenceGenerator.nthDate(transaction, v.count!);
     final preview = OccurrenceGenerator.generate(
       transactions: [transaction],
@@ -370,7 +377,13 @@ class TransactionSolver {
         }
       }
       if (hits.isNotEmpty) {
-        return (size, [for (final x in open) if (hits.contains(x)) x]);
+        return (
+          size,
+          [
+            for (final x in open)
+              if (hits.contains(x)) x
+          ]
+        );
       }
     }
     return (open.length, open);
@@ -405,7 +418,8 @@ class TransactionSolver {
     }
   }
 
-  static Transaction _probe(DateTime start, int interval, RecurrenceUnit unit) =>
+  static Transaction _probe(
+          DateTime start, int interval, RecurrenceUnit unit) =>
       Transaction(
         id: 'probe',
         accountId: 'probe',
@@ -508,8 +522,7 @@ class TransactionSolver {
   ) {
     final scale = Decimal.parse('100');
     final rawCents = raw * scale;
-    Decimal fromCents(BigInt c) =>
-        _div(Decimal.fromBigInt(c), scale, scale: 2);
+    Decimal fromCents(BigInt c) => _div(Decimal.fromBigInt(c), scale, scale: 2);
 
     final floorA = fromCents(rawCents.floor().toBigInt());
     final ceilA = fromCents(rawCents.ceil().toBigInt());

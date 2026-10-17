@@ -69,3 +69,10 @@ class CalendarMath {
   static int compare(DateTime a, DateTime b) =>
       dateOnly(a).compareTo(dateOnly(b));
 }
+
+/// Whole calendar days from [from] to [to] (date parts only, DST safe).
+int calendarDayDelta(DateTime from, DateTime to) => DateTime.utc(
+      to.year,
+      to.month,
+      to.day,
+    ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;

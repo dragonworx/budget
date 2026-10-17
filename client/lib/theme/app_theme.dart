@@ -39,6 +39,10 @@ class AppTheme {
   static Color creditSoft = _credit.withValues(alpha: 0.14);
   static Color debitSoft = _debit.withValues(alpha: 0.14);
 
+  /// Transfers between accounts (violet: neither income nor spend).
+  static const Color transferColor = violet;
+  static Color transferSoft = violet.withValues(alpha: 0.14);
+
   static const double radius = 12;
   static BorderRadius get radiusAll => BorderRadius.circular(radius);
 

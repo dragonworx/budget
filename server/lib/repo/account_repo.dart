@@ -117,7 +117,53 @@ class AccountRepo {
     return _fromRow(rows.first);
   }
 
-  Future<Account?> reorderTransactions(String id, List<String> transactionIds) async {
+  /// Moves every transaction schedule of [accountId] by [days] calendar
+  /// days (start date, until-date end, skipped dates) so the schedule keeps
+  /// its position relative to the seed date. Run inside the same DB
+  /// transaction as the seed-date update. Returns the number of
+  /// transactions moved.
+  Future<int> shiftSchedules(String accountId, int days) async {
+    if (days == 0) return 0;
+    // Transfers move as a pair: the peer row in the other account shifts
+    // with its source so both sides keep the same dates.
+    const scope = '''
+      account_id = @id OR transfer_id IN (
+        SELECT transfer_id FROM transactions
+        WHERE account_id = @id AND transfer_id IS NOT NULL)''';
+    final moved = await _conn.execute(
+      Sql.named('''
+        UPDATE transactions SET
+          start_date = start_date + @d::int,
+          end_date = CASE WHEN end_date IS NULL THEN NULL ELSE end_date + @d::int END
+        WHERE $scope
+        RETURNING account_id = @id
+      '''),
+      parameters: {'id': accountId, 'd': days},
+    );
+    // Skipped dates: delete + re-insert, so a uniform shift can't trip the
+    // (transaction_id, date) primary key mid-update.
+    final skipped = await _conn.execute(
+      Sql.named('''
+        DELETE FROM skipped_occurrences
+        WHERE transaction_id IN (SELECT id FROM transactions WHERE $scope)
+        RETURNING transaction_id::text, date
+      '''),
+      parameters: {'id': accountId},
+    );
+    for (final row in skipped) {
+      await _conn.execute(
+        Sql.named('''
+          INSERT INTO skipped_occurrences (transaction_id, date)
+          VALUES (@t::uuid, @date::date + @d::int)
+        '''),
+        parameters: {'t': row[0], 'date': row[1], 'd': days},
+      );
+    }
+    return moved.where((r) => r[0] == true).length;
+  }
+
+  Future<Account?> reorderTransactions(
+      String id, List<String> transactionIds) async {
     final rows = await _conn.execute(
       Sql.named('''
         UPDATE accounts SET transaction_order = @transactionOrder
@@ -135,6 +181,15 @@ class AccountRepo {
   }
 
   Future<bool> delete(String id) async {
+    await _conn.execute(
+      Sql.named('''
+        UPDATE transactions SET transfer_id = NULL
+        WHERE account_id <> @a::uuid AND transfer_id IN (
+          SELECT transfer_id FROM transactions
+          WHERE account_id = @a::uuid AND transfer_id IS NOT NULL)
+      '''),
+      parameters: {'a': id},
+    );
     final rows = await _conn.execute(
       Sql.named('DELETE FROM accounts WHERE id = @id RETURNING id'),
       parameters: {'id': id},

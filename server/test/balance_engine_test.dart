@@ -95,7 +95,9 @@ void main() {
       );
       expect(series.points.first.date, DateTime.utc(2024, 1, 10));
       expect(series.points.last.date, DateTime.utc(2024, 1, 12));
-      expect(series.points.every((p) => p.closingBalance == Decimal.parse('10')), isTrue);
+      expect(
+          series.points.every((p) => p.closingBalance == Decimal.parse('10')),
+          isTrue);
     });
 
     test('same-day order follows transactionOrder', () {
@@ -122,7 +124,8 @@ void main() {
       );
 
       // Order does not change commutative sum, but occurrences list is ordered.
-      expect(series.occurrences.map((o) => o.transactionId).toList(), ['b', 'a']);
+      expect(
+          series.occurrences.map((o) => o.transactionId).toList(), ['b', 'a']);
       expect(series.points.first.closingBalance, Decimal.parse('70'));
     });
 

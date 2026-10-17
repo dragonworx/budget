@@ -35,14 +35,16 @@ Router buildProjectsApi(Connection conn) {
     }
   });
 
-  router.get('/<projectId>/accounts', (Request request, String projectId) async {
+  router.get('/<projectId>/accounts',
+      (Request request, String projectId) async {
     final project = await projects.get(projectId);
     if (project == null) return jsonError(404, 'project not found');
     final items = await accounts.listByProject(projectId);
     return jsonOk({'accounts': items.map((a) => a.toJson()).toList()});
   });
 
-  router.post('/<projectId>/accounts', (Request request, String projectId) async {
+  router.post('/<projectId>/accounts',
+      (Request request, String projectId) async {
     try {
       final project = await projects.get(projectId);
       if (project == null) return jsonError(404, 'project not found');

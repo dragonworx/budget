@@ -538,7 +538,9 @@ class _TxRow extends StatelessWidget {
                     )
                   else
                     const SizedBox(width: 8),
-                  DirectionBadge(credit: credit, muted: !t.enabled),
+                  t.isTransfer
+                      ? _TransferBadge(muted: !t.enabled)
+                      : DirectionBadge(credit: credit, muted: !t.enabled),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -552,6 +554,18 @@ class _TxRow extends StatelessWidget {
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
+                        if (t.isTransfer)
+                          Text(
+                            transferPhrase(t)[0].toUpperCase() +
+                                transferPhrase(t).substring(1),
+                            key: ValueKey('row-transfer-${t.id}'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppTheme.transferColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         Text(
                           [
                             describeRecurrence(t),
@@ -653,4 +667,25 @@ class _TxRow extends StatelessWidget {
 class _Editing {
   const _Editing(this.transaction);
   final Transaction? transaction;
+}
+
+/// List badge for one side of a transfer (⇄ instead of in/out arrow).
+class _TransferBadge extends StatelessWidget {
+  const _TransferBadge({this.muted = false});
+
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = muted ? AppTheme.textFaint : AppTheme.transferColor;
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: muted ? AppTheme.overlay : AppTheme.transferSoft,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(Icons.swap_horiz_rounded, size: 18, color: color),
+    );
+  }
 }

@@ -10,6 +10,7 @@ import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/account_dialog.dart';
+import '../../widgets/account_picker.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
 import '../transactions/editor_outcome.dart';
@@ -242,7 +243,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
                       .asData
                       ?.value ??
                   const <Transaction>[])
-            transaction.id: transaction.name,
+            transaction.id: transactionLabel(transaction),
         };
 
         final transactions =
@@ -890,6 +891,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
       context,
       projectId: account.projectId,
       existing: account,
+      transactionCount: ref
+          .read(transactionsProvider(widget.accountId))
+          .valueOrNull
+          ?.length,
     );
     if (edited == null) return;
     try {
@@ -897,6 +902,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
           .read(accountsProvider(account.projectId).notifier)
           .updateAccount(edited);
       ref.invalidate(accountProvider(widget.accountId));
+      // A seed move shifts every schedule on the server.
+      ref.invalidate(transactionsProvider(widget.accountId));
       _invalidateBalance();
       if (context.mounted) {
         ScaffoldMessenger.of(context)
@@ -988,16 +995,42 @@ class _AccountHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Tooltip(
-                message: account.name,
-                waitDuration: const Duration(milliseconds: 500),
-                child: Text(
-                  account.name,
-                  style: compact
-                      ? theme.textTheme.titleMedium
-                      : theme.textTheme.titleLarge,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              // Project > account jump menu (same picker as transfers).
+              AccountPicker(
+                keyPrefix: 'nav',
+                title: 'Jump to account',
+                currentAccountId: account.id,
+                onSelected: (a) {
+                  if (a.id == account.id) return;
+                  context.pushReplacement('/accounts/${a.id}/timeline');
+                },
+                builder: (context, open) => InkWell(
+                  key: const ValueKey('header-account-picker'),
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: open,
+                  child: Tooltip(
+                    message: 'Jump to another account',
+                    waitDuration: const Duration(milliseconds: 500),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            account.name,
+                            style: compact
+                                ? theme.textTheme.titleMedium
+                                : theme.textTheme.titleLarge,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(
+                          Icons.arrow_drop_down_rounded,
+                          color: AppTheme.textMuted,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               if (compact && today != null)

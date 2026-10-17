@@ -99,6 +99,10 @@ class AccountsNotifier extends FamilyAsyncNotifier<List<Account>, String> {
 
   Future<void> updateAccount(Account account) async {
     final updated = await ref.read(accountRepositoryProvider).update(account);
+    // A seed move also shifts the far side of this account's transfers.
+    ref.invalidate(transactionsProvider);
+    ref.invalidate(balanceProvider);
+    ref.invalidate(todayBalanceProvider);
     final current = state.valueOrNull ?? [];
     state = AsyncData([
       for (final a in current) a.id == account.id ? updated : a,
@@ -143,6 +147,7 @@ class TransactionsNotifier
         .create(arg, draft);
     final current = state.valueOrNull ?? [];
     state = AsyncData([...current, created]);
+    _touchPeer(created.transfer);
     return created;
   }
 
@@ -151,15 +156,29 @@ class TransactionsNotifier
         .read(transactionRepositoryProvider)
         .update(transaction);
     final current = state.valueOrNull ?? [];
+    final before = current.where((s) => s.id == transaction.id).firstOrNull;
     state = AsyncData([
       for (final s in current) s.id == transaction.id ? updated : s,
     ]);
+    _touchPeer(before?.transfer);
+    _touchPeer(updated.transfer);
+  }
+
+  /// A transfer changed: the other account's list and every balance
+  /// (both sides move) are stale.
+  void _touchPeer(TransferLink? link) {
+    if (link == null) return;
+    ref.invalidate(transactionsProvider(link.peerAccountId));
+    ref.invalidate(balanceProvider);
+    ref.invalidate(todayBalanceProvider);
   }
 
   Future<void> delete(String id) async {
     await ref.read(transactionRepositoryProvider).delete(id);
     final current = state.valueOrNull ?? [];
+    final gone = current.where((s) => s.id == id).firstOrNull;
     state = AsyncData(current.where((s) => s.id != id).toList());
+    _touchPeer(gone?.transfer);
   }
 
   Future<void> setSkip(
@@ -170,6 +189,10 @@ class TransactionsNotifier
     await ref
         .read(transactionRepositoryProvider)
         .skipOccurrence(transactionId, date, skipped: skipped);
+    final t = (state.valueOrNull ?? [])
+        .where((s) => s.id == transactionId)
+        .firstOrNull;
+    _touchPeer(t?.transfer);
   }
 
   Future<void> reorder(List<String> transactionIds) async {
@@ -231,3 +254,15 @@ final todayBalanceProvider = FutureProvider.family<Decimal?, String>((
   );
   return series.points.isEmpty ? null : series.points.last.closingBalance;
 });
+
+/// Every project with its accounts, in display order — for the
+/// project > account pickers (header navigation and transfer destination).
+final accountDirectoryProvider = FutureProvider<List<(Project, List<Account>)>>(
+  (ref) async {
+    final projects = await ref.watch(projectsProvider.future);
+    return [
+      for (final p in projects)
+        (p, await ref.watch(accountsProvider(p.id).future)),
+    ];
+  },
+);

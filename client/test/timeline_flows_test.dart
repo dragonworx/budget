@@ -158,6 +158,52 @@ Future<void> _editFromPanel(WidgetTester tester, String name) async {
 }
 
 void main() {
+  testWidgets('mouse hover near a dot shows the info popup; away hides it', (
+    tester,
+  ) async {
+    final store = await _pump(tester);
+    final box = tester.getRect(find.byType(BalanceChart));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: box.topLeft + const Offset(-5, -5));
+    final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+    Offset? hit;
+    for (var y = box.top + 10; y < box.bottom - 10 && hit == null; y += 6) {
+      for (var x = box.left + 10; x < box.right - 10; x += 12) {
+        await mouse.moveTo(Offset(x, y));
+        await tester.pump();
+        if (tip.evaluate().isNotEmpty) {
+          hit = Offset(x, y);
+          break;
+        }
+      }
+    }
+    expect(hit, isNotNull, reason: 'hovering should reach a dot');
+    expect(
+      find.descendant(
+        of: tip,
+        matching: find.textContaining(
+          RegExp('Rent|Salary|Opening balance'),
+          findRichText: true,
+        ),
+      ),
+      findsWidgets,
+    );
+    // Far from any dot (well past the 18px mouse radius): hidden.
+    await mouse.moveTo(Offset(hit!.dx, box.top + 4));
+    await tester.pump();
+    expect(tip, findsNothing);
+    // Back on the dot, then leaving the chart hides it too.
+    await mouse.moveTo(hit);
+    await tester.pump();
+    expect(tip, findsOneWidget);
+    await mouse.moveTo(box.bottomRight + const Offset(50, 50));
+    await tester.pump();
+    expect(tip, findsNothing);
+    expect(find.byKey(const ValueKey('editor-save')), findsNothing);
+    expect(store.calls.where((c) => !c.startsWith('balance')), isEmpty);
+    await mouse.removePointer();
+  });
+
   testWidgets('taps on the chart never create or edit', (tester) async {
     final store = await _pump(tester);
     final chart = find.byType(BalanceChart);
@@ -421,6 +467,102 @@ void main() {
       expect(tip, findsNothing, reason: 'release after pinch shows no tip');
       await tester.pump(const Duration(seconds: 6));
     }
+  });
+
+  testWidgets('touch info stays pinned after lift until the next tap', (
+    tester,
+  ) async {
+    final store = await _pump(tester, size: const Size(390, 844));
+    final plot = tester.getRect(find.byType(BalanceChart));
+    final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+    Offset? spot;
+    for (var fy = 0.1; fy < 0.8 && spot == null; fy += 0.03) {
+      for (var fx = 0.3; fx < 0.98 && spot == null; fx += 0.04) {
+        final p = Offset(
+          plot.left + plot.width * fx,
+          plot.top + plot.height * fy,
+        );
+        await tester.tapAt(p, kind: PointerDeviceKind.touch);
+        await tester.pump();
+        if (tip.evaluate().isNotEmpty) spot = p;
+      }
+    }
+    expect(spot, isNotNull, reason: 'a tap should reveal some dot');
+    // Tap tip: no timeout on touch.
+    await tester.pump(const Duration(seconds: 10));
+    expect(tip, findsOneWidget);
+    // Tap on empty space closes it.
+    final empty = Offset(plot.left + 8, plot.top + 6);
+    await tester.tapAt(empty, kind: PointerDeviceKind.touch);
+    await tester.pump();
+    expect(tip, findsNothing);
+    // Drag-scrub from the dot, lift: the tip stays on the last dot.
+    final g = await tester.startGesture(spot!, kind: PointerDeviceKind.touch);
+    for (var i = 1; i <= 6; i++) {
+      await g.moveTo(spot + Offset(i * 4.0, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(tip, findsOneWidget);
+    await g.up();
+    await tester.pump(const Duration(seconds: 10));
+    expect(tip, findsOneWidget, reason: 'pinned after lift');
+    // A pan that starts away from dots closes it.
+    final pan = await tester.startGesture(empty, kind: PointerDeviceKind.touch);
+    expect(tip, findsOneWidget, reason: 'still up while the press is a tap');
+    for (var i = 1; i <= 6; i++) {
+      await pan.moveTo(empty + Offset(i * 8.0, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await pan.up();
+    await tester.pump();
+    expect(tip, findsNothing);
+    expect(find.byKey(const ValueKey('editor-save')), findsNothing);
+    expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+  });
+
+  testWidgets('touch popup keeps its exact rect across pointer up', (
+    tester,
+  ) async {
+    await _pump(tester, size: const Size(390, 844));
+    final plot = tester.getRect(find.byType(BalanceChart));
+    final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+    Offset? spot;
+    for (var fy = 0.1; fy < 0.8 && spot == null; fy += 0.03) {
+      for (var fx = 0.3; fx < 0.98 && spot == null; fx += 0.04) {
+        final p = Offset(
+          plot.left + plot.width * fx,
+          plot.top + plot.height * fy,
+        );
+        await tester.tapAt(p, kind: PointerDeviceKind.touch);
+        await tester.pump();
+        if (tip.evaluate().isNotEmpty) spot = p;
+      }
+    }
+    expect(spot, isNotNull);
+    final empty = Offset(plot.left + 8, plot.top + 6);
+    await tester.tapAt(empty, kind: PointerDeviceKind.touch);
+    await tester.pump();
+    expect(tip, findsNothing);
+    // Drag-scrub, then lift: same rect just before and after up.
+    final g = await tester.startGesture(spot!, kind: PointerDeviceKind.touch);
+    for (var i = 1; i <= 6; i++) {
+      await g.moveTo(spot + Offset(i * 4.0, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final before = tester.getRect(tip);
+    await g.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.getRect(tip), before, reason: 'scrub lift');
+    // Tap again on the shown dot while it is pinned: still the same rect.
+    final g2 = await tester.startGesture(spot, kind: PointerDeviceKind.touch);
+    await tester.pump();
+    final pressed = tester.getRect(tip);
+    expect(pressed, before);
+    await g2.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.getRect(tip), pressed, reason: 'tap lift');
   });
 
   testWidgets('seed vertex shows the opening balance on tap, nothing else', (

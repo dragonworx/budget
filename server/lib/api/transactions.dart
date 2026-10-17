@@ -26,7 +26,8 @@ Router transactionsRouter(Connection conn) {
 
       RecurrenceMode? recurrenceMode;
       if (body.containsKey('recurrenceMode')) {
-        recurrenceMode = RecurrenceMode.parse(requireString(body, 'recurrenceMode'));
+        recurrenceMode =
+            RecurrenceMode.parse(requireString(body, 'recurrenceMode'));
       }
       EndMode? endMode;
       if (body.containsKey('endMode')) {
@@ -38,49 +39,70 @@ Router transactionsRouter(Connection conn) {
         unit = u == null ? null : RecurrenceUnit.parse(u.toString());
       }
 
-      final clearInterval = body.containsKey('interval') && body['interval'] == null;
+      final clearInterval =
+          body.containsKey('interval') && body['interval'] == null;
       final clearUnit = body.containsKey('unit') && body['unit'] == null;
-      final clearEndDate = body.containsKey('endDate') && body['endDate'] == null;
-      final clearCount =
-          body.containsKey('occurrenceCount') && body['occurrenceCount'] == null;
+      final clearEndDate =
+          body.containsKey('endDate') && body['endDate'] == null;
+      final clearCount = body.containsKey('occurrenceCount') &&
+          body['occurrenceCount'] == null;
 
-      final transaction = await transactions.update(
-        id,
-        name: optionalString(body, 'name'),
-        direction: body.containsKey('direction')
-            ? Direction.parse(requireString(body, 'direction'))
-            : null,
-        amount: body.containsKey('amount') ? parseDecimal(body['amount']) : null,
-        startDate: body.containsKey('startDate')
-            ? parseDate(requireString(body, 'startDate'))
-            : null,
-        recurrenceMode: recurrenceMode,
-        interval: optionalInt(body, 'interval'),
-        unit: unit,
-        endMode: endMode,
-        endDate: body.containsKey('endDate') && body['endDate'] != null
-            ? parseDate(body['endDate'].toString())
-            : null,
-        occurrenceCount: optionalInt(body, 'occurrenceCount'),
-        enabled: optionalBool(body, 'enabled'),
-        clearInterval: clearInterval,
-        clearUnit: clearUnit,
-        clearEndDate: clearEndDate,
-        clearOccurrenceCount: clearCount,
-      );
-      return jsonOk(transaction!.toJson());
+      final transaction = await conn.runTx((tx) async {
+        final transactions = TransactionRepo(tx);
+        var updated = (await transactions.update(
+          id,
+          name: optionalString(body, 'name'),
+          direction: body.containsKey('direction')
+              ? Direction.parse(requireString(body, 'direction'))
+              : null,
+          amount:
+              body.containsKey('amount') ? parseDecimal(body['amount']) : null,
+          startDate: body.containsKey('startDate')
+              ? parseDate(requireString(body, 'startDate'))
+              : null,
+          recurrenceMode: recurrenceMode,
+          interval: optionalInt(body, 'interval'),
+          unit: unit,
+          endMode: endMode,
+          endDate: body.containsKey('endDate') && body['endDate'] != null
+              ? parseDate(body['endDate'].toString())
+              : null,
+          occurrenceCount: optionalInt(body, 'occurrenceCount'),
+          enabled: optionalBool(body, 'enabled'),
+          clearInterval: clearInterval,
+          clearUnit: clearUnit,
+          clearEndDate: clearEndDate,
+          clearOccurrenceCount: clearCount,
+        ))!;
+        // Transfers: retarget / link / unlink, then mirror onto the peer.
+        if (body.containsKey('transferToAccountId')) {
+          final to = body['transferToAccountId']?.toString();
+          if (to == null) {
+            if (updated.transfer != null) await transactions.unlink(updated);
+          } else if (updated.transfer?.peerId != null) {
+            await transactions.movePeer(updated, to);
+          } else {
+            await transactions.linkNewPeer(updated, to);
+          }
+          updated = (await transactions.get(id))!;
+        }
+        await transactions.syncPeer(updated);
+        return (await transactions.get(id))!;
+      });
+      return jsonOk(transaction.toJson());
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }
   });
 
   router.delete('/<id>', (Request request, String id) async {
-    final ok = await transactions.delete(id);
+    final ok = await conn.runTx((tx) => TransactionRepo(tx).delete(id));
     if (!ok) return jsonError(404, 'transaction not found');
     return Response(204);
   });
 
-  router.put('/<id>/skips/<date>', (Request request, String id, String date) async {
+  router.put('/<id>/skips/<date>',
+      (Request request, String id, String date) async {
     try {
       final transaction = await transactions.get(id);
       if (transaction == null) return jsonError(404, 'transaction not found');
@@ -90,7 +112,12 @@ Router transactionsRouter(Connection conn) {
         return jsonError(400, 'skipped must be a boolean');
       }
       final d = parseDate(date);
-      await transactions.setSkip(id, d, skipped);
+      await conn.runTx((tx) async {
+        final repo = TransactionRepo(tx);
+        await repo.setSkip(id, d, skipped);
+        final peerId = transaction.transfer?.peerId;
+        if (peerId != null) await repo.setSkip(peerId, d, skipped);
+      });
       return jsonOk({
         'transactionId': id,
         'date': formatDate(d),

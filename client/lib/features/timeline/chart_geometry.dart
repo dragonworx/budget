@@ -884,3 +884,6 @@ List<DayGroup> groupByDay(Iterable<Occurrence> occurrences) {
 /// Width of the label's count chip around a number [textWidth] wide:
 /// at least round (min 18), with 5px side padding.
 double countPillWidth(double textWidth) => math.max(18, textWidth + 10);
+
+/// Px between the seed and Today lines when they fall on the same day.
+const double markerGap = 3;

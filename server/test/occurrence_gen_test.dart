@@ -36,7 +36,8 @@ Transaction _transaction({
 void main() {
   group('OccurrenceGenerator', () {
     test('once transaction yields single date in window', () {
-      final s = _transaction(mode: RecurrenceMode.once, start: DateTime.utc(2024, 3, 5));
+      final s = _transaction(
+          mode: RecurrenceMode.once, start: DateTime.utc(2024, 3, 5));
       final dates = OccurrenceGenerator.datesForTransaction(
         s,
         DateTime.utc(2024, 3, 1),
@@ -106,7 +107,8 @@ void main() {
     });
 
     test('skipped flag does not remove occurrence from list', () {
-      final s = _transaction(mode: RecurrenceMode.once, start: DateTime.utc(2024, 1, 10));
+      final s = _transaction(
+          mode: RecurrenceMode.once, start: DateTime.utc(2024, 1, 10));
       final occ = OccurrenceGenerator.generate(
         transactions: [s],
         from: DateTime.utc(2024, 1, 1),

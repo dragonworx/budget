@@ -6,6 +6,17 @@ import '../domain/enums.dart';
 import '../domain/models.dart';
 import '../domain/transaction_import.dart';
 
+const _enrichedCols = '''
+  t.id, t.account_id, t.name, t.direction, t.amount, t.start_date,
+  t.recurrence_mode, t.interval, t.unit, t.end_mode, t.end_date,
+  t.occurrence_count, t.enabled, t.created_at, t.transfer_id,
+  p.id, pa.id, pa.name, pp.id, pp.name''';
+const _peerJoin = '''
+  LEFT JOIN transactions p
+    ON t.transfer_id IS NOT NULL AND p.transfer_id = t.transfer_id AND p.id <> t.id
+  LEFT JOIN accounts pa ON pa.id = p.account_id
+  LEFT JOIN projects pp ON pp.id = pa.project_id''';
+
 class TransactionRepo {
   TransactionRepo(this._conn);
 
@@ -15,12 +26,10 @@ class TransactionRepo {
   Future<List<Transaction>> listByAccount(String accountId) async {
     final rows = await _conn.execute(
       Sql.named('''
-        SELECT id, account_id, name, direction, amount, start_date,
-               recurrence_mode, interval, unit, end_mode, end_date,
-               occurrence_count, enabled, created_at
-        FROM transactions
-        WHERE account_id = @accountId
-        ORDER BY created_at ASC
+        SELECT $_enrichedCols
+        FROM transactions t $_peerJoin
+        WHERE t.account_id = @accountId
+        ORDER BY t.created_at ASC
       '''),
       parameters: {'accountId': accountId},
     );
@@ -30,10 +39,9 @@ class TransactionRepo {
   Future<Transaction?> get(String id) async {
     final rows = await _conn.execute(
       Sql.named('''
-        SELECT id, account_id, name, direction, amount, start_date,
-               recurrence_mode, interval, unit, end_mode, end_date,
-               occurrence_count, enabled, created_at
-        FROM transactions WHERE id = @id
+        SELECT $_enrichedCols
+        FROM transactions t $_peerJoin
+        WHERE t.id = @id
       '''),
       parameters: {'id': id},
     );
@@ -54,6 +62,7 @@ class TransactionRepo {
     DateTime? endDate,
     int? occurrenceCount,
     bool enabled = true,
+    String? transferId,
   }) async {
     _validateShape(
       recurrenceMode: recurrenceMode,
@@ -66,20 +75,20 @@ class TransactionRepo {
     );
 
     final id = _uuid.v4();
-    final rows = await _conn.execute(
+    await _conn.execute(
       Sql.named('''
         INSERT INTO transactions (
           id, account_id, name, direction, amount, start_date,
           recurrence_mode, interval, unit, end_mode, end_date,
-          occurrence_count, enabled
+          occurrence_count, enabled, transfer_id
         ) VALUES (
           @id, @accountId, @name, @direction, @amount, @startDate,
           @recurrenceMode, @interval, @unit, @endMode, @endDate,
-          @occurrenceCount, @enabled
+          @occurrenceCount, @enabled, @transferId::uuid
         )
         RETURNING id, account_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
-                  occurrence_count, enabled, created_at
+                  occurrence_count, enabled, created_at, transfer_id
       '''),
       parameters: {
         'id': id,
@@ -95,6 +104,7 @@ class TransactionRepo {
         'endDate': endDate == null ? null : _date(endDate),
         'occurrenceCount': occurrenceCount,
         'enabled': enabled,
+        'transferId': transferId,
       },
     );
 
@@ -109,7 +119,7 @@ class TransactionRepo {
       parameters: {'accountId': accountId, 'transactionId': id},
     );
 
-    return _fromRow(rows.first);
+    return (await get(id))!;
   }
 
   Future<Transaction?> update(
@@ -153,7 +163,7 @@ class TransactionRepo {
       amount: nextAmount,
     );
 
-    final rows = await _conn.execute(
+    await _conn.execute(
       Sql.named('''
         UPDATE transactions SET
           name = @name,
@@ -170,7 +180,7 @@ class TransactionRepo {
         WHERE id = @id
         RETURNING id, account_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
-                  occurrence_count, enabled, created_at
+                  occurrence_count, enabled, created_at, transfer_id
       '''),
       parameters: {
         'id': id,
@@ -187,10 +197,20 @@ class TransactionRepo {
         'enabled': enabled ?? existing.enabled,
       },
     );
-    return _fromRow(rows.first);
+    return (await get(id))!;
   }
 
+  /// Deletes [id]; for a transfer, also its peer row (call inside a DB
+  /// transaction so both go or neither).
   Future<bool> delete(String id) async {
+    final existing = await get(id);
+    if (existing == null) return false;
+    final peerId = existing.transfer?.peerId;
+    if (peerId != null) await _deleteOne(peerId);
+    return _deleteOne(id);
+  }
+
+  Future<bool> _deleteOne(String id) async {
     final existing = await get(id);
     if (existing == null) return false;
     await _conn.execute(
@@ -422,6 +442,149 @@ class TransactionRepo {
       occurrenceCount: row[11] as int?,
       enabled: row[12] as bool,
       createdAt: (row[13] as DateTime).toUtc(),
+      transfer: row.length > 14 && row[14] != null
+          ? TransferLink(
+              id: row[14].toString(),
+              peerId: row.length > 15 ? row[15]?.toString() : null,
+              peerAccountId: row.length > 16 ? row[16]?.toString() : null,
+              peerAccountName: row.length > 17 ? row[17] as String? : null,
+              peerProjectId: row.length > 18 ? row[18]?.toString() : null,
+              peerProjectName: row.length > 19 ? row[19] as String? : null,
+            )
+          : null,
+    );
+  }
+  // ---- Transfers --------------------------------------------------------
+
+  /// Creates the peer row of a new transfer in [peerAccountId], mirroring
+  /// [source] with the opposite direction, and links both by a new
+  /// transfer_id. Call inside a DB transaction.
+  Future<Transaction> linkNewPeer(
+      Transaction source, String peerAccountId) async {
+    await _checkPeerAccount(source, peerAccountId);
+    final transferId = _uuid.v4();
+    await _conn.execute(
+      Sql.named(
+          'UPDATE transactions SET transfer_id = @t::uuid WHERE id = @id'),
+      parameters: {'t': transferId, 'id': source.id},
+    );
+    final peer = await create(
+      accountId: peerAccountId,
+      name: source.name,
+      direction: source.direction == Direction.credit
+          ? Direction.debit
+          : Direction.credit,
+      amount: source.amount,
+      startDate: source.startDate,
+      recurrenceMode: source.recurrenceMode,
+      interval: source.interval,
+      unit: source.unit,
+      endMode: source.endMode,
+      endDate: source.endDate,
+      occurrenceCount: source.occurrenceCount,
+      enabled: source.enabled,
+      transferId: transferId,
+    );
+    await _copySkips(source.id, peer.id);
+    return (await get(source.id))!;
+  }
+
+  Future<void> _checkPeerAccount(Transaction source, String accountId) async {
+    if (accountId == source.accountId) {
+      throw FormatException('transfer destination must be another account');
+    }
+    final exists = await _conn.execute(
+      Sql.named('SELECT 1 FROM accounts WHERE id = @id::uuid'),
+      parameters: {'id': accountId},
+    );
+    if (exists.isEmpty) throw FormatException('transfer account not found');
+  }
+
+  /// Rewrites the peer of [source] (a transfer row) to mirror it exactly:
+  /// name, amount, opposite direction, schedule, enabled and skipped dates.
+  Future<void> syncPeer(Transaction source) async {
+    final peerId = source.transfer?.peerId;
+    if (peerId == null) return;
+    await _conn.execute(
+      Sql.named('''
+        UPDATE transactions p SET
+          name = s.name,
+          direction = CASE s.direction WHEN 'credit' THEN 'debit' ELSE 'credit' END,
+          amount = s.amount, start_date = s.start_date,
+          recurrence_mode = s.recurrence_mode, interval = s.interval,
+          unit = s.unit, end_mode = s.end_mode, end_date = s.end_date,
+          occurrence_count = s.occurrence_count, enabled = s.enabled
+        FROM transactions s
+        WHERE s.id = @s AND p.id = @p
+      '''),
+      parameters: {'s': source.id, 'p': peerId},
+    );
+    await _copySkips(source.id, peerId);
+  }
+
+  /// Moves the peer row of a transfer into [accountId] (changing where the
+  /// transfer goes), fixing both accounts' transaction_order.
+  Future<void> movePeer(Transaction source, String accountId) async {
+    final peerId = source.transfer?.peerId;
+    if (peerId == null || source.transfer!.peerAccountId == accountId) return;
+    await _checkPeerAccount(source, accountId);
+    await _conn.execute(
+      Sql.named('''
+        UPDATE accounts SET transaction_order =
+          array_remove(transaction_order, @p::uuid)
+        WHERE id = @old::uuid
+      '''),
+      parameters: {'p': peerId, 'old': source.transfer!.peerAccountId},
+    );
+    await _conn.execute(
+      Sql.named('UPDATE transactions SET account_id = @a::uuid WHERE id = @p'),
+      parameters: {'a': accountId, 'p': peerId},
+    );
+    await _conn.execute(
+      Sql.named('''
+        UPDATE accounts SET transaction_order =
+          array_append(transaction_order, @p::uuid)
+        WHERE id = @a::uuid
+      '''),
+      parameters: {'a': accountId, 'p': peerId},
+    );
+  }
+
+  /// Turns a transfer row back into a plain transaction (drops the peer).
+  Future<void> unlink(Transaction source) async {
+    final peerId = source.transfer?.peerId;
+    if (peerId != null) await _deleteOne(peerId);
+    await _conn.execute(
+      Sql.named('UPDATE transactions SET transfer_id = NULL WHERE id = @id'),
+      parameters: {'id': source.id},
+    );
+  }
+
+  /// Before deleting [accountId] (cascade), turn the surviving side of each
+  /// of its transfers into a plain transaction.
+  Future<void> orphanPeersOfAccount(String accountId) async {
+    await _conn.execute(
+      Sql.named('''
+        UPDATE transactions SET transfer_id = NULL
+        WHERE account_id <> @a::uuid AND transfer_id IN (
+          SELECT transfer_id FROM transactions
+          WHERE account_id = @a::uuid AND transfer_id IS NOT NULL)
+      '''),
+      parameters: {'a': accountId},
+    );
+  }
+
+  Future<void> _copySkips(String fromId, String toId) async {
+    await _conn.execute(
+      Sql.named('DELETE FROM skipped_occurrences WHERE transaction_id = @t'),
+      parameters: {'t': toId},
+    );
+    await _conn.execute(
+      Sql.named('''
+        INSERT INTO skipped_occurrences (transaction_id, date)
+        SELECT @t::uuid, date FROM skipped_occurrences WHERE transaction_id = @f
+      '''),
+      parameters: {'t': toId, 'f': fromId},
     );
   }
 }

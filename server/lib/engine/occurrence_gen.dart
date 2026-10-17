@@ -24,9 +24,11 @@ class OccurrenceGenerator {
     final out = <Occurrence>[];
     for (final transaction in transactions) {
       if (!transaction.enabled) continue;
-      for (final date in datesForTransaction(transaction, windowStart, windowEnd)) {
+      for (final date
+          in datesForTransaction(transaction, windowStart, windowEnd)) {
         final skipSet = skipped[transaction.id] ?? const <DateTime>{};
-        final isSkipped = skipSet.any((d) => CalendarMath.compare(d, date) == 0);
+        final isSkipped =
+            skipSet.any((d) => CalendarMath.compare(d, date) == 0);
         out.add(
           Occurrence(
             transactionId: transaction.id,
@@ -129,7 +131,8 @@ class OccurrenceGenerator {
         endMode: transaction.endMode == EndMode.never
             ? EndMode.untilDate
             : transaction.endMode,
-        endDate: transaction.endMode == EndMode.never ? end : transaction.endDate,
+        endDate:
+            transaction.endMode == EndMode.never ? end : transaction.endDate,
         clearOccurrenceCount: transaction.endMode == EndMode.never,
       ),
       transaction.startDate,

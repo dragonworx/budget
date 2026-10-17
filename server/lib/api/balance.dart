@@ -22,7 +22,8 @@ void attachBalanceRoutes(Router router, Connection conn) {
       final fromRaw = params['from'];
       final toRaw = params['to'];
       if (fromRaw == null || toRaw == null) {
-        return jsonError(400, 'from and to query params are required (YYYY-MM-DD)');
+        return jsonError(
+            400, 'from and to query params are required (YYYY-MM-DD)');
       }
       final from = parseDate(fromRaw);
       final to = parseDate(toRaw);

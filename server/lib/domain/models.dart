@@ -72,6 +72,7 @@ class Transaction {
     this.occurrenceCount,
     required this.enabled,
     required this.createdAt,
+    this.transfer,
   });
 
   final String id;
@@ -89,8 +90,10 @@ class Transaction {
   final bool enabled;
   final DateTime createdAt;
 
-  Decimal get signedAmount =>
-      direction == Direction.credit ? amount : -amount;
+  /// Set when this row is one side of a transfer (linked pair).
+  final TransferLink? transfer;
+
+  Decimal get signedAmount => direction == Direction.credit ? amount : -amount;
 
   Map<String, Object?> toJson() => {
         'id': id,
@@ -107,6 +110,7 @@ class Transaction {
         'occurrenceCount': occurrenceCount,
         'enabled': enabled,
         'createdAt': createdAt.toUtc().toIso8601String(),
+        'transfer': transfer?.toJson(),
       };
 
   Transaction copyWith({
@@ -141,12 +145,42 @@ class Transaction {
       unit: clearUnit ? null : (unit ?? this.unit),
       endMode: endMode ?? this.endMode,
       endDate: clearEndDate ? null : (endDate ?? this.endDate),
-      occurrenceCount:
-          clearOccurrenceCount ? null : (occurrenceCount ?? this.occurrenceCount),
+      occurrenceCount: clearOccurrenceCount
+          ? null
+          : (occurrenceCount ?? this.occurrenceCount),
       enabled: enabled ?? this.enabled,
       createdAt: createdAt ?? this.createdAt,
+      transfer: transfer,
     );
   }
+}
+
+/// The other side of a transfer, as seen from one row.
+class TransferLink {
+  TransferLink({
+    required this.id,
+    this.peerId,
+    this.peerAccountId,
+    this.peerAccountName,
+    this.peerProjectId,
+    this.peerProjectName,
+  });
+
+  final String id;
+  final String? peerId;
+  final String? peerAccountId;
+  final String? peerAccountName;
+  final String? peerProjectId;
+  final String? peerProjectName;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'peerTransactionId': peerId,
+        'peerAccountId': peerAccountId,
+        'peerAccountName': peerAccountName,
+        'peerProjectId': peerProjectId,
+        'peerProjectName': peerProjectName,
+      };
 }
 
 class Occurrence {

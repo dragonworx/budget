@@ -4,6 +4,7 @@ import 'package:shelf_router/shelf_router.dart';
 
 import '../domain/models.dart';
 import '../domain/transaction_import.dart';
+import '../engine/calendar_math.dart';
 import '../repo/account_repo.dart';
 import '../repo/transaction_repo.dart';
 import 'balance.dart';
@@ -33,20 +34,36 @@ Router buildAccountsApi(Connection conn) {
 
       final body = await readJsonObject(request);
       final parsed = parseTransactionBody(body);
-      final transaction = await transactions.create(
-        accountId: accountId,
-        name: parsed.name,
-        direction: parsed.direction,
-        amount: parsed.amount,
-        startDate: parsed.startDate,
-        recurrenceMode: parsed.recurrenceMode,
-        interval: parsed.interval,
-        unit: parsed.unit,
-        endMode: parsed.endMode,
-        endDate: parsed.endDate,
-        occurrenceCount: parsed.occurrenceCount,
-        enabled: parsed.enabled,
-      );
+      final transferTo = optionalString(body, 'transferToAccountId');
+      final skips = (body['skippedDates'] as List?)
+              ?.map((e) => parseDate(e.toString()))
+              .toList() ??
+          const <DateTime>[];
+      // A transfer creates both sides atomically.
+      final transaction = await conn.runTx((tx) async {
+        final transactions = TransactionRepo(tx);
+        var created = await transactions.create(
+          accountId: accountId,
+          name: parsed.name,
+          direction: parsed.direction,
+          amount: parsed.amount,
+          startDate: parsed.startDate,
+          recurrenceMode: parsed.recurrenceMode,
+          interval: parsed.interval,
+          unit: parsed.unit,
+          endMode: parsed.endMode,
+          endDate: parsed.endDate,
+          occurrenceCount: parsed.occurrenceCount,
+          enabled: parsed.enabled,
+        );
+        for (final d in skips) {
+          await transactions.setSkip(created.id, d, true);
+        }
+        if (transferTo != null) {
+          created = await transactions.linkNewPeer(created, transferTo);
+        }
+        return created;
+      });
       return jsonOk(transaction.toJson(), status: 201);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
@@ -131,21 +148,36 @@ Router buildAccountsApi(Connection conn) {
   router.patch('/<id>', (Request request, String id) async {
     try {
       final body = await readJsonObject(request);
-      final account = await accounts.update(
-        id,
-        name: optionalString(body, 'name'),
-        currency: optionalString(body, 'currency'),
-        seedBalance: body.containsKey('seedBalance')
-            ? parseDecimal(body['seedBalance'])
-            : null,
-        lossThreshold: body.containsKey('lossThreshold')
-            ? parseDecimal(body['lossThreshold'])
-            : null,
-        seedDate: body.containsKey('seedDate')
-            ? parseDate(requireString(body, 'seedDate'))
-            : null,
-        displayOrder: optionalInt(body, 'displayOrder'),
-      );
+      final newSeed = body.containsKey('seedDate')
+          ? parseDate(requireString(body, 'seedDate'))
+          : null;
+      // Seed date change moves every schedule by the same calendar-day
+      // delta, atomically with the account update.
+      final account = await conn.runTx((tx) async {
+        final repo = AccountRepo(tx);
+        final before = await repo.get(id);
+        if (before == null) return null;
+        final updated = await repo.update(
+          id,
+          name: optionalString(body, 'name'),
+          currency: optionalString(body, 'currency'),
+          seedBalance: body.containsKey('seedBalance')
+              ? parseDecimal(body['seedBalance'])
+              : null,
+          lossThreshold: body.containsKey('lossThreshold')
+              ? parseDecimal(body['lossThreshold'])
+              : null,
+          seedDate: newSeed,
+          displayOrder: optionalInt(body, 'displayOrder'),
+        );
+        if (newSeed != null) {
+          await repo.shiftSchedules(
+            id,
+            calendarDayDelta(before.seedDate, newSeed),
+          );
+        }
+        return updated;
+      });
       if (account == null) return jsonError(404, 'account not found');
       return jsonOk(account.toJson());
     } on FormatException catch (e) {
