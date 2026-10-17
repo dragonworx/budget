@@ -1,0 +1,39 @@
+import 'dart:ui';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:budget_client/features/timeline/balance_chart.dart';
+import 'package:budget_client/features/timeline/chart_geometry.dart';
+
+void main() {
+  test('footer always has year, month, week, day rows in order', () {
+    for (final size in const [Size(390, 600), Size(1440, 700)]) {
+      for (final days in const [1.0, 31.0, 91.0, 365.0, 3650.0]) {
+        final l = ChartLayout.of(size, days);
+        expect(l.yearBand.top, l.plot.bottom);
+        expect(l.monthBand.top, l.yearBand.bottom);
+        expect(l.weekBand!.top, l.monthBand.bottom);
+        expect(l.dayBand!.top, l.weekBand!.bottom);
+        expect(l.dayBand!.bottom, closeTo(size.height, 0.01));
+        expect(l.xControls.bottom, lessThanOrEqualTo(l.plot.bottom));
+      }
+    }
+  });
+  test('year labels shorten then blank', () {
+    expect(yearLabel(2026, 80), '2026');
+    expect(yearLabel(2026, 24), '\u201926');
+    expect(yearLabel(2026, 10), '');
+  });
+  test('month labels: full, 3-letter, letter, blank', () {
+    final oct = DateTime(2026, 10);
+    expect(monthLabel(oct, 200), 'October');
+    expect(monthLabel(oct, 40), 'Oct');
+    expect(monthLabel(oct, 14), 'O');
+    expect(monthLabel(oct, 6), '');
+  });
+  test('week labels keep the Monday date style', () {
+    final mon = DateTime(2026, 10, 12);
+    expect(weekLabel(mon, 80), 'Oct 12');
+    expect(weekLabel(mon, 24), '12');
+    expect(weekLabel(mon, 8), '');
+  });
+}

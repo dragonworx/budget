@@ -135,9 +135,26 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('editor-transfer-account')));
     await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('transfer-header-projects')),
+      findsOneWidget,
+    );
+    expect(find.text('Projects:'), findsOneWidget);
+    // Headers are not focusable menu items.
+    expect(
+      find.ancestor(
+        of: find.text('Projects:'),
+        matching: find.byType(MenuItemButton),
+      ),
+      findsNothing,
+    );
     // The source account itself is not offered.
     await tester.tap(find.byKey(const ValueKey('transfer-project-p1')));
     await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('transfer-header-accounts-p1')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('transfer-account-a')), findsNothing);
     expect(find.byKey(const ValueKey('transfer-account-s')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('transfer-project-p2')));
@@ -158,8 +175,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('editor-transfer-account')));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.text('Projects:'), findsOneWidget);
+    expect(find.text('Accounts:'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('transfer-project-p2')));
     await tester.pumpAndSettle();
+    expect(find.text('Projects:'), findsNothing);
+    expect(find.text('Accounts:'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('transfer-account-b')));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsNothing);

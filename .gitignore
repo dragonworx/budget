@@ -30,3 +30,6 @@ Thumbs.db
 postgres-data/
 pgdata/
 data/postgres/
+
+# Backups
+*.bak

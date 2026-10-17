@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:postgres/postgres.dart';
 
+import 'repo/currency_scale_backfill.dart';
+
 import 'config.dart';
 
 /// Opens a Postgres connection from [Config.databaseUrl].
@@ -79,7 +81,28 @@ Future<void> applyMigrations(
       );
     });
   }
+
+  // Data migrations (Dart), each run once after the SQL files.
+  for (final entry in _dataMigrations.entries) {
+    final done = await conn.execute(
+      Sql.named('SELECT 1 FROM schema_migrations WHERE id = @id'),
+      parameters: {'id': entry.key},
+    );
+    if (done.isNotEmpty) continue;
+    await conn.runTx((session) async {
+      await entry.value(session);
+      await session.execute(
+        Sql.named('INSERT INTO schema_migrations (id) VALUES (@id) '
+            'ON CONFLICT DO NOTHING'),
+        parameters: {'id': entry.key},
+      );
+    });
+  }
 }
+
+final _dataMigrations = <String, Future<void> Function(Session)>{
+  '006_currency_scale_backfill': backfillCurrencyScales,
+};
 
 /// Splits a SQL file into individual statements (no procedure bodies expected).
 List<String> splitSqlStatements(String sql) {

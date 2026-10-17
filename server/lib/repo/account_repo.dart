@@ -14,7 +14,7 @@ class AccountRepo {
     final rows = await _conn.execute(
       Sql.named('''
         SELECT id, project_id, name, currency, seed_balance, seed_date,
-               loss_threshold, display_order, transaction_order
+               loss_threshold, display_order, transaction_order, currency_scale
         FROM accounts
         WHERE project_id = @projectId
         ORDER BY display_order ASC, name ASC
@@ -28,7 +28,7 @@ class AccountRepo {
     final rows = await _conn.execute(
       Sql.named('''
         SELECT id, project_id, name, currency, seed_balance, seed_date,
-               loss_threshold, display_order, transaction_order
+               loss_threshold, display_order, transaction_order, currency_scale
         FROM accounts WHERE id = @id
       '''),
       parameters: {'id': id},
@@ -45,19 +45,20 @@ class AccountRepo {
     required DateTime seedDate,
     required Decimal lossThreshold,
     int displayOrder = 0,
+    int currencyScale = Account.defaultCurrencyScale,
   }) async {
     final id = _uuid.v4();
     final rows = await _conn.execute(
       Sql.named('''
         INSERT INTO accounts (
           id, project_id, name, currency, seed_balance, seed_date,
-          loss_threshold, display_order
+          loss_threshold, display_order, currency_scale
         ) VALUES (
           @id, @projectId, @name, @currency, @seedBalance, @seedDate,
-          @lossThreshold, @displayOrder
+          @lossThreshold, @displayOrder, @currencyScale
         )
         RETURNING id, project_id, name, currency, seed_balance, seed_date,
-                  loss_threshold, display_order, transaction_order
+                  loss_threshold, display_order, transaction_order, currency_scale
       '''),
       parameters: {
         'id': id,
@@ -68,6 +69,7 @@ class AccountRepo {
         'seedDate': DateTime.utc(seedDate.year, seedDate.month, seedDate.day),
         'lossThreshold': lossThreshold.toString(),
         'displayOrder': displayOrder,
+        'currencyScale': currencyScale,
       },
     );
     return _fromRow(rows.first);
@@ -81,6 +83,7 @@ class AccountRepo {
     DateTime? seedDate,
     Decimal? lossThreshold,
     int? displayOrder,
+    int? currencyScale,
   }) async {
     final existing = await get(id);
     if (existing == null) return null;
@@ -93,10 +96,11 @@ class AccountRepo {
           seed_balance = @seedBalance,
           seed_date = @seedDate,
           loss_threshold = @lossThreshold,
-          display_order = @displayOrder
+          display_order = @displayOrder,
+          currency_scale = @currencyScale
         WHERE id = @id
         RETURNING id, project_id, name, currency, seed_balance, seed_date,
-                  loss_threshold, display_order, transaction_order
+                  loss_threshold, display_order, transaction_order, currency_scale
       '''),
       parameters: {
         'id': id,
@@ -112,6 +116,7 @@ class AccountRepo {
               )
             : DateTime.utc(seedDate.year, seedDate.month, seedDate.day),
         'displayOrder': displayOrder ?? existing.displayOrder,
+        'currencyScale': currencyScale ?? existing.currencyScale,
       },
     );
     return _fromRow(rows.first);
@@ -169,7 +174,7 @@ class AccountRepo {
         UPDATE accounts SET transaction_order = @transactionOrder
         WHERE id = @id
         RETURNING id, project_id, name, currency, seed_balance, seed_date,
-                  loss_threshold, display_order, transaction_order
+                  loss_threshold, display_order, transaction_order, currency_scale
       '''),
       parameters: {
         'id': id,
@@ -220,6 +225,7 @@ class AccountRepo {
       lossThreshold: Decimal.parse(row[6].toString()),
       displayOrder: row[7] as int,
       transactionOrder: transactionOrder,
+      currencyScale: row[9] as int,
     );
   }
 }

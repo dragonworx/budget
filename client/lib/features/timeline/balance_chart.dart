@@ -42,6 +42,7 @@ class BalanceChart extends StatefulWidget {
     required this.seedDate,
     this.seedBalance,
     this.lossThreshold = 0,
+    this.currencyScale,
     this.fitIncludesThreshold = false,
     required this.viewStart,
     required this.visibleDays,
@@ -54,6 +55,9 @@ class BalanceChart extends StatefulWidget {
     this.zeroToken = 0,
     this.onFitRequested,
     this.onZoomStep,
+    this.unitLabel,
+    this.canZoomIn = true,
+    this.canZoomOut = true,
     this.onShift,
     this.transactions = const {},
   });
@@ -64,6 +68,11 @@ class BalanceChart extends StatefulWidget {
   /// +/− keys: one centred zoom step (-1 in, +1 out). Falls back to an
   /// unanimated centred zoom when null.
   final ValueChanged<int>? onZoomStep;
+
+  /// Current time unit's name, shown beside the horizontal scale pair.
+  final String? unitLabel;
+  final bool canZoomIn;
+  final bool canZoomOut;
 
   /// [ / ] keys: shift the view one unit back (-1) / forward (1).
   final ValueChanged<int>? onShift;
@@ -94,6 +103,10 @@ class BalanceChart extends StatefulWidget {
   /// Closing balances at or below this value are drawn as a loss.
   final double lossThreshold;
 
+  /// Account currency scale (dollars per y grid step). When set, the chart
+  /// opens at [currencyScaleRange] and re-applies it whenever it changes.
+  final double? currencyScale;
+
   /// Whether balance fits stretch to include the loss threshold line.
   final bool fitIncludesThreshold;
   final DateTime viewStart;
@@ -108,7 +121,38 @@ class BalanceChart extends StatefulWidget {
   State<BalanceChart> createState() => _BalanceChartState();
 }
 
-class _BalanceChartState extends State<BalanceChart> {
+class _BalanceChartState extends State<BalanceChart>
+    with SingleTickerProviderStateMixin {
+  /// Eases y-scale button steps; pan / pinch / wheel stay direct.
+  late final AnimationController _yAnim = AnimationController(
+    vsync: this,
+    duration: zoomEaseDuration,
+  )..addListener(_tickY);
+  BalanceExtents? _yFrom;
+  BalanceExtents? _yTo;
+
+  void _tickY() {
+    final from = _yFrom, to = _yTo;
+    if (from == null || to == null) return;
+    setState(
+      () => _yRange = lerpBalanceRange(
+        from,
+        to,
+        Curves.easeOutCubic.transform(_yAnim.value),
+      ),
+    );
+  }
+
+  /// Animates the balance range to [target] from wherever it is now
+  /// (mid-animation included), so repeated taps chain smoothly.
+  void _animateY(BalanceExtents target) {
+    if (!target.min.isFinite || !target.max.isFinite) return;
+    _clearTip();
+    _yFrom = _yRange ?? target;
+    _yTo = target;
+    _yAnim.forward(from: 0);
+  }
+
   Size _size = Size.zero;
   int? _pointer;
   Offset? _downPos;
@@ -157,6 +201,9 @@ class _BalanceChartState extends State<BalanceChart> {
   /// Visible balance range; null until fitted to the first data shown.
   BalanceExtents? _yRange;
 
+  /// Next automatic y-range uses the currency scale instead of a data fit.
+  bool _scaleDefault = true;
+
   /// Set by a fit whose time range is not loaded yet; the balance range is
   /// refit again once [BalanceChart.dataFrom]..dataThrough covers the view.
   bool _fitAwaitingData = false;
@@ -185,14 +232,30 @@ class _BalanceChartState extends State<BalanceChart> {
   @override
   void didUpdateWidget(covariant BalanceChart oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewStart != widget.viewStart ||
+        oldWidget.visibleDays != widget.visibleDays ||
+        oldWidget.fitToken != widget.fitToken ||
+        oldWidget.currencyScale != widget.currencyScale) {
+      // Any view navigation (pan, pinch, wheel, zoom, ◀ ▶, Fit, Today)
+      // closes the info card and its y-axis highlight.
+      _clearTip();
+    }
     final y = _yRange;
     if (oldWidget.zeroToken != widget.zeroToken && y != null) {
       _yRange = includeZero(y);
     }
-    if (oldWidget.fitToken != widget.fitToken) {
+    if (oldWidget.currencyScale != widget.currencyScale) {
+      _yAnim.stop();
       _yRange = null;
+      _scaleDefault = true;
+    }
+    if (oldWidget.fitToken != widget.fitToken) {
+      _yAnim.stop();
+      _yRange = null;
+      _scaleDefault = false;
       _fitAwaitingData = !_dataCoversView;
     } else if (_fitAwaitingData && _dataCoversView) {
+      _yAnim.stop();
       _yRange = null;
       _fitAwaitingData = false;
     }
@@ -203,6 +266,14 @@ class _BalanceChartState extends State<BalanceChart> {
     if (_yRange != null) return _yRange;
     final visible = _visible();
     if (visible == null) return null;
+    final unit = widget.currencyScale;
+    if (_scaleDefault && unit != null && unit > 0) {
+      return _yRange = currencyScaleRange(
+        unit,
+        visible.extents.min,
+        visible.extents.max,
+      );
+    }
     // Fits always include the origin, so the zero line is in view.
     return _yRange = paddedRange(
       visible.extents.min,
@@ -221,15 +292,31 @@ class _BalanceChartState extends State<BalanceChart> {
     return !seed.isBefore(dateOnly(widget.viewStart)) && seed.isBefore(end);
   }
 
+  /// Closes the info card (and the y-axis highlight that follows it).
+  void _clearTip() {
+    if (_mode == _Gesture.scrub || _longPressTip) return;
+    _tapTipTimer?.cancel();
+    _tapTip = false;
+    _stickyTip = false;
+    if (_hoverDots.value != null) _hoverDots.value = null;
+  }
+
   void _setYRange(BalanceExtents range) {
     if (!range.min.isFinite || !range.max.isFinite) return;
+    _clearTip();
+    _yAnim.stop();
     setState(() => _yRange = range);
   }
 
-  void _fitY() => setState(() => _yRange = null);
+  void _fitY() {
+    _clearTip();
+    _yAnim.stop();
+    setState(() => _yRange = null);
+  }
 
   @override
   void dispose() {
+    _yAnim.dispose();
     _holdTimer?.cancel();
     _autoScroll?.cancel();
     _tapTipTimer?.cancel();
@@ -249,6 +336,7 @@ class _BalanceChartState extends State<BalanceChart> {
     final touch = event.kind != PointerDeviceKind.mouse;
     if (!touch && (event.buttons & kPrimaryButton) == 0) return;
     _down[event.pointer] = event.localPosition;
+    _yAnim.stop(); // a touch takes over from an easing y-zoom
     if (_down.length >= 2) {
       _multiTouch = true;
       _holdTimer?.cancel();
@@ -816,35 +904,42 @@ class _BalanceChartState extends State<BalanceChart> {
                   onPointerSignal: _onPointerSignal,
                   // Own layer: moving the hover "+" button must not repaint the chart.
                   child: RepaintBoundary(
-                    child: CustomPaint(
-                      painter: _BalanceChartPainter(
-                        series: widget.series,
-                        currency: widget.currency,
-                        seedDate: widget.seedDate,
-                        seedBalance: widget.seedBalance,
-                        lossThreshold: widget.lossThreshold,
-                        fitIncludesThreshold: widget.fitIncludesThreshold,
-                        viewStart: widget.viewStart,
-                        visibleDays: widget.visibleDays,
-                        labelStyle:
-                            theme.textTheme.bodySmall ?? const TextStyle(),
-                        strongStyle:
-                            (theme.textTheme.labelMedium ?? const TextStyle())
-                                .copyWith(fontWeight: FontWeight.w700),
-                        laneStyle:
-                            (theme.textTheme.labelSmall ?? const TextStyle())
-                                .copyWith(fontWeight: FontWeight.w600),
-                        transactionNames: widget.transactionNames,
-                        textScaler: MediaQuery.textScalerOf(context),
-                        dataFrom: widget.dataFrom,
-                        dataThrough: widget.dataThrough,
-                        yRange: yRange,
+                    child: ValueListenableBuilder<_DotTip?>(
+                      valueListenable: _hoverDots,
+                      builder: (context, tip, _) => CustomPaint(
+                        painter: _BalanceChartPainter(
+                          series: widget.series,
+                          currency: widget.currency,
+                          seedDate: widget.seedDate,
+                          seedBalance: widget.seedBalance,
+                          lossThreshold: widget.lossThreshold,
+                          fitIncludesThreshold: widget.fitIncludesThreshold,
+                          viewStart: widget.viewStart,
+                          visibleDays: widget.visibleDays,
+                          labelStyle:
+                              theme.textTheme.bodySmall ?? const TextStyle(),
+                          strongStyle:
+                              (theme.textTheme.labelMedium ?? const TextStyle())
+                                  .copyWith(fontWeight: FontWeight.w700),
+                          laneStyle:
+                              (theme.textTheme.labelSmall ?? const TextStyle())
+                                  .copyWith(fontWeight: FontWeight.w600),
+                          transactionNames: widget.transactionNames,
+                          textScaler: MediaQuery.textScalerOf(context),
+                          dataFrom: widget.dataFrom,
+                          dataThrough: widget.dataThrough,
+                          yRange: yRange,
+                          highlightY: _tipShown(tip)
+                              ? _highlightDot(tip!).center.dy
+                              : null,
+                        ),
+                        child: const SizedBox.expand(),
                       ),
-                      child: const SizedBox.expand(),
                     ),
                   ),
                 ),
                 if (yRange != null) _yScaleControls(theme),
+                if (widget.onZoomStep != null) _xScaleControls(theme),
                 if (_mode == _Gesture.pick && _pickDay != null)
                   ..._pickOverlay(theme),
                 ValueListenableBuilder<DateTime?>(
@@ -859,14 +954,13 @@ class _BalanceChartState extends State<BalanceChart> {
                 ValueListenableBuilder<_DotTip?>(
                   valueListenable: _hoverDots,
                   builder: (context, tip, _) {
-                    if (tip == null ||
-                        (_pointer != null &&
-                            !_longPressTip &&
-                            !_stickyTip &&
-                            _mode != _Gesture.scrub)) {
-                      return const SizedBox.shrink();
-                    }
-                    return _tooltip(theme, tip);
+                    if (!_tipShown(tip)) return const SizedBox.shrink();
+                    return Stack(
+                      children: [
+                        ..._yHighlight(theme, tip!),
+                        _tooltip(theme, tip),
+                      ],
+                    );
                   },
                 ),
               ],
@@ -877,11 +971,89 @@ class _BalanceChartState extends State<BalanceChart> {
     );
   }
 
+  bool _tipShown(_DotTip? tip) =>
+      tip != null &&
+      !(_pointer != null &&
+          !_longPressTip &&
+          !_stickyTip &&
+          _mode != _Gesture.scrub);
+
+  /// The dot whose balance the y-axis highlight shows: the day's dot
+  /// (end-of-day balance) for a group, else the seed diamond.
+  _Dot _highlightDot(_DotTip tip) =>
+      tip.dots.firstWhere((d) => !d.isSeed, orElse: () => tip.dots.first);
+
+  /// Guide line from the active dot to the left axis, and its exact
+  /// balance on a pill in the y gutter.
+  List<Widget> _yHighlight(ThemeData theme, _DotTip tip) {
+    final dot = _highlightDot(tip);
+    final layout = _layout;
+    final y = dot.center.dy;
+    if (y < layout.plot.top || y > layout.plot.bottom) return const [];
+    final color = dot.balanceAfter < widget.lossThreshold
+        ? AppTheme.debitColor
+        : _lineColor;
+    final style = (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
+      fontWeight: FontWeight.w800,
+      color: Colors.white,
+    );
+    const pillH = 22.0;
+    final controls = layout.yControls.inflate(2);
+    final top = (y - pillH / 2)
+        .clamp(
+          layout.plot.top + 1,
+          math.max(layout.plot.top + 1, layout.plot.bottom - pillH - 1),
+        )
+        .toDouble();
+    final overlaps = top < controls.bottom && top + pillH > controls.top;
+    final left = (overlaps ? controls.right : layout.plot.left) + 3;
+    return [
+      Positioned.fill(
+        child: IgnorePointer(
+          child: CustomPaint(
+            key: const ValueKey('y-highlight-line'),
+            painter: _GuideLinePainter(
+              from: Offset(layout.plot.left, y),
+              to: Offset(dot.center.dx - dot.radius - 2, y),
+              color: color.withValues(alpha: 0.7),
+            ),
+          ),
+        ),
+      ),
+      Positioned(
+        left: left,
+        top: top,
+        height: pillH,
+        child: IgnorePointer(
+          child: Container(
+            key: const ValueKey('y-highlight'),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 7),
+            decoration: BoxDecoration(
+              color: Color.alphaBlend(
+                color.withValues(alpha: 0.35),
+                AppTheme.raised,
+              ),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: color, width: 1.2),
+            ),
+            child: Text(
+              formatMoneyAmount(dot.balanceAfter, widget.currency),
+              style: style,
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
   /// Scales the balance axis by [factor] around the view's vertical centre.
   void _scaleY(double factor) {
-    final range = _ensureYRange();
+    // Chain from the pending target so rapid taps compound without drift;
+    // only the balance axis changes (never the time range).
+    final range = _yAnim.isAnimating ? _yTo : _ensureYRange();
     if (range == null) return;
-    _setYRange(zoomBalanceRange(range, factor, 0.5));
+    _animateY(zoomBalanceRange(range, factor, 0.5));
   }
 
   /// Compact + / − for the balance axis, at the bottom-left of the y gutter.
@@ -926,6 +1098,75 @@ class _BalanceChartState extends State<BalanceChart> {
               'Compress balance axis',
               yScaleStep,
               const ValueKey('y-scale-out'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The y-scale pair turned sideways: compress / stretch time by stepping
+  /// the view unit (larger on the left / smaller on the right), floating at the plot's bottom centre
+  /// with the unit's name between the buttons.
+  Widget _xScaleControls(ThemeData theme) {
+    final compact = _size.width < 600;
+    final size = ChartLayout.yControlSize(_size.width);
+    final controls = _layout.xControls;
+    Widget button(String tip, int dir, bool enabled, Key key) => SizedBox(
+      width: size,
+      height: size,
+      child: IconButton(
+        key: key,
+        tooltip: tip,
+        padding: EdgeInsets.zero,
+        iconSize: compact ? 20 : 16,
+        color: AppTheme.textMuted,
+        onPressed: enabled ? () => widget.onZoomStep!(dir) : null,
+        icon: RotatedBox(
+          quarterTurns: 1,
+          child: Icon(
+            dir < 0 ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
+          ),
+        ),
+      ),
+    );
+    return Positioned(
+      left: controls.left,
+      top: controls.top,
+      width: controls.width,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0x9910151C),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0x22FFFFFF)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            button(
+              'Compress time (larger unit, −)',
+              1,
+              widget.canZoomOut,
+              const ValueKey('x-scale-out'),
+            ),
+            Expanded(
+              child: Text(
+                widget.unitLabel ?? '',
+                key: const ValueKey('span-label'),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: AppTheme.textMuted,
+                ),
+              ),
+            ),
+            button(
+              'Stretch time (smaller unit, +)',
+              -1,
+              widget.canZoomIn,
+              const ValueKey('x-scale-in'),
             ),
           ],
         ),
@@ -1416,6 +1657,12 @@ class _BalanceChartState extends State<BalanceChart> {
     if (left + width > _size.width - 4) left = tip.anchor.dx - 14 - width;
     left = _clampEdge(left, 4, _size.width - width - 4);
     var top = tip.anchor.dy - 20;
+    if (left < tip.anchor.dx) {
+      // Flipped left of the dot: keep the card off the dot's row so the
+      // y-axis guide line and balance pill stay readable.
+      final above = tip.anchor.dy - 18 - estHeight;
+      top = above >= 4 ? above : tip.anchor.dy + 18;
+    }
     if (top + estHeight > _size.height - 4) top = _size.height - estHeight - 4;
     top = _clampEdge(top, 4, _size.height - 40);
     final finger = tip.finger;
@@ -1518,6 +1765,7 @@ class ChartLayout {
   const ChartLayout({
     required this.size,
     required this.plot,
+    required this.yearBand,
     required this.monthBand,
     required this.weekBand,
     required this.dayBand,
@@ -1528,6 +1776,10 @@ class ChartLayout {
   });
 
   final Rect plot;
+
+  /// Footer rows, top to bottom: year, month, week, day. All four always
+  /// show; segments too narrow for a label stay blank.
+  final Rect yearBand;
   final Rect monthBand;
   final Rect? weekBand;
   final Rect? dayBand;
@@ -1550,6 +1802,14 @@ class ChartLayout {
     return Rect.fromLTWH(plot.left + 4, plot.center.dy - b, b, b * 2);
   }
 
+  /// The horizontal (time) pair: bottom centre of the plot, just above the
+  /// date lanes, with room for the unit name between the buttons.
+  Rect get xControls {
+    final b = yControlSize(size.width);
+    final w = b * 2 + (size.width < 600 ? 64 : 72);
+    return Rect.fromLTWH(plot.center.dx - w / 2, plot.bottom - b - 4, w, b);
+  }
+
   /// 44px touch targets on narrow (phone) charts, 32px on desktop.
   static double yControlSize(double chartWidth) => chartWidth < 600 ? 44 : 32;
   static const double top = 8;
@@ -1565,10 +1825,12 @@ class ChartLayout {
     final showDayText = dayPx >= 6;
     final showDayLane = dayPx >= 3;
     final showWeekLane = dayPx * 7 >= 14;
-    const monthH = 26.0;
-    final weekH = showWeekLane ? 20.0 : 0.0;
-    final dayH = !showDayLane ? 0.0 : (showDayText ? dayLaneLabelHeight : 14.0);
-    final axisH = monthH + weekH + dayH;
+    final phone = size.width < 600;
+    final yearH = phone ? 17.0 : 18.0;
+    final monthH = phone ? 19.0 : 20.0;
+    final weekH = phone ? 17.0 : 18.0;
+    final dayH = showDayText ? dayLaneLabelHeight : 14.0;
+    final axisH = yearH + monthH + weekH + dayH;
     final plot = Rect.fromLTWH(
       gutter,
       top,
@@ -1576,18 +1838,17 @@ class ChartLayout {
       math.max(1, size.height - top - axisH),
     );
     var y = plot.bottom;
+    final yearBand = Rect.fromLTWH(plot.left, y, plot.width, yearH);
+    y += yearH;
     final monthBand = Rect.fromLTWH(plot.left, y, plot.width, monthH);
     y += monthH;
-    final weekBand = showWeekLane
-        ? Rect.fromLTWH(plot.left, y, plot.width, weekH)
-        : null;
+    final weekBand = Rect.fromLTWH(plot.left, y, plot.width, weekH);
     y += weekH;
-    final dayBand = showDayLane
-        ? Rect.fromLTWH(plot.left, y, plot.width, dayH)
-        : null;
+    final dayBand = Rect.fromLTWH(plot.left, y, plot.width, dayH);
     return ChartLayout(
       size: size,
       plot: plot,
+      yearBand: yearBand,
       monthBand: monthBand,
       weekBand: weekBand,
       dayBand: dayBand,
@@ -1692,10 +1953,15 @@ class _BalanceChartPainter extends CustomPainter {
     this.dataFrom,
     this.dataThrough,
     this.yRange,
+    this.highlightY,
   });
 
   /// Balance range shown top to bottom. Null falls back to fitting the view.
   final BalanceExtents? yRange;
+
+  /// Y of the active dot's highlighted balance; regular axis labels that
+  /// would collide with its pill are skipped.
+  final double? highlightY;
   final DateTime? dataFrom;
   final DateTime? dataThrough;
   final BalanceSeries series;
@@ -1859,76 +2125,29 @@ class _BalanceChartPainter extends CustomPainter {
   }
 
   void _paintAxes(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
-    if (useYearLane(layout.plot.width, visibleDays)) {
-      _paintLane(
-        canvas,
-        layout,
-        layout.monthBand,
-        yearSegments(viewStart, viewEnd),
-        viewEnd,
-        (segment, width) => width >= 30
-            ? '${segment.start.year}'
-            : width >= 18
-            ? "'${'${segment.start.year % 100}'.padLeft(2, '0')}"
-            : '',
-        (segment) => _yearColor(segment.colorIndex),
-        Colors.white,
-        'Year',
-      );
-    } else {
-      _paintMonthLane(canvas, layout, viewEnd);
-    }
-    _paintRestOfAxes(canvas, layout, viewEnd);
-  }
-
-  void _paintMonthLane(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
-    final months = monthSegments(viewStart, viewEnd);
-    final firstVisible = months.isEmpty ? null : months.first.start;
-    // Year on January and on the first visible month, so the axis alone
-    // says which year you are looking at.
-    String withYear(AxisSegment segment, String text, String year) =>
-        segment.start.month == 1 || segment.start == firstVisible
-        ? '$text $year'
-        : text;
+    _paintLane(
+      canvas,
+      layout,
+      layout.yearBand,
+      yearSegments(viewStart, viewEnd),
+      viewEnd,
+      (segment, width) => yearLabel(segment.start.year, width),
+      (segment) => _yearColor(segment.colorIndex),
+      Colors.white,
+      'Year',
+    );
     _paintLane(
       canvas,
       layout,
       layout.monthBand,
-      months,
+      monthSegments(viewStart, viewEnd),
       viewEnd,
-      (segment, width) {
-        final year = '${segment.start.year}';
-        if (width >= 130) {
-          return withYear(
-            segment,
-            DateFormat.MMMM().format(segment.start),
-            year,
-          );
-        }
-        if (width >= 72) {
-          return withYear(
-            segment,
-            DateFormat.MMM().format(segment.start),
-            year,
-          );
-        }
-        if (width >= 40) {
-          final short = "'${'${segment.start.year % 100}'.padLeft(2, '0')}";
-          return withYear(
-            segment,
-            DateFormat.MMM().format(segment.start),
-            short,
-          );
-        }
-        if (width >= 14) {
-          return DateFormat.MMM().format(segment.start).substring(0, 1);
-        }
-        return '';
-      },
+      (segment, width) => monthLabel(segment.start, width),
       (segment) => _monthColor(segment.colorIndex),
       Colors.white,
       'Month',
     );
+    _paintRestOfAxes(canvas, layout, viewEnd);
   }
 
   void _paintRestOfAxes(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
@@ -1938,13 +2157,11 @@ class _BalanceChartPainter extends CustomPainter {
         canvas,
         layout,
         weekBand,
-        weekSegments(viewStart, viewEnd),
+        layout.plot.width / visibleDays * 7 >= 2
+            ? weekSegments(viewStart, viewEnd)
+            : const [],
         viewEnd,
-        (segment, width) {
-          if (width >= 72) return DateFormat.MMMd().format(segment.start);
-          if (width >= 28) return '${segment.start.day}';
-          return '';
-        },
+        (segment, width) => weekLabel(segment.start, width),
         (segment) => _weekColor(segment.colorIndex),
         _laneText,
         'Week',
@@ -1956,7 +2173,9 @@ class _BalanceChartPainter extends CustomPainter {
         canvas,
         layout,
         dayBand,
-        daySegments(viewStart, viewEnd),
+        layout.plot.width / visibleDays >= 2
+            ? daySegments(viewStart, viewEnd)
+            : const [],
         viewEnd,
         (segment, width) => '',
         (segment) => _dayColor(segment.colorIndex),
@@ -2051,28 +2270,72 @@ class _BalanceChartPainter extends CustomPainter {
     canvas.drawRect(band, Paint()..color = const Color(0xFF10151C));
     canvas.save();
     canvas.clipRect(band);
-    for (final segment in segments) {
-      final left = layout.xOf(segment.start, viewStart, visibleDays);
-      final right = layout.xOf(segment.end, viewStart, visibleDays);
-      if (right < band.left || left > band.right) continue;
-      final rect = Rect.fromLTRB(
-        math.max(left, band.left),
-        band.top,
-        math.min(right, band.right) - 1,
-        band.bottom,
-      );
-      if (rect.width <= 0) continue;
-      canvas.drawRect(rect, Paint()..color = colorFor(segment));
-      final label = labelFor(segment, rect.width);
-      if (label.isEmpty) continue;
+    // Segments under 2px can't show a fill or separator; leave the row as a
+    // plain band rather than smearing hundreds of slivers.
+    final span = segments.isEmpty
+        ? 0.0
+        : layout.xOf(segments.first.end, viewStart, visibleDays) -
+              layout.xOf(segments.first.start, viewStart, visibleDays);
+    final nameW = _laneNameWidth(layout);
+    if (span >= 2) {
       final style = laneStyle.copyWith(color: textColor, height: 1.05);
-      _paintCentered(canvas, rect.deflate(1), label, style);
+      for (final segment in segments) {
+        final left = layout.xOf(segment.start, viewStart, visibleDays);
+        final right = layout.xOf(segment.end, viewStart, visibleDays);
+        if (right < band.left || left > band.right) continue;
+        final rect = Rect.fromLTRB(
+          math.max(left, band.left),
+          band.top,
+          math.min(right, band.right) - 1,
+          band.bottom,
+        );
+        if (rect.width <= 0) continue;
+        canvas.drawRect(rect, Paint()..color = colorFor(segment));
+        // Label the part of the segment not covered by the row name.
+        final open = Rect.fromLTRB(
+          math.max(rect.left, band.left + nameW),
+          rect.top,
+          rect.right,
+          rect.bottom,
+        );
+        if (open.width <= 0) continue;
+        final label = labelFor(segment, open.width);
+        if (label.isEmpty) continue;
+        _paintCentered(canvas, open.deflate(1), label, style);
+      }
     }
+    // Row name, right-aligned in a small chip at the left edge.
+    final namePainter = TextPainter(
+      text: TextSpan(
+        text: laneName,
+        style: laneStyle.copyWith(
+          color: const Color(0xFF8592A3),
+          fontSize: (laneStyle.fontSize ?? 11) - 2,
+          fontWeight: FontWeight.w600,
+          height: 1,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: textScaler,
+      maxLines: 1,
+    )..layout();
+    canvas.drawRect(
+      Rect.fromLTWH(band.left, band.top, nameW, band.height - 1),
+      Paint()..color = const Color(0xE610151C),
+    );
+    namePainter.paint(
+      canvas,
+      Offset(
+        band.left + nameW - 4 - namePainter.width,
+        band.center.dy - namePainter.height / 2,
+      ),
+    );
+    namePainter.dispose();
     canvas.restore();
-    // No lane names: with the plot at full width there is no gutter for
-    // them, and an overlay would hide the first segment's label. The lanes
-    // read on their own (month names, week starts, weekday + day numerals).
   }
+
+  double _laneNameWidth(ChartLayout layout) =>
+      layout.size.width < 600 ? 38 : 44;
 
   void _fillSegment(
     Canvas canvas,
@@ -2268,6 +2531,8 @@ class _BalanceChartPainter extends CustomPainter {
     TextStyle style, {
     bool emphasize = false,
   }) {
+    final hy = highlightY;
+    if (hy != null && (y - hy).abs() < 18) return;
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
@@ -2574,7 +2839,8 @@ class _BalanceChartPainter extends CustomPainter {
       final w = painter.width + 16;
       final h = painter.height + 6;
       final left = layout.plot.center.dx - w / 2;
-      final y = top ? layout.plot.top + 4 : layout.plot.bottom - h - 4;
+      // The below chip sits over the time-scale buttons, not under them.
+      final y = top ? layout.plot.top + 4 : layout.xControls.top - h - 4;
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(left, y, w, h),
@@ -3099,6 +3365,7 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.textScaler != textScaler ||
         oldDelegate.dataFrom != dataFrom ||
         oldDelegate.yRange?.min != yRange?.min ||
+        oldDelegate.highlightY != highlightY ||
         oldDelegate.yRange?.max != yRange?.max ||
         oldDelegate.dataThrough != dataThrough ||
         !mapEquals(oldDelegate.transactionNames, transactionNames);
@@ -3226,4 +3493,35 @@ double autoScrollDays(double depth, double visibleDays) {
   final f1 = ((focusX - layout.plot.left) / width).clamp(0.0, 1.0);
   final anchor = addDays(originStart, f0 * originDays);
   return (addDays(anchor, -f1 * days), days);
+}
+
+/// Dashed horizontal guide from the y axis to the active dot.
+class _GuideLinePainter extends CustomPainter {
+  _GuideLinePainter({
+    required this.from,
+    required this.to,
+    required this.color,
+  });
+  final Offset from;
+  final Offset to;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5;
+    const dash = 5.0, gap = 4.0;
+    final dir = to.dx >= from.dx ? 1.0 : -1.0;
+    final len = (to.dx - from.dx).abs();
+    for (var d = 0.0; d < len; d += dash + gap) {
+      final a = from.dx + dir * d;
+      final b = from.dx + dir * math.min(len, d + dash);
+      canvas.drawLine(Offset(a, from.dy), Offset(b, from.dy), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _GuideLinePainter old) =>
+      old.from != from || old.to != to || old.color != color;
 }

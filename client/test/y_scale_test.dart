@@ -45,4 +45,15 @@ void main() {
     final zout = zoomBalanceRange(r, yScaleStep, 0.5);
     expect(zout.max - zout.min, closeTo(125, 1e-9));
   });
+
+  test('eased ranges keep the centre fixed every frame', () {
+    const a = BalanceExtents(-100, 300), b = BalanceExtents(50, 150);
+    for (final t in [0.0, 0.25, 0.5, 0.9, 1.0]) {
+      final r = lerpBalanceRange(a, b, t);
+      expect((r.min + r.max) / 2, closeTo(100, 1e-9));
+    }
+    expect(lerpBalanceRange(a, b, 1).min, closeTo(50, 1e-9));
+    expect(lerpVisibleDays(21, 365, 0), closeTo(21, 1e-9));
+    expect(lerpVisibleDays(21, 365, 1), closeTo(365, 1e-9));
+  });
 }

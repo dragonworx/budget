@@ -31,7 +31,12 @@ class Account {
     required this.lossThreshold,
     required this.displayOrder,
     required this.transactionOrder,
+    this.currencyScale = defaultCurrencyScale,
   });
+
+  /// Allowed y-axis units (currency units per grid step).
+  static const currencyScales = [1, 10, 100, 1000, 10000, 100000, 1000000];
+  static const defaultCurrencyScale = 100;
 
   final String id;
   final String projectId;
@@ -42,10 +47,12 @@ class Account {
   final Decimal lossThreshold;
   final int displayOrder;
   final List<String> transactionOrder;
+  final int currencyScale;
 
   Map<String, Object?> toJson() => {
         'id': id,
         'projectId': projectId,
+        'currencyScale': currencyScale,
         'name': name,
         'currency': currency,
         'seedBalance': seedBalance.toString(),
@@ -240,4 +247,28 @@ DateTime parseDate(String value) {
 Decimal parseDecimal(Object? value) {
   if (value == null) throw FormatException('Missing decimal');
   return Decimal.parse(value.toString());
+}
+
+/// Reads an optional `currencyScale` from a request body. Null when absent;
+/// throws [FormatException] for values outside [Account.currencyScales].
+int? parseCurrencyScale(Map<String, Object?> body) {
+  final raw = body['currencyScale'];
+  if (raw == null) return null;
+  final v = raw is int ? raw : int.tryParse(raw.toString());
+  if (v == null || !Account.currencyScales.contains(v)) {
+    throw FormatException(
+        'currencyScale must be one of ${Account.currencyScales.join(', ')}');
+  }
+  return v;
+}
+
+/// Smallest currency scale whose ~10-unit default view holds [span] (the
+/// distance from the lowest of balance/zero to the highest) in 9 units,
+/// clamped to $1..$1M. E.g. 3500 → 1000, 800 → 100, 0 → 1.
+int autoCurrencyScale(double span) {
+  final s = span.abs();
+  for (final unit in Account.currencyScales) {
+    if (s <= 9 * unit) return unit;
+  }
+  return Account.currencyScales.last;
 }

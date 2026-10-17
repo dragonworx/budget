@@ -75,6 +75,7 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
         MenuItemButton(onPressed: null, child: Text('Could not load accounts')),
       ],
       data: (projects) => [
+        PickerSectionHeader('Projects:', key: ValueKey('$p-header-projects')),
         for (final (project, accounts) in projects)
           _ProjectSubmenu(
             key: ValueKey('$p-submenu-${project.id}'),
@@ -82,6 +83,10 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
             project: project,
             onOpening: _closeSiblings,
             menuChildren: [
+              PickerSectionHeader(
+                'Accounts:',
+                key: ValueKey('$p-header-accounts-${project.id}'),
+              ),
               if (_choices(accounts).isEmpty)
                 const MenuItemButton(
                   onPressed: null,
@@ -196,6 +201,11 @@ class _DrillDownSheetState extends ConsumerState<_DrillDownSheet> {
                     return ListView(
                       shrinkWrap: true,
                       children: [
+                        PickerSectionHeader(
+                          'Projects:',
+                          key: ValueKey('$p-header-projects'),
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                        ),
                         for (final (pr, accounts) in projects)
                           ListTile(
                             key: ValueKey('$p-project-${pr.id}'),
@@ -216,15 +226,27 @@ class _DrillDownSheetState extends ConsumerState<_DrillDownSheet> {
                         for (final a in list)
                           if (a.id != widget.excludeAccountId) a,
                   ];
+                  final header = PickerSectionHeader(
+                    'Accounts:',
+                    key: ValueKey('$p-header-accounts-${project.id}'),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  );
                   if (accounts.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('No other accounts in this project'),
+                    return ListView(
+                      shrinkWrap: true,
+                      children: [
+                        header,
+                        const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text('No other accounts in this project'),
+                        ),
+                      ],
                     );
                   }
                   return ListView(
                     shrinkWrap: true,
                     children: [
+                      header,
                       for (final a in accounts)
                         ListTile(
                           key: ValueKey('$p-account-${a.id}'),
@@ -298,6 +320,40 @@ class _ProjectSubmenuState extends State<_ProjectSubmenu> {
         },
         onPressed: _open,
         child: Text(widget.project.name),
+      ),
+    );
+  }
+}
+
+/// Small muted, non-interactive label heading a picker level. Excluded from
+/// focus traversal so keyboard navigation skips straight to the items.
+class PickerSectionHeader extends StatelessWidget {
+  const PickerSectionHeader(
+    this.label, {
+    super.key,
+    this.padding = const EdgeInsets.fromLTRB(12, 8, 12, 4),
+  });
+
+  final String label;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ExcludeFocus(
+      child: Semantics(
+        header: true,
+        child: Padding(
+          padding: padding,
+          child: Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              letterSpacing: 0.8,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
       ),
     );
   }

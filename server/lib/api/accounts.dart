@@ -169,6 +169,7 @@ Router buildAccountsApi(Connection conn) {
               : null,
           seedDate: newSeed,
           displayOrder: optionalInt(body, 'displayOrder'),
+          currencyScale: parseCurrencyScale(body),
         );
         if (newSeed != null) {
           await repo.shiftSchedules(

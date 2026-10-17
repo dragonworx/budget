@@ -810,6 +810,29 @@ BalanceExtents includeZero(BalanceExtents range) {
       : BalanceExtents(range.min, pad);
 }
 
+/// Default balance view for an account's currency scale [unit] (dollars per
+/// grid step): about 10 units tall, always including the origin. When the
+/// data in view ([dataMin]..[dataMax]) fits with zero inside 9 units it is
+/// centred; otherwise the window sits on the side of zero the data is on.
+BalanceExtents currencyScaleRange(double unit, double dataMin, double dataMax) {
+  final lo = math.min(dataMin, 0.0), hi = math.max(dataMax, 0.0);
+  final span = 10 * unit;
+  // One-sided data keeps zero just inside the near edge (more room for it).
+  if (lo >= 0 && hi <= 9.5 * unit) {
+    return BalanceExtents(-0.5 * unit, 9.5 * unit);
+  }
+  if (hi <= 0 && lo >= -9.5 * unit) {
+    return BalanceExtents(-9.5 * unit, 0.5 * unit);
+  }
+  if (hi - lo <= 9 * unit) {
+    final pad = (span - (hi - lo)) / 2;
+    return BalanceExtents(lo - pad, hi + pad);
+  }
+  return hi.abs() >= lo.abs()
+      ? BalanceExtents(-0.5 * unit, 9.5 * unit)
+      : BalanceExtents(-9.5 * unit, 0.5 * unit);
+}
+
 /// Factor for one press of the y-scale buttons.
 const double yScaleStep = 1.25;
 
@@ -887,3 +910,62 @@ double countPillWidth(double textWidth) => math.max(18, textWidth + 10);
 
 /// Px between the seed and Today lines when they fall on the same day.
 const double markerGap = 3;
+
+/// Duration of the eased zoom-button transitions (time and balance axes).
+const Duration zoomEaseDuration = Duration(milliseconds: 280);
+
+/// [a] → [b] at [t]: centre linearly, span geometrically, so a zoom about a
+/// fixed centre keeps that centre fixed for every frame.
+BalanceExtents lerpBalanceRange(BalanceExtents a, BalanceExtents b, double t) {
+  final ca = (a.min + a.max) / 2, cb = (b.min + b.max) / 2;
+  final sa = (a.max - a.min).abs(), sb = (b.max - b.min).abs();
+  final span = sa > 0 && sb > 0
+      ? math.exp(math.log(sa) + (math.log(sb) - math.log(sa)) * t)
+      : sa + (sb - sa) * t;
+  final c = ca + (cb - ca) * t;
+  return BalanceExtents(c - span / 2, c + span / 2);
+}
+
+/// Visible span at [t] between [fromDays] and [toDays], geometric.
+double lerpVisibleDays(double fromDays, double toDays, double t) =>
+    math.exp(math.log(fromDays) + (math.log(toDays) - math.log(fromDays)) * t);
+
+/// Year row label: "2026", or "’26" when narrow; blank when even that won't fit.
+String yearLabel(int year, double width) {
+  if (width >= 34) return '$year';
+  if (width >= 22) return '\u2019${'${year % 100}'.padLeft(2, '0')}';
+  return '';
+}
+
+const _monthNames = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/// Month row label: full name, 3-letter, or single letter by width.
+String monthLabel(DateTime month, double width) {
+  final name = _monthNames[month.month - 1];
+  if (width >= name.length * 7.0 + 8) return name;
+  if (width >= 30) return name.substring(0, 3);
+  if (width >= 12) return name.substring(0, 1);
+  return '';
+}
+
+/// Week row label (the week's Monday): "Oct 12", "12", or blank.
+String weekLabel(DateTime monday, double width) {
+  if (width >= 52) {
+    return '${_monthNames[monday.month - 1].substring(0, 3)} ${monday.day}';
+  }
+  if (width >= 18) return '${monday.day}';
+  return '';
+}

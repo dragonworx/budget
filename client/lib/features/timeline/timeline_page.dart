@@ -33,7 +33,45 @@ class TimelinePage extends ConsumerStatefulWidget {
   ConsumerState<TimelinePage> createState() => _TimelinePageState();
 }
 
-class _TimelinePageState extends ConsumerState<TimelinePage> {
+class _TimelinePageState extends ConsumerState<TimelinePage>
+    with SingleTickerProviderStateMixin {
+  /// Eases the time-scale buttons; pans, pinches, ◀ ▶ and fits are instant.
+  late final AnimationController _viewAnim = AnimationController(
+    vsync: this,
+    duration: zoomEaseDuration,
+  )..addListener(_tickView);
+  DateTime _animFromCenter = DateTime(2000);
+  DateTime _animToCenter = DateTime(2000);
+  double _animFromDays = 1;
+  double _animToDays = 1;
+
+  @override
+  void dispose() {
+    _viewAnim.dispose();
+    super.dispose();
+  }
+
+  void _tickView() {
+    final t = Curves.easeOutCubic.transform(_viewAnim.value);
+    final days = lerpVisibleDays(_animFromDays, _animToDays, t);
+    final shift = (dayCoord(_animToCenter) - dayCoord(_animFromCenter)) * t;
+    final center = addDays(_animFromCenter, shift);
+    _applyViewport(addDays(center, -days / 2), days);
+  }
+
+  /// Eases the view to [days] wide about [center], starting from the current
+  /// (possibly mid-animation) view so rapid taps chain smoothly.
+  void _animateViewport(DateTime center, double days) {
+    final to = days.clamp(minVisibleDays, maxVisibleDays).toDouble();
+    _animFromCenter = addDays(_viewStart, _visibleDays / 2);
+    _animFromDays = _visibleDays;
+    _animToCenter = center;
+    _animToDays = to;
+    // Fetch the target window once up front (it covers every frame).
+    _extendData(addDays(center, -to / 2), to);
+    _viewAnim.forward(from: 0);
+  }
+
   /// Selected view unit per account (kept while the app is open).
   static final Map<String, ViewUnit> _unitByAccount = {};
 
@@ -69,6 +107,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
   void _ensureWindow(Account account) {
     if (_windowAccountId == account.id) return;
     _windowAccountId = account.id;
+    _viewAnim.stop();
     _seriesCache = null;
     _seriesCacheQuery = null;
     final today = dateOnly(DateTime.now());
@@ -118,14 +157,17 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     _selectUnit(ViewUnit.values[i]);
   }
 
-  /// Selects [unit] and shows exactly the unit containing the view centre,
-  /// its start leftmost, refitting the balance (like the old Fit week).
+  /// Selects [unit] and eases the view to one unit wide about the same
+  /// centre date. The balance range is left as it is (no refit), so nothing
+  /// jumps; Fit is there to refit.
   void _selectUnit(ViewUnit unit) {
-    final center = addDays(_viewStart, _visibleDays / 2);
-    final span = unit.spanContaining(center);
-    _setUnit(unit);
-    _onViewport(span.start, span.days);
-    setState(() => _fitToken++);
+    // Mid-animation, keep the original centre so chained taps never drift.
+    final center = _viewAnim.isAnimating
+        ? _animToCenter
+        : addDays(_viewStart, _visibleDays / 2);
+    final days = unit.spanContaining(center).days;
+    setState(() => _setUnit(unit));
+    _animateViewport(center, days);
   }
 
   /// ◀ (-1) / ▶ (1): one unit back / forward, snapped to unit starts.
@@ -184,8 +226,24 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     setState(() => _fitToken++);
   }
 
+  /// Instant view change (pan, pinch, ◀ ▶, fits); cancels any easing.
   void _onViewport(DateTime start, double visibleDays) {
+    _viewAnim.stop();
+    _applyViewport(start, visibleDays);
+  }
+
+  void _extendData(DateTime start, double visibleDays) {
     final days = visibleDays.clamp(minVisibleDays, maxVisibleDays).toDouble();
+    final r = _dataWindowFor(start, days);
+    if (r.$1 != _dataFrom || r.$2 != _dataTo) {
+      setState(() {
+        _dataFrom = r.$1;
+        _dataTo = r.$2;
+      });
+    }
+  }
+
+  (DateTime, DateTime) _dataWindowFor(DateTime start, double days) {
     final viewEnd = addDays(start, days);
     var from = _dataFrom;
     var to = _dataTo;
@@ -196,6 +254,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     if (!dateOnly(viewEnd).isBefore(addCalendarDays(to, -bufferDays))) {
       to = addCalendarDays(viewEnd, bufferDays * 2);
     }
+    return (from, to);
+  }
+
+  void _applyViewport(DateTime start, double visibleDays) {
+    final days = visibleDays.clamp(minVisibleDays, maxVisibleDays).toDouble();
+    final (from, to) = _dataWindowFor(start, days);
     setState(() {
       _viewStart = start;
       _visibleDays = days;
@@ -402,12 +466,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
                                   zeroToken: _zeroToken,
                                   onFitRequested: (mode) => _fit(mode, account),
                                   onZoomStep: _zoomStep,
+                                  unitLabel: _unit.label,
+                                  canZoomIn: _unit.index > 0,
+                                  canZoomOut:
+                                      _unit.index < ViewUnit.values.length - 1,
                                   onShift: _shift,
                                   series: series,
                                   currency: account.currency,
                                   seedDate: account.seedDate,
                                   seedBalance: account.seedBalance.toDouble(),
                                   lossThreshold: account.lossThreshold
+                                      .toDouble(),
+                                  currencyScale: account.currencyScale
                                       .toDouble(),
                                   fitIncludesThreshold: _fitThreshold,
                                   viewStart: _viewStart,
@@ -505,101 +575,30 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     );
   }
 
-  /// Unit picker with − / + (desktop) and ◀ ▶ shift buttons beside it.
+  /// ◀ ▶ shift buttons; the unit itself is changed by the chart's floating
+  /// horizontal scale pair (which also shows its name).
   Widget _unitGroup(ThemeData theme, {required bool compact}) {
-    final i = _unit.index;
     Widget divider() => Container(width: 1, height: 22, color: AppTheme.border);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          decoration: AppTheme.panel(color: AppTheme.raised, r: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!compact) ...[
-                IconButton(
-                  key: const ValueKey('zoom-out'),
-                  tooltip: 'Larger unit (−)',
-                  onPressed: i < ViewUnit.values.length - 1
-                      ? () => _zoomStep(1)
-                      : null,
-                  icon: const Icon(Icons.zoom_out_rounded),
-                ),
-                divider(),
-              ],
-              PopupMenuButton<ViewUnit>(
-                key: const ValueKey('unit-menu'),
-                tooltip: 'View unit',
-                initialValue: _unit,
-                position: PopupMenuPosition.under,
-                onSelected: _selectUnit,
-                itemBuilder: (context) => [
-                  for (final u in ViewUnit.values)
-                    CheckedPopupMenuItem(
-                      value: u,
-                      checked: u == _unit,
-                      child: Text(u.label),
-                    ),
-                ],
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: 44,
-                    minWidth: compact ? 88 : 104,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          _unit.label,
-                          key: const ValueKey('span-label'),
-                          style: theme.textTheme.labelLarge,
-                        ),
-                        const SizedBox(width: 2),
-                        const Icon(Icons.expand_more_rounded, size: 18),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              if (!compact) ...[
-                divider(),
-                IconButton(
-                  key: const ValueKey('zoom-in'),
-                  tooltip: 'Smaller unit (+)',
-                  onPressed: i > 0 ? () => _zoomStep(-1) : null,
-                  icon: const Icon(Icons.zoom_in_rounded),
-                ),
-              ],
-            ],
+    return Container(
+      decoration: AppTheme.panel(color: AppTheme.raised, r: 10),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            key: const ValueKey('shift-left'),
+            tooltip: 'Back one ${_unit.label.toLowerCase()} ([)',
+            onPressed: () => _shift(-1),
+            icon: const Icon(Icons.chevron_left_rounded),
           ),
-        ),
-        SizedBox(width: compact ? 2 : 6),
-        Container(
-          decoration: AppTheme.panel(color: AppTheme.raised, r: 10),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                key: const ValueKey('shift-left'),
-                tooltip: 'Back one ${_unit.label.toLowerCase()} ([)',
-                onPressed: () => _shift(-1),
-                icon: const Icon(Icons.chevron_left_rounded),
-              ),
-              divider(),
-              IconButton(
-                key: const ValueKey('shift-right'),
-                tooltip: 'Forward one ${_unit.label.toLowerCase()} (])',
-                onPressed: () => _shift(1),
-                icon: const Icon(Icons.chevron_right_rounded),
-              ),
-            ],
+          divider(),
+          IconButton(
+            key: const ValueKey('shift-right'),
+            tooltip: 'Forward one ${_unit.label.toLowerCase()} (])',
+            onPressed: () => _shift(1),
+            icon: const Icon(Icons.chevron_right_rounded),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1157,7 +1156,7 @@ class _TipsBar extends StatelessWidget {
                 'Drag or tap the dates to add',
               ),
               tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
-              tip(Icons.view_week_rounded, 'Pick a unit, ◀ ▶ to step'),
+              tip(Icons.view_week_rounded, '↔ buttons change unit, ◀ ▶ step'),
               tip(Icons.mouse_outlined, 'Scroll or pinch to zoom'),
               tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
             ],

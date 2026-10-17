@@ -74,7 +74,33 @@ class Account {
     required this.lossThreshold,
     this.transactionOrder = const [],
     this.displayOrder = 0,
+    this.currencyScale = defaultCurrencyScale,
   });
+
+  /// Currency scale choices: dollars per y-axis grid step, with labels.
+  static const currencyScales = <int, String>{
+    1: 'Dollars (\$1)',
+    10: 'Tens (\$10)',
+    100: 'Hundreds (\$100)',
+    1000: 'Thousands (\$1k)',
+    10000: 'Tens of thousands (\$10k)',
+    100000: 'Hundreds of thousands (\$100k)',
+    1000000: 'Millions (\$1M)',
+  };
+  static const defaultCurrencyScale = 100;
+
+  /// Smallest scale whose ~10-unit view holds [span] in 9 units ($1..$1M).
+  /// Mirrors the server's autoCurrencyScale.
+  static int autoCurrencyScale(double span) {
+    final s = span.abs();
+    for (final unit in currencyScales.keys) {
+      if (s <= 9 * unit) return unit;
+    }
+    return currencyScales.keys.last;
+  }
+
+  /// Dollars per y grid step; the timeline's default vertical view is ~10.
+  final int currencyScale;
 
   final String id;
   final String projectId;
@@ -102,6 +128,9 @@ class Account {
       lossThreshold: loss == null ? Decimal.zero : parseMoney(loss),
       transactionOrder: (order as List).map((e) => e.toString()).toList(),
       displayOrder: (json['displayOrder'] ?? json['display_order'] ?? 0) as int,
+      currencyScale:
+          (json['currencyScale'] ?? json['currency_scale'] ?? defaultCurrencyScale)
+              as int,
     );
   }
 
@@ -113,6 +142,7 @@ class Account {
     'seedBalance': moneyToJson(seedBalance),
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
+    'currencyScale': currencyScale,
     'transactionOrder': transactionOrder,
     'displayOrder': displayOrder,
   };
@@ -123,6 +153,7 @@ class Account {
     'seedBalance': moneyToJson(seedBalance),
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
+    'currencyScale': currencyScale,
   };
 
   Map<String, dynamic> toPatchJson() => {
@@ -131,6 +162,7 @@ class Account {
     'seedBalance': moneyToJson(seedBalance),
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
+    'currencyScale': currencyScale,
     'transactionOrder': transactionOrder,
   };
 
@@ -144,6 +176,7 @@ class Account {
     Decimal? lossThreshold,
     List<String>? transactionOrder,
     int? displayOrder,
+    int? currencyScale,
   }) {
     return Account(
       id: id ?? this.id,
@@ -155,6 +188,7 @@ class Account {
       lossThreshold: lossThreshold ?? this.lossThreshold,
       transactionOrder: transactionOrder ?? this.transactionOrder,
       displayOrder: displayOrder ?? this.displayOrder,
+      currencyScale: currencyScale ?? this.currencyScale,
     );
   }
 }

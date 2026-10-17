@@ -13,7 +13,7 @@
 #            Start with: WEB_MODE=debug ./dev.sh restart
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"; LOGS=/workspace/dev-logs; PGDATA=/workspace/dev-data/pg
-PGBIN=$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)
+PGBIN=$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)
 export PATH="$HOME/flutter/bin:$PATH" DATABASE_URL=postgres://budget:budget@127.0.0.1:5432/budget API_HOST=127.0.0.1 API_PORT=8080
 WEB_PORT=5080; PROXY_PORT=8000; S=budget; WEB_MODE=${WEB_MODE:-release}; export WEB_MODE
 pg_start() {
@@ -22,7 +22,12 @@ pg_start() {
   "$PGBIN/psql" -h 127.0.0.1 -U budget -d postgres -tAc "select 1 from pg_database where datname='budget'" | grep -q 1 || "$PGBIN/createdb" -h 127.0.0.1 -U budget budget
 }
 case "${1:-}" in
+setup) exec "$ROOT/setup.sh" "${@:2}" ;;
 start)
+  if [ ! -x "$PGBIN/postgres" ] || ! command -v ngrok >/dev/null || ! command -v inotifywait >/dev/null; then
+    echo "missing system deps -> running setup.sh --deps"; "$ROOT/setup.sh" --deps || exit 1
+    PGBIN=$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)
+  fi
   mkdir -p $LOGS; pg_start
   (cd "$ROOT/server" && dart pub get >/dev/null && dart run bin/migrate.dart) 2>&1 | tee $LOGS/migrate.log
   tmux has-session -t $S 2>/dev/null && { echo "already running"; exit 0; }

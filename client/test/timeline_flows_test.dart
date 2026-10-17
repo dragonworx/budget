@@ -10,6 +10,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final _today = DateTime.now();
@@ -23,6 +24,7 @@ Account _account() => Account(
   seedBalance: Decimal.fromInt(1000),
   seedDate: _day.subtract(const Duration(days: 30)),
   lossThreshold: Decimal.zero,
+  currencyScale: 1000,
 );
 
 Transaction _tx(String id, String name, {TransactionDirection? dir}) =>
@@ -411,18 +413,69 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('shift-left')));
     await tester.pump();
     expect(chart().viewStart, DateTime(start.year, start.month - 1));
-    await tester.tap(find.byKey(const ValueKey('zoom-in')));
+    double center() =>
+        dayCoord(chart().viewStart) + chart().visibleDays / 2;
+    final c0 = center();
+    // Compress (zoom out) sits on the left, stretch (zoom in) on the right.
+    expect(
+      tester.getCenter(find.byKey(const ValueKey('x-scale-out'))).dx,
+      lessThan(tester.getCenter(find.byKey(const ValueKey('span-label'))).dx),
+    );
+    expect(
+      tester.getCenter(find.byKey(const ValueKey('x-scale-in'))).dx,
+      greaterThan(
+          tester.getCenter(find.byKey(const ValueKey('span-label'))).dx),
+    );
+    await tester.tap(find.byKey(const ValueKey('x-scale-in')));
     await tester.pump();
-    expect(find.text('3 weeks'), findsOneWidget);
-    expect(chart().viewStart.weekday, DateTime.monday);
-    expect(chart().visibleDays, 21);
-    await tester.tap(find.byKey(const ValueKey('unit-menu')));
+    expect(find.text('3 weeks'), findsOneWidget); // label switches at once
+    await tester.pump(const Duration(milliseconds: 100));
+    // Mid-ease: between the two spans, same centre date.
+    expect(chart().visibleDays, inExclusiveRange(21, 31));
+    expect(center(), closeTo(c0, 1e-6));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Year').last);
+    expect(chart().visibleDays, closeTo(21, 1e-9));
+    expect(center(), closeTo(c0, 1e-6));
+    // Rapid taps chain from the animated state and still keep the centre.
+    for (var i = 0; i < 8; i++) {
+      await tester.tap(find.byKey(const ValueKey('x-scale-out')));
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(center(), closeTo(c0, 1e-6));
+    }
     await tester.pumpAndSettle();
+    expect(find.text('Year'), findsOneWidget);
+    expect(
+      tester.widget<IconButton>(find.byKey(const ValueKey('x-scale-out')))
+          .onPressed,
+      isNull,
+    );
+    expect(chart().visibleDays, anyOf(365, 366));
+    expect(center(), closeTo(c0, 1e-6));
+    // ◀ ▶ stay instant and unit-snapped.
+    await tester.tap(find.byKey(const ValueKey('shift-left')));
+    await tester.pump();
     expect(chart().viewStart.month, 1);
     expect(chart().viewStart.day, 1);
-    expect(chart().visibleDays, anyOf(365, 366));
+  });
+
+  testWidgets('y-scale buttons ease the balance axis, never the time range', (
+    tester,
+  ) async {
+    await _pump(tester);
+    BalanceChart chart() =>
+        tester.widget<BalanceChart>(find.byType(BalanceChart));
+    final start = chart().viewStart;
+    final days = chart().visibleDays;
+    for (final key in ['y-scale-in', 'y-scale-in', 'y-scale-out']) {
+      await tester.tap(find.byKey(ValueKey(key)));
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(chart().viewStart, start);
+      expect(chart().visibleDays, days);
+    }
+    await tester.pumpAndSettle();
+    expect(chart().viewStart, start);
+    expect(chart().visibleDays, days);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('no dot tooltip after a pinch, whichever finger lifts last', (
@@ -520,6 +573,66 @@ void main() {
     expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
   });
 
+  testWidgets('active dot highlights its balance on the y axis until '
+      'navigation', (tester) async {
+    await _pump(tester, size: const Size(390, 844));
+    final plot = tester.getRect(find.byType(BalanceChart));
+    final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+    final pill = find.byKey(const ValueKey('y-highlight'));
+    final line = find.byKey(const ValueKey('y-highlight-line'));
+    Future<Offset> reveal() async {
+      for (var fy = 0.1; fy < 0.8; fy += 0.03) {
+        for (var fx = 0.3; fx < 0.98; fx += 0.04) {
+          final p = Offset(
+            plot.left + plot.width * fx,
+            plot.top + plot.height * fy,
+          );
+          await tester.tapAt(p, kind: PointerDeviceKind.touch);
+          await tester.pump();
+          if (tip.evaluate().isNotEmpty) return p;
+        }
+      }
+      fail('a tap should reveal some dot');
+    }
+
+    expect(pill, findsNothing);
+    await reveal();
+    expect(pill, findsOneWidget);
+    expect(line, findsOneWidget);
+    // Pill sits at the left axis, bold.
+    expect(tester.getRect(pill).left, lessThan(plot.left + 60));
+    final text = tester.widget<Text>(
+      find.descendant(of: pill, matching: find.byType(Text)),
+    );
+    expect(text.data, startsWith('A\$'));
+    expect(text.style?.fontWeight, FontWeight.w800);
+    await tester.pump(const Duration(seconds: 10));
+    expect(pill, findsOneWidget, reason: 'stays while pinned');
+    // A zoom button clears it (and the popup).
+    await tester.tap(find.byKey(const ValueKey('y-scale-out')));
+    await tester.pump();
+    expect(pill, findsNothing);
+    expect(tip, findsNothing);
+    await tester.pumpAndSettle();
+    // ◀ ▶ shift clears it.
+    await reveal();
+    expect(pill, findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('shift-right')));
+    await tester.pump();
+    expect(pill, findsNothing);
+    expect(tip, findsNothing);
+    await tester.pumpAndSettle();
+    // A tap on empty space clears it.
+    await reveal();
+    await tester.tapAt(
+      Offset(plot.left + 8, plot.top + 6),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump();
+    expect(pill, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('touch popup keeps its exact rect across pointer up', (
     tester,
   ) async {
@@ -555,7 +668,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.getRect(tip), before, reason: 'scrub lift');
     // Tap again on the shown dot while it is pinned: still the same rect.
-    final g2 = await tester.startGesture(spot, kind: PointerDeviceKind.touch);
+    // (Where the scrub ended, so it is the shown dot even when dots are dense.)
+    final g2 = await tester.startGesture(
+      spot + const Offset(24, 0),
+      kind: PointerDeviceKind.touch,
+    );
     await tester.pump();
     final pressed = tester.getRect(tip);
     expect(pressed, before);

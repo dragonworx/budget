@@ -81,6 +81,8 @@ void main() {
     );
     await _open(tester, existing: existing);
     expect(find.byKey(const ValueKey('seed-move-note')), findsNothing);
+    await tester.ensureVisible(find.text('Fri 16 Oct 2026'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Fri 16 Oct 2026'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('23'));
