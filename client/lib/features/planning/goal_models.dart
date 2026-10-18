@@ -329,3 +329,80 @@ class GoalResult {
     return out;
   }
 }
+
+/// A saved what-if: a goal request stored per account. Included scenarios
+/// are overlaid on the chart as coloured ghost lines; they never change the
+/// account's real transactions.
+class Scenario {
+  const Scenario({
+    required this.id,
+    required this.name,
+    required this.colorIndex,
+    required this.included,
+    required this.request,
+  });
+
+  final String id;
+  final String name;
+  final int colorIndex;
+  final bool included;
+  final GoalRequest request;
+
+  factory Scenario.fromJson(Map<String, dynamic> j) => Scenario(
+    id: j['id'] as String,
+    name: j['name'] as String,
+    colorIndex: (j['colorIndex'] as num?)?.toInt() ?? 0,
+    included: j['included'] as bool? ?? true,
+    request: GoalRequest.fromJson(
+      Map<String, dynamic>.from(j['request'] as Map),
+    ),
+  );
+}
+
+/// "+3 wks" / "−5 days" / "same": how much later (+) the alert date lands.
+String shiftText(int days) {
+  if (days == 0) return 'same';
+  final sign = days > 0 ? '+' : '−';
+  final a = days.abs();
+  if (a >= 14 && a % 7 == 0 || a >= 28) {
+    final w = (a / 7).round();
+    return '$sign$w wk${w == 1 ? '' : 's'}';
+  }
+  return '$sign$a day${a == 1 ? '' : 's'}';
+}
+
+/// Delta of a solved scenario against the account as it is: the balance
+/// change at the plan's end and how far the first alert date moves.
+/// [baselineAlert] is the account's current first alert date (null: none
+/// within the horizon). Returns parts like ['+A$420 by 1 Mar', 'alert +3 wks'].
+({double? balance, int? alertShiftDays, bool alertCleared, bool alertNew})
+scenarioDelta(GoalResult r, DateTime? baselineAlert) {
+  final end = r.endBalance, base = r.baselineEndBalance;
+  final balance = end == null || base == null ? null : end - base;
+  final a = r.alertDate;
+  int? shift;
+  var cleared = false, isNew = false;
+  if (a != null && baselineAlert != null) {
+    shift = DateTime.utc(a.year, a.month, a.day)
+        .difference(
+          DateTime.utc(
+            baselineAlert.year,
+            baselineAlert.month,
+            baselineAlert.day,
+          ),
+        )
+        .inDays;
+  } else if (a == null && baselineAlert != null) {
+    final endDate = r.values?.endDate;
+    // Only "cleared" when the plan window covers the old alert date.
+    cleared = endDate != null && !endDate.isBefore(baselineAlert);
+  } else if (a != null && baselineAlert == null) {
+    isNew = true;
+  }
+  return (
+    balance: balance,
+    alertShiftDays: shift,
+    alertCleared: cleared,
+    alertNew: isNew,
+  );
+}

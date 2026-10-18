@@ -35,7 +35,11 @@ class GoalPanel extends ConsumerStatefulWidget {
     required this.account,
     required this.onResult,
     this.initial,
+    this.onSaveScenario,
   });
+
+  /// "Save as scenario": stores the current request as a what-if.
+  final ValueChanged<GoalRequest>? onSaveScenario;
 
   final Account account;
 
@@ -319,6 +323,17 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
             icon: const Icon(Icons.add_rounded, size: 18),
             label: Text(_saving ? 'Adding…' : 'Add plan to account'),
           ),
+          if (widget.onSaveScenario != null) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              key: const ValueKey('goal-save-scenario'),
+              onPressed: _result?.isComplete ?? false
+                  ? () => widget.onSaveScenario!(_request())
+                  : null,
+              icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+              label: const Text('Save as scenario'),
+            ),
+          ],
           ...footer(context),
         ],
       ),

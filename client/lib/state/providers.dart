@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api_client.dart';
 import '../data/models.dart';
+import '../features/planning/goal_models.dart';
 import '../data/repositories.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
@@ -267,6 +268,36 @@ final insightsProvider = FutureProvider.family<BalanceInsights, String>((
       .read(accountRepositoryProvider)
       .insights(accountId, DateTime.now());
 });
+
+/// Saved what-if scenarios for an account.
+final scenariosProvider = FutureProvider.family<List<Scenario>, String>((
+  ref,
+  accountId,
+) {
+  return ref.read(accountRepositoryProvider).scenarios(accountId);
+});
+
+/// Each scenario with its solve (null when excluded or unsolvable). Watches
+/// [insightsProvider] so every data change (which invalidates insights)
+/// re-solves the scenarios against the new baseline.
+final scenarioResultsProvider =
+    FutureProvider.family<List<(Scenario, GoalResult?)>, String>((
+      ref,
+      accountId,
+    ) async {
+      final list = await ref.watch(scenariosProvider(accountId).future);
+      await ref.watch(insightsProvider(accountId).future);
+      final repo = ref.read(accountRepositoryProvider);
+      return Future.wait([
+        for (final s in list)
+          s.included
+              ? repo
+                    .goal(accountId, s.request)
+                    .then<(Scenario, GoalResult?)>((r) => (s, r))
+                    .catchError((Object _) => (s, null))
+              : Future.value((s, null)),
+      ]);
+    });
 
 /// Every project with its accounts, in display order — for the
 /// project > account pickers (header navigation and transfer destination).

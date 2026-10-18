@@ -104,6 +104,47 @@ class AccountRepository {
   }
 
   /// Solves one balance-goal unknown (`POST /accounts/:id/goal`).
+  Future<List<Scenario>> scenarios(String accountId) async {
+    final data = await _api.get('/api/accounts/$accountId/scenarios');
+    return [
+      for (final j in data as List)
+        Scenario.fromJson(Map<String, dynamic>.from(j as Map)),
+    ];
+  }
+
+  Future<Scenario> createScenario(
+    String accountId, {
+    required String name,
+    required GoalRequest request,
+  }) async {
+    final data = await _api.post(
+      '/api/accounts/$accountId/scenarios',
+      body: {'name': name, 'request': request.toJson()},
+    );
+    return Scenario.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<Scenario> updateScenario(
+    String accountId,
+    String id, {
+    String? name,
+    bool? included,
+    GoalRequest? request,
+  }) async {
+    final data = await _api.patch(
+      '/api/accounts/$accountId/scenarios/$id',
+      body: {
+        'name': ?name,
+        'included': ?included,
+        if (request != null) 'request': request.toJson(),
+      },
+    );
+    return Scenario.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<void> deleteScenario(String accountId, String id) =>
+      _api.delete('/api/accounts/$accountId/scenarios/$id');
+
   Future<GoalResult> goal(String accountId, GoalRequest request) async {
     final data = await _api.post(
       '/api/accounts/$accountId/goal',

@@ -5,8 +5,9 @@ import '../../theme/app_theme.dart';
 import '../transactions/solve_sheet.dart';
 import 'goal_models.dart';
 import 'goal_panel.dart';
+import 'scenarios_panel.dart';
 
-enum PlanTab { goal, payment }
+enum PlanTab { goal, payment, scenarios }
 
 /// Non-blocking planning panel docked beside (desktop) or under (phone)
 /// the chart, so the chart and its live preview line stay visible.
@@ -25,7 +26,12 @@ class PlanPanel extends StatelessWidget {
     this.goalKey,
     this.goalInitial,
     this.compact = false,
+    this.onSaveScenario,
+    this.onLoadScenario,
   });
+
+  final ValueChanged<GoalRequest>? onSaveScenario;
+  final ValueChanged<Scenario>? onLoadScenario;
 
   final Account account;
   final PlanTab tab;
@@ -66,16 +72,30 @@ class PlanPanel extends StatelessWidget {
                       ButtonSegment(
                         value: PlanTab.goal,
                         label: Text('Plan a goal'),
-                        icon: Icon(Icons.flag_rounded, size: 16),
                       ),
                       ButtonSegment(
                         value: PlanTab.payment,
                         label: Text('Plan a payment'),
-                        icon: Icon(Icons.calculate_outlined, size: 16),
                       ),
                     ],
-                    selected: {tab},
-                    onSelectionChanged: (s) => onTab(s.first),
+                    emptySelectionAllowed: true,
+                    selected: {if (tab != PlanTab.scenarios) tab},
+                    onSelectionChanged: (s) {
+                      if (s.isNotEmpty) onTab(s.first);
+                    },
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('plan-tab-scenarios'),
+                  tooltip: 'Saved scenarios',
+                  isSelected: tab == PlanTab.scenarios,
+                  onPressed: () => onTab(
+                    tab == PlanTab.scenarios ? PlanTab.goal : PlanTab.scenarios,
+                  ),
+                  icon: const Icon(Icons.bookmarks_outlined),
+                  selectedIcon: const Icon(
+                    Icons.bookmarks_rounded,
+                    color: AppTheme.accent,
                   ),
                 ),
                 IconButton(
@@ -97,6 +117,7 @@ class PlanPanel extends StatelessWidget {
                   account: account,
                   initial: goalInitial,
                   onResult: onGoalResult,
+                  onSaveScenario: onSaveScenario,
                 ),
                 SolveSheet(
                   key: ValueKey('plan-payment-${account.id}'),
@@ -105,6 +126,10 @@ class PlanPanel extends StatelessWidget {
                   creditOnly: true,
                   onPreview: onPreview,
                   onDone: onDone,
+                ),
+                ScenariosPanel(
+                  account: account,
+                  onLoad: (s) => onLoadScenario?.call(s),
                 ),
               ],
             ),

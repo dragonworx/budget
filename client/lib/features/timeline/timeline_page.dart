@@ -16,6 +16,7 @@ import '../../widgets/ui.dart';
 import '../transactions/editor_outcome.dart';
 import '../transactions/import_dialog.dart';
 import '../planning/goal_models.dart';
+import '../planning/scenarios_panel.dart' show scenarioColor;
 import 'selection_period.dart';
 import '../planning/goal_panel.dart';
 import '../planning/plan_panel.dart';
@@ -113,6 +114,49 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// Target tool: taps / drags on the chart set the goal target.
   bool _targetMode = false;
 
+  /// Names and stores the goal request as a what-if (explicit button only).
+  Future<void> _saveScenario(BuildContext context, GoalRequest req) async {
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Save scenario'),
+        content: TextField(
+          key: const ValueKey('scenario-name'),
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 80,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(c, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('scenario-save'),
+            onPressed: () => Navigator.pop(c, ctrl.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.trim().isEmpty) return;
+    try {
+      await ref
+          .read(accountRepositoryProvider)
+          .createScenario(widget.accountId, name: name.trim(), request: req);
+      ref.invalidate(scenariosProvider(widget.accountId));
+      if (mounted) setState(() => _planTab = PlanTab.scenarios);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Couldn’t save: $e')));
+      }
+    }
+  }
+
   void _openPlan() => setState(() => _planOpen = true);
 
   /// Selection card "Plan…": open the goal tab over the selected range,
@@ -181,6 +225,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   bool get _goalActive => _planOpen && _planTab == PlanTab.goal;
 
   List<GhostLine> get _ghosts => [
+    for (final (sc, r)
+        in ref.watch(scenarioResultsProvider(widget.accountId)).valueOrNull ??
+            const <(Scenario, GoalResult?)>[])
+      if (sc.included && r != null && r.values != null)
+        GhostLine(
+          points: r.points,
+          color: scenarioColor(sc.colorIndex),
+          from: r.values!.startDate,
+          label: sc.name,
+        ),
     if (_planOpen && _planTab == PlanTab.goal) ?_goalGhost,
     if (_planOpen && _planTab == PlanTab.payment) ?_planGhost,
   ];
@@ -696,6 +750,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       onPreview: _onPlanPreview,
       onDone: (r) => _planDone(context, r),
       onGoalResult: _onGoalResult,
+      onSaveScenario: (req) => _saveScenario(context, req),
+      onLoadScenario: (sc) {
+        setState(() => _planTab = PlanTab.goal);
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _goalKey.currentState?.load(sc.request),
+        );
+      },
     );
     if (compact) {
       final h = MediaQuery.sizeOf(context).height;
