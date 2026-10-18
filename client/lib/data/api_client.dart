@@ -16,7 +16,30 @@ class ApiException implements Exception {
 }
 
 /// Thin HTTP wrapper around the Budget REST API.
+class ApiRequestStats {
+  int started = 0;
+  int completed = 0;
+  int get inFlight => started - completed;
+}
+
 class ApiClient {
+  /// Global request counters, used by the boot loader to know when the
+  /// initial data has arrived.
+  static final ApiRequestStats stats = ApiRequestStats();
+  static Object? firstFailure;
+
+  static Future<T> _track<T>(Future<T> Function() run) async {
+    stats.started++;
+    try {
+      return await run();
+    } catch (e) {
+      firstFailure ??= e;
+      rethrow;
+    } finally {
+      stats.completed++;
+    }
+  }
+
   ApiClient({http.Client? httpClient, String? baseUrl})
     : _http = httpClient ?? http.Client(),
       baseUrl = (baseUrl ?? AppConfig.apiBaseUrl).replaceAll(RegExp(r'/$'), '');
@@ -30,39 +53,49 @@ class ApiClient {
   }
 
   Future<dynamic> get(String path, {Map<String, String>? query}) async {
-    final response = await _http.get(_uri(path, query), headers: _headers());
+    final response = await _track(
+      () => _http.get(_uri(path, query), headers: _headers()),
+    );
     return _decode(response);
   }
 
   Future<dynamic> post(String path, {Object? body}) async {
-    final response = await _http.post(
-      _uri(path),
-      headers: _headers(),
-      body: body == null ? null : jsonEncode(body),
+    final response = await _track(
+      () => _http.post(
+        _uri(path),
+        headers: _headers(),
+        body: body == null ? null : jsonEncode(body),
+      ),
     );
     return _decode(response);
   }
 
   Future<dynamic> patch(String path, {Object? body}) async {
-    final response = await _http.patch(
-      _uri(path),
-      headers: _headers(),
-      body: body == null ? null : jsonEncode(body),
+    final response = await _track(
+      () => _http.patch(
+        _uri(path),
+        headers: _headers(),
+        body: body == null ? null : jsonEncode(body),
+      ),
     );
     return _decode(response);
   }
 
   Future<dynamic> put(String path, {Object? body}) async {
-    final response = await _http.put(
-      _uri(path),
-      headers: _headers(),
-      body: body == null ? null : jsonEncode(body),
+    final response = await _track(
+      () => _http.put(
+        _uri(path),
+        headers: _headers(),
+        body: body == null ? null : jsonEncode(body),
+      ),
     );
     return _decode(response);
   }
 
   Future<void> delete(String path) async {
-    final response = await _http.delete(_uri(path), headers: _headers());
+    final response = await _track(
+      () => _http.delete(_uri(path), headers: _headers()),
+    );
     _decode(response, allowEmpty: true);
   }
 

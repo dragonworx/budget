@@ -969,3 +969,9 @@ String weekLabel(DateTime monday, double width) {
   if (width >= 18) return '${monday.day}';
   return '';
 }
+
+
+/// Span multiplier for one vertical wheel event of [dy] logical pixels
+/// (line-mode wheels already arrive scaled to pixels by the engine).
+/// Clamped per event so a single huge notch can't jump; up (< 0) zooms in.
+double wheelZoomFactor(double dy) => math.exp(dy.clamp(-240.0, 240.0) * 0.0018);

@@ -31,8 +31,106 @@
 
   <title>budget_client</title>
   <link rel="manifest" href="manifest.json">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <style id="bl-style">
+    html,body{margin:0;background:#0D1117}
+    #bl{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#0D1117;color:#E6EBF2;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;transition:opacity .35s ease;padding:16px;box-sizing:border-box}
+    #bl.out{opacity:0;pointer-events:none}
+    #bl .card{width:100%;max-width:360px;background:#141A22;border:1px solid #2A3441;border-radius:14px;padding:20px 18px}
+    #bl h1{margin:0 0 2px;font-size:17px;font-weight:600}
+    #bl .lbl{color:#A2ADBC;font-size:13px;min-height:18px;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #bl .bar{height:6px;border-radius:3px;background:#222B37;overflow:hidden;position:relative}
+    #bl .fill{height:100%;width:0;background:#3DD6B5;border-radius:3px;transition:width .2s ease}
+    #bl .bar.ind .fill{position:absolute;width:30%!important;animation:blind 1.1s ease-in-out infinite}
+    @keyframes blind{0%{left:-30%}100%{left:100%}}
+    #bl .pct{display:flex;justify-content:space-between;color:#7F8A9A;font-size:12px;margin:6px 0 12px}
+    #bl ul{list-style:none;margin:0;padding:0;font-size:13px}
+    #bl li{display:flex;align-items:center;gap:8px;padding:3px 0;color:#7F8A9A}
+    #bl li .ic{width:16px;text-align:center;flex:none}
+    #bl li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #bl li .t{font-variant-numeric:tabular-nums;font-size:12px}
+    #bl li.on{color:#E6EBF2}#bl li.on .ic{color:#3DD6B5;animation:blsp 1s linear infinite}
+    #bl li.ok{color:#A2ADBC}#bl li.ok .ic{color:#3DD6B5}
+    #bl li.err{color:#FF7B72}
+    @keyframes blsp{to{transform:rotate(360deg)}}
+    #bl .errbox{display:none;margin-top:14px;color:#FF7B72;font-size:13px}
+    #bl.failed .errbox{display:block}#bl.failed .fill{background:#FF7B72}
+    #bl button{margin-top:10px;background:#3DD6B5;color:#0D1117;border:0;border-radius:8px;padding:10px 18px;font:600 14px system-ui,sans-serif;min-height:40px}
+  </style>
 </head>
 <body>
+  <div id="bl" role="status" aria-live="polite"><div class="card">
+    <h1>Budget</h1><div class="lbl" id="bl-lbl">Starting…</div>
+    <div class="bar" id="bl-bar"><div class="fill" id="bl-fill"></div></div>
+    <div class="pct"><span id="bl-pct">0%</span><span id="bl-time">0.0s</span></div>
+    <ul id="bl-list"></ul>
+    <div class="errbox"><div id="bl-err"></div><button type="button" onclick="location.reload()">Retry</button></div>
+  </div></div>
+  <script>
+  /* budgetLoader: tiny boot progress overlay. API: stage(name[,label]), progress(name,fraction), done(name?), error(msg), finish() */
+  (function(){
+    var T0=performance.timeOrigin?0:0, $=function(i){return document.getElementById(i)};
+    // Ordered stages and their share of the overall bar.
+    var DEF=[['page','Page loaded',3],['bootstrap','Flutter loader',4],['main','App code (main.dart.js)',38],['engine','Engine (CanvasKit wasm)',25],['init','Compile + start engine',12],['fonts','Fonts',6],['frame','First frame',4],['data','Loading your data',8]];
+    var S={},order=[],finished=false,failed=false,timer=null,TIMEOUT=60000;
+    DEF.forEach(function(d){S[d[0]]={k:d[0],label:d[1],w:d[2],f:0,st:'wait',t0:0,t1:0,ind:false};order.push(d[0]);});
+    function now(){return performance.now()}
+    function li(s){if(!s.el){s.el=document.createElement('li');s.el.innerHTML='<span class="ic"></span><span class="nm"></span><span class="t"></span>';$('bl-list').appendChild(s.el);}return s.el}
+    function render(){
+      var tot=0,sum=0,cur=null,ind=false;
+      order.forEach(function(k){var s=S[k];tot+=s.w;sum+=s.w*(s.st==='ok'?1:s.f);
+        if(s.st==='on'){cur=cur||s;ind=ind||s.ind}
+        if(s.st==='wait'&&!s.el)return;var e=li(s);e.className=s.st;
+        e.children[0].textContent=s.st==='ok'?'✓':s.st==='on'?'◌':s.st==='err'?'✕':'·';
+        e.children[1].textContent=s.label+(s.st==='on'&&!s.ind&&s.f>0&&s.f<1?' '+Math.round(s.f*100)+'%':'');
+        e.children[2].textContent=s.t0?(((s.t1||now())-s.t0)/1000).toFixed(1)+'s':'';});
+      var p=Math.min(100,Math.round(sum/tot*100));
+      $('bl-fill').style.width=p+'%';$('bl-pct').textContent=p+'%';
+      $('bl-bar').className='bar'+(ind&&!failed?' ind':'');
+      $('bl-time').textContent=(now()/1000).toFixed(1)+'s';
+      if(cur&&!failed)$('bl-lbl').textContent=cur.label+'…';
+    }
+    function get(k,label){if(!S[k]){S[k]={k:k,label:label||k,w:2,f:0,st:'wait',t0:0,t1:0};order.push(k)}if(label)S[k].label=label;return S[k]}
+    function start(s){if(s.st==='wait'){s.st='on';s.t0=now()}}
+    function arm(){clearTimeout(timer);if(!finished)timer=setTimeout(function(){api.error('Timed out while loading: '+(($('bl-lbl').textContent)||'').replace('…',''))},TIMEOUT)}
+    var api={
+      stage:function(k,label){if(finished||failed)return api;var s=get(k,label);
+        // starting a stage completes the earlier built-in ones still running only if asked via done()
+        start(s);arm();render();return api},
+      progress:function(k,f,label){var s=get(k,label);start(s);if(f==null||!(f>=0)){s.ind=true}else{s.ind=false;s.f=Math.max(s.f,Math.min(1,f))}arm();render();return api},
+      indeterminate:function(k){return api.progress(k,null)},
+      done:function(k){
+        if(k==null){return api.finish()}
+        var s=get(k);start(s);if(s.st!=='ok'){s.st='ok';s.f=1;s.t1=now()}arm();render();return api},
+      error:function(msg){if(finished)return;failed=true;clearTimeout(timer);
+        order.forEach(function(k){if(S[k].st==='on'){S[k].st='err';S[k].t1=now()}});
+        $('bl').className='failed';$('bl-err').textContent=msg||'Something went wrong while loading.';$('bl-lbl').textContent='Load failed';render();
+        try{console.error('[loader]',msg)}catch(e){}},
+      finish:function(){if(finished||failed)return;
+        order.forEach(function(k){var s=S[k];if(s.st!=='ok'){if(s.st==='wait'&&!s.el){s.st='ok';s.f=1;return}s.st='ok';s.f=1;s.t1=s.t1||now();if(!s.t0)s.t0=s.t1}});
+        finished=true;clearTimeout(timer);$('bl-lbl').textContent='Ready in '+(now()/1000).toFixed(1)+'s';render();
+        var el=$('bl');setTimeout(function(){el.className='out';setTimeout(function(){el.remove()},400)},250);
+        window.__blTimings=order.map(function(k){var s=S[k];return [k,Math.round(s.t0),Math.round(s.t1)]});},
+      timings:function(){return order.map(function(k){var s=S[k];return {stage:k,status:s.st,start:Math.round(s.t0),end:Math.round(s.t1)}})}
+    };
+    window.budgetLoader=api;
+    var tick=setInterval(function(){if(finished||failed){clearInterval(tick)}else render()},100);
+    // Page: HTML parsed (we are inline, so it is effectively done now).
+    S.page.t0=0.0001;api.done('page');api.stage('bootstrap');
+    // Resource timing: completion of CanvasKit / fonts / other assets.
+    var fontN=0;
+    function onRes(e){var n=e.name;
+      if(/flutter_bootstrap\.js|flutter\.js(\?|$)/.test(n)){/* handled in bootstrap */}
+      else if(/canvaskit|skwasm/.test(n)){if(e.responseStatus===0&&e.transferSize===0&&e.decodedBodySize===0&&!/gstatic/.test(n)||e.responseStatus>=400){return api.error('Failed to download '+n.split('/').pop())}start(S.engine);if(/\.wasm/.test(n)){api.done('engine');api.stage('init')}else{api.progress('engine',.15)}}
+      else if(/\.(ttf|otf|woff2?)(\?|$)|fonts\.gstatic|\/fonts\//.test(n)){fontN++;start(S.fonts);S.fonts.label='Fonts ('+fontN+')';api.progress('fonts',Math.min(.95,fontN/3))}
+    }
+    try{new PerformanceObserver(function(l){l.getEntries().forEach(onRes)}).observe({type:'resource',buffered:true})}catch(e){}
+    window.addEventListener('error',function(e){var t=e&&e.target;if(t&&(t.tagName==='SCRIPT'||t.tagName==='LINK'))api.error('Failed to load '+(t.src||t.href))},true);
+    window.addEventListener('unhandledrejection',function(e){var r=e&&e.reason,m=String(r&&r.message||r||'');if(/fetch|load|wasm|canvaskit|import/i.test(m)&&S.frame.st!=='ok')api.error('Load failed: '+m)});
+    window.addEventListener('flutter-first-frame',function(){api.done('init');api.done('frame');api.stage('data')});
+    arm();render();
+  })();
+  </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

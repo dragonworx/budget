@@ -15,7 +15,7 @@ function serveStatic(req, res) {
   const ext = path.extname(file);
   // index/bootstrap must never be cached so a rebuild shows up on reload; big assets are content-stable per build.
   const noCache = ['.html', '.json'].includes(ext) || /flutter(_bootstrap|_service_worker)?\.js$/.test(file) || file.endsWith('main.dart.js');
-  res.writeHead(200, { 'content-type': TYPES[ext] || 'application/octet-stream', 'cache-control': noCache ? 'no-cache' : 'public, max-age=300' });
+  res.writeHead(200, { 'content-type': TYPES[ext] || 'application/octet-stream', 'cache-control': noCache ? 'no-cache' : 'public, max-age=300', 'content-length': fs.statSync(file).size });
   fs.createReadStream(file).pipe(res);
 }
 const srv = http.createServer((req, res) => {

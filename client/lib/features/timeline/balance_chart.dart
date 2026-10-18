@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
@@ -11,6 +12,7 @@ import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
 import 'chart_geometry.dart';
+import 'duration_format.dart';
 import 'fit_ranges.dart';
 import 'occurrence_info.dart';
 import 'selection_period.dart';
@@ -123,7 +125,60 @@ class BalanceChart extends StatefulWidget {
 }
 
 class _BalanceChartState extends State<BalanceChart>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  /// Smooth wheel zoom: the wheel accumulates [_wheelTargetDays] and a
+  /// ticker eases the visible span toward it (exponential approach in log
+  /// space), anchored on [_wheelCenter] so the centre date never drifts.
+  late final Ticker _wheelTicker = createTicker(_tickWheel);
+  DateTime? _wheelCenter;
+  double _wheelTargetDays = 1;
+  double _wheelDays = 1;
+  Duration _wheelLast = Duration.zero;
+
+  /// Time constant of the ease (~95% settled after 3τ ≈ 120 ms).
+  static const double _wheelTau = 0.04;
+
+  bool get _wheelActive => _wheelTicker.isActive;
+
+  void _stopWheel() {
+    if (_wheelTicker.isActive) _wheelTicker.stop();
+    _wheelCenter = null;
+  }
+
+  /// Wheel up (dy < 0) zooms in, down zooms out, about the view centre.
+  void _wheelZoom(double dy) {
+    final center = _wheelActive && _wheelCenter != null
+        ? _wheelCenter!
+        : addDays(widget.viewStart, widget.visibleDays / 2);
+    final base = _wheelActive ? _wheelTargetDays : widget.visibleDays;
+    if (!_wheelActive) _wheelDays = widget.visibleDays;
+    _wheelCenter = center;
+    _wheelTargetDays = (base * wheelZoomFactor(dy))
+        .clamp(minVisibleDays, maxVisibleDays)
+        .toDouble();
+    if (!_wheelTicker.isActive) {
+      _wheelLast = Duration.zero;
+      _wheelTicker.start();
+    }
+  }
+
+  void _tickWheel(Duration elapsed) {
+    final center = _wheelCenter;
+    if (center == null) return _stopWheel();
+    final dt = _wheelLast == Duration.zero
+        ? 1 / 60
+        : (elapsed - _wheelLast).inMicroseconds / 1e6;
+    _wheelLast = elapsed;
+    final a = 1 - math.exp(-dt.clamp(0.0, 0.1) / _wheelTau);
+    final from = math.log(_wheelDays), to = math.log(_wheelTargetDays);
+    var next = math.exp(from + (to - from) * a);
+    final done = (to - math.log(next)).abs() < 0.002;
+    if (done) next = _wheelTargetDays;
+    _wheelDays = next;
+    widget.onViewportChanged(addDays(center, -next / 2), next);
+    if (done) _stopWheel();
+  }
+
   /// Eases y-scale button steps; pan / pinch / wheel stay direct.
   late final AnimationController _yAnim = AnimationController(
     vsync: this,
@@ -149,7 +204,6 @@ class _BalanceChartState extends State<BalanceChart>
   void _animateY(BalanceExtents target) {
     if (!target.min.isFinite || !target.max.isFinite) return;
     _clearTip();
-    _clearSelection();
     _yFrom = _yRange ?? target;
     _yTo = target;
     _yAnim.forward(from: 0);
@@ -234,17 +288,24 @@ class _BalanceChartState extends State<BalanceChart>
   @override
   void didUpdateWidget(covariant BalanceChart oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Someone else moved the view (pan, buttons, fit): drop the wheel ease.
+    if (_wheelActive &&
+        ((widget.visibleDays - _wheelDays).abs() > 1e-6 ||
+            (dayCoord(widget.viewStart) -
+                        (dayCoord(_wheelCenter!) - _wheelDays / 2))
+                    .abs() >
+                1e-6)) {
+      _stopWheel();
+    }
     if (oldWidget.viewStart != widget.viewStart ||
         oldWidget.visibleDays != widget.visibleDays ||
         oldWidget.fitToken != widget.fitToken ||
         oldWidget.currencyScale != widget.currencyScale) {
       // Any view navigation (pan, pinch, wheel, zoom, ◀ ▶, Fit, Today)
       // closes the info card and its y-axis highlight.
+      // The selection is anchored to its dates and survives navigation;
+      // only closing its card clears it.
       _clearTip();
-      if (!_userPanning) {
-        _selA = _selB = null;
-        _selecting = false;
-      }
     }
     final y = _yRange;
     if (oldWidget.zeroToken != widget.zeroToken && y != null) {
@@ -310,14 +371,12 @@ class _BalanceChartState extends State<BalanceChart>
   void _setYRange(BalanceExtents range) {
     if (!range.min.isFinite || !range.max.isFinite) return;
     _clearTip();
-    if (!_userPanning) _clearSelection();
     _yAnim.stop();
     setState(() => _yRange = range);
   }
 
   void _fitY() {
     _clearTip();
-    _clearSelection();
     _yAnim.stop();
     setState(() => _yRange = null);
   }
@@ -325,6 +384,7 @@ class _BalanceChartState extends State<BalanceChart>
   @override
   void dispose() {
     _yAnim.dispose();
+    _wheelTicker.dispose();
     _holdTimer?.cancel();
     _autoScroll?.cancel();
     _tapTipTimer?.cancel();
@@ -441,6 +501,25 @@ class _BalanceChartState extends State<BalanceChart>
   DateTime? _selA;
   DateTime? _selB;
 
+  /// Where the user dragged the selection card (top-left, chart coords);
+  /// null = default placement. Kept while the selection exists.
+  Offset? _cardPos;
+  final GlobalKey _cardKey = GlobalKey(debugLabel: 'selection-card');
+
+  /// Clamps a card at [pos] of [size] inside the chart area.
+  Offset _clampCard(Offset pos, Size size) {
+    final plot = _layout.plot;
+    final minX = 4.0, minY = plot.top + 4;
+    final maxX = math.max(minX, _size.width - size.width - 4);
+    final maxY = math.max(minY, _size.height - size.height - 4);
+    return Offset(pos.dx.clamp(minX, maxX), pos.dy.clamp(minY, maxY));
+  }
+
+  Size get _cardSize {
+    final box = _cardKey.currentContext?.findRenderObject();
+    return box is RenderBox && box.hasSize ? box.size : const Size(300, 200);
+  }
+
   /// The hold that created the selection is still down (extending it).
   bool _selecting = false;
 
@@ -453,10 +532,6 @@ class _BalanceChartState extends State<BalanceChart>
   DateTime? _selDragB;
 
   bool get _hasSelection => _selA != null;
-
-  /// A one-finger / mouse drag pan is in progress (keeps the selection).
-  bool get _userPanning =>
-      _pointer != null && _mode == _Gesture.pan && _dragged && !_multiTouch;
 
   /// Screen distance from [pos] to the plotted step line (plateaus and
   /// vertical steps), mirroring [_BalanceChartPainter._paintSeries].
@@ -527,6 +602,7 @@ class _BalanceChartState extends State<BalanceChart>
       _mode = _Gesture.select;
       _selA = day;
       _selB = day;
+      _cardPos = null; // a new selection gets the default card placement
       _selecting = true;
     });
   }
@@ -537,6 +613,7 @@ class _BalanceChartState extends State<BalanceChart>
     void clear() {
       _selA = null;
       _selB = null;
+      _cardPos = null;
       _selecting = false;
     }
 
@@ -804,10 +881,9 @@ class _BalanceChartState extends State<BalanceChart>
       return;
     }
     _reset();
-    if (dismiss && !dragged) {
-      _clearSelection(); // tap outside the band / card
-      return;
-    }
+    // A tap outside the band / card keeps the selection (it clears only
+    // via its card's close button) and still never shows dot info.
+    if (dismiss && !dragged) return;
     if (longPress || dismiss) return;
 
     final addDay = _downOnAdd;
@@ -914,6 +990,7 @@ class _BalanceChartState extends State<BalanceChart>
       return;
     }
     if (dx.abs() > dy.abs() && dx != 0) {
+      _stopWheel();
       final days = dx / width * widget.visibleDays;
       widget.onViewportChanged(
         addDays(widget.viewStart, days),
@@ -922,8 +999,9 @@ class _BalanceChartState extends State<BalanceChart>
       return;
     }
     if (dy == 0) return;
-    final factor = math.exp(dy.clamp(-400.0, 400.0) * 0.0016);
-    _zoomAt(event.localPosition.dx, factor);
+    // Vertical wheel drives the time scale, smoothly, about the centre.
+    _clearTip();
+    _wheelZoom(dy);
   }
 
   void _handleScale(PointerSignalEvent event) {
@@ -1101,11 +1179,13 @@ class _BalanceChartState extends State<BalanceChart>
                     ),
                   ),
                 ),
-                if (yRange != null) _yScaleControls(theme),
-                if (widget.onZoomStep != null) _xScaleControls(theme),
                 if (_mode == _Gesture.pick && _pickDay != null)
                   ..._pickOverlay(theme),
                 if (_selA != null && _selB != null) ..._selectionOverlay(theme),
+                // Scale controls float above the selection band and card so
+                // the view stays adjustable while a selection is open.
+                if (yRange != null) _yScaleControls(theme),
+                if (widget.onZoomStep != null) _xScaleControls(theme),
                 ValueListenableBuilder<DateTime?>(
                   valueListenable: _hoverDay,
                   builder: (context, day, _) {
@@ -1245,7 +1325,10 @@ class _BalanceChartState extends State<BalanceChart>
       top: controls.top,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0x9910151C),
+          // Near-opaque over a selection card so they read clearly on top.
+          color: _selA != null
+              ? const Color(0xF210151C)
+              : const Color(0x9910151C),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: const Color(0x22FFFFFF)),
         ),
@@ -1301,7 +1384,10 @@ class _BalanceChartState extends State<BalanceChart>
       width: controls.width,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0x9910151C),
+          // Near-opaque over a selection card so they read clearly on top.
+          color: _selA != null
+              ? const Color(0xF210151C)
+              : const Color(0x9910151C),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: const Color(0x22FFFFFF)),
         ),
@@ -1493,6 +1579,11 @@ class _BalanceChartState extends State<BalanceChart>
       ),
     );
 
+    // Fully scrolled out of view: keep the selection (and its card) but
+    // draw no band or handles until it comes back.
+    if (rawX1 <= layout.plot.left || rawX0 >= layout.plot.right) {
+      return [_selectionCard(theme, summary, x0, x1)];
+    }
     final widgets = <Widget>[
       Positioned(
         left: x0,
@@ -1586,7 +1677,15 @@ class _BalanceChartState extends State<BalanceChart>
         children: [
           Text(name, style: theme.textTheme.labelMedium),
           const SizedBox(width: 6),
-          Expanded(child: Text(detail, style: label, maxLines: 1)),
+          Expanded(
+            child: Text(
+              detail,
+              style: label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 10),
           value,
         ],
       ),
@@ -1595,6 +1694,14 @@ class _BalanceChartState extends State<BalanceChart>
     final net = sum.net;
     final header = Row(
       children: [
+        const Padding(
+          padding: EdgeInsets.only(right: 6),
+          child: Icon(
+            Icons.drag_indicator_rounded,
+            size: 16,
+            color: AppTheme.textMuted,
+          ),
+        ),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1604,17 +1711,30 @@ class _BalanceChartState extends State<BalanceChart>
                     ? range.format(sum.start)
                     : '${DateFormat(sum.start.year == sum.end.year ? 'd MMM' : 'd MMM y').format(sum.start)} – ${range.format(sum.end)}',
                 key: const ValueKey('selection-range'),
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              Text('${sum.days} day${sum.days == 1 ? '' : 's'}', style: label),
+              Text(
+                formatSpanDuration(
+                  sum.start,
+                  sum.end,
+                  precision: durationPrecisionFor(widget.visibleDays),
+                ),
+                key: const ValueKey('selection-duration'),
+                maxLines: 1,
+                softWrap: false,
+                style: label,
+              ),
             ],
           ),
         ),
         SizedBox(
-          width: 32,
-          height: 32,
+          width: phone ? 40 : 32,
+          height: phone ? 40 : 32,
           child: IconButton(
             key: const ValueKey('selection-close'),
             tooltip: 'Close selection',
@@ -1684,28 +1804,19 @@ class _BalanceChartState extends State<BalanceChart>
         ),
         const ValueKey('sel-row-losses'),
       ),
-      const Divider(height: 10),
+      row(
+        'Transactions',
+        '',
+        Text(
+          '${sum.occurrences.length}',
+          key: const ValueKey('selection-count'),
+          style: strong,
+        ),
+        const ValueKey('sel-row-count'),
+      ),
     ];
-    final items = <Widget>[
-      for (final o in sum.occurrences) _selectionItem(theme, o, dm, signColor),
-    ];
-    final list = items.isEmpty
-        ? Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text('No transactions in this period', style: label),
-          )
-        : Flexible(
-            child: Scrollbar(
-              child: ListView(
-                key: const ValueKey('selection-list'),
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                children: items,
-              ),
-            ),
-          );
-    final card = Material(
-      key: const ValueKey('selection-card'),
+    Widget card = Material(
+      key: _cardKey,
       elevation: 12,
       color: AppTheme.raised,
       shape: RoundedRectangleBorder(
@@ -1713,8 +1824,9 @@ class _BalanceChartState extends State<BalanceChart>
         side: const BorderSide(color: Color(0x22FFFFFF)),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+        padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
         child: Column(
+          key: const ValueKey('selection-card'),
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -1723,33 +1835,80 @@ class _BalanceChartState extends State<BalanceChart>
               padding: const EdgeInsets.only(right: 6),
               child: Column(mainAxisSize: MainAxisSize.min, children: stats),
             ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text(
-                'Transactions (${sum.occurrences.length})',
-                style: label.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-            list,
           ],
         ),
       ),
     );
-    if (phone) {
-      // Bottom sheet-like: over the date lanes, leaving the band's upper
-      // part (where the line usually is) visible.
-      final maxH = math.min(_size.height * 0.5, 340.0);
+    // The whole card is the grab surface (the close button keeps its tap).
+    // The card sits above the chart's listener, so this never pans the
+    // chart, moves the selection or starts hold-to-select.
+    card = MouseRegion(
+      cursor: SystemMouseCursors.move,
+      child: GestureDetector(
+        key: const ValueKey('selection-card-handle'),
+        behavior: HitTestBehavior.opaque,
+        onPanStart: (_) {
+          final box = _cardKey.currentContext?.findRenderObject();
+          final chart = context.findRenderObject();
+          if (box is RenderBox && chart is RenderBox) {
+            _cardPos ??= chart.globalToLocal(box.localToGlobal(Offset.zero));
+          }
+        },
+        onPanUpdate: (d) {
+          final from = _cardPos;
+          if (from == null) return;
+          setState(() => _cardPos = _clampCard(from + d.delta, _cardSize));
+        },
+        child: card,
+      ),
+    );
+    final maxW = math.max(160.0, _size.width * 0.85);
+    card = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxW),
+      child: IntrinsicWidth(child: card),
+    );
+    final moved = _cardPos;
+    if (moved != null) {
+      final w = math.min(_cardSize.width, maxW);
+      final maxH = phone
+          ? math.max(120.0, math.min(_size.height * 0.5, 340.0))
+          : math.max(160.0, layout.plot.height - 16);
+      // Re-clamp every build so resizes keep it inside the chart.
+      final size = _cardSize;
+      final pos = _clampCard(moved, Size(w, math.min(size.height, maxH)));
       return Positioned(
-        left: 6,
-        right: 6,
-        bottom: 6,
+        left: pos.dx,
+        top: pos.dy,
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxH),
           child: card,
         ),
       );
     }
-    const w = 300.0;
+    if (phone) {
+      // Bottom sheet-like: over the date lanes, leaving the band's upper
+      // part (where the line usually is) visible.
+      // Sits just above the floating time-scale buttons so they stay
+      // visible and tappable.
+      final bottom = math.max(6.0, _size.height - layout.xControls.top + 6);
+      final maxH = math.max(
+        120.0,
+        math.min(
+          _size.height * 0.5,
+          math.min(340.0, _size.height - bottom - 8),
+        ),
+      );
+      // Right-aligned so the balance scale buttons on the left stay clear.
+      return Positioned(
+        right: 6,
+        bottom: bottom,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: card,
+        ),
+      );
+    }
+    final w = math.min(_cardSize.width, maxW);
     final fitsRight = x1 + 12 + w <= _size.width - 8;
     final fitsLeft = x0 - 12 - w >= layout.plot.left;
     final left = fitsRight
@@ -1760,71 +1919,11 @@ class _BalanceChartState extends State<BalanceChart>
     return Positioned(
       left: left.clamp(4.0, math.max(4.0, _size.width - w - 4)).toDouble(),
       top: layout.plot.top + 8,
-      width: w,
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxHeight: math.max(160, layout.plot.height - 16),
         ),
         child: card,
-      ),
-    );
-  }
-
-  Widget _selectionItem(
-    ThemeData theme,
-    Occurrence o,
-    DateFormat dm,
-    Color Function(double) signColor,
-  ) {
-    final t = widget.transactions[o.transactionId];
-    final rawName = widget.transactionNames[o.transactionId] ?? t?.name;
-    final name = rawName == null || rawName.trim().isEmpty
-        ? 'Transaction'
-        : rawName.trim();
-    final amount = o.signedDelta.toDouble();
-    final transfer = t?.transfer;
-    final small = theme.textTheme.bodySmall ?? const TextStyle();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        key: ValueKey('selection-item-${o.transactionId}-${dm.format(o.date)}'),
-        children: [
-          SizedBox(
-            width: 40,
-            child: Text(
-              dm.format(o.date),
-              style: small.copyWith(color: AppTheme.textMuted),
-            ),
-          ),
-          if (transfer != null) ...[
-            Icon(
-              amount < 0
-                  ? Icons.arrow_forward_rounded
-                  : Icons.arrow_back_rounded,
-              size: 14,
-              color: AppTheme.textMuted,
-            ),
-            const SizedBox(width: 3),
-          ],
-          Expanded(
-            child: Text(
-              transfer != null && transfer.peerAccountName != null
-                  ? '$name ${amount < 0 ? '→' : '←'} ${transfer.peerAccountName}'
-                  : name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelMedium,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            formatSignedAmount(amount, widget.currency),
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: signColor(amount),
-            ),
-          ),
-        ],
       ),
     );
   }

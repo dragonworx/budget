@@ -127,7 +127,10 @@ void main() {
     expect(_txt(tester, 'selection-gains'), contains('1,000'));
     expect(_txt(tester, 'selection-losses'), contains('0'));
     expect(_txt(tester, 'selection-net'), startsWith('+'));
-    expect(find.text('Bonus'), findsOneWidget);
+    expect(find.text('Bonus'), findsNothing, reason: 'totals only, no list');
+    expect(_txt(tester, 'selection-count'), '1');
+    // 30 Sep-wide view = day precision: 5..20 Oct inclusive.
+    expect(_txt(tester, 'selection-duration'), '2 Weeks, 2 Days');
     expect(h.viewports, isEmpty, reason: 'selecting never pans');
     expect(h.created, isEmpty);
   });
@@ -201,33 +204,34 @@ void main() {
     expect(_range(tester), '18 Oct – 21 Oct 2026');
   });
 
-  testWidgets('tap outside, close button and navigation dismiss', (
+  testWidgets('only the close button dismisses; taps and navigation keep it', (
     tester,
   ) async {
     final h = await _pump(tester);
     await _select(tester, 4, 6);
+    final range = _range(tester);
     await tester.tapAt(Offset(_x(25), _y(1600)));
     await tester.pump();
-    expect(_card, findsNothing);
+    expect(_card, findsOneWidget, reason: 'tap outside keeps it');
     expect(_tip, findsNothing);
 
-    await _select(tester, 4, 6);
-    await tester.tap(find.byKey(const ValueKey('selection-close')));
-    await tester.pump();
-    expect(_card, findsNothing);
-
-    await _select(tester, 4, 6);
     await tester.tap(find.byKey(const ValueKey('y-scale-in')));
-    await tester.pump();
-    expect(_card, findsNothing);
+    await tester.pumpAndSettle();
+    expect(_card, findsOneWidget, reason: 'y zoom keeps it');
+    expect(_range(tester), range);
 
-    await _select(tester, 4, 6);
     final mouse = TestPointer(9, PointerDeviceKind.mouse);
     await tester.sendEventToBinding(mouse.hover(Offset(_x(20), _y(400))));
     await tester.sendEventToBinding(mouse.scroll(const Offset(0, 50)));
     await tester.pump();
     expect(h.viewports, isNotEmpty);
-    expect(_card, findsNothing, reason: 'wheel zoom is navigation');
+    expect(_card, findsOneWidget, reason: 'wheel zoom keeps it');
+    expect(_range(tester), range);
+
+    await tester.tap(find.byKey(const ValueKey('selection-close')));
+    await tester.pump();
+    expect(_card, findsNothing);
+    expect(find.byKey(const ValueKey('selection-band')), findsNothing);
   });
 
   testWidgets('drag inside the band moves it without panning', (tester) async {
@@ -259,7 +263,7 @@ void main() {
     await _select(tester, 4, 9);
     final before = tester.getRect(find.byKey(const ValueKey('selection-band')));
     final g = await tester.startGesture(
-      Offset(_x(20), _y(1600)),
+      Offset(_x(27), _y(1600)),
       kind: PointerDeviceKind.touch,
     );
     for (var i = 1; i <= 10; i++) {
@@ -274,5 +278,76 @@ void main() {
     final after = tester.getRect(find.byKey(const ValueKey('selection-band')));
     expect(after.left - before.left, closeTo(-3 * _dayPx, 2));
     expect(_tip, findsNothing);
+  });
+
+  testWidgets('card drags by its header, clamps, persists, resets', (
+    tester,
+  ) async {
+    final h = await _pump(tester);
+    await _select(tester, 4, 8);
+    final before = tester.getTopLeft(_card);
+    final range = _range(tester);
+    await _drag(tester, 'selection-card-handle', -120);
+    final after = tester.getTopLeft(_card);
+    expect(after.dx, closeTo(before.dx - 120, 1));
+    expect(_range(tester), range, reason: 'selection did not move');
+    expect(h.viewports, isEmpty, reason: 'card drag never pans');
+    // Far drag clamps inside the chart.
+    await _drag(tester, 'selection-card-handle', -5000);
+    expect(tester.getTopLeft(_card).dx, greaterThanOrEqualTo(0));
+    // Park it far right, clear of the selection's edge handles.
+    await _drag(tester, 'selection-card-handle', 5000);
+    expect(tester.getTopRight(_card).dx, lessThanOrEqualTo(_size.width));
+    final parked = tester.getTopLeft(_card);
+    // Selection edge drag keeps the card where the user put it.
+    await _drag(tester, 'selection-end', 3 * _dayPx);
+    expect(tester.getTopLeft(_card), parked);
+    // Close, reselect: default placement again.
+    await tester.tap(find.byKey(const ValueKey('selection-close')));
+    await tester.pump();
+    await _select(tester, 4, 8);
+    expect(tester.getTopLeft(_card), before);
+  });
+
+  testWidgets('card drags from any point: stats, count row; close still taps', (
+    tester,
+  ) async {
+    final h = await _pump(tester);
+    await _select(tester, 4, 19);
+    final range = _range(tester);
+    Future<void> dragFrom(Finder f, Offset by) async {
+      final g = await tester.startGesture(tester.getCenter(f));
+      for (var i = 1; i <= 10; i++) {
+        await g.moveBy(by / 10);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await g.up();
+      await tester.pump();
+    }
+
+    var at = tester.getTopLeft(_card);
+    await dragFrom(
+      find.byKey(const ValueKey('sel-row-gains')),
+      const Offset(-80, 30),
+    );
+    expect(tester.getTopLeft(_card), at + const Offset(-80, 30));
+    at = tester.getTopLeft(_card);
+    await dragFrom(find.byKey(const ValueKey('sel-row-count')), const Offset(-40, 20));
+    expect(tester.getTopLeft(_card), at + const Offset(-40, 20));
+    expect(_range(tester), range);
+    expect(h.viewports, isEmpty, reason: 'card drag never pans');
+    expect(h.created, isEmpty);
+    await tester.tap(find.byKey(const ValueKey('selection-close')));
+    await tester.pump();
+    expect(_card, findsNothing);
+  });
+
+  testWidgets('card shrink-wraps its content width', (tester) async {
+    await _pump(tester);
+    await _select(tester, 4, 19);
+    final w = tester.getSize(_card).width;
+    // Test font (Ahem) is wide; real fonts measure far narrower.
+    expect(w, lessThan(400));
+    expect(w, lessThanOrEqualTo(_size.width * 0.85));
   });
 }
