@@ -78,7 +78,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   /// Selected view unit per account (kept while the app is open).
-  static final Map<String, ViewUnit> _unitByAccount = {};
 
   /// Always one selected; − / + step through [ViewUnit.values].
   ViewUnit _unit = ViewUnit.month;
@@ -304,15 +303,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _viewAnim.stop();
     _seriesCache = null;
     _seriesCacheQuery = null;
+    // Every open starts on today at the default unit (never the last view,
+    // a fit or the seed); Fit / Seed / Today stay explicit actions.
     final today = dateOnly(DateTime.now());
-    final seed = dateOnly(account.seedDate);
-    _unit = _unitByAccount[account.id] ?? ViewUnit.month;
-    final first = _unit.spanContaining(seed);
-    _viewStart = first.start;
-    _visibleDays = first.days;
+    _unit = ViewUnit.month;
+    final v = initialView(today, _unit);
+    _viewStart = v.start;
+    _visibleDays = v.days;
     _dataFrom = addCalendarDays(_viewStart, -30);
     final horizon = math.max(120, _visibleDays.ceil());
-    _dataTo = addCalendarDays(today.isAfter(seed) ? today : seed, horizon);
+    _dataTo = addCalendarDays(today, horizon);
   }
 
   BalanceQuery get _query =>
@@ -374,7 +374,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   void _setUnit(ViewUnit unit) {
     _unit = unit;
-    _unitByAccount[widget.accountId] = unit;
   }
 
   /// Pans / wheel / pinch from the chart. A changed span (zoom) reselects the
@@ -1675,4 +1674,10 @@ class _TipsBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Opening view: one [unit] wide, centred on [today].
+({DateTime start, double days}) initialView(DateTime today, ViewUnit unit) {
+  final days = unit.spanContaining(today).days.toDouble();
+  return (start: addDays(dateOnly(today), 0.5 - days / 2), days: days);
 }

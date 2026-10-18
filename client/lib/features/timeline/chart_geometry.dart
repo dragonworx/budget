@@ -814,7 +814,27 @@ BalanceExtents includeZero(BalanceExtents range) {
 /// grid step): about 10 units tall, always including the origin. When the
 /// data in view ([dataMin]..[dataMax]) fits with zero inside 9 units it is
 /// centred; otherwise the window sits on the side of zero the data is on.
-BalanceExtents currencyScaleRange(double unit, double dataMin, double dataMax) {
+BalanceExtents currencyScaleRange(
+  double unit,
+  double dataMin,
+  double dataMax, {
+  double? focus,
+}) {
+  final r = _currencyScaleRange(unit, dataMin, dataMax);
+  // When the zero-anchored window would leave [focus] (today's balance) off
+  // screen, centre the 10-unit window on it instead (rounded to a unit).
+  if (focus != null && (focus < r.min || focus > r.max)) {
+    final mid = (focus / unit).roundToDouble() * unit;
+    return BalanceExtents(mid - 5 * unit, mid + 5 * unit);
+  }
+  return r;
+}
+
+BalanceExtents _currencyScaleRange(
+  double unit,
+  double dataMin,
+  double dataMax,
+) {
   final lo = math.min(dataMin, 0.0), hi = math.max(dataMax, 0.0);
   final span = 10 * unit;
   // One-sided data keeps zero just inside the near edge (more room for it).

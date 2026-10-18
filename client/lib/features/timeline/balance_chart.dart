@@ -360,6 +360,7 @@ class _BalanceChartState extends State<BalanceChart>
         unit,
         visible.extents.min,
         visible.extents.max,
+        focus: _todayBalanceInView(),
       );
     }
     // Fits always include the origin, so the zero line is in view.
@@ -372,6 +373,21 @@ class _BalanceChartState extends State<BalanceChart>
         if (widget.seedBalance != null && _seedInView) widget.seedBalance!,
       ],
     );
+  }
+
+  /// Closing balance today when today is in view (for the opening y range).
+  double? _todayBalanceInView() {
+    final today = dateOnly(DateTime.now());
+    final end = addDays(widget.viewStart, widget.visibleDays);
+    if (today.isBefore(dateOnly(widget.viewStart)) || !today.isBefore(end)) {
+      return null;
+    }
+    double? v;
+    for (final p in widget.series.points) {
+      if (p.date.isAfter(today)) break;
+      v = p.closingBalance.toDouble();
+    }
+    return v;
   }
 
   bool get _seedInView {

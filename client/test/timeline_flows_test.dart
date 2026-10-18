@@ -404,6 +404,12 @@ void main() {
     BalanceChart chart() =>
         tester.widget<BalanceChart>(find.byType(BalanceChart));
     expect(find.text('Month'), findsOneWidget);
+    // Opens centred on today (not aligned); ▶ snaps to a month start.
+    final open = chart().viewStart;
+    final mid = dayCoord(open) + chart().visibleDays / 2;
+    expect(mid, inInclusiveRange(dayCoord(_day), dayCoord(_day) + 1));
+    await tester.tap(find.byKey(const ValueKey('shift-right')));
+    await tester.pump();
     final start = chart().viewStart;
     expect(start.day, 1);
     await tester.tap(find.byKey(const ValueKey('shift-right')));
@@ -668,9 +674,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.getRect(tip), before, reason: 'scrub lift');
     // Tap again on the shown dot while it is pinned: still the same rect.
-    // (Where the scrub ended, so it is the shown dot even when dots are dense.)
+    // (Where the scrub started: the shown dot is the one nearest there.)
     final g2 = await tester.startGesture(
-      spot + const Offset(24, 0),
+      spot,
       kind: PointerDeviceKind.touch,
     );
     await tester.pump();
