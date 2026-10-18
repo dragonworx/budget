@@ -109,13 +109,27 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// Target point of the goal (end date, target balance) for the chart.
   (DateTime, double)? _goalTarget;
 
+  /// Target tool: taps / drags on the chart set the goal target.
+  bool _targetMode = false;
+
   void _openPlan() => setState(() => _planOpen = true);
+
+  void _onTargetDrag(DateTime day, double balance) {
+    // A goal can only land in the future: clamp past days to tomorrow.
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    if (day.isBefore(tomorrow)) day = tomorrow;
+    final rounded = (balance / 10).roundToDouble() * 10;
+    setState(() => _goalTarget = (day, rounded));
+    _goalKey.currentState?.setTarget(day, rounded);
+  }
 
   void _closePlan() => setState(() {
     _planOpen = false;
     _planGhost = null;
     _goalGhost = null;
     _goalTarget = null;
+    _targetMode = false;
     _previewSeq++;
   });
 
@@ -135,6 +149,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       _goalTarget = end == null || target == null ? null : (end, target);
     });
   }
+
+  bool get _goalActive => _planOpen && _planTab == PlanTab.goal;
 
   List<GhostLine> get _ghosts => [
     if (_planOpen && _planTab == PlanTab.goal) ?_goalGhost,
@@ -580,11 +596,31 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                     dataFrom: _seriesCacheQuery?.from,
                                     dataThrough: _seriesCacheQuery?.to,
                                     ghosts: _ghosts,
-                                    target:
-                                        _planOpen && _planTab == PlanTab.goal
-                                        ? _goalTarget
-                                        : null,
+                                    target: _goalActive ? _goalTarget : null,
+                                    targetMode: _goalActive && _targetMode,
+                                    onTargetChanged: _onTargetDrag,
                                   ),
+                                  if (_goalActive)
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: FilterChip(
+                                        key: const ValueKey('target-tool'),
+                                        avatar: const Icon(
+                                          Icons.my_location_rounded,
+                                          size: 16,
+                                        ),
+                                        label: Text(
+                                          _targetMode
+                                              ? 'Tap or drag to set target'
+                                              : 'Set target',
+                                        ),
+                                        tooltip: 'Target tool: tap or drag on the chart to set the goal balance and date',
+                                        selected: _targetMode,
+                                        onSelected: (on) =>
+                                            setState(() => _targetMode = on),
+                                      ),
+                                    ),
                                   if (balanceAsync.isLoading)
                                     const Positioned(
                                       top: 0,

@@ -116,7 +116,9 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
       _solveFor = GoalVar.amount;
     }
     setState(() {});
-    _schedule(immediate: true);
+    // Short debounce: drags fire every frame.
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 60), _solve);
   }
 
   GoalRequest get request => _request();

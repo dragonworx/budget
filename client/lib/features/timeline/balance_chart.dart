@@ -66,7 +66,14 @@ class BalanceChart extends StatefulWidget {
     this.transactions = const {},
     this.ghosts = const [],
     this.target,
+    this.targetMode = false,
+    this.onTargetChanged,
   });
+
+  /// Target tool on: taps and drags on the plot set the goal target
+  /// (date, balance) instead of panning / selecting. Never edits data.
+  final bool targetMode;
+  final void Function(DateTime day, double balance)? onTargetChanged;
 
   /// Goal target point (date, balance), drawn as a ringed marker.
   final (DateTime, double)? target;
@@ -1191,6 +1198,10 @@ class _BalanceChartState extends State<BalanceChart>
                 if ((widget.ghosts.isNotEmpty || widget.target != null) &&
                     yRange != null)
                   _ghostOverlay(yRange),
+                if (widget.targetMode &&
+                    widget.onTargetChanged != null &&
+                    yRange != null)
+                  _targetOverlay(yRange),
                 if (_mode == _Gesture.pick && _pickDay != null)
                   ..._pickOverlay(theme),
                 if (_selA != null && _selB != null) ..._selectionOverlay(theme),
@@ -1222,6 +1233,51 @@ class _BalanceChartState extends State<BalanceChart>
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  /// Plot position to (day, balance) for the target tool.
+  (DateTime, double) _targetAt(Offset pos, BalanceExtents range) {
+    final plot = _layout.plot;
+    final x = pos.dx.clamp(plot.left, plot.right - 0.5).toDouble();
+    final y = pos.dy.clamp(plot.top, plot.bottom).toDouble();
+    final day = dateOnly(
+      addDays(
+        widget.viewStart,
+        (x - plot.left) / math.max(plot.width, 1) * widget.visibleDays,
+      ),
+    );
+    final t = (plot.bottom - y) / math.max(plot.height, 1);
+    return (day, range.min + t * (range.max - range.min));
+  }
+
+  /// Captures plot taps / drags while the target tool is on (the wheel
+  /// still zooms). Sits under the scale buttons so those keep working.
+  Widget _targetOverlay(BalanceExtents range) {
+    final plot = _layout.plot;
+    void set(Offset p) {
+      final (d, v) = _targetAt(p, range);
+      widget.onTargetChanged!(d, v);
+    }
+
+    return Positioned.fromRect(
+      rect: plot,
+      child: Listener(
+        onPointerSignal: _onPointerSignal,
+        // Raw pointer events so touch drags track live regardless of which
+        // recognizer wins the arena; the detector below just claims it.
+        onPointerDown: (e) => set(e.localPosition + plot.topLeft),
+        onPointerMove: (e) => set(e.localPosition + plot.topLeft),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.precise,
+          child: GestureDetector(
+            key: const ValueKey('target-overlay'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () {},
+            onPanUpdate: (_) {},
+          ),
         ),
       ),
     );
