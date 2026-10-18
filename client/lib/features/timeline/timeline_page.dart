@@ -432,7 +432,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                           value: 'plan',
                           child: ListTile(
                             leading: Icon(Icons.calculate_outlined),
-                            title: Text('Plan from a target'),
+                            title: Text('Plan a payment'),
                           ),
                         ),
                         PopupMenuItem(
@@ -654,7 +654,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         ),
         const Spacer(),
         Tooltip(
-          message: 'Plan a transaction from a target total',
+          message: 'Plan a payment or a balance goal',
           child: TextButton.icon(
             key: const ValueKey('open-plan'),
             onPressed: _openPlan,
@@ -825,6 +825,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               ),
             ),
           ),
+        ),
+        IconButton(
+          key: const ValueKey('open-plan-compact'),
+          tooltip: 'Plan',
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          onPressed: _planOpen ? _closePlan : _openPlan,
+          isSelected: _planOpen,
+          icon: const Icon(Icons.calculate_outlined),
+          selectedIcon: const Icon(Icons.calculate, color: AppTheme.accent),
         ),
         _fitMenu(account, compact: true),
       ],
