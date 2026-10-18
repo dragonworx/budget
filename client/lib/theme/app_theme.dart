@@ -31,6 +31,18 @@ class AppTheme {
   static const Color _debit = Color(0xFFFF7B7B);
   static const Color warning = Color(0xFFF2B84B);
 
+  /// Dashed plan-preview line and the planning target marker.
+  static const Color planGhost = Color(0xFFFFC857);
+
+  /// Saved what-if scenario lines, in order.
+  static const List<Color> scenarioColors = [
+    Color(0xFF6FB7FF),
+    Color(0xFFE38BFF),
+    Color(0xFFFF9F68),
+    Color(0xFF8BE0A4),
+    Color(0xFFFF6FA5),
+  ];
+
   static Color get debitColor => _debit;
   static Color get creditColor => _credit;
   static Color get mint => accent;

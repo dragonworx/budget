@@ -35,13 +35,7 @@ Future<SolveResult?> showSolveSheet(
           accountId: accountId,
           initial:
               initial ??
-              SolveRequest(
-                name: 'Planned income',
-                direction: TransactionDirection.credit,
-                unit: RecurrenceUnit.weeks,
-                startDate: startDate,
-                endDate: endDate,
-              ),
+              defaultPlanRequest(startDate: startDate, endDate: endDate),
           creditOnly: initial == null,
           saveOnCommit: saveOnCommit,
         ),
@@ -50,6 +44,16 @@ Future<SolveResult?> showSolveSheet(
   );
 }
 
+/// The planner's starting point: a weekly credit, nothing else known.
+SolveRequest defaultPlanRequest({DateTime? startDate, DateTime? endDate}) =>
+    SolveRequest(
+      name: 'Planned income',
+      direction: TransactionDirection.credit,
+      unit: RecurrenceUnit.weeks,
+      startDate: startDate,
+      endDate: endDate,
+    );
+
 class SolveSheet extends ConsumerStatefulWidget {
   const SolveSheet({
     super.key,
@@ -57,7 +61,16 @@ class SolveSheet extends ConsumerStatefulWidget {
     required this.initial,
     this.saveOnCommit = true,
     this.creditOnly = false,
+    this.onPreview,
+    this.onDone,
   });
+
+  /// Embedded (panel) use: called with the would-be transaction whenever
+  /// the plan is fully solved, or null when it is not.
+  final ValueChanged<Transaction?>? onPreview;
+
+  /// Embedded use: called instead of popping the route after a commit.
+  final ValueChanged<SolveResult>? onDone;
 
   final String accountId;
   final SolveRequest initial;
@@ -226,15 +239,24 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
         _defaulted = defaulted;
         _error = null;
       });
+      _emitPreview();
     } catch (error) {
       if (!mounted || seq != _requestSeq) return;
       setState(() {
         _result = null;
         _error = friendlyError(error);
       });
+      _emitPreview();
     } finally {
       if (mounted && seq == _requestSeq) setState(() => _solving = false);
     }
+  }
+
+  void _emitPreview() {
+    final cb = widget.onPreview;
+    if (cb == null) return;
+    final t = _result?.transaction;
+    cb(t?.copyWith(accountId: widget.accountId, direction: _direction));
   }
 
   /// Custom… chosen: show the unit + Every inputs.
@@ -327,11 +349,14 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              widget.creditOnly ? 'Plan income' : 'Plan a transaction',
-              style: theme.textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 4),
+            // Docked in the plan panel, the panel header is the title.
+            if (widget.onPreview == null) ...[
+              Text(
+                widget.creditOnly ? 'Plan income' : 'Plan a transaction',
+                style: theme.textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 4),
+            ],
             Text(
               widget.creditOnly
                   ? 'Plan money coming in. Fill in what you know — blank '
@@ -392,7 +417,8 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
               controller: _targetBalance,
               label: 'Target balance (optional)',
               optional: true,
-              help: 'Balance wanted on the end date; the total becomes the '
+              help:
+                  'Balance wanted on the end date; the total becomes the '
                   'gap from what is already projected',
               calculated: null,
               wanted: false,
@@ -570,7 +596,12 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     );
 
     if (!widget.saveOnCommit) {
-      Navigator.of(context).pop(_withTransaction(result, named));
+      final done = _withTransaction(result, named);
+      if (widget.onDone != null) {
+        widget.onDone!(done);
+      } else {
+        Navigator.of(context).pop(done);
+      }
       return;
     }
 
@@ -580,9 +611,16 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
           .read(transactionsProvider(widget.accountId).notifier)
           .create(named);
       if (mounted) {
-        Navigator.of(context).pop(
-          _withTransaction(result, created, message: 'Created ${created.name}'),
+        final done = _withTransaction(
+          result,
+          created,
+          message: 'Created ${created.name}',
         );
+        if (widget.onDone != null) {
+          widget.onDone!(done);
+        } else {
+          Navigator.of(context).pop(done);
+        }
       }
     } catch (error) {
       if (mounted) {
@@ -928,10 +966,7 @@ class _StatusPanel extends StatelessWidget {
         color: scheme.secondaryContainer,
         icon: Icons.verified_outlined,
         iconColor: AppTheme.creditColor,
-        children: [
-          Text(r.message ?? 'Already on track.'),
-          ?btLine,
-        ],
+        children: [Text(r.message ?? 'Already on track.'), ?btLine],
       );
     }
     if (r == null) {

@@ -15,12 +15,13 @@ import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
 import '../transactions/editor_outcome.dart';
 import '../transactions/import_dialog.dart';
-import '../transactions/solve_sheet.dart';
+import '../planning/plan_panel.dart';
 import '../transactions/transaction_editor.dart';
 import '../transactions/transactions_panel.dart';
 import 'balance_chart.dart';
 import 'chart_geometry.dart';
 import 'fit_ranges.dart';
+import 'ghost_line.dart';
 import 'view_units.dart';
 import 'zoom_level.dart';
 
@@ -94,6 +95,52 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Balance fits also stretch to the loss-threshold line.
   bool _fitThreshold = false;
+
+  /// Docked planner (non-blocking) and its live preview line.
+  bool _planOpen = false;
+  GhostLine? _planGhost;
+  int _previewSeq = 0;
+
+  void _openPlan() => setState(() => _planOpen = true);
+
+  void _closePlan() => setState(() {
+    _planOpen = false;
+    _planGhost = null;
+    _previewSeq++;
+  });
+
+  /// Projects the balance with the would-be [t] and shows it dashed.
+  Future<void> _onPlanPreview(Transaction? t) async {
+    final seq = ++_previewSeq;
+    if (t == null) {
+      if (_planGhost != null) setState(() => _planGhost = null);
+      return;
+    }
+    final start = dateOnly(t.startDate);
+    final horizon = addCalendarDays(start, 730);
+    final to = _dataTo.isAfter(horizon) ? _dataTo : horizon;
+    try {
+      final series = await ref
+          .read(accountRepositoryProvider)
+          .project(
+            widget.accountId,
+            [t],
+            from: addCalendarDays(start, -1),
+            to: to,
+          );
+      if (!mounted || seq != _previewSeq) return;
+      setState(
+        () => _planGhost = GhostLine(
+          points: series.points,
+          color: AppTheme.planGhost,
+          from: start,
+          label: 'Plan preview',
+        ),
+      );
+    } catch (_) {
+      if (mounted && seq == _previewSeq) setState(() => _planGhost = null);
+    }
+  }
 
   @override
   void initState() {
@@ -357,7 +404,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                           case 'settings':
                             _editAccount(context, account);
                           case 'plan':
-                            _solve(context);
+                            _openPlan();
                           case 'shortcuts':
                             _showShortcuts(context);
                         }
@@ -418,100 +465,145 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                     const SizedBox(width: 16),
                   ],
           ),
-          body: Column(
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  compact ? 8 : 16,
-                  compact ? 6 : 12,
-                  compact ? 8 : 16,
-                  0,
-                ),
-                child: compact
-                    ? _compactToolbar(context, account)
-                    : _toolbar(context, account),
-              ),
-              Expanded(
-                child: Padding(
+          body: _withPlanPanel(
+            context,
+            compact: compact,
+            child: Column(
+              children: [
+                Padding(
                   padding: EdgeInsets.fromLTRB(
                     compact ? 8 : 16,
-                    compact ? 6 : 10,
+                    compact ? 6 : 12,
                     compact ? 8 : 16,
-                    6,
+                    0,
                   ),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: AppTheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.border),
+                  child: compact
+                      ? _compactToolbar(context, account)
+                      : _toolbar(context, account),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      compact ? 8 : 16,
+                      compact ? 6 : 10,
+                      compact ? 8 : 16,
+                      6,
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(15),
-                      child: series == null
-                          ? balanceAsync.when(
-                              loading: () => const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                              error: (error, _) => _BalanceError(
-                                message: friendlyError(error),
-                                onRetry: _invalidateBalance,
-                              ),
-                              data: (_) => const SizedBox.shrink(),
-                            )
-                          : Stack(
-                              children: [
-                                BalanceChart(
-                                  key: ValueKey(account.id),
-                                  fitToken: _fitToken,
-                                  zeroToken: _zeroToken,
-                                  onFitRequested: (mode) => _fit(mode, account),
-                                  onZoomStep: _zoomStep,
-                                  unitLabel: _unit.label,
-                                  canZoomIn: _unit.index > 0,
-                                  canZoomOut:
-                                      _unit.index < ViewUnit.values.length - 1,
-                                  onShift: _shift,
-                                  series: series,
-                                  currency: account.currency,
-                                  seedDate: account.seedDate,
-                                  seedBalance: account.seedBalance.toDouble(),
-                                  lossThreshold: account.lossThreshold
-                                      .toDouble(),
-                                  currencyScale: account.currencyScale
-                                      .toDouble(),
-                                  fitIncludesThreshold: _fitThreshold,
-                                  viewStart: _viewStart,
-                                  visibleDays: _visibleDays,
-                                  onViewportChanged: _onChartViewport,
-                                  onCreateOnDay: (day) =>
-                                      _createOnceOnDay(context, day),
-                                  transactionNames: transactionNames,
-                                  transactions: {
-                                    for (final t in transactions) t.id: t,
-                                  },
-                                  dataFrom: _seriesCacheQuery?.from,
-                                  dataThrough: _seriesCacheQuery?.to,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(15),
+                        child: series == null
+                            ? balanceAsync.when(
+                                loading: () => const Center(
+                                  child: CircularProgressIndicator(),
                                 ),
-                                if (balanceAsync.isLoading)
-                                  const Positioned(
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    child: LinearProgressIndicator(
-                                      minHeight: 2,
-                                    ),
+                                error: (error, _) => _BalanceError(
+                                  message: friendlyError(error),
+                                  onRetry: _invalidateBalance,
+                                ),
+                                data: (_) => const SizedBox.shrink(),
+                              )
+                            : Stack(
+                                children: [
+                                  BalanceChart(
+                                    key: ValueKey(account.id),
+                                    fitToken: _fitToken,
+                                    zeroToken: _zeroToken,
+                                    onFitRequested: (mode) =>
+                                        _fit(mode, account),
+                                    onZoomStep: _zoomStep,
+                                    unitLabel: _unit.label,
+                                    canZoomIn: _unit.index > 0,
+                                    canZoomOut:
+                                        _unit.index <
+                                        ViewUnit.values.length - 1,
+                                    onShift: _shift,
+                                    series: series,
+                                    currency: account.currency,
+                                    seedDate: account.seedDate,
+                                    seedBalance: account.seedBalance.toDouble(),
+                                    lossThreshold: account.lossThreshold
+                                        .toDouble(),
+                                    currencyScale: account.currencyScale
+                                        .toDouble(),
+                                    fitIncludesThreshold: _fitThreshold,
+                                    viewStart: _viewStart,
+                                    visibleDays: _visibleDays,
+                                    onViewportChanged: _onChartViewport,
+                                    onCreateOnDay: (day) =>
+                                        _createOnceOnDay(context, day),
+                                    transactionNames: transactionNames,
+                                    transactions: {
+                                      for (final t in transactions) t.id: t,
+                                    },
+                                    dataFrom: _seriesCacheQuery?.from,
+                                    dataThrough: _seriesCacheQuery?.to,
+                                    ghosts: [?_planGhost],
                                   ),
-                              ],
-                            ),
+                                  if (balanceAsync.isLoading)
+                                    const Positioned(
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                      child: LinearProgressIndicator(
+                                        minHeight: 2,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              _TipsBar(compact: compact),
-            ],
+                if (!_planOpen || !compact) _TipsBar(compact: compact),
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  /// Docks the planner beside (desktop) or under (phone) the chart.
+  Widget _withPlanPanel(
+    BuildContext context, {
+    required bool compact,
+    required Widget child,
+  }) {
+    if (!_planOpen) return child;
+    final panel = PlanPanel(
+      accountId: widget.accountId,
+      compact: compact,
+      onClose: _closePlan,
+      onPreview: _onPlanPreview,
+      onDone: (r) => _planDone(context, r),
+    );
+    if (compact) {
+      final h = MediaQuery.sizeOf(context).height;
+      return Column(
+        children: [
+          Expanded(child: child),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: SizedBox(height: h * 0.46, child: panel),
+          ),
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: child),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(0, 12, 16, 10),
+          child: SizedBox(width: 400, child: panel),
+        ),
+      ],
     );
   }
 
@@ -560,7 +652,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         Tooltip(
           message: 'Plan a transaction from a target total',
           child: TextButton.icon(
-            onPressed: () => _solve(context),
+            key: const ValueKey('open-plan'),
+            onPressed: _openPlan,
             icon: const Icon(Icons.calculate_outlined, size: 18),
             label: const Text('Plan'),
           ),
@@ -870,19 +963,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  Future<void> _solve(BuildContext context) async {
-    final result = await showSolveSheet(context, accountId: widget.accountId);
-    if (result != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.message ??
-                'Created ${result.transaction?.name.isNotEmpty == true ? result.transaction!.name : 'transaction'}',
-          ),
+  void _planDone(BuildContext context, SolveResult result) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.message ??
+              'Created ${result.transaction?.name.isNotEmpty == true ? result.transaction!.name : 'transaction'}',
         ),
-      );
-      _invalidateBalance();
-    }
+      ),
+    );
+    _closePlan();
+    ref.invalidate(transactionsProvider(widget.accountId));
+    _invalidateBalance();
   }
 
   Future<void> _editAccount(BuildContext context, Account account) async {

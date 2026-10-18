@@ -14,6 +14,7 @@ import '../../widgets/money_text.dart';
 import 'chart_geometry.dart';
 import 'duration_format.dart';
 import 'fit_ranges.dart';
+import 'ghost_line.dart';
 import 'occurrence_info.dart';
 import 'selection_period.dart';
 import 'zoom_level.dart';
@@ -63,7 +64,11 @@ class BalanceChart extends StatefulWidget {
     this.canZoomOut = true,
     this.onShift,
     this.transactions = const {},
+    this.ghosts = const [],
   });
+
+  /// Dashed what-if lines (plan preview, scenarios) over the real line.
+  final List<GhostLine> ghosts;
 
   /// Transactions by id, for the occurrence hover tooltip.
   final Map<String, Transaction> transactions;
@@ -1179,6 +1184,8 @@ class _BalanceChartState extends State<BalanceChart>
                     ),
                   ),
                 ),
+                if (widget.ghosts.isNotEmpty && yRange != null)
+                  _ghostOverlay(yRange),
                 if (_mode == _Gesture.pick && _pickDay != null)
                   ..._pickOverlay(theme),
                 if (_selA != null && _selB != null) ..._selectionOverlay(theme),
@@ -1210,6 +1217,31 @@ class _BalanceChartState extends State<BalanceChart>
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _ghostOverlay(BalanceExtents range) {
+    final layout = _layout;
+    final scale = _YScale(range.min, range.max, layout.plot);
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: CustomPaint(
+          key: const ValueKey('ghost-lines'),
+          painter: GhostLinePainter(
+            ghosts: widget.ghosts,
+            plot: layout.plot,
+            xOf: (d) => layout.xOf(d, widget.viewStart, widget.visibleDays),
+            yOf: scale.yOf,
+            repaintKey: (
+              widget.viewStart,
+              widget.visibleDays,
+              range.min,
+              range.max,
+              layout.plot,
+            ),
+          ),
         ),
       ),
     );

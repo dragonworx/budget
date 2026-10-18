@@ -85,6 +85,24 @@ class AccountRepository {
     return Account.fromJson(data as Map<String, dynamic>);
   }
 
+  /// Balance as if [extra] (unsaved) transactions were added.
+  Future<BalanceSeries> project(
+    String accountId,
+    List<Transaction> extra, {
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final data = await _api.post(
+      '/api/accounts/$accountId/project',
+      body: {
+        'from': formatDate(from),
+        'to': formatDate(to),
+        'transactions': [for (final t in extra) t.toCreateJson()],
+      },
+    );
+    return BalanceSeries.fromJson(data);
+  }
+
   Future<SolveResult> solve(String accountId, SolveRequest request) async {
     final data = await _api.post(
       '/api/accounts/$accountId/solve',

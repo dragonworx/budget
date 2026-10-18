@@ -129,7 +129,9 @@ class Account {
       transactionOrder: (order as List).map((e) => e.toString()).toList(),
       displayOrder: (json['displayOrder'] ?? json['display_order'] ?? 0) as int,
       currencyScale:
-          (json['currencyScale'] ?? json['currency_scale'] ?? defaultCurrencyScale)
+          (json['currencyScale'] ??
+                  json['currency_scale'] ??
+                  defaultCurrencyScale)
               as int,
     );
   }
