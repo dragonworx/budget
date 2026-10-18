@@ -74,6 +74,8 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
   late final TextEditingController _name;
   late final TextEditingController _amount;
   late final TextEditingController _total;
+  late final TextEditingController _targetBalance;
+  final TextEditingController _balanceTotal = TextEditingController();
   late final TextEditingController _interval;
   late final TextEditingController _count;
   late TransactionDirection _direction;
@@ -100,6 +102,9 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     _name = TextEditingController(text: i.name);
     _amount = TextEditingController(text: i.amount?.toString() ?? '');
     _total = TextEditingController(text: i.targetTotal?.toString() ?? '');
+    _targetBalance = TextEditingController(
+      text: i.targetBalance?.toString() ?? '',
+    );
     _interval = TextEditingController(text: i.interval?.toString() ?? '');
     _count = TextEditingController(text: i.occurrenceCount?.toString() ?? '');
     _direction = widget.creditOnly ? TransactionDirection.credit : i.direction;
@@ -121,6 +126,8 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     _name.dispose();
     _amount.dispose();
     _total.dispose();
+    _targetBalance.dispose();
+    _balanceTotal.dispose();
     _interval.dispose();
     _count.dispose();
     super.dispose();
@@ -142,6 +149,15 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     return null;
   }
 
+  /// A target balance may be any amount (even zero or negative).
+  String? _balanceError(TextEditingController c) {
+    final raw = c.text.trim();
+    if (raw.isEmpty) return null;
+    return Decimal.tryParse(raw) == null ? 'Invalid amount' : null;
+  }
+
+  bool get _balanceMode => _targetBalance.text.trim().isNotEmpty;
+
   String? _intError(TextEditingController c) {
     final raw = c.text.trim();
     if (raw.isEmpty) return null;
@@ -153,6 +169,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
   bool get _hasInputErrors =>
       _moneyError(_amount) != null ||
       _moneyError(_total) != null ||
+      _balanceError(_targetBalance) != null ||
       _intError(_interval) != null ||
       _intError(_count) != null;
 
@@ -163,7 +180,8 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     startDate: _startDate,
     endDate: _endDate,
     amount: _parseMoney(_amount),
-    targetTotal: _parseMoney(_total),
+    targetTotal: _balanceMode ? null : _parseMoney(_total),
+    targetBalance: _parseMoney(_targetBalance),
     interval: _parseInt(_interval),
     occurrenceCount: _parseInt(_count),
     rounding: _rounding,
@@ -370,14 +388,40 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
             ),
             const SizedBox(height: 12),
             _MoneyField(
-              controller: _total,
-              label: 'Total amount',
-              help: 'Sum of every occurrence',
-              calculated: _isSolved(SolveVar.total) ? values?.total : null,
-              wanted: _isWanted(SolveVar.total),
-              error: _moneyError(_total),
+              key: const ValueKey('plan-target-balance'),
+              controller: _targetBalance,
+              label: 'Target balance (optional)',
+              optional: true,
+              help: 'Balance wanted on the end date; the total becomes the '
+                  'gap from what is already projected',
+              calculated: null,
+              wanted: false,
+              error: _balanceError(_targetBalance),
               onChanged: _changed,
             ),
+            const SizedBox(height: 12),
+            if (_balanceMode)
+              _MoneyField(
+                key: const ValueKey('plan-total-from-balance'),
+                controller: _balanceTotal,
+                label: 'Total amount',
+                help: 'From the target balance',
+                calculated: _result?.balanceTarget?.gap.abs(),
+                wanted: false,
+                error: null,
+                readOnly: true,
+                onChanged: () {},
+              )
+            else
+              _MoneyField(
+                controller: _total,
+                label: 'Total amount',
+                help: 'Sum of every occurrence',
+                calculated: _isSolved(SolveVar.total) ? values?.total : null,
+                wanted: _isWanted(SolveVar.total),
+                error: _moneyError(_total),
+                onChanged: _changed,
+              ),
             const SizedBox(height: 12),
             _MoneyField(
               controller: _amount,
@@ -459,7 +503,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
                 _changed();
               },
             ),
-            if (_total.text.trim().isNotEmpty) ...[
+            if (_total.text.trim().isNotEmpty || _balanceMode) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<RoundingMode>(
                 initialValue: _rounding,
@@ -603,6 +647,9 @@ TextStyle? _helperStyle(
 
 class _MoneyField extends StatelessWidget {
   const _MoneyField({
+    super.key,
+    this.readOnly = false,
+    this.optional = false,
     required this.controller,
     required this.label,
     required this.help,
@@ -619,12 +666,17 @@ class _MoneyField extends StatelessWidget {
   final bool wanted;
   final String? error;
   final VoidCallback onChanged;
+  final bool readOnly;
+
+  /// Not part of the solve: blank means "not used", not "calculate".
+  final bool optional;
 
   @override
   Widget build(BuildContext context) {
     final hasValue = controller.text.trim().isNotEmpty;
     return TextField(
       controller: controller,
+      readOnly: readOnly,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       onChanged: (_) => onChanged(),
       decoration: _decoration(
@@ -634,12 +686,14 @@ class _MoneyField extends StatelessWidget {
         wanted: wanted,
         error: error,
         hint: calculated?.toString(),
-        helper: _helperFor(
-          hasValue: hasValue,
-          wanted: wanted,
-          help: help,
-          calculated: calculated?.toString(),
-        ),
+        helper: optional && !hasValue
+            ? help
+            : _helperFor(
+                hasValue: hasValue,
+                wanted: wanted,
+                help: help,
+                calculated: calculated?.toString(),
+              ),
         onClear: () {
           controller.clear();
           onChanged();
@@ -859,6 +913,27 @@ class _StatusPanel extends StatelessWidget {
     }
 
     final r = result;
+    final bt = r?.balanceTarget;
+    final btLine = bt == null
+        ? null
+        : Text(
+            'Projected ${bt.projectedBalance} on the end date without this '
+            'plan; target ${bt.targetBalance}, gap ${bt.gap}.',
+            key: const ValueKey('plan-balance-target-info'),
+            style: theme.textTheme.bodySmall,
+          );
+    if (r != null && r.onTrack) {
+      return _panel(
+        context,
+        color: scheme.secondaryContainer,
+        icon: Icons.verified_outlined,
+        iconColor: AppTheme.creditColor,
+        children: [
+          Text(r.message ?? 'Already on track.'),
+          ?btLine,
+        ],
+      );
+    }
     if (r == null) {
       return _panel(
         context,
@@ -915,6 +990,7 @@ class _StatusPanel extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text('Total ${v.actualTotal ?? v.total}'),
+        ?btLine,
         if (rounded)
           Text(
             'Rounded from the ${v.total} target.',

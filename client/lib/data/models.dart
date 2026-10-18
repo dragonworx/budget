@@ -630,8 +630,13 @@ class SolveRequest {
     this.interval,
     this.occurrenceCount,
     this.targetTotal,
+    this.targetBalance,
     this.rounding = RoundingMode.nearest,
   });
+
+  /// Balance target mode: the account balance wanted on [endDate]; the
+  /// server sets the total to `target − projected balance`.
+  final Decimal? targetBalance;
 
   final String name;
   final TransactionDirection direction;
@@ -655,6 +660,7 @@ class SolveRequest {
         interval: interval ?? this.interval,
         occurrenceCount: occurrenceCount,
         targetTotal: targetTotal,
+        targetBalance: targetBalance,
         rounding: rounding,
       );
 
@@ -667,7 +673,9 @@ class SolveRequest {
     if (amount != null) 'amount': moneyToJson(amount!),
     if (interval != null) 'interval': interval,
     if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
-    if (targetTotal != null) 'targetTotal': moneyToJson(targetTotal!),
+    if (targetTotal != null && targetBalance == null)
+      'targetTotal': moneyToJson(targetTotal!),
+    if (targetBalance != null) 'targetBalance': moneyToJson(targetBalance!),
     'rounding': rounding.toJson(),
   };
 }
@@ -722,7 +730,16 @@ class SolveResult {
     this.needsMore = 0,
     this.needsOneOf = const [],
     this.message,
+    this.balanceTarget,
+    this.onTrack = false,
   });
+
+  /// Set in balance target mode: projected balance on the end date and the
+  /// gap the plan covers.
+  final BalanceTargetInfo? balanceTarget;
+
+  /// Balance target already met without a new transaction.
+  final bool onTrack;
 
   /// Null while the inputs are not yet enough to determine a transaction.
   final Transaction? transaction;
@@ -762,6 +779,29 @@ class SolveResult {
       needsMore: (json['needsMore'] as int?) ?? 0,
       needsOneOf: vars('needsOneOf'),
       message: json['message'] as String?,
+      balanceTarget: json['balanceTarget'] is Map<String, dynamic>
+          ? BalanceTargetInfo.fromJson(json['balanceTarget'])
+          : null,
+      onTrack: json['status'] == 'onTrack',
     );
   }
+}
+
+class BalanceTargetInfo {
+  const BalanceTargetInfo({
+    required this.targetBalance,
+    required this.projectedBalance,
+    required this.gap,
+  });
+
+  final Decimal targetBalance;
+  final Decimal projectedBalance;
+  final Decimal gap;
+
+  factory BalanceTargetInfo.fromJson(Map<String, dynamic> json) =>
+      BalanceTargetInfo(
+        targetBalance: parseMoney(json['targetBalance']),
+        projectedBalance: parseMoney(json['projectedBalance']),
+        gap: parseMoney(json['gap']),
+      );
 }
