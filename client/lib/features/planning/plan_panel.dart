@@ -28,7 +28,16 @@ class PlanPanel extends StatelessWidget {
     this.compact = false,
     this.onSaveScenario,
     this.onLoadScenario,
+    this.fullScreen = false,
+    this.onExpand,
   });
+
+  /// Full-screen page: the page app bar carries close, so the panel drops
+  /// its own close button and border.
+  final bool fullScreen;
+
+  /// Docked on phone portrait ("Show on chart"): back to full screen.
+  final VoidCallback? onExpand;
 
   final ValueChanged<GoalRequest>? onSaveScenario;
   final ValueChanged<Scenario>? onLoadScenario;
@@ -50,8 +59,10 @@ class PlanPanel extends StatelessWidget {
       key: const ValueKey('plan-panel'),
       color: AppTheme.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(fullScreen ? 0 : 16),
+        side: fullScreen
+            ? BorderSide.none
+            : const BorderSide(color: AppTheme.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -85,25 +96,38 @@ class PlanPanel extends StatelessWidget {
                     },
                   ),
                 ),
-                IconButton(
-                  key: const ValueKey('plan-tab-scenarios'),
-                  tooltip: 'Saved scenarios',
-                  isSelected: tab == PlanTab.scenarios,
-                  onPressed: () => onTab(
-                    tab == PlanTab.scenarios ? PlanTab.goal : PlanTab.scenarios,
+                // Docked on phone portrait the row is tight: scenarios are
+                // reachable from full screen.
+                if (onExpand == null)
+                  IconButton(
+                    key: const ValueKey('plan-tab-scenarios'),
+                    tooltip: 'Saved scenarios',
+                    isSelected: tab == PlanTab.scenarios,
+                    onPressed: () => onTab(
+                      tab == PlanTab.scenarios
+                          ? PlanTab.goal
+                          : PlanTab.scenarios,
+                    ),
+                    icon: const Icon(Icons.bookmarks_outlined),
+                    selectedIcon: const Icon(
+                      Icons.bookmarks_rounded,
+                      color: AppTheme.accent,
+                    ),
                   ),
-                  icon: const Icon(Icons.bookmarks_outlined),
-                  selectedIcon: const Icon(
-                    Icons.bookmarks_rounded,
-                    color: AppTheme.accent,
+                if (onExpand != null)
+                  IconButton(
+                    key: const ValueKey('plan-expand'),
+                    tooltip: 'Full screen',
+                    onPressed: onExpand,
+                    icon: const Icon(Icons.open_in_full_rounded),
                   ),
-                ),
-                IconButton(
-                  key: const ValueKey('plan-close'),
-                  tooltip: 'Close planner',
-                  onPressed: onClose,
-                  icon: const Icon(Icons.close_rounded),
-                ),
+                if (!fullScreen)
+                  IconButton(
+                    key: const ValueKey('plan-close'),
+                    tooltip: 'Close planner',
+                    onPressed: onClose,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
               ],
             ),
           ),

@@ -102,6 +102,19 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Docked planner (non-blocking) and its live preview line.
   bool _planOpen = false;
+
+  /// Phone portrait: the planner opens full screen; "Show on chart" (or the
+  /// target tool) docks it under the chart again for the live ghost line.
+  bool _planOnChart = false;
+  final _planPanelKey = GlobalKey(debugLabel: 'plan-panel');
+
+  bool _isPortraitPhone(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    return size.width < 600 && size.height > size.width;
+  }
+
+  bool _planFull(BuildContext context) =>
+      _planOpen && !_planOnChart && !_targetMode && _isPortraitPhone(context);
   PlanTab _planTab = PlanTab.goal;
   GhostLine? _planGhost;
   GhostLine? _goalGhost;
@@ -157,7 +170,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     }
   }
 
-  void _openPlan() => setState(() => _planOpen = true);
+  void _openPlan() => setState(() {
+    _planOpen = true;
+    _planOnChart = false;
+  });
 
   /// Selection card "Plan…": open the goal tab over the selected range,
   /// starting from the balance on its first day, and solve the largest
@@ -171,6 +187,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         : start.add(const Duration(days: 30));
     setState(() {
       _planOpen = true;
+      _planOnChart = false;
       _planTab = PlanTab.goal;
     });
     final req = GoalRequest(
@@ -496,234 +513,240 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             : _closingNear(series.points, DateTime.now());
 
         final compact = MediaQuery.sizeOf(context).width < 600;
-        return Scaffold(
-          appBar: AppBar(
-            toolbarHeight: compact ? 60 : 68,
-            leading: IconButton(
-              key: const ValueKey('timeline-back'),
-              tooltip: 'Back to project',
-              icon: const Icon(Icons.arrow_back_rounded),
-              onPressed: () => _goBack(context, account.projectId),
-            ),
-            titleSpacing: compact ? 0 : 4,
-            title: _AccountHeader(
-              account: account,
-              todayPoint: todayPoint,
-              insights: ref
-                  .watch(insightsProvider(widget.accountId))
-                  .valueOrNull,
-              compact: compact,
-            ),
-            actions: compact
-                ? [
-                    IconButton(
-                      key: const ValueKey('open-transactions'),
-                      tooltip: 'Transactions (${transactions.length})',
-                      onPressed: () => _openTransactionsPanel(context, account),
-                      icon: Badge.count(
-                        count: transactions.length,
-                        backgroundColor: AppTheme.accent,
-                        textColor: AppTheme.onAccent,
-                        child: const Icon(Icons.list_alt_rounded),
+        return _withFullPlan(
+          context,
+          Scaffold(
+            appBar: AppBar(
+              toolbarHeight: compact ? 60 : 68,
+              leading: IconButton(
+                key: const ValueKey('timeline-back'),
+                tooltip: 'Back to project',
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () => _goBack(context, account.projectId),
+              ),
+              titleSpacing: compact ? 0 : 4,
+              title: _AccountHeader(
+                account: account,
+                todayPoint: todayPoint,
+                insights: ref
+                    .watch(insightsProvider(widget.accountId))
+                    .valueOrNull,
+                compact: compact,
+              ),
+              actions: compact
+                  ? [
+                      IconButton(
+                        key: const ValueKey('open-transactions'),
+                        tooltip: 'Transactions (${transactions.length})',
+                        onPressed: () =>
+                            _openTransactionsPanel(context, account),
+                        icon: Badge.count(
+                          count: transactions.length,
+                          backgroundColor: AppTheme.accent,
+                          textColor: AppTheme.onAccent,
+                          child: const Icon(Icons.list_alt_rounded),
+                        ),
                       ),
-                    ),
-                    PopupMenuButton<String>(
-                      key: const ValueKey('timeline-more'),
-                      tooltip: 'More',
-                      icon: const Icon(Icons.more_vert_rounded),
-                      onSelected: (v) {
-                        switch (v) {
-                          case 'import':
-                            _openImport(context, account);
-                          case 'settings':
-                            _editAccount(context, account);
-                          case 'plan':
-                            _openPlan();
-                          case 'shortcuts':
-                            _showShortcuts(context);
-                        }
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(
-                          value: 'settings',
-                          child: ListTile(
-                            leading: Icon(Icons.tune_rounded),
-                            title: Text('Account settings'),
+                      PopupMenuButton<String>(
+                        key: const ValueKey('timeline-more'),
+                        tooltip: 'More',
+                        icon: const Icon(Icons.more_vert_rounded),
+                        onSelected: (v) {
+                          switch (v) {
+                            case 'import':
+                              _openImport(context, account);
+                            case 'settings':
+                              _editAccount(context, account);
+                            case 'plan':
+                              _openPlan();
+                            case 'shortcuts':
+                              _showShortcuts(context);
+                          }
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                            value: 'settings',
+                            child: ListTile(
+                              leading: Icon(Icons.tune_rounded),
+                              title: Text('Account settings'),
+                            ),
                           ),
-                        ),
-                        PopupMenuItem(
-                          value: 'import',
-                          child: ListTile(
-                            leading: Icon(Icons.file_upload_outlined),
-                            title: Text('Import transactions'),
+                          PopupMenuItem(
+                            value: 'import',
+                            child: ListTile(
+                              leading: Icon(Icons.file_upload_outlined),
+                              title: Text('Import transactions'),
+                            ),
                           ),
-                        ),
-                        PopupMenuItem(
-                          value: 'plan',
-                          child: ListTile(
-                            leading: Icon(Icons.calculate_outlined),
-                            title: Text('Plan a payment'),
+                          PopupMenuItem(
+                            value: 'plan',
+                            child: ListTile(
+                              leading: Icon(Icons.calculate_outlined),
+                              title: Text('Plan a payment'),
+                            ),
                           ),
-                        ),
-                        PopupMenuItem(
-                          value: 'shortcuts',
-                          child: ListTile(
-                            leading: Icon(Icons.help_outline_rounded),
-                            title: Text('Gestures & shortcuts'),
+                          PopupMenuItem(
+                            value: 'shortcuts',
+                            child: ListTile(
+                              leading: Icon(Icons.help_outline_rounded),
+                              title: Text('Gestures & shortcuts'),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 4),
-                  ]
-                : [
-                    IconButton(
-                      tooltip: 'Import transactions (JSON)',
-                      onPressed: () => _openImport(context, account),
-                      icon: const Icon(Icons.file_upload_outlined),
-                    ),
-                    IconButton(
-                      key: const ValueKey('account-settings'),
-                      tooltip:
-                          'Account settings: seed balance, date, threshold',
-                      onPressed: () => _editAccount(context, account),
-                      icon: const Icon(Icons.tune_rounded),
-                    ),
-                    const SizedBox(width: 6),
-                    OutlinedButton.icon(
-                      key: const ValueKey('open-transactions'),
-                      onPressed: () => _openTransactionsPanel(context, account),
-                      icon: const Icon(Icons.list_alt_rounded, size: 18),
-                      label: Text('Transactions · ${transactions.length}'),
-                    ),
-                    const SizedBox(width: 16),
-                  ],
-          ),
-          body: _withPlanPanel(
-            context,
-            compact: compact,
-            child: Column(
-              children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    compact ? 8 : 16,
-                    compact ? 6 : 12,
-                    compact ? 8 : 16,
-                    0,
-                  ),
-                  child: compact
-                      ? _compactToolbar(context, account)
-                      : _toolbar(context, account),
-                ),
-                Expanded(
-                  child: Padding(
+                        ],
+                      ),
+                      const SizedBox(width: 4),
+                    ]
+                  : [
+                      IconButton(
+                        tooltip: 'Import transactions (JSON)',
+                        onPressed: () => _openImport(context, account),
+                        icon: const Icon(Icons.file_upload_outlined),
+                      ),
+                      IconButton(
+                        key: const ValueKey('account-settings'),
+                        tooltip:
+                            'Account settings: seed balance, date, threshold',
+                        onPressed: () => _editAccount(context, account),
+                        icon: const Icon(Icons.tune_rounded),
+                      ),
+                      const SizedBox(width: 6),
+                      OutlinedButton.icon(
+                        key: const ValueKey('open-transactions'),
+                        onPressed: () =>
+                            _openTransactionsPanel(context, account),
+                        icon: const Icon(Icons.list_alt_rounded, size: 18),
+                        label: Text('Transactions · ${transactions.length}'),
+                      ),
+                      const SizedBox(width: 16),
+                    ],
+            ),
+            body: _withPlanPanel(
+              context,
+              compact: compact,
+              child: Column(
+                children: [
+                  Padding(
                     padding: EdgeInsets.fromLTRB(
                       compact ? 8 : 16,
-                      compact ? 6 : 10,
+                      compact ? 6 : 12,
                       compact ? 8 : 16,
-                      6,
+                      0,
                     ),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: AppTheme.surface,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppTheme.border),
+                    child: compact
+                        ? _compactToolbar(context, account)
+                        : _toolbar(context, account),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        compact ? 8 : 16,
+                        compact ? 6 : 10,
+                        compact ? 8 : 16,
+                        6,
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(15),
-                        child: series == null
-                            ? balanceAsync.when(
-                                loading: () => const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                                error: (error, _) => _BalanceError(
-                                  message: friendlyError(error),
-                                  onRetry: _invalidateBalance,
-                                ),
-                                data: (_) => const SizedBox.shrink(),
-                              )
-                            : Stack(
-                                children: [
-                                  BalanceChart(
-                                    key: ValueKey(account.id),
-                                    fitToken: _fitToken,
-                                    zeroToken: _zeroToken,
-                                    onFitRequested: (mode) =>
-                                        _fit(mode, account),
-                                    onZoomStep: _zoomStep,
-                                    unitLabel: _unit.label,
-                                    canZoomIn: _unit.index > 0,
-                                    canZoomOut:
-                                        _unit.index <
-                                        ViewUnit.values.length - 1,
-                                    onShift: _shift,
-                                    series: series,
-                                    currency: account.currency,
-                                    seedDate: account.seedDate,
-                                    seedBalance: account.seedBalance.toDouble(),
-                                    lossThreshold: account.lossThreshold
-                                        .toDouble(),
-                                    currencyScale: account.currencyScale
-                                        .toDouble(),
-                                    fitIncludesThreshold: _fitThreshold,
-                                    viewStart: _viewStart,
-                                    visibleDays: _visibleDays,
-                                    onViewportChanged: _onChartViewport,
-                                    onCreateOnDay: (day) =>
-                                        _createOnceOnDay(context, day),
-                                    transactionNames: transactionNames,
-                                    transactions: {
-                                      for (final t in transactions) t.id: t,
-                                    },
-                                    dataFrom: _seriesCacheQuery?.from,
-                                    dataThrough: _seriesCacheQuery?.to,
-                                    ghosts: _ghosts,
-                                    target: _goalActive ? _goalTarget : null,
-                                    targetMode: _goalActive && _targetMode,
-                                    onTargetChanged: _onTargetDrag,
-                                    onPlanPeriod: (p) => _planPeriod(
-                                      p,
-                                      account.lossThreshold.toDouble(),
-                                    ),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(15),
+                          child: series == null
+                              ? balanceAsync.when(
+                                  loading: () => const Center(
+                                    child: CircularProgressIndicator(),
                                   ),
-                                  if (_goalActive)
-                                    Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: FilterChip(
-                                        key: const ValueKey('target-tool'),
-                                        avatar: const Icon(
-                                          Icons.my_location_rounded,
-                                          size: 16,
-                                        ),
-                                        label: Text(
-                                          _targetMode
-                                              ? 'Tap or drag to set target'
-                                              : 'Set target',
-                                        ),
-                                        tooltip: 'Target tool: tap or drag on the chart to set the goal balance and date',
-                                        selected: _targetMode,
-                                        onSelected: (on) =>
-                                            setState(() => _targetMode = on),
+                                  error: (error, _) => _BalanceError(
+                                    message: friendlyError(error),
+                                    onRetry: _invalidateBalance,
+                                  ),
+                                  data: (_) => const SizedBox.shrink(),
+                                )
+                              : Stack(
+                                  children: [
+                                    BalanceChart(
+                                      key: ValueKey(account.id),
+                                      fitToken: _fitToken,
+                                      zeroToken: _zeroToken,
+                                      onFitRequested: (mode) =>
+                                          _fit(mode, account),
+                                      onZoomStep: _zoomStep,
+                                      unitLabel: _unit.label,
+                                      canZoomIn: _unit.index > 0,
+                                      canZoomOut:
+                                          _unit.index <
+                                          ViewUnit.values.length - 1,
+                                      onShift: _shift,
+                                      series: series,
+                                      currency: account.currency,
+                                      seedDate: account.seedDate,
+                                      seedBalance: account.seedBalance
+                                          .toDouble(),
+                                      lossThreshold: account.lossThreshold
+                                          .toDouble(),
+                                      currencyScale: account.currencyScale
+                                          .toDouble(),
+                                      fitIncludesThreshold: _fitThreshold,
+                                      viewStart: _viewStart,
+                                      visibleDays: _visibleDays,
+                                      onViewportChanged: _onChartViewport,
+                                      onCreateOnDay: (day) =>
+                                          _createOnceOnDay(context, day),
+                                      transactionNames: transactionNames,
+                                      transactions: {
+                                        for (final t in transactions) t.id: t,
+                                      },
+                                      dataFrom: _seriesCacheQuery?.from,
+                                      dataThrough: _seriesCacheQuery?.to,
+                                      ghosts: _ghosts,
+                                      target: _goalActive ? _goalTarget : null,
+                                      targetMode: _goalActive && _targetMode,
+                                      onTargetChanged: _onTargetDrag,
+                                      onPlanPeriod: (p) => _planPeriod(
+                                        p,
+                                        account.lossThreshold.toDouble(),
                                       ),
                                     ),
-                                  if (balanceAsync.isLoading)
-                                    const Positioned(
-                                      top: 0,
-                                      left: 0,
-                                      right: 0,
-                                      child: LinearProgressIndicator(
-                                        minHeight: 2,
+                                    if (_goalActive)
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: FilterChip(
+                                          key: const ValueKey('target-tool'),
+                                          avatar: const Icon(
+                                            Icons.my_location_rounded,
+                                            size: 16,
+                                          ),
+                                          label: Text(
+                                            _targetMode
+                                                ? 'Tap or drag to set target'
+                                                : 'Set target',
+                                          ),
+                                          tooltip: 'Target tool: tap or drag on the chart to set the goal balance and date',
+                                          selected: _targetMode,
+                                          onSelected: (on) =>
+                                              setState(() => _targetMode = on),
+                                        ),
                                       ),
-                                    ),
-                                ],
-                              ),
+                                    if (balanceAsync.isLoading)
+                                      const Positioned(
+                                        top: 0,
+                                        left: 0,
+                                        right: 0,
+                                        child: LinearProgressIndicator(
+                                          minHeight: 2,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                if (!_planOpen || !compact) _TipsBar(compact: compact),
-              ],
+                  if (!_planOpen || !compact) _TipsBar(compact: compact),
+                ],
+              ),
             ),
           ),
         );
@@ -732,32 +755,72 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   /// Docks the planner beside (desktop) or under (phone) the chart.
+  /// Full-screen planner over the whole page on phone portrait. The page
+  /// (chart included) stays mounted underneath, so the goal panel state and
+  /// viewport survive switching to "Show on chart" and back.
+  Widget _withFullPlan(BuildContext context, Widget page) {
+    if (!_planFull(context)) return page;
+    final account = ref.read(accountProvider(widget.accountId)).valueOrNull;
+    if (account == null) return page;
+    final goal = _planTab == PlanTab.goal;
+    return Stack(
+      children: [
+        Offstage(child: page),
+        Positioned.fill(
+          child: Scaffold(
+            key: const ValueKey('plan-fullscreen'),
+            appBar: AppBar(
+              leading: IconButton(
+                key: const ValueKey('plan-full-close'),
+                tooltip: 'Close planner',
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: _closePlan,
+              ),
+              titleSpacing: 0,
+              title: Text(switch (_planTab) {
+                PlanTab.goal => 'Plan a goal',
+                PlanTab.payment => 'Plan a payment',
+                PlanTab.scenarios => 'Scenarios',
+              }),
+              actions: [
+                if (goal)
+                  IconButton(
+                    key: const ValueKey('plan-full-target'),
+                    tooltip: 'Set target on the chart',
+                    icon: const Icon(Icons.my_location_rounded),
+                    onPressed: () => setState(() => _targetMode = true),
+                  ),
+                IconButton(
+                  key: const ValueKey('plan-full-chart'),
+                  tooltip: 'Show on chart',
+                  icon: const Icon(Icons.show_chart_rounded),
+                  onPressed: () => setState(() => _planOnChart = true),
+                ),
+                const SizedBox(width: 4),
+              ],
+            ),
+            body: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: _planPanel(context, account, compact: true, full: true),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _withPlanPanel(
     BuildContext context, {
     required bool compact,
     required Widget child,
   }) {
-    if (!_planOpen) return child;
+    if (!_planOpen || _planFull(context)) return child;
     final account = ref.read(accountProvider(widget.accountId)).valueOrNull;
     if (account == null) return child;
-    final panel = PlanPanel(
-      account: account,
-      tab: _planTab,
-      onTab: (t) => setState(() => _planTab = t),
-      compact: compact,
-      goalKey: _goalKey,
-      onClose: _closePlan,
-      onPreview: _onPlanPreview,
-      onDone: (r) => _planDone(context, r),
-      onGoalResult: _onGoalResult,
-      onSaveScenario: (req) => _saveScenario(context, req),
-      onLoadScenario: (sc) {
-        setState(() => _planTab = PlanTab.goal);
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => _goalKey.currentState?.load(sc.request),
-        );
-      },
-    );
+    final panel = _planPanel(context, account, compact: compact);
     if (compact) {
       final h = MediaQuery.sizeOf(context).height;
       return Column(
@@ -779,6 +842,41 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           child: SizedBox(width: 400, child: panel),
         ),
       ],
+    );
+  }
+
+  Widget _planPanel(
+    BuildContext context,
+    Account account, {
+    required bool compact,
+    bool full = false,
+  }) {
+    final portrait = _isPortraitPhone(context);
+    return PlanPanel(
+      key: _planPanelKey,
+      fullScreen: full,
+      onExpand: !full && portrait
+          ? () => setState(() {
+              _planOnChart = false;
+              _targetMode = false;
+            })
+          : null,
+      account: account,
+      tab: _planTab,
+      onTab: (t) => setState(() => _planTab = t),
+      compact: compact,
+      goalKey: _goalKey,
+      onClose: _closePlan,
+      onPreview: _onPlanPreview,
+      onDone: (r) => _planDone(context, r),
+      onGoalResult: _onGoalResult,
+      onSaveScenario: (req) => _saveScenario(context, req),
+      onLoadScenario: (sc) {
+        setState(() => _planTab = PlanTab.goal);
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _goalKey.currentState?.load(sc.request),
+        );
+      },
     );
   }
 
