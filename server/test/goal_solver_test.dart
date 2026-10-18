@@ -154,9 +154,44 @@ void main() {
       ));
       final a = r.affordability!;
       expect(a['affordable'], isFalse);
-      // 500 after purchase; bills from 5 Jan: 400, 300, 200 (19 Jan) ≤ 200.
-      expect(a['safeUntil'], '2026-01-18');
+      // 500 after purchase; bills from 5 Jan: 400, 300, 200 (19 Jan, on the
+      // line: still safe), 100 (26 Jan) < 200.
+      expect(a['safeUntil'], '2026-01-25');
       expect(r.alertDate, DateTime.utc(2026, 1, 19));
+    });
+
+    test('interest compounds daily on the whole balance', () {
+      final r = _solver().solve(GoalRequest(
+        solveFor: GoalVar.targetBalance,
+        startDate: _start,
+        endDate: DateTime.utc(2027, 1, 1),
+        rate: 10,
+      ));
+      // 366 days of r/365 daily compounding on 1000.
+      final expected = 1000 * _pow(1 + 0.10 / 365, 366);
+      expect(r.endBalance, closeTo(expected, 0.5));
+    });
+
+    test('rate is solved numerically (round trip)', () {
+      final r = _solver().solve(GoalRequest(
+        solveFor: GoalVar.rate,
+        startDate: _start,
+        endDate: DateTime.utc(2027, 1, 1),
+        targetBalance: 1105.3,
+      ));
+      expect((r.values!['rate'] as num).toDouble(), closeTo(10, 0.05));
+    });
+
+    test('an affordable purchase reports the worst point', () {
+      final r = _solver(threshold: 200).solve(GoalRequest(
+        solveFor: GoalVar.targetBalance,
+        startDate: _start,
+        endDate: DateTime.utc(2026, 3, 1),
+        oneOff: -500,
+      ));
+      final a = r.affordability!;
+      expect(a['affordable'], isTrue);
+      expect(a['safeUntil'], '2026-03-01');
     });
 
     test('unreachable targets explain why', () {
@@ -183,4 +218,12 @@ void main() {
       expect(dates, containsAllInOrder([1, 8, 10]));
     });
   });
+}
+
+double _pow(double b, int n) {
+  var r = 1.0;
+  for (var i = 0; i < n; i++) {
+    r *= b;
+  }
+  return r;
 }

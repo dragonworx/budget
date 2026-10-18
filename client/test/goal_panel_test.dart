@@ -37,8 +37,9 @@ Map<String, dynamic> _solved(String solveFor, {String amount = '280.00'}) => {
 };
 
 class _Repo extends AccountRepository {
-  _Repo() : super(ApiClient());
+  _Repo({this.result}) : super(ApiClient());
   final requests = <GoalRequest>[];
+  final Map<String, dynamic>? result;
 
   @override
   Future<GoalResult> goal(String accountId, GoalRequest request) async {
@@ -53,7 +54,7 @@ class _Repo extends AccountRepository {
         ],
       });
     }
-    return GoalResult.fromJson(_solved(request.solveFor.name));
+    return GoalResult.fromJson(result ?? _solved(request.solveFor.name));
   }
 }
 
@@ -142,5 +143,50 @@ void main() {
     expect(req.amount, 280);
     expect(req.targetBalance, 2000);
     expect(find.byKey(const ValueKey('goal-solved-count')), findsOneWidget);
+  });
+
+  testWidgets('rate row solves and affordability is shown', (tester) async {
+    tester.view.physicalSize = const Size(500, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final base = _solved('rate');
+    final repo = _Repo(
+      result: {
+        ...base,
+        'values': {
+          ...(base['values'] as Map<String, dynamic>),
+          'rate': 4.5,
+          'oneOff': '-300.00',
+        },
+        'affordability': {
+          'affordable': false,
+          'threshold': '200.00',
+          'worst': {'date': '2026-01-20', 'closingBalance': '150.00'},
+          'safeUntil': '2026-01-12',
+        },
+      },
+    );
+    final key = GlobalKey<GoalPanelState>();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [accountRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: GoalPanel(key: key, account: _account, onResult: (_, _) {}),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('goal-toggle-rate')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('goal-toggle-rate')));
+    key.currentState!.setTarget(DateTime(2026, 1, 29), 2000);
+    await tester.pumpAndSettle();
+    expect(repo.requests.last.solveFor, GoalVar.rate);
+    expect(find.textContaining('Needs 4.50% a year'), findsOneWidget);
+    expect(find.textContaining('Not affordable'), findsOneWidget);
+    expect(find.textContaining('Worst point'), findsOneWidget);
+    expect(find.textContaining('Safe until'), findsOneWidget);
+    expect(find.byKey(const ValueKey('goal-rate-note')), findsOneWidget);
   });
 }

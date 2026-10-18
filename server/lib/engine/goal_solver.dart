@@ -523,14 +523,17 @@ class GoalSolver {
 
     Map<String, Object?>? afford;
     if (p.oneOff < 0) {
-      // A purchase: does the balance stay above the alert line?
+      // A purchase: does the balance stay at or above the alert line?
+      // (Touching it is fine, so the solved maximum one-off — which lands
+      // exactly on the line — reads as affordable.)
+      final floor = threshold - 0.005;
       DateTime? safeUntil;
       for (var k = 0; k < s.length; k++) {
-        if (s[k] <= threshold) break;
+        if (s[k] < floor) break;
         safeUntil = p.start.add(Duration(days: k));
       }
       afford = {
-        'affordable': lowest != null && lowest.balance > threshold,
+        'affordable': lowest != null && lowest.balance >= floor,
         'threshold': _m(threshold),
         'worst': lowest?.toJson(),
         'safeUntil': safeUntil == null ? null : formatDate(safeUntil),

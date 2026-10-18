@@ -23,6 +23,7 @@ const goalRows = [
   GoalVar.interval,
   GoalVar.count,
   GoalVar.oneOff,
+  GoalVar.rate,
 ];
 
 /// "Plan a goal": every variable is known (🔒, typed or a default) except
@@ -362,7 +363,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
       GoalVar.amount => 'None (+ in, − out)',
       GoalVar.count => 'Every time until the end date',
       GoalVar.oneOff => 'None (− for a purchase)',
-      GoalVar.rate => '0%',
+      GoalVar.rate => '0% a year, compounded daily',
       GoalVar.targetBalance || GoalVar.endDate => 'Required',
       GoalVar.interval => '',
     };
@@ -652,12 +653,65 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
               : AppTheme.debitColor,
         ),
       ),
+      if (r.affordability case final a?) ..._affordability(context, a),
+      if ((r.values?.rate ?? 0) != 0)
+        Text(
+          'Interest compounds daily on the whole balance; '
+          '"Add plan" adds the payments only, not the interest.',
+          key: const ValueKey('goal-rate-note'),
+          style: small,
+        ),
       ...statusExtras(context, r),
       if (r.note != null) Text(r.note!, style: small),
     ]);
   }
 
-  /// Hook for extra status lines (affordability).
+  /// Purchase check (a negative one-off): yes/no, the worst point after it
+  /// and the last day the balance stays above the alert line.
+  List<Widget> _affordability(BuildContext context, Affordability a) {
+    final theme = Theme.of(context);
+    final color = a.affordable ? AppTheme.creditColor : AppTheme.debitColor;
+    return [
+      const SizedBox(height: 4),
+      Row(
+        key: const ValueKey('goal-affordability'),
+        children: [
+          Icon(
+            a.affordable ? Icons.check_circle_rounded : Icons.cancel_rounded,
+            size: 16,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              a.affordable
+                  ? 'Affordable — stays at or above the alert line'
+                  : 'Not affordable — dips below the alert line',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+      if (a.worstDate != null && a.worstBalance != null)
+        Text(
+          'Worst point ${_money2(a.worstBalance!)} on ${_date(a.worstDate!)}',
+          key: const ValueKey('goal-afford-worst'),
+          style: theme.textTheme.bodySmall,
+        ),
+      Text(
+        a.safeUntil == null
+            ? 'Below the alert line straight away'
+            : 'Safe until ${_date(a.safeUntil!)}',
+        key: const ValueKey('goal-afford-safe'),
+        style: theme.textTheme.bodySmall,
+      ),
+    ];
+  }
+
+  /// Hook for extra status lines.
   List<Widget> statusExtras(BuildContext context, GoalResult r) => const [];
 
   /// One sentence answering the solved question.
