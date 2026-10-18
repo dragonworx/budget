@@ -65,7 +65,11 @@ class BalanceChart extends StatefulWidget {
     this.onShift,
     this.transactions = const {},
     this.ghosts = const [],
+    this.target,
   });
+
+  /// Goal target point (date, balance), drawn as a ringed marker.
+  final (DateTime, double)? target;
 
   /// Dashed what-if lines (plan preview, scenarios) over the real line.
   final List<GhostLine> ghosts;
@@ -1184,7 +1188,8 @@ class _BalanceChartState extends State<BalanceChart>
                     ),
                   ),
                 ),
-                if (widget.ghosts.isNotEmpty && yRange != null)
+                if ((widget.ghosts.isNotEmpty || widget.target != null) &&
+                    yRange != null)
                   _ghostOverlay(yRange),
                 if (_mode == _Gesture.pick && _pickDay != null)
                   ..._pickOverlay(theme),
@@ -1231,6 +1236,7 @@ class _BalanceChartState extends State<BalanceChart>
           key: const ValueKey('ghost-lines'),
           painter: GhostLinePainter(
             ghosts: widget.ghosts,
+            target: widget.target,
             plot: layout.plot,
             xOf: (d) => layout.xOf(d, widget.viewStart, widget.visibleDays),
             yOf: scale.yOf,

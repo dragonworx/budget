@@ -9,6 +9,7 @@ import '../repo/account_repo.dart';
 import '../repo/transaction_repo.dart';
 import 'balance.dart';
 import 'json_helpers.dart';
+import 'goal.dart';
 import 'solve.dart';
 import 'transactions.dart' show parseTransactionBody;
 
@@ -121,6 +122,7 @@ Router buildAccountsApi(Connection conn) {
 
   attachBalanceRoutes(router, conn);
   attachSolveRoutes(router, conn);
+  attachGoalRoutes(router, conn);
 
   router.patch('/<id>/reorder-transactions',
       (Request request, String id) async {

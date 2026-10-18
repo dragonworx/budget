@@ -15,6 +15,8 @@ import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
 import '../transactions/editor_outcome.dart';
 import '../transactions/import_dialog.dart';
+import '../planning/goal_models.dart';
+import '../planning/goal_panel.dart';
 import '../planning/plan_panel.dart';
 import '../transactions/transaction_editor.dart';
 import '../transactions/transactions_panel.dart';
@@ -98,16 +100,46 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Docked planner (non-blocking) and its live preview line.
   bool _planOpen = false;
+  PlanTab _planTab = PlanTab.goal;
   GhostLine? _planGhost;
+  GhostLine? _goalGhost;
   int _previewSeq = 0;
+  final _goalKey = GlobalKey<GoalPanelState>();
+
+  /// Target point of the goal (end date, target balance) for the chart.
+  (DateTime, double)? _goalTarget;
 
   void _openPlan() => setState(() => _planOpen = true);
 
   void _closePlan() => setState(() {
     _planOpen = false;
     _planGhost = null;
+    _goalGhost = null;
+    _goalTarget = null;
     _previewSeq++;
   });
+
+  void _onGoalResult(GoalRequest req, GoalResult? r) {
+    final v = r?.values;
+    setState(() {
+      _goalGhost = r == null || v == null
+          ? null
+          : GhostLine(
+              points: r.points,
+              color: AppTheme.planGhost,
+              from: v.startDate,
+              label: 'Goal',
+            );
+      final end = v?.endDate ?? req.endDate;
+      final target = v?.targetBalance ?? req.targetBalance;
+      _goalTarget = end == null || target == null ? null : (end, target);
+    });
+  }
+
+  List<GhostLine> get _ghosts => [
+    if (_planOpen && _planTab == PlanTab.goal) ?_goalGhost,
+    if (_planOpen && _planTab == PlanTab.payment) ?_planGhost,
+  ];
 
   /// Projects the balance with the would-be [t] and shows it dashed.
   Future<void> _onPlanPreview(Transaction? t) async {
@@ -547,7 +579,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                     },
                                     dataFrom: _seriesCacheQuery?.from,
                                     dataThrough: _seriesCacheQuery?.to,
-                                    ghosts: [?_planGhost],
+                                    ghosts: _ghosts,
+                                    target:
+                                        _planOpen && _planTab == PlanTab.goal
+                                        ? _goalTarget
+                                        : null,
                                   ),
                                   if (balanceAsync.isLoading)
                                     const Positioned(
@@ -580,12 +616,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     required Widget child,
   }) {
     if (!_planOpen) return child;
+    final account = ref.read(accountProvider(widget.accountId)).valueOrNull;
+    if (account == null) return child;
     final panel = PlanPanel(
-      accountId: widget.accountId,
+      account: account,
+      tab: _planTab,
+      onTab: (t) => setState(() => _planTab = t),
       compact: compact,
+      goalKey: _goalKey,
       onClose: _closePlan,
       onPreview: _onPlanPreview,
       onDone: (r) => _planDone(context, r),
+      onGoalResult: _onGoalResult,
     );
     if (compact) {
       final h = MediaQuery.sizeOf(context).height;
@@ -1295,7 +1337,9 @@ class _InsightChip extends StatelessWidget {
       decoration: AppTheme.panel(
         color: warn ? AppTheme.debitSoft : AppTheme.raised,
         r: 10,
-        edge: warn ? AppTheme.debitColor.withValues(alpha: 0.4) : AppTheme.border,
+        edge: warn
+            ? AppTheme.debitColor.withValues(alpha: 0.4)
+            : AppTheme.border,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

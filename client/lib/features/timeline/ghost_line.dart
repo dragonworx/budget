@@ -71,7 +71,13 @@ class GhostLinePainter extends CustomPainter {
     required this.xOf,
     required this.yOf,
     required this.repaintKey,
+    this.target,
+    this.targetColor = const Color(0xFFFFC857),
   });
+
+  /// Goal target (date, balance): drawn as a ringed marker with guides.
+  final (DateTime, double)? target;
+  final Color targetColor;
 
   final List<GhostLine> ghosts;
   final Rect plot;
@@ -113,6 +119,47 @@ class GhostLinePainter extends CustomPainter {
         Paint()..color = g.color,
       );
     }
+    final t = target;
+    if (t != null) {
+      final c = Offset(xOf(addDays(dateOnly(t.$1), 0.5)), yOf(t.$2));
+      final guide = Paint()
+        ..color = targetColor.withValues(alpha: 0.45)
+        ..strokeWidth = 1;
+      canvas.drawPath(
+        _dash(
+          Path()
+            ..moveTo(plot.left, c.dy)
+            ..lineTo(plot.right, c.dy),
+          4,
+          4,
+        ),
+        guide..style = PaintingStyle.stroke,
+      );
+      canvas.drawPath(
+        _dash(
+          Path()
+            ..moveTo(c.dx, plot.top)
+            ..lineTo(c.dx, plot.bottom),
+          4,
+          4,
+        ),
+        guide,
+      );
+      canvas.drawCircle(
+        c,
+        9,
+        Paint()..color = targetColor.withValues(alpha: 0.25),
+      );
+      canvas.drawCircle(
+        c,
+        7,
+        Paint()
+          ..color = targetColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+      canvas.drawCircle(c, 3, Paint()..color = targetColor);
+    }
     canvas.restore();
   }
 
@@ -130,5 +177,7 @@ class GhostLinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant GhostLinePainter old) =>
-      old.repaintKey != repaintKey || !identical(old.ghosts, ghosts);
+      old.repaintKey != repaintKey ||
+      !identical(old.ghosts, ghosts) ||
+      old.target != target;
 }

@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import '../features/planning/goal_models.dart';
 import 'models.dart';
 
 class ProjectRepository {
@@ -100,6 +101,15 @@ class AccountRepository {
       },
     );
     return BalanceInsights.fromJson(data as Map<String, dynamic>);
+  }
+
+  /// Solves one balance-goal unknown (`POST /accounts/:id/goal`).
+  Future<GoalResult> goal(String accountId, GoalRequest request) async {
+    final data = await _api.post(
+      '/api/accounts/$accountId/goal',
+      body: {...request.toJson(), 'today': formatDate(DateTime.now())},
+    );
+    return GoalResult.fromJson(data as Map<String, dynamic>);
   }
 
   /// Balance as if [extra] (unsaved) transactions were added.
