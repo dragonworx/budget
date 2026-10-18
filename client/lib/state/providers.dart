@@ -103,6 +103,7 @@ class AccountsNotifier extends FamilyAsyncNotifier<List<Account>, String> {
     ref.invalidate(transactionsProvider);
     ref.invalidate(balanceProvider);
     ref.invalidate(todayBalanceProvider);
+    ref.invalidate(insightsProvider);
     final current = state.valueOrNull ?? [];
     state = AsyncData([
       for (final a in current) a.id == account.id ? updated : a,
@@ -171,6 +172,7 @@ class TransactionsNotifier
     ref.invalidate(transactionsProvider(link.peerAccountId));
     ref.invalidate(balanceProvider);
     ref.invalidate(todayBalanceProvider);
+    ref.invalidate(insightsProvider);
   }
 
   Future<void> delete(String id) async {
@@ -253,6 +255,15 @@ final todayBalanceProvider = FutureProvider.family<Decimal?, String>((
         .future,
   );
   return series.points.isEmpty ? null : series.points.last.closingBalance;
+});
+
+/// Lowest point over the next year and the runway (first alert / below
+/// zero dates within five years), from today.
+final insightsProvider = FutureProvider.family<BalanceInsights, String>((
+  ref,
+  accountId,
+) {
+  return ref.read(accountRepositoryProvider).insights(accountId, DateTime.now());
 });
 
 /// Every project with its accounts, in display order — for the

@@ -188,6 +188,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   void _invalidateBalance() {
     ref.invalidate(balanceProvider(_query));
     ref.invalidate(todayBalanceProvider(widget.accountId));
+    ref.invalidate(insightsProvider(widget.accountId));
   }
 
   /// Puts [day] a third of the way in and refits the balance to the view
@@ -378,6 +379,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             title: _AccountHeader(
               account: account,
               todayPoint: todayPoint,
+              insights: ref
+                  .watch(insightsProvider(widget.accountId))
+                  .valueOrNull,
               compact: compact,
             ),
             actions: compact
@@ -1067,12 +1071,38 @@ class _AccountHeader extends StatelessWidget {
   const _AccountHeader({
     required this.account,
     required this.todayPoint,
+    this.insights,
     this.compact = false,
   });
 
   final Account account;
   final BalancePoint? todayPoint;
+  final BalanceInsights? insights;
   final bool compact;
+
+  /// Phone header: "alert 19 Feb 27 · low −$2,450 15 Oct 27" (runway
+  /// first: it matters most and the line may be cut off).
+  String? _compactInsights() {
+    final i = insights;
+    if (i == null) return null;
+    final short = DateFormat('d MMM yy');
+    final today = dateOnly(DateTime.now());
+    final alert = i.alertDate;
+    final parts = <String>[
+      alert == null
+          ? 'runway OK'
+          : (!alert.isAfter(today)
+                ? 'below alert'
+                : 'alert ${short.format(alert)}'),
+    ];
+    if (i.lowestBalance != null && i.lowestDate != null) {
+      parts.add(
+        'low ${formatMoneyAmount(i.lowestBalance!, account.currency)} '
+        '${short.format(i.lowestDate!)}',
+      );
+    }
+    return parts.join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1126,7 +1156,10 @@ class _AccountHeader extends StatelessWidget {
               ),
               if (compact && today != null)
                 Text(
-                  'Today ${formatMoneyAmount(today.toDouble(), account.currency, decimalDigits: 2)}',
+                  [
+                    'Today ${formatMoneyAmount(today.toDouble(), account.currency, decimalDigits: 2)}',
+                    ?_compactInsights(),
+                  ].join(' · '),
                   key: const ValueKey('header-today'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: loss ? AppTheme.debitColor : AppTheme.textMuted,
@@ -1145,6 +1178,32 @@ class _AccountHeader extends StatelessWidget {
             ],
           ),
         ),
+        if (insights != null && !compact) ...[
+          const SizedBox(width: 10),
+          _InsightChip(
+            key: const ValueKey('header-lowest'),
+            label: 'LOWEST · 12 MO',
+            value: insights!.lowestBalance == null
+                ? '—'
+                : formatMoneyAmount(insights!.lowestBalance!, account.currency),
+            detail: insights!.lowestDate == null
+                ? null
+                : DateFormat('d MMM y').format(insights!.lowestDate!),
+            warn:
+                insights!.lowestBalance != null &&
+                insights!.lowestBalance! <= account.lossThreshold.toDouble(),
+          ),
+          const SizedBox(width: 8),
+          _InsightChip(
+            key: const ValueKey('header-runway'),
+            label: 'RUNWAY',
+            value: runwayText(insights!, account),
+            detail: insights!.alertDate == null
+                ? null
+                : 'alert ≤ ${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}',
+            warn: insights!.alertDate != null,
+          ),
+        ],
         if (today != null && !compact) ...[
           const SizedBox(width: 16),
           Container(
@@ -1184,6 +1243,85 @@ class _AccountHeader extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Runway headline: the first alert date (and the zero date when the
+/// threshold is not zero), or that it holds for the whole horizon.
+String runwayText(BalanceInsights i, Account account) {
+  final fmt = DateFormat('d MMM y');
+  final alert = i.alertDate;
+  if (alert == null) {
+    return 'OK ${(i.horizonDays / 365).round()}+ yrs';
+  }
+  final today = dateOnly(DateTime.now());
+  if (!alert.isAfter(today)) return 'Below alert now';
+  final zero = i.zeroDate;
+  if (zero != null && zero != alert && account.lossThreshold.toDouble() != 0) {
+    return '${fmt.format(alert)} · \$0 ${fmt.format(zero)}';
+  }
+  return fmt.format(alert);
+}
+
+class _InsightChip extends StatelessWidget {
+  const _InsightChip({
+    super.key,
+    required this.label,
+    required this.value,
+    this.detail,
+    this.warn = false,
+  });
+
+  final String label;
+  final String value;
+  final String? detail;
+  final bool warn;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: AppTheme.panel(
+        color: warn ? AppTheme.debitSoft : AppTheme.raised,
+        r: 10,
+        edge: warn ? AppTheme.debitColor.withValues(alpha: 0.4) : AppTheme.border,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              letterSpacing: 1,
+              color: AppTheme.textFaint,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: value,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: warn ? AppTheme.debitColor : AppTheme.text,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (detail != null)
+                  TextSpan(
+                    text: '  $detail',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: AppTheme.textMuted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

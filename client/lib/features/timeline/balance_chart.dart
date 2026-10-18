@@ -1565,6 +1565,7 @@ class _BalanceChartState extends State<BalanceChart>
       end: e,
       seedDate: widget.seedDate,
       seedBalance: widget.seedBalance,
+      threshold: widget.lossThreshold,
     );
 
     double centreX(DateTime d) =>
@@ -1845,6 +1846,36 @@ class _BalanceChartState extends State<BalanceChart>
           style: strong,
         ),
         const ValueKey('sel-row-count'),
+      ),
+      const Divider(height: 10),
+      if (sum.lowestBalance != null)
+        row(
+          'Lowest',
+          sum.lowestDate == null ? '' : dm.format(sum.lowestDate!),
+          Text(
+            formatMoneyAmount(sum.lowestBalance!, cur),
+            key: const ValueKey('selection-lowest'),
+            style: strong.copyWith(
+              color: sum.lowestBalance! <= widget.lossThreshold
+                  ? AppTheme.debitColor
+                  : null,
+            ),
+          ),
+          const ValueKey('sel-row-lowest'),
+        ),
+      row(
+        'Alert',
+        '≤ ${formatMoneyAmount(widget.lossThreshold, cur)}',
+        Text(
+          sum.alertDate == null ? 'Never' : dm.format(sum.alertDate!),
+          key: const ValueKey('selection-alert'),
+          style: strong.copyWith(
+            color: sum.alertDate == null
+                ? AppTheme.creditColor
+                : AppTheme.debitColor,
+          ),
+        ),
+        const ValueKey('sel-row-alert'),
       ),
     ];
     Widget card = Material(

@@ -85,6 +85,23 @@ class AccountRepository {
     return Account.fromJson(data as Map<String, dynamic>);
   }
 
+  Future<BalanceInsights> insights(
+    String accountId,
+    DateTime from, {
+    int days = 365,
+    int horizonDays = 1825,
+  }) async {
+    final data = await _api.get(
+      '/api/accounts/$accountId/insights',
+      query: {
+        'from': formatDate(from),
+        'days': '$days',
+        'horizonDays': '$horizonDays',
+      },
+    );
+    return BalanceInsights.fromJson(data as Map<String, dynamic>);
+  }
+
   /// Balance as if [extra] (unsaved) transactions were added.
   Future<BalanceSeries> project(
     String accountId,

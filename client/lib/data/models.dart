@@ -807,3 +807,41 @@ class BalanceTargetInfo {
         gap: parseMoney(json['gap']),
       );
 }
+
+/// Lowest point and runway from `GET /accounts/:id/insights`.
+class BalanceInsights {
+  const BalanceInsights({
+    this.lowestDate,
+    this.lowestBalance,
+    this.alertDate,
+    this.zeroDate,
+    this.horizonDays = 1825,
+    this.days = 365,
+  });
+
+  final DateTime? lowestDate;
+  final double? lowestBalance;
+
+  /// First day at or below the alert threshold (null: not within horizon).
+  final DateTime? alertDate;
+
+  /// First day below zero (null: not within horizon).
+  final DateTime? zeroDate;
+  final int horizonDays;
+  final int days;
+
+  factory BalanceInsights.fromJson(Map<String, dynamic> json) {
+    final low = json['lowest'];
+    DateTime? date(Object? v) => v == null ? null : parseDate(v);
+    return BalanceInsights(
+      lowestDate: low is Map ? date(low['date']) : null,
+      lowestBalance: low is Map
+          ? double.tryParse(low['balance'].toString())
+          : null,
+      alertDate: date(json['alertDate']),
+      zeroDate: date(json['zeroDate']),
+      horizonDays: (json['horizonDays'] as int?) ?? 1825,
+      days: (json['days'] as int?) ?? 365,
+    );
+  }
+}

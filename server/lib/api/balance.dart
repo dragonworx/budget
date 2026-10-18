@@ -4,6 +4,7 @@ import 'package:shelf_router/shelf_router.dart';
 
 import '../domain/models.dart';
 import '../engine/balance_engine.dart';
+import '../engine/balance_insights.dart';
 import '../repo/account_repo.dart';
 import '../repo/transaction_repo.dart';
 import 'json_helpers.dart';
@@ -102,6 +103,52 @@ void attachBalanceRoutes(Router router, Connection conn) {
       );
       return jsonOk({
         'points': series.points.map((p) => p.toJson()).toList(),
+      });
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    } on ArgumentError catch (e) {
+      return jsonError(400, e.message.toString());
+    }
+  });
+
+  /// `GET /<id>/insights?from=YYYY-MM-DD&days=365&horizonDays=1825`:
+  /// lowest closing balance over `days` from `from`, and the first dates
+  /// at/below the alert threshold and below zero within `horizonDays`.
+  router.get('/<id>/insights', (Request request, String id) async {
+    try {
+      final account = await accounts.get(id);
+      if (account == null) return jsonError(404, 'account not found');
+      final q = request.url.queryParameters;
+      final from = q['from'] == null
+          ? DateTime.now().toUtc()
+          : parseDate(q['from']!);
+      final days = int.tryParse(q['days'] ?? '') ?? 365;
+      final horizon = int.tryParse(q['horizonDays'] ?? '') ?? 1825;
+      if (days < 1 || horizon < 1 || days > 36500 || horizon > 36500) {
+        return jsonError(400, 'days and horizonDays must be 1..36500');
+      }
+      final start = DateTime.utc(from.year, from.month, from.day);
+      final end = start.add(Duration(days: horizon > days ? horizon : days));
+      final series = BalanceEngine.compute(
+        seedBalance: account.seedBalance,
+        seedDate: account.seedDate,
+        transactions: await transactions.listByAccount(id),
+        transactionOrder: account.transactionOrder,
+        from: start,
+        to: end,
+        skipped: await transactions.skipsForAccount(id),
+      );
+      final insights = BalanceInsights.of(
+        series.points,
+        threshold: account.lossThreshold.toDouble(),
+        lowestThrough: start.add(Duration(days: days - 1)),
+      );
+      return jsonOk({
+        'from': formatDate(start),
+        'days': days,
+        'horizonDays': horizon,
+        'threshold': account.lossThreshold.toString(),
+        ...insights.toJson(),
       });
     } on FormatException catch (e) {
       return jsonError(400, e.message);

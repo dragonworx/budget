@@ -134,4 +134,31 @@ void main() {
     );
     expect(s.percent, isNull);
   });
+
+  test('lowest point and first alert day in the range', () {
+    final s = summarizePeriod(
+      series: daily(),
+      start: d(4),
+      end: d(12),
+      seedDate: d(1),
+      seedBalance: 1000,
+      threshold: 1290,
+    );
+    // 1500 on 4th, 1300 from 5th, 1270 from 10th.
+    expect(s.lowestBalance, 1270);
+    expect(s.lowestDate, d(10));
+    expect(s.alertDate, d(10));
+  });
+
+  test('no alert day when the balance stays above the threshold', () {
+    final s = summarizePeriod(
+      series: daily(),
+      start: d(1),
+      end: d(20),
+      seedDate: d(1),
+      seedBalance: 1000,
+    );
+    expect(s.alertDate, isNull);
+    expect(s.lowestBalance, 1000);
+  });
 }

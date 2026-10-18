@@ -21,7 +21,17 @@ class PeriodSummary {
     required this.gains,
     required this.losses,
     required this.occurrences,
+    this.lowestBalance,
+    this.lowestDate,
+    this.alertDate,
   });
+
+  /// Lowest closing balance in the range and its (first) day.
+  final double? lowestBalance;
+  final DateTime? lowestDate;
+
+  /// First day in the range closing at or below the alert threshold.
+  final DateTime? alertDate;
 
   final DateTime start;
   final DateTime end;
@@ -57,6 +67,7 @@ PeriodSummary summarizePeriod({
   required DateTime end,
   required DateTime seedDate,
   double? seedBalance,
+  double threshold = 0,
 }) {
   final (s, e) = orderedDays(start, end);
   final seed = dateOnly(seedDate);
@@ -103,7 +114,25 @@ PeriodSummary summarizePeriod({
       losses += v;
     }
   }
+  double? low;
+  DateTime? lowDate, alert;
+  final byDay = {
+    for (final p in points) dateOnly(p.date): p.closingBalance.toDouble(),
+  };
+  double? prev;
+  for (var d = s; !d.isAfter(e); d = addCalendarDays(d, 1)) {
+    final v = byDay[d] ?? prev ?? closeOf(d);
+    prev = v;
+    if (low == null || v < low) {
+      low = v;
+      lowDate = d;
+    }
+    if (alert == null && v <= threshold) alert = d;
+  }
   return PeriodSummary(
+    lowestBalance: low,
+    lowestDate: lowDate,
+    alertDate: alert,
     start: s,
     end: e,
     startBalance: opening,
