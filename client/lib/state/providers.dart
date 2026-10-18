@@ -263,7 +263,9 @@ final insightsProvider = FutureProvider.family<BalanceInsights, String>((
   ref,
   accountId,
 ) {
-  return ref.read(accountRepositoryProvider).insights(accountId, DateTime.now());
+  return ref
+      .read(accountRepositoryProvider)
+      .insights(accountId, DateTime.now());
 });
 
 /// Every project with its accounts, in display order — for the

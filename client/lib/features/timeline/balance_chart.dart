@@ -68,7 +68,12 @@ class BalanceChart extends StatefulWidget {
     this.target,
     this.targetMode = false,
     this.onTargetChanged,
+    this.onPlanPeriod,
   });
+
+  /// "Plan…" in the selection card: opens the goal planner pre-filled with
+  /// the selected range. Opens a panel only; never edits data.
+  final void Function(PeriodSummary period)? onPlanPeriod;
 
   /// Target tool on: taps and drags on the plot set the goal target
   /// (date, balance) instead of panning / selecting. Never edits data.
@@ -1939,6 +1944,23 @@ class _BalanceChartState extends State<BalanceChart>
         ),
         const ValueKey('sel-row-alert'),
       ),
+      if (widget.onPlanPeriod != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 2),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey('sel-plan'),
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              onPressed: () => widget.onPlanPeriod!(sum),
+              icon: const Icon(Icons.flag_rounded, size: 16),
+              label: const Text('Plan…'),
+            ),
+          ),
+        ),
     ];
     Widget card = Material(
       key: _cardKey,

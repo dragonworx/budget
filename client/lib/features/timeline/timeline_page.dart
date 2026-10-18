@@ -16,6 +16,7 @@ import '../../widgets/ui.dart';
 import '../transactions/editor_outcome.dart';
 import '../transactions/import_dialog.dart';
 import '../planning/goal_models.dart';
+import 'selection_period.dart';
 import '../planning/goal_panel.dart';
 import '../planning/plan_panel.dart';
 import '../transactions/transaction_editor.dart';
@@ -113,6 +114,33 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   bool _targetMode = false;
 
   void _openPlan() => setState(() => _planOpen = true);
+
+  /// Selection card "Plan…": open the goal tab over the selected range,
+  /// starting from the balance on its first day, and solve the largest
+  /// one-off that keeps the balance above the alert line (affordability).
+  void _planPeriod(PeriodSummary p, double threshold) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final start = p.start.isBefore(today) ? today : p.start;
+    final end = p.end.isAfter(start)
+        ? p.end
+        : start.add(const Duration(days: 30));
+    setState(() {
+      _planOpen = true;
+      _planTab = PlanTab.goal;
+    });
+    final req = GoalRequest(
+      solveFor: GoalVar.oneOff,
+      mode: GoalMode.floor,
+      startDate: start,
+      endDate: end,
+      startBalance: start == p.start ? p.startBalance : null,
+      targetBalance: threshold,
+    );
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _goalKey.currentState?.load(req),
+    );
+  }
 
   void _onTargetDrag(DateTime day, double balance) {
     // A goal can only land in the future: clamp past days to tomorrow.
@@ -599,6 +627,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                     target: _goalActive ? _goalTarget : null,
                                     targetMode: _goalActive && _targetMode,
                                     onTargetChanged: _onTargetDrag,
+                                    onPlanPeriod: (p) => _planPeriod(
+                                      p,
+                                      account.lossThreshold.toDouble(),
+                                    ),
                                   ),
                                   if (_goalActive)
                                     Positioned(

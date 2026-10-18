@@ -1,5 +1,6 @@
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
+import 'package:budget_client/features/timeline/selection_period.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ class _H {
   double visibleDays = _days;
   final viewports = <DateTime>[];
   final created = <DateTime>[];
+  final planned = <PeriodSummary>[];
 }
 
 /// Balance 1000 until 15 Oct, where a +1000 credit (one dot) lifts it to
@@ -58,6 +60,7 @@ Future<_H> _pump(WidgetTester tester) async {
                 h.viewports.add(s);
               }),
               onCreateOnDay: h.created.add,
+              onPlanPeriod: h.planned.add,
             ),
           ),
         ),
@@ -110,6 +113,23 @@ Future<void> _drag(WidgetTester tester, String key, double dx) async {
 }
 
 void main() {
+  testWidgets('selection card Plan… hands over the range, edits nothing', (
+    tester,
+  ) async {
+    final h = await _pump(tester);
+    await _select(tester, 5, 20);
+    final plan = find.byKey(const ValueKey('sel-plan'));
+    expect(plan, findsOneWidget);
+    await tester.ensureVisible(plan);
+    await tester.tap(plan);
+    await tester.pump();
+    expect(h.planned, hasLength(1));
+    expect(h.planned.single.start, DateTime(2026, 10, 6));
+    expect(h.planned.single.end, DateTime(2026, 10, 21));
+    expect(h.planned.single.startBalance, 1000);
+    expect(h.created, isEmpty);
+  });
+
   testWidgets('hold in empty space selects; drag while held extends', (
     tester,
   ) async {
