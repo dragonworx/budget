@@ -48,11 +48,15 @@ typedef TrimOnDay = void Function(
 ///
 /// Pressing on the date axis (month/week/day lanes) picks a date instead:
 /// a bubble, guide line and day highlight follow the pointer, the view
-/// auto-scrolls near the plot edges, and releasing calls [onCreateOnDay]
-/// for that day. Dragging up into the balance fill (below the line) offers
-/// "Trim…" instead when [onTrimOnDay] is set and a recurring series runs
-/// past that day: release calls [onTrimOnDay]. Dragging above the line, or
-/// Esc, cancels.
+/// auto-scrolls near the plot edges. Releasing (or a plain tap) never acts
+/// by itself: the line and bubble stay pinned on that day and the bubble
+/// gets a "+" button; only tapping "+" calls [onCreateOnDay]. Dragging up
+/// into the balance fill (below the line) offers "Trim…" instead when
+/// [onTrimOnDay] is set and a recurring series runs past that day: the
+/// pinned bubble then has a scissors button that calls [onTrimOnDay] (and
+/// "+" too). Dragging above the line, or Esc, cancels. A pinned line goes
+/// on its close button, any press elsewhere on the chart, Esc, or a view
+/// navigation.
 /// With focus: arrow keys pan, +/- zoom time, F fits balances.
 /// Test hook: after each paint, every in-plot vertex as (name, x, labelled).
 @visibleForTesting
@@ -256,6 +260,35 @@ class _BalanceChartState extends State<BalanceChart>
   TrimTarget? _pickTrim;
   Timer? _autoScroll;
 
+  /// The pick was released: its line and bubble stay up (with the "+" /
+  /// Trim buttons) until acted on or dismissed.
+  bool _pickPinned = false;
+  final GlobalKey _pinKey = GlobalKey();
+
+  void _clearPin() {
+    if (!_pickPinned) return;
+    setState(() {
+      _pickPinned = false;
+      _pickDay = null;
+      _pickPos = null;
+      _pickTrim = null;
+      _pickCancelled = false;
+    });
+  }
+
+  /// The pinned bubble's "+" / scissors: the only way a pick acts.
+  void _actOnPin({required bool trim}) {
+    final day = _pickDay;
+    final target = _pickTrim;
+    _clearPin();
+    if (day == null) return;
+    if (trim && target != null) {
+      widget.onTrimOnDay?.call(target.transaction, day, target.removed.length);
+    } else {
+      widget.onCreateOnDay(day);
+    }
+  }
+
   /// A long-press on a dot (touch) shows its tooltip instead of opening it.
   bool _longPressTip = false;
 
@@ -321,10 +354,11 @@ class _BalanceChartState extends State<BalanceChart>
         oldWidget.fitToken != widget.fitToken ||
         oldWidget.currencyScale != widget.currencyScale) {
       // Any view navigation (pan, pinch, wheel, zoom, ◀ ▶, Fit, Today)
-      // closes the info card and its y-axis highlight.
+      // closes the info card and its y-axis highlight, and a pinned pick.
       // The selection is anchored to its dates and survives navigation;
       // only closing its card clears it.
       _clearTip();
+      if (_mode != _Gesture.pick) _clearPin();
     }
     final y = _yRange;
     if (oldWidget.zeroToken != widget.zeroToken && y != null) {
@@ -433,6 +467,9 @@ class _BalanceChartState extends State<BalanceChart>
     final touch = event.kind != PointerDeviceKind.mouse;
     if (!touch && (event.buttons & kPrimaryButton) == 0) return;
     _down[event.pointer] = event.localPosition;
+    // Any press on the chart (its bubble sits above and keeps its own)
+    // dismisses a pinned pick.
+    _clearPin();
     if (_down.length >= 2) {
       _multiTouch = true;
       _holdTimer?.cancel();
@@ -873,17 +910,17 @@ class _BalanceChartState extends State<BalanceChart>
     final ok = commit && !_pickCancelled && day != null;
     setState(() {
       _mode = _Gesture.none;
+      if (ok) {
+        // Release never acts: pin the line + bubble; "+" / Trim in it do.
+        _pickPinned = true;
+        _pickTrim = trim;
+        return;
+      }
       _pickDay = null;
       _pickPos = null;
       _pickCancelled = false;
       _pickTrim = null;
     });
-    if (!ok) return;
-    if (trim != null) {
-      widget.onTrimOnDay?.call(trim.transaction, day, trim.removed.length);
-    } else {
-      widget.onCreateOnDay(day);
-    }
   }
 
   void _onPointerUp(PointerUpEvent event) {
@@ -1062,11 +1099,16 @@ class _BalanceChartState extends State<BalanceChart>
     if (widget.onEditTransaction == null || _hoverDots.value == null) {
       return false;
     }
-    final card = _tipCardKey.currentContext?.findRenderObject();
+    return _keyContains(_tipCardKey, pos, inflate: 18);
+  }
+
+  /// Whether chart-local [pos] is on [key]'s widget (grown by [inflate]).
+  bool _keyContains(GlobalKey key, Offset pos, {double inflate = 0}) {
+    final box = key.currentContext?.findRenderObject();
     final me = context.findRenderObject();
-    if (card is! RenderBox || me is! RenderBox || !card.attached) return false;
-    final topLeft = me.globalToLocal(card.localToGlobal(Offset.zero));
-    return (topLeft & card.size).inflate(18).contains(pos);
+    if (box is! RenderBox || me is! RenderBox || !box.attached) return false;
+    final topLeft = me.globalToLocal(box.localToGlobal(Offset.zero));
+    return (topLeft & box.size).inflate(inflate).contains(pos);
   }
 
   void _hideTip() {
@@ -1273,6 +1315,10 @@ class _BalanceChartState extends State<BalanceChart>
       _endPick(commit: false);
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.escape && _pickPinned) {
+      _clearPin();
+      return KeyEventResult.handled;
+    }
     final span = widget.visibleDays;
     void pan(double fraction) => widget.onViewportChanged(
       addDays(widget.viewStart, span * fraction),
@@ -1431,7 +1477,7 @@ class _BalanceChartState extends State<BalanceChart>
                     widget.onTargetChanged != null &&
                     yRange != null)
                   _targetOverlay(yRange),
-                if (_mode == _Gesture.pick && _pickDay != null)
+                if ((_mode == _Gesture.pick || _pickPinned) && _pickDay != null)
                   ..._pickOverlay(theme),
                 if (_selA != null && _selB != null) ..._selectionOverlay(theme),
                 ValueListenableBuilder<DateTime?>(
@@ -1727,8 +1773,11 @@ class _BalanceChartState extends State<BalanceChart>
         : trim != null
         ? AppTheme.debitColor
         : AppTheme.accent;
-    final bubbleW = trim != null ? 220.0 : 168.0;
-    const bubbleH = 52.0;
+    final pinned = _pickPinned;
+    final bubbleW = pinned
+        ? (trim != null ? 300.0 : 236.0)
+        : (trim != null ? 220.0 : 168.0);
+    final bubbleH = pinned ? 60.0 : 52.0;
     final range = _ensureYRange();
     // Above the finger on touch so it stays visible; just above the cursor
     // otherwise. Clamped inside the chart.
@@ -1794,59 +1843,157 @@ class _BalanceChartState extends State<BalanceChart>
         top: by,
         width: bubbleW,
         height: bubbleH,
-        child: IgnorePointer(
-          child: Material(
-            key: const ValueKey('pick-bubble'),
-            elevation: 10,
-            color: cancelled
-                ? AppTheme.overlay
-                : trim != null
-                ? AppTheme.debitColor
-                : AppTheme.accent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (trim != null)
+        child: pinned
+            ? KeyedSubtree(
+                key: _pinKey,
+                child: _pinnedBubble(theme, day, trim, trimName, cancelled),
+              )
+            : IgnorePointer(
+                child: Material(
+                  key: const ValueKey('pick-bubble'),
+                  elevation: 10,
+                  color: cancelled
+                      ? AppTheme.overlay
+                      : trim != null
+                      ? AppTheme.debitColor
+                      : AppTheme.accent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (trim != null)
+                          Text(
+                            'Trim…',
+                            key: const ValueKey('pick-trim'),
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        Text(
+                          trim != null
+                              ? '$trimName ends ${formatOccurrenceDate(day)}'
+                              : formatOccurrenceDate(day),
+                          key: const ValueKey('pick-date'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: cancelled
+                                ? AppTheme.textMuted
+                                : AppTheme.onAccent,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (trim == null)
+                          Text(
+                            cancelled
+                                ? 'Release to cancel'
+                                : 'Release, then tap +',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: cancelled
+                                  ? AppTheme.textFaint
+                                  : AppTheme.onAccent.withValues(alpha: 0.8),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+      ),
+    ];
+  }
+
+  /// The released pick's bubble: date (or "`name` ends `date`"), the "+"
+  /// add button, scissors for Trim in the Trim zone, and close.
+  Widget _pinnedBubble(
+    ThemeData theme,
+    DateTime day,
+    TrimTarget? trim,
+    String trimName,
+    bool cancelled,
+  ) {
+    final bg = trim != null ? AppTheme.debitColor : AppTheme.accent;
+    final fg = trim != null ? Colors.white : AppTheme.onAccent;
+    final btn = IconButton.styleFrom(
+      backgroundColor: fg.withValues(alpha: 0.18),
+      foregroundColor: fg,
+      visualDensity: VisualDensity.compact,
+    );
+    return Listener(
+      onPointerSignal: _onPointerSignal,
+      child: Material(
+        key: const ValueKey('pick-bubble'),
+        elevation: 10,
+        color: bg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      'Trim…',
-                      key: const ValueKey('pick-trim'),
+                      trim != null ? 'Trim…' : formatOccurrenceDate(day),
+                      key: ValueKey(trim != null ? 'pick-trim' : 'pick-date'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
-                        color: Colors.white,
+                        color: fg,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                  Text(
-                    trim != null
-                        ? '$trimName ends ${formatOccurrenceDate(day)}'
-                        : formatOccurrenceDate(day),
-                    key: const ValueKey('pick-date'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: cancelled ? AppTheme.textMuted : AppTheme.onAccent,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (trim == null)
                     Text(
-                      cancelled ? 'Release to cancel' : 'Release to add here',
+                      trim != null
+                          ? '$trimName ends ${formatOccurrenceDate(day)}'
+                          : 'Tap + to add here',
+                      key: trim != null ? const ValueKey('pick-date') : null,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: cancelled
-                            ? AppTheme.textFaint
-                            : AppTheme.onAccent.withValues(alpha: 0.8),
+                        color: fg.withValues(alpha: 0.85),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
+              if (trim != null)
+                IconButton(
+                  key: const ValueKey('pick-trim-action'),
+                  tooltip:
+                      'Trim “$trimName” to end ${formatOccurrenceDate(day)}',
+                  style: btn,
+                  icon: const Icon(Icons.content_cut_rounded, size: 20),
+                  onPressed: () => _actOnPin(trim: true),
+                ),
+              const SizedBox(width: 2),
+              IconButton(
+                key: const ValueKey('pick-add'),
+                tooltip: 'Add a transaction on ${formatOccurrenceDate(day)}',
+                style: btn,
+                icon: const Icon(Icons.add_rounded, size: 22),
+                onPressed: () => _actOnPin(trim: false),
+              ),
+              IconButton(
+                key: const ValueKey('pick-close'),
+                tooltip: 'Close',
+                color: fg,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close_rounded, size: 18),
+                onPressed: _clearPin,
+              ),
+            ],
           ),
         ),
       ),
-    ];
+    );
   }
 
   /// Shaded band, edge lines, 44px drag handles and the summary card.
@@ -2319,6 +2466,11 @@ class _BalanceChartState extends State<BalanceChart>
     if (_pointer != null || _multiTouch || _size == Size.zero) return;
     final pos = event.localPosition;
     final layout = _layout;
+    if (_pickPinned && _keyContains(_pinKey, pos)) {
+      if (_hoverDay.value != null) _hoverDay.value = null;
+      if (_overAdd) setState(() => _overAdd = false);
+      return;
+    }
     _overTipCard = _tipCardContains(pos);
     if (_overTipCard) {
       // Heading for (or on) the popup's Edit: keep the tip, no "+".

@@ -166,7 +166,7 @@ void main() {
   });
 
   testWidgets(
-    'drag from the footer into the fill offers Trim; release reports it',
+    'drag from the footer into the fill offers Trim; release pins, scissors trims',
     (tester) async {
       const size = Size(600, 500);
       tester.view.physicalSize = size;
@@ -235,6 +235,14 @@ void main() {
       await tester.pump();
       await g.up();
       await tester.pump();
+      // Release only pins the line + bubble (preview kept); scissors acts.
+      expect(trims, isEmpty, reason: 'release never trims by itself');
+      expect(find.byKey(const ValueKey('pick-trim')), findsOneWidget);
+      expect(find.byKey(const ValueKey('trim-preview')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('pick-trim-action')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
       expect(created, isEmpty, reason: 'a trim never creates');
       expect(trims, hasLength(1));
       expect(trims.single.$1, 'rent');

@@ -220,6 +220,38 @@ void main() {
     expect(find.textContaining('now ends'), findsOneWidget);
   });
 
+  testWidgets('footer tap pins a line; only its "+" opens the add flow', (
+    tester,
+  ) async {
+    for (final (size, kind) in [
+      (const Size(390, 844), PointerDeviceKind.touch),
+      (const Size(1440, 900), PointerDeviceKind.mouse),
+    ]) {
+      final store = await _pump(tester, size: size);
+      final chart = tester.getRect(find.byType(BalanceChart));
+      final footer = Offset(chart.center.dx, chart.bottom - 8);
+      await tester.tapAt(footer, kind: kind);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(find.byKey(const ValueKey('pick-bubble')), findsOneWidget);
+      // Drag along the footer and release: still only the line.
+      final g = await tester.startGesture(footer, kind: kind);
+      for (var i = 1; i <= 5; i++) {
+        await g.moveTo(footer + Offset(i * 10.0, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await g.up();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(find.byKey(const ValueKey('pick-bubble')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('pick-add')), kind: kind);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
+      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+    }
+  });
+
   testWidgets('mouse hover near a dot shows the info popup; away hides it', (
     tester,
   ) async {
