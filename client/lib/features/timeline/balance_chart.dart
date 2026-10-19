@@ -90,6 +90,7 @@ class BalanceChart extends StatefulWidget {
     this.targetMode = false,
     this.onTargetChanged,
     this.onPlanPeriod,
+    this.onAddForPeriod,
     this.onTrimOnDay,
     this.onEditTransaction,
   });
@@ -105,6 +106,11 @@ class BalanceChart extends StatefulWidget {
   /// "Plan…" in the selection card: opens the goal planner pre-filled with
   /// the selected range. Opens a panel only; never edits data.
   final void Function(PeriodSummary period)? onPlanPeriod;
+
+  /// "+" in the selection card: open the add-transaction editor bounded to
+  /// the selected days (start .. end, inclusive). Opens the editor only;
+  /// nothing is created until it is saved. Null: no "+" (viewers).
+  final void Function(DateTime start, DateTime end)? onAddForPeriod;
 
   /// Target tool on: taps and drags on the plot set the goal target
   /// (date, balance) instead of panning / selecting. Never edits data.
@@ -2331,21 +2337,37 @@ class _BalanceChartState extends State<BalanceChart>
         ),
         const ValueKey('sel-row-alert'),
       ),
-      if (widget.onPlanPeriod != null)
+      if (widget.onPlanPeriod != null || widget.onAddForPeriod != null)
         Padding(
           padding: const EdgeInsets.only(top: 6, bottom: 2),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              key: const ValueKey('sel-plan'),
-              style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-              ),
-              onPressed: () => widget.onPlanPeriod!(sum),
-              icon: const Icon(Icons.flag_rounded, size: 16),
-              label: const Text('Plan…'),
-            ),
+          child: Row(
+            children: [
+              if (widget.onPlanPeriod != null)
+                OutlinedButton.icon(
+                  key: const ValueKey('sel-plan'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  onPressed: () => widget.onPlanPeriod!(sum),
+                  icon: const Icon(Icons.flag_rounded, size: 16),
+                  label: const Text('Plan…'),
+                ),
+              if (widget.onAddForPeriod != null) ...[
+                const SizedBox(width: 6),
+                IconButton.outlined(
+                  key: const ValueKey('sel-add'),
+                  tooltip: 'Add a transaction for this period',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  onPressed: () => widget.onAddForPeriod!(
+                    dateOnly(sum.start),
+                    dateOnly(sum.end),
+                  ),
+                  icon: const Icon(Icons.add_rounded),
+                ),
+              ],
+            ],
           ),
         ),
     ];

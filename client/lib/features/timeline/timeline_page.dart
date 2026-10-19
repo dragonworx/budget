@@ -771,6 +771,14 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                       target: _goalActive ? _goalTarget : null,
                                       targetMode: _goalActive && _targetMode,
                                       onTargetChanged: _onTargetDrag,
+                                      onAddForPeriod: account.role.canEdit
+                                          ? (start, end) => _openEditor(
+                                              context,
+                                              account,
+                                              initialDate: start,
+                                              initialEndDate: end,
+                                            )
+                                          : null,
                                       onPlanPeriod: (p) => _planPeriod(
                                         p,
                                         account.lossThreshold.toDouble(),
@@ -1285,6 +1293,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     Account account, {
     Transaction? existing,
     DateTime? initialDate,
+    DateTime? initialEndDate,
     DateTime? focusDate,
     bool onceOnly = false,
   }) async {
@@ -1293,6 +1302,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       accountId: widget.accountId,
       existing: existing,
       initialDate: initialDate,
+      initialEndDate: initialEndDate,
       focusDate: focusDate,
       onceOnly: onceOnly,
       currency: account.currency,

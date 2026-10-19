@@ -16,11 +16,12 @@ class _H {
   final viewports = <DateTime>[];
   final created = <DateTime>[];
   final planned = <PeriodSummary>[];
+  final added = <(DateTime, DateTime)>[];
 }
 
 /// Balance 1000 until 15 Oct, where a +1000 credit (one dot) lifts it to
 /// 2000. Fitted y range: paddedRange(1000, 2000, include 0) = −240..2240.
-Future<_H> _pump(WidgetTester tester) async {
+Future<_H> _pump(WidgetTester tester, {bool canAdd = true}) async {
   tester.view.physicalSize = _size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -61,6 +62,9 @@ Future<_H> _pump(WidgetTester tester) async {
               }),
               onCreateOnDay: h.created.add,
               onPlanPeriod: h.planned.add,
+              onAddForPeriod: canAdd
+                  ? (start, end) => h.added.add((start, end))
+                  : null,
             ),
           ),
         ),
@@ -128,6 +132,30 @@ void main() {
     expect(h.planned.single.end, DateTime(2026, 10, 21));
     expect(h.planned.single.startBalance, 1000);
     expect(h.created, isEmpty);
+  });
+
+  testWidgets('selection card + hands over the selected days, creates '
+      'nothing; hidden without onAddForPeriod', (tester) async {
+    final h = await _pump(tester);
+    await _select(tester, 5, 20);
+    final add = find.byKey(const ValueKey('sel-add'));
+    expect(add, findsOneWidget);
+    // Next to Plan…, on the same row.
+    final plan = tester.getRect(find.byKey(const ValueKey('sel-plan')));
+    expect(tester.getCenter(add).dy, closeTo(plan.center.dy, 4));
+    expect(tester.getRect(add).left, greaterThan(plan.right));
+    await tester.ensureVisible(add);
+    await tester.tap(add);
+    await tester.pump();
+    expect(h.added, [(DateTime(2026, 10, 6), DateTime(2026, 10, 21))]);
+    expect(h.created, isEmpty);
+    expect(h.planned, isEmpty);
+
+    final v = await _pump(tester, canAdd: false);
+    await _select(tester, 5, 20);
+    expect(find.byKey(const ValueKey('sel-plan')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sel-add')), findsNothing);
+    expect(v.added, isEmpty);
   });
 
   testWidgets('hold in empty space selects; drag while held extends', (
@@ -347,7 +375,10 @@ void main() {
     );
     expect(tester.getTopLeft(_card), at + const Offset(-80, 30));
     at = tester.getTopLeft(_card);
-    await dragFrom(find.byKey(const ValueKey('sel-row-count')), const Offset(-40, 20));
+    await dragFrom(
+      find.byKey(const ValueKey('sel-row-count')),
+      const Offset(-40, 20),
+    );
     expect(tester.getTopLeft(_card), at + const Offset(-40, 20));
     expect(_range(tester), range);
     expect(h.viewports, isEmpty, reason: 'card drag never pans');

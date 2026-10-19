@@ -10,6 +10,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -250,6 +251,33 @@ void main() {
       expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
       expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
     }
+  });
+
+  testWidgets('selection + opens the add editor bounded to the period; '
+      'nothing saved until Save; viewers get no +', (tester) async {
+    final store = await _pump(tester);
+    final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
+    expect(chart.onAddForPeriod, isNotNull);
+    final start = _day.add(const Duration(days: 3));
+    final end = _day.add(const Duration(days: 40));
+    chart.onAddForPeriod!(start, end);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+    expect(find.text('New transaction'), findsWidgets);
+    String fmt(DateTime d) => DateFormat('EEE d MMM y').format(d);
+    expect(find.text(fmt(start)), findsWidgets, reason: 'start pre-filled');
+    expect(find.text(fmt(end)), findsWidgets, reason: 'end pre-filled');
+    final ends = tester.widget<SegmentedButton<EndMode>>(
+      find.byType(SegmentedButton<EndMode>),
+    );
+    expect(ends.selected, {EndMode.untilDate});
+    expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+
+    await _pump(tester, setup: (s) => s.role = Role.viewer);
+    expect(
+      tester.widget<BalanceChart>(find.byType(BalanceChart)).onAddForPeriod,
+      isNull,
+    );
   });
 
   testWidgets('mouse hover near a dot shows the info popup; away hides it', (

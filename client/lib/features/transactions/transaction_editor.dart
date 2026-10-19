@@ -61,6 +61,7 @@ Future<EditorOutcome?> showTransactionEditor(
   required String accountId,
   Transaction? existing,
   DateTime? initialDate,
+  DateTime? initialEndDate,
   bool onceOnly = false,
   DateTime? focusDate,
   Set<DateTime> skippedDates = const {},
@@ -74,6 +75,7 @@ Future<EditorOutcome?> showTransactionEditor(
       accountId: accountId,
       existing: existing,
       initialDate: initialDate,
+      initialEndDate: initialEndDate,
       onceOnly: onceOnly,
       focusDate: focusDate,
       skippedDates: skippedDates,
@@ -89,6 +91,7 @@ class TransactionEditor extends ConsumerStatefulWidget {
     required this.accountId,
     this.existing,
     this.initialDate,
+    this.initialEndDate,
     this.onceOnly = false,
     this.focusDate,
     this.skippedDates = const {},
@@ -110,6 +113,10 @@ class TransactionEditor extends ConsumerStatefulWidget {
   final String accountId;
   final Transaction? existing;
   final DateTime? initialDate;
+
+  /// New repeating transaction only: pre-fill Ends "On date" with this day
+  /// (inclusive, like the field itself), e.g. a selected period's end.
+  final DateTime? initialEndDate;
   final bool onceOnly;
   final DateTime? focusDate;
   final Set<DateTime> skippedDates;
@@ -187,6 +194,13 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final start = existing?.startDate ?? widget.initialDate ?? DateTime.now();
     _startDate = DateTime(start.year, start.month, start.day);
     _endDate = existing?.endDate;
+    final presetEnd = widget.initialEndDate;
+    if (existing == null &&
+        presetEnd != null &&
+        _recurrenceMode == RecurrenceMode.every) {
+      _endMode = EndMode.untilDate;
+      _endDate = DateTime(presetEnd.year, presetEnd.month, presetEnd.day);
+    }
     _enabled = existing?.enabled ?? true;
     _skipped = {for (final d in widget.skippedDates) _day(d)};
     _skippedInitially = {..._skipped};
