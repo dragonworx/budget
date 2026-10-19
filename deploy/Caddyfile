@@ -1,0 +1,46 @@
+# Bundled Caddy: TLS (automatic Let's Encrypt), static web app, API load balancing.
+# SITE_ADDRESS: "budget.example.com" in production (TLS), ":80" behind a host Caddy
+# or for local testing (plain HTTP).
+{
+	admin off
+}
+
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		# Google Identity Services needs accounts.google.com; CanvasKit + fonts come from gstatic.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://accounts.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://accounts.google.com https://www.gstatic.com https://fonts.gstatic.com https://fonts.googleapis.com; frame-src https://accounts.google.com; worker-src 'self' blob:"
+		-Server
+	}
+
+	@api path /api/* /health /ready
+	handle @api {
+		reverse_proxy {
+			# Every api replica (Docker DNS returns one A record per replica).
+			dynamic a api 8080 {
+				refresh 5s
+			}
+			lb_policy round_robin
+			lb_retries 2
+			health_uri /health
+			health_interval 10s
+			# Stream SSE (/api/events) immediately.
+			flush_interval -1
+		}
+	}
+
+	handle {
+		root * /srv/web
+		@immutable path /assets/* /canvaskit/* *.wasm
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		@html path / /index.html /flutter_bootstrap.js /flutter_service_worker.js /version.json /main.dart.js
+		header @html Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

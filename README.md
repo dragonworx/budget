@@ -48,3 +48,16 @@ make db-reset
 ```bash
 make help
 ```
+
+## Deploy (production)
+
+One Docker Compose stack: Caddy (TLS, static web app, load balancer) → API replicas → Postgres, with a one-off `migrate` job.
+
+```bash
+cp deploy/.env.prod.example deploy/.env.prod   # fill in domain, Google client id, secrets
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d --build
+```
+
+Already running Caddy on the host? Add `-f deploy/docker-compose.host.yml` and paste
+`deploy/caddy-host-snippet` into the host Caddyfile. Backups: `scripts/backup.sh`.
+Full guide (VPS, Route 53 DNS, Google client, upgrades, backups): [docs/deploy.md](docs/deploy.md).

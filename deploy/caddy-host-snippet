@@ -1,0 +1,10 @@
+# Add to the host's /etc/caddy/Caddyfile, then: sudo systemctl reload caddy
+# Requires deploy/docker-compose.host.yml (bundled Caddy on 127.0.0.1:8081).
+budget.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8081 {
+		# Keep SSE (/api/events) streaming.
+		flush_interval -1
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

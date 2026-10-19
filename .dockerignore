@@ -1,0 +1,9 @@
+# Root context is used by client/Dockerfile (needs client/ and deploy/ only).
+**/.dart_tool/
+**/build/
+server/
+docs/
+.git/
+.env
+*.log
+node_modules/
