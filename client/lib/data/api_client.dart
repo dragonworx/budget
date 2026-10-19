@@ -1,8 +1,13 @@
 import 'dart:convert';
 
+import 'dart:math';
+
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import 'http_client_stub.dart'
+    if (dart.library.js_interop) 'http_client_web.dart'
+    as platform;
 
 class ApiException implements Exception {
   ApiException(this.message, {this.statusCode, this.body});
@@ -40,8 +45,23 @@ class ApiClient {
     }
   }
 
+  /// Called when a non-auth request comes back 401 (session missing or
+  /// expired). The auth state registers this to route to sign-in.
+  static void Function()? onUnauthorized;
+
+  /// Per-tab id, echoed by the server in realtime events.
+  static final String clientId = _randomId();
+
+  static String _randomId() {
+    final r = Random();
+    return List.generate(
+      16,
+      (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+  }
+
   ApiClient({http.Client? httpClient, String? baseUrl})
-    : _http = httpClient ?? http.Client(),
+    : _http = httpClient ?? platform.createHttpClient(),
       baseUrl = (baseUrl ?? AppConfig.apiBaseUrl).replaceAll(RegExp(r'/$'), '');
 
   final http.Client _http;
@@ -56,7 +76,7 @@ class ApiClient {
     final response = await _track(
       () => _http.get(_uri(path, query), headers: _headers()),
     );
-    return _decode(response);
+    return _decode(response, path: path);
   }
 
   Future<dynamic> post(String path, {Object? body}) async {
@@ -67,7 +87,7 @@ class ApiClient {
         body: body == null ? null : jsonEncode(body),
       ),
     );
-    return _decode(response);
+    return _decode(response, path: path);
   }
 
   Future<dynamic> patch(String path, {Object? body}) async {
@@ -78,7 +98,7 @@ class ApiClient {
         body: body == null ? null : jsonEncode(body),
       ),
     );
-    return _decode(response);
+    return _decode(response, path: path);
   }
 
   Future<dynamic> put(String path, {Object? body}) async {
@@ -89,14 +109,14 @@ class ApiClient {
         body: body == null ? null : jsonEncode(body),
       ),
     );
-    return _decode(response);
+    return _decode(response, path: path);
   }
 
   Future<void> delete(String path) async {
     final response = await _track(
       () => _http.delete(_uri(path), headers: _headers()),
     );
-    _decode(response, allowEmpty: true);
+    _decode(response, allowEmpty: true, path: path);
   }
 
   Map<String, String> _headers() => {
@@ -104,10 +124,20 @@ class ApiClient {
     'Content-Type': 'application/json',
     // Always fetch live data (a cached list would resurrect deleted items).
     'Cache-Control': 'no-cache',
+    // CSRF defence required by the server on every request.
+    'X-Requested-With': 'budget',
+    'X-Client-Id': clientId,
   };
 
-  dynamic _decode(http.Response response, {bool allowEmpty = false}) {
+  dynamic _decode(
+    http.Response response, {
+    bool allowEmpty = false,
+    String path = '',
+  }) {
     final status = response.statusCode;
+    if (status == 401 && !path.contains('api/auth/')) {
+      onUnauthorized?.call();
+    }
     final body = response.body;
     if (status >= 200 && status < 300) {
       if (body.isEmpty) {

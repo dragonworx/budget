@@ -20,11 +20,36 @@ class BootLoader {
 
   /// After the first frame, waits for the initial API requests to settle,
   /// then dismisses the loader. Call once, right after runApp.
+  ///
+  /// [authReady] resolves to whether a user is signed in. The "Signing in"
+  /// stage waits on it; when signed out (redirected to sign-in) there is no
+  /// data to load, so the loader finishes straight away.
   static void finishWhenReady({
     Duration maxWait = const Duration(seconds: 15),
+    Future<bool>? authReady,
   }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       done('frame');
+      if (authReady == null) return _waitForData(maxWait);
+      stage('auth', 'Signing in');
+      authReady.timeout(maxWait, onTimeout: () => false).then((signedIn) {
+        done('auth');
+        if (!signedIn) {
+          stage('auth', 'Sign in required');
+          done('auth');
+          return _finish();
+        }
+        // The guard may still be swapping pages; give them a frame to fetch.
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _waitForData(maxWait),
+        );
+        WidgetsBinding.instance.scheduleFrame();
+      });
+    });
+  }
+
+  static void _waitForData(Duration maxWait) {
+    {
       stage('data', 'Loading your data');
       final started = DateTime.now();
       var idleTicks = 0;
@@ -54,7 +79,7 @@ class BootLoader {
           t.cancel();
         }
       });
-    });
+    }
   }
 
   static void _finish() {

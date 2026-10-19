@@ -71,7 +71,7 @@
   (function(){
     var T0=performance.timeOrigin?0:0, $=function(i){return document.getElementById(i)};
     // Ordered stages and their share of the overall bar.
-    var DEF=[['page','Page loaded',3],['bootstrap','Flutter loader',4],['main','App code (main.dart.js)',38],['engine','Engine (CanvasKit wasm)',25],['init','Compile + start engine',12],['fonts','Fonts',6],['frame','First frame',4],['data','Loading your data',8]];
+    var DEF=[['page','Page loaded',3],['bootstrap','Flutter loader',4],['main','App code (main.dart.js)',38],['engine','Engine (CanvasKit wasm)',25],['init','Compile + start engine',12],['fonts','Fonts',6],['frame','First frame',4],['auth','Signing in',2],['data','Loading your data',8]];
     var S={},order=[],finished=false,failed=false,timer=null,TIMEOUT=60000;
     DEF.forEach(function(d){S[d[0]]={k:d[0],label:d[1],w:d[2],f:0,st:'wait',t0:0,t1:0,ind:false};order.push(d[0]);});
     function now(){return performance.now()}
@@ -125,9 +125,9 @@
       else if(/\.(ttf|otf|woff2?)(\?|$)|fonts\.gstatic|\/fonts\//.test(n)){fontN++;start(S.fonts);S.fonts.label='Fonts ('+fontN+')';api.progress('fonts',Math.min(.95,fontN/3))}
     }
     try{new PerformanceObserver(function(l){l.getEntries().forEach(onRes)}).observe({type:'resource',buffered:true})}catch(e){}
-    window.addEventListener('error',function(e){var t=e&&e.target;if(t&&(t.tagName==='SCRIPT'||t.tagName==='LINK'))api.error('Failed to load '+(t.src||t.href))},true);
+    window.addEventListener('error',function(e){var t=e&&e.target;if(t&&!(t.dataset&&t.dataset.optional)&&(t.tagName==='SCRIPT'||t.tagName==='LINK'))api.error('Failed to load '+(t.src||t.href))},true);
     window.addEventListener('unhandledrejection',function(e){var r=e&&e.reason,m=String(r&&r.message||r||'');if(/fetch|load|wasm|canvaskit|import/i.test(m)&&S.frame.st!=='ok')api.error('Load failed: '+m)});
-    window.addEventListener('flutter-first-frame',function(){api.done('init');api.done('frame');api.stage('data')});
+    window.addEventListener('flutter-first-frame',function(){api.done('init');api.done('frame')});
     arm();render();
   })();
   </script>
@@ -139,6 +139,25 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+  /* budgetGis: Google Identity Services button, loaded lazily on the sign-in page. */
+  (function(){
+    var loading=null,inited=null;
+    function load(){if(window.google&&google.accounts&&google.accounts.id)return Promise.resolve();
+      if(!loading)loading=new Promise(function(res,rej){var s=document.createElement('script');
+        s.src='https://accounts.google.com/gsi/client';s.async=true;s.dataset.optional='1';
+        s.onload=function(){res()};s.onerror=function(){loading=null;rej(new Error('Google sign-in failed to load'))};
+        document.head.appendChild(s)});return loading}
+    window.budgetGis={
+      render:function(el,clientId,cb,width){load().then(function(){
+        if(inited!==clientId){google.accounts.id.initialize({client_id:clientId,callback:function(r){window.__gisCb&&window.__gisCb(r.credential)},ux_mode:'popup',use_fedcm_for_prompt:true});inited=clientId}
+        window.__gisCb=cb;
+        google.accounts.id.renderButton(el,{type:'standard',theme:'filled_black',size:'large',shape:'pill',text:'signin_with',width:Math.min(400,Math.round(width||280))});
+      }).catch(function(e){el.textContent=String(e.message||e);el.style.color='#f88';el.style.font='13px sans-serif'})},
+      disableAutoSelect:function(){try{window.google&&google.accounts&&google.accounts.id.disableAutoSelect()}catch(e){}}
+    };
+  })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../widgets/user_menu.dart';
+
 import 'package:intl/intl.dart';
 
 import '../../theme/app_theme.dart';
@@ -33,6 +36,7 @@ class ProjectsPage extends ConsumerWidget {
             onPressed: () => ref.read(projectsProvider.notifier).refresh(),
             icon: const Icon(Icons.refresh_rounded),
           ),
+          const UserMenu(),
           const SizedBox(width: 12),
         ],
       ),
