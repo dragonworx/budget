@@ -1,3 +1,4 @@
+import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -45,7 +46,10 @@ class _SignInPageState extends ConsumerState<SignInPage> {
       Text('Budget', style: theme.textTheme.headlineMedium),
       const SizedBox(height: 6),
       Text(
-        'Sign in to see your projects',
+        (GoRouterState.of(context).uri.queryParameters['from'] ?? '')
+                .startsWith('/invite/')
+            ? 'Sign in to accept your invite'
+            : 'Sign in to see your projects',
         style: theme.textTheme.bodyMedium,
         textAlign: TextAlign.center,
       ),

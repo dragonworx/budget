@@ -5,6 +5,7 @@ import '../data/api_client.dart';
 import '../data/models.dart';
 import '../features/planning/goal_models.dart';
 import '../data/repositories.dart';
+import '../data/sharing.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final client = ApiClient();
@@ -48,8 +49,26 @@ class ProjectsNotifier extends AsyncNotifier<List<Project>> {
     return created;
   }
 
-  Future<void> rename(String id, String name) async {
-    final updated = await ref.read(projectRepositoryProvider).rename(id, name);
+  Future<void> rename(String id, String name, {bool force = false}) async {
+    final current0 = state.valueOrNull ?? [];
+    final before = current0.where((p) => p.id == id).firstOrNull;
+    final fresh = await ref
+        .read(projectRepositoryProvider)
+        .rename(id, name, version: force ? null : before?.version);
+    // PATCH answers without the sharing fields: keep them.
+    final updated = before == null
+        ? fresh
+        : Project(
+            id: fresh.id,
+            name: fresh.name,
+            createdAt: fresh.createdAt ?? before.createdAt,
+            version: fresh.version,
+            role: before.role,
+            limited: before.limited,
+            shared: before.shared,
+            owner: before.owner,
+            sharedAccountIds: before.sharedAccountIds,
+          );
     final current = state.valueOrNull ?? [];
     state = AsyncData([for (final p in current) p.id == id ? updated : p]);
   }
@@ -98,8 +117,10 @@ class AccountsNotifier extends FamilyAsyncNotifier<List<Account>, String> {
     return created;
   }
 
-  Future<void> updateAccount(Account account) async {
-    final updated = await ref.read(accountRepositoryProvider).update(account);
+  Future<void> updateAccount(Account account, {bool force = false}) async {
+    final updated = await ref
+        .read(accountRepositoryProvider)
+        .update(account, force: force);
     // A seed move also shifts the far side of this account's transfers.
     ref.invalidate(transactionsProvider);
     ref.invalidate(balanceProvider);
@@ -118,8 +139,15 @@ class AccountsNotifier extends FamilyAsyncNotifier<List<Account>, String> {
   }
 }
 
-final accountProvider = FutureProvider.family<Account, String>((ref, id) {
-  return ref.read(accountRepositoryProvider).get(id);
+final accountProvider = FutureProvider.family<Account, String>((ref, id) async {
+  final account = await ref.read(accountRepositoryProvider).get(id);
+  // GET /accounts/:id has no `role`; the project's account list does.
+  try {
+    final list = await ref.watch(accountsProvider(account.projectId).future);
+    final listed = list.where((a) => a.id == id).firstOrNull;
+    if (listed != null) return account.copyWith(role: listed.role);
+  } catch (_) {}
+  return account;
 });
 
 final transactionsProvider =
@@ -153,10 +181,13 @@ class TransactionsNotifier
     return created;
   }
 
-  Future<void> updateTransaction(Transaction transaction) async {
+  Future<void> updateTransaction(
+    Transaction transaction, {
+    bool force = false,
+  }) async {
     final updated = await ref
         .read(transactionRepositoryProvider)
-        .update(transaction);
+        .update(transaction, force: force);
     final current = state.valueOrNull ?? [];
     final before = current.where((s) => s.id == transaction.id).firstOrNull;
     state = AsyncData([
@@ -310,3 +341,18 @@ final accountDirectoryProvider = FutureProvider<List<(Project, List<Account>)>>(
     ];
   },
 );
+
+final sharingRepositoryProvider = Provider<SharingRepository>((ref) {
+  return SharingRepository(ref.watch(apiClientProvider));
+});
+
+/// Pending invites addressed to the signed-in user's email.
+final myInvitesProvider = FutureProvider<List<Invite>>((ref) {
+  return ref.read(sharingRepositoryProvider).myInvites();
+});
+
+/// The account's effective role, from the cached account or project lists.
+Role accountRole(WidgetRef ref, String accountId) {
+  final a = ref.watch(accountProvider(accountId)).valueOrNull;
+  return a?.role ?? Role.owner;
+}

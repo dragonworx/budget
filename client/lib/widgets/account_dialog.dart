@@ -347,6 +347,8 @@ class _AccountDialogState extends State<AccountDialog> {
       transactionOrder: existing?.transactionOrder ?? const [],
       displayOrder: existing?.displayOrder ?? 0,
       currencyScale: _currencyScale,
+      version: existing?.version,
+      role: existing?.role ?? Role.owner,
     );
     final onSave = widget.onSave;
     if (onSave == null) {

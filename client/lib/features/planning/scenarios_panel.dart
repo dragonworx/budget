@@ -125,7 +125,9 @@ class ScenariosPanel extends ConsumerWidget {
                       Switch(
                         key: ValueKey('scenario-include-${s.id}'),
                         value: s.included,
-                        onChanged: (on) => run(
+                        onChanged: !account.role.canEdit
+                            ? null
+                            : (on) => run(
                           () => repo.updateScenario(
                             account.id,
                             s.id,
@@ -140,6 +142,7 @@ class ScenariosPanel extends ConsumerWidget {
                         onPressed: () => onLoad(s),
                         icon: const Icon(Icons.edit_outlined, size: 18),
                       ),
+                      if (account.role.canEdit)
                       IconButton(
                         key: ValueKey('scenario-delete-${s.id}'),
                         tooltip: 'Delete scenario',

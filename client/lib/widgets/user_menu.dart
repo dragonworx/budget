@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../data/auth_repository.dart';
 import '../state/auth_providers.dart';
@@ -46,6 +47,7 @@ class UserMenu extends ConsumerWidget {
       offset: const Offset(0, 44),
       onSelected: (v) {
         if (v == 'sign-out') ref.read(authProvider.notifier).signOut();
+        if (v == 'admin') GoRouter.of(context).go('/admin');
       },
       itemBuilder: (context) => [
         PopupMenuItem<String>(
@@ -98,6 +100,18 @@ class UserMenu extends ConsumerWidget {
           ),
         ),
         const PopupMenuDivider(),
+        if (user.isAdmin)
+          const PopupMenuItem<String>(
+            key: ValueKey('menu-admin'),
+            value: 'admin',
+            child: Row(
+              children: [
+                Icon(Icons.admin_panel_settings_outlined, size: 18),
+                SizedBox(width: 10),
+                Text('Admin'),
+              ],
+            ),
+          ),
         const PopupMenuItem<String>(
           key: ValueKey('sign-out'),
           value: 'sign-out',

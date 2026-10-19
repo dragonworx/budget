@@ -63,6 +63,7 @@ class SolveSheet extends ConsumerStatefulWidget {
     this.creditOnly = false,
     this.onPreview,
     this.onDone,
+    this.readOnly = false,
   });
 
   /// Embedded (panel) use: called with the would-be transaction whenever
@@ -72,6 +73,8 @@ class SolveSheet extends ConsumerStatefulWidget {
   /// Embedded use: called instead of popping the route after a commit.
   final ValueChanged<SolveResult>? onDone;
 
+  /// Viewer access: solve only, no "Create transaction".
+  final bool readOnly;
   final String accountId;
   final SolveRequest initial;
   final bool saveOnCommit;
@@ -568,11 +571,18 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
             ),
             const SizedBox(height: 20),
             FilledButton(
-              onPressed: _result?.isComplete == true && !_solving && !_saving
+              key: const ValueKey('solve-commit'),
+              onPressed:
+                  !(widget.readOnly && widget.saveOnCommit) &&
+                      _result?.isComplete == true &&
+                      !_solving &&
+                      !_saving
                   ? _commit
                   : null,
               child: Text(
-                _saving
+                widget.readOnly && widget.saveOnCommit
+                    ? 'View only: can’t create'
+                    : _saving
                     ? 'Saving…'
                     : (widget.saveOnCommit
                           ? 'Create transaction'

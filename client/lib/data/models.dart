@@ -33,18 +33,102 @@ Decimal parseMoney(dynamic value) {
 
 String moneyToJson(Decimal value) => value.toString();
 
+/// Sharing role, lowest to highest.
+enum Role {
+  viewer,
+  editor,
+  owner;
+
+  static Role parse(dynamic v, [Role fallback = Role.owner]) => switch (v) {
+    'viewer' => Role.viewer,
+    'editor' => Role.editor,
+    'owner' => Role.owner,
+    _ => fallback,
+  };
+
+  bool get canEdit => index >= Role.editor.index;
+  bool get isOwner => this == Role.owner;
+  String get label => switch (this) {
+    Role.viewer => 'Viewer',
+    Role.editor => 'Editor',
+    Role.owner => 'Owner',
+  };
+}
+
+/// A user as embedded in sharing payloads.
+class UserRef {
+  const UserRef({required this.id, required this.email, this.name, this.pictureUrl});
+
+  final String id;
+  final String email;
+  final String? name;
+  final String? pictureUrl;
+
+  String get displayName =>
+      (name != null && name!.trim().isNotEmpty) ? name! : email;
+
+  String get initials {
+    final parts = displayName
+        .trim()
+        .split(RegExp(r'[\s@._-]+'))
+        .where((p) => p.isNotEmpty);
+    final t = parts.take(2).map((p) => p[0].toUpperCase()).join();
+    return t.isEmpty ? '?' : t;
+  }
+
+  static UserRef? maybe(dynamic j) {
+    if (j is! Map) return null;
+    return UserRef(
+      id: (j['id'] ?? j['userId'] ?? '').toString(),
+      email: (j['email'] ?? '').toString(),
+      name: j['name']?.toString(),
+      pictureUrl: j['pictureUrl']?.toString(),
+    );
+  }
+}
+
 class Project {
-  const Project({required this.id, required this.name, this.createdAt});
+  const Project({
+    required this.id,
+    required this.name,
+    this.createdAt,
+    this.version,
+    this.role = Role.owner,
+    this.limited = false,
+    this.shared = false,
+    this.owner,
+    this.sharedAccountIds = const [],
+  });
 
   final String id;
   final String name;
   final DateTime? createdAt;
+  final int? version;
+
+  /// The signed-in user's role on the project (owner when not reported).
+  final Role role;
+
+  /// Only some accounts are shared with this user (`access: "account"`).
+  final bool limited;
+
+  /// Someone else owns this project and shared it (or some accounts) with me.
+  final bool shared;
+  final UserRef? owner;
+  final List<String> sharedAccountIds;
 
   factory Project.fromJson(Map<String, dynamic> json) {
     return Project(
       id: json['id'] as String,
       name: json['name'] as String,
       createdAt: _parseDateTime(json['createdAt'] ?? json['created_at']),
+      version: (json['version'] as num?)?.toInt(),
+      role: Role.parse(json['role'], json['access'] == 'account' ? Role.viewer : Role.owner),
+      limited: json['access'] == 'account',
+      shared: json['shared'] == true,
+      owner: UserRef.maybe(json['owner']),
+      sharedAccountIds: [
+        for (final a in (json['sharedAccountIds'] as List?) ?? const []) a.toString(),
+      ],
     );
   }
 
@@ -59,6 +143,12 @@ class Project {
       id: id ?? this.id,
       name: name ?? this.name,
       createdAt: createdAt ?? this.createdAt,
+      version: version,
+      role: role,
+      limited: limited,
+      shared: shared,
+      owner: owner,
+      sharedAccountIds: sharedAccountIds,
     );
   }
 }
@@ -75,7 +165,14 @@ class Account {
     this.transactionOrder = const [],
     this.displayOrder = 0,
     this.currencyScale = defaultCurrencyScale,
+    this.version,
+    this.role = Role.owner,
   });
+
+  final int? version;
+
+  /// Effective role on this account (max of project role and account share).
+  final Role role;
 
   /// Currency scale choices: dollars per y-axis grid step, with labels.
   static const currencyScales = <int, String>{
@@ -133,6 +230,8 @@ class Account {
                   json['currency_scale'] ??
                   defaultCurrencyScale)
               as int,
+      version: (json['version'] as num?)?.toInt(),
+      role: Role.parse(json['role']),
     );
   }
 
@@ -166,6 +265,7 @@ class Account {
     'lossThreshold': moneyToJson(lossThreshold),
     'currencyScale': currencyScale,
     'transactionOrder': transactionOrder,
+    if (version != null) 'version': version,
   };
 
   Account copyWith({
@@ -179,8 +279,13 @@ class Account {
     List<String>? transactionOrder,
     int? displayOrder,
     int? currencyScale,
+    int? version,
+    bool clearVersion = false,
+    Role? role,
   }) {
     return Account(
+      version: clearVersion ? null : (version ?? this.version),
+      role: role ?? this.role,
       id: id ?? this.id,
       projectId: projectId ?? this.projectId,
       name: name ?? this.name,
@@ -277,7 +382,11 @@ class Transaction {
     this.occurrenceCount,
     this.enabled = true,
     this.transfer,
+    this.version,
   });
+
+  /// Row version for optimistic concurrency (null: last write wins).
+  final int? version;
 
   final String id;
   final String accountId;
@@ -361,6 +470,7 @@ class Transaction {
       transfer: json['transfer'] is Map<String, dynamic>
           ? TransferLink.fromJson(json['transfer'] as Map<String, dynamic>)
           : null,
+      version: (json['version'] as num?)?.toInt(),
     );
   }
 
@@ -417,8 +527,11 @@ class Transaction {
     bool clearUnit = false,
     bool clearEndDate = false,
     bool clearOccurrenceCount = false,
+    int? version,
+    bool clearVersion = false,
   }) {
     return Transaction(
+      version: clearVersion ? null : (version ?? this.version),
       transfer: clearTransfer ? null : (transfer ?? this.transfer),
       id: id ?? this.id,
       accountId: accountId ?? this.accountId,
@@ -448,7 +561,11 @@ class TransferLink {
     this.peerAccountName,
     this.peerProjectId,
     this.peerProjectName,
+    this.peerReadable = true,
   });
+
+  /// False when I can't see the other account (its names are withheld).
+  final bool peerReadable;
 
   final String? id;
   final String? peerTransactionId;
@@ -464,6 +581,7 @@ class TransferLink {
     peerAccountName: json['peerAccountName'] as String?,
     peerProjectId: json['peerProjectId'] as String?,
     peerProjectName: json['peerProjectName'] as String?,
+    peerReadable: json['peerReadable'] as bool? ?? true,
   );
 
   Map<String, dynamic> toJson() => {
@@ -473,9 +591,12 @@ class TransferLink {
     'peerAccountName': peerAccountName,
     'peerProjectId': peerProjectId,
     'peerProjectName': peerProjectName,
+    'peerReadable': peerReadable,
   };
 
-  String get accountLabel => peerAccountName ?? 'another account';
+  String get accountLabel => !peerReadable
+      ? 'Private account'
+      : (peerAccountName ?? 'another account');
 }
 
 /// "to Savings" / "from Savings" for one side of a transfer.

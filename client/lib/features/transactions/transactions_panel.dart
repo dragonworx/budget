@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
 import '../../data/models.dart';
+import '../../widgets/conflict_dialog.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
@@ -86,6 +87,8 @@ class TransactionsPanel extends ConsumerStatefulWidget {
 }
 
 class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
+  bool get _readOnly => !widget.account.role.canEdit;
+
   final _search = TextEditingController();
   TxFilter _filter = TxFilter.all;
 
@@ -246,6 +249,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
                 : TransactionEditor(
                     key: ValueKey('editor-${_editing!.transaction?.id}'),
                     accountId: widget.account.id,
+                    readOnly: _readOnly,
                     existing: _editing!.transaction,
                     currency: widget.account.currency,
                     skippedDates: _editing!.transaction == null
@@ -283,6 +287,17 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
                       style: theme.textTheme.headlineSmall,
                     ),
                   ),
+                  if (_readOnly)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 4),
+                      child: Chip(
+                        key: ValueKey('panel-view-only'),
+                        avatar: Icon(Icons.visibility_outlined, size: 16),
+                        label: Text('View only'),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    )
+                  else
                   FilledButton.tonalIcon(
                     key: const ValueKey('panel-new-transaction'),
                     onPressed: () => _open(null),
@@ -357,8 +372,10 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
       return EmptyState(
         icon: Icons.receipt_long_rounded,
         title: 'No transactions yet',
-        message: 'Add income, bills and one-offs here, or hover a day on the timeline and click +.',
-        action: FilledButton.icon(
+        message: _readOnly
+            ? 'Nothing has been added to this account yet.'
+            : 'Add income, bills and one-offs here, or hover a day on the timeline and click +.',
+        action: _readOnly ? null : FilledButton.icon(
           onPressed: () => _open(null),
           icon: const Icon(Icons.add_rounded, size: 20),
           label: const Text('New transaction'),
@@ -367,7 +384,8 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
     }
     final ordered = _ordered(items);
     final shown = filterTransactions(ordered, _search.text, _filter);
-    final canReorder = _search.text.trim().isEmpty && _filter == TxFilter.all;
+    final canReorder =
+        !_readOnly && _search.text.trim().isEmpty && _filter == TxFilter.all;
     if (shown.isEmpty) {
       return EmptyState(
         icon: Icons.search_off_rounded,
@@ -389,6 +407,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
       transaction: t,
       currency: widget.account.currency,
       index: canReorder ? index : null,
+      readOnly: _readOnly,
       onTap: () => _open(t),
       onDelete: () => _deleteFromList(context, t),
       onLocate: () {
@@ -397,10 +416,14 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
       },
       onToggle: (v) async {
         try {
-          await ref
-              .read(transactionsProvider(widget.account.id).notifier)
-              .updateTransaction(t.copyWith(enabled: v));
-          widget.onChanged();
+          final n = ref.read(transactionsProvider(widget.account.id).notifier);
+          final r = await saveWithConflictCheck(
+            context,
+            save: (force) =>
+                n.updateTransaction(t.copyWith(enabled: v), force: force),
+            reload: n.refresh,
+          );
+          if (r != SaveResult.cancelled) widget.onChanged();
         } catch (e) {
           _error(e);
         }
@@ -448,7 +471,10 @@ class _TxRow extends StatelessWidget {
     required this.onDelete,
     this.highlighted = false,
     this.highlightKey,
+    this.readOnly = false,
   });
+
+  final bool readOnly;
 
   final bool highlighted;
   final Key? highlightKey;
@@ -473,7 +499,9 @@ class _TxRow extends StatelessWidget {
     // long, deliberate swipe so a scroll or tap never deletes.
     return Dismissible(
       key: ValueKey('dismiss-${t.id}'),
-      direction: DismissDirection.endToStart,
+      direction: readOnly
+          ? DismissDirection.none
+          : DismissDirection.endToStart,
       dismissThresholds: const {DismissDirection.endToStart: 0.5},
       background: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
@@ -608,6 +636,7 @@ class _TxRow extends StatelessWidget {
                               title: Text('Show on timeline'),
                             ),
                           ),
+                          if (!readOnly)
                           PopupMenuItem(
                             value: 'delete',
                             child: ListTile(
@@ -628,6 +657,7 @@ class _TxRow extends StatelessWidget {
                       onPressed: next == null ? null : onLocate,
                       icon: const Icon(Icons.my_location_rounded, size: 18),
                     ),
+                    if (!readOnly)
                     IconButton(
                       key: ValueKey('row-delete-${t.id}'),
                       tooltip: 'Delete $name',
@@ -645,11 +675,14 @@ class _TxRow extends StatelessWidget {
                     child: GestureDetector(
                       key: ValueKey('row-switch-${t.id}'),
                       behavior: HitTestBehavior.opaque,
-                      onTap: () => onToggle(!t.enabled),
+                      onTap: readOnly ? null : () => onToggle(!t.enabled),
                       child: IgnorePointer(
                         child: Transform.scale(
                           scale: touch ? 0.9 : 0.8,
-                          child: Switch(value: t.enabled, onChanged: onToggle),
+                          child: Switch(
+                            value: t.enabled,
+                            onChanged: readOnly ? null : onToggle,
+                          ),
                         ),
                       ),
                     ),

@@ -7,6 +7,9 @@ import 'package:intl/intl.dart';
 
 import '../../data/api_client.dart';
 import '../../data/models.dart';
+import '../../widgets/conflict_dialog.dart';
+import '../../data/sharing.dart';
+import '../sharing/share_dialog.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/account_dialog.dart';
@@ -560,9 +563,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               _openPlan();
                             case 'shortcuts':
                               _showShortcuts(context);
+                            case 'share':
+                              _share(context, account);
                           }
                         },
-                        itemBuilder: (context) => const [
+                        itemBuilder: (context) => [
+                          if (account.role.isOwner)
+                            const PopupMenuItem(
+                              value: 'share',
+                              child: ListTile(
+                                leading: Icon(Icons.person_add_alt_1_outlined),
+                                title: Text('Share account'),
+                              ),
+                            ),
+                          if (account.role.canEdit) ...const [
                           PopupMenuItem(
                             value: 'settings',
                             child: ListTile(
@@ -577,14 +591,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               title: Text('Import transactions'),
                             ),
                           ),
-                          PopupMenuItem(
+                          ],
+                          const PopupMenuItem(
                             value: 'plan',
                             child: ListTile(
                               leading: Icon(Icons.calculate_outlined),
                               title: Text('Plan a payment'),
                             ),
                           ),
-                          PopupMenuItem(
+                          const PopupMenuItem(
                             value: 'shortcuts',
                             child: ListTile(
                               leading: Icon(Icons.help_outline_rounded),
@@ -596,6 +611,23 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                       const SizedBox(width: 4),
                     ]
                   : [
+                      if (!account.role.canEdit)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: Chip(
+                            key: ValueKey('timeline-view-only'),
+                            avatar: Icon(Icons.visibility_outlined, size: 16),
+                            label: Text('View only'),
+                          ),
+                        ),
+                      if (account.role.isOwner)
+                        IconButton(
+                          key: const ValueKey('account-share'),
+                          tooltip: 'Share account',
+                          onPressed: () => _share(context, account),
+                          icon: const Icon(Icons.person_add_alt_1_outlined),
+                        ),
+                      if (account.role.canEdit) ...[
                       IconButton(
                         tooltip: 'Import transactions (JSON)',
                         onPressed: () => _openImport(context, account),
@@ -608,6 +640,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                         onPressed: () => _editAccount(context, account),
                         icon: const Icon(Icons.tune_rounded),
                       ),
+                      ],
                       const SizedBox(width: 6),
                       OutlinedButton.icon(
                         key: const ValueKey('open-transactions'),
@@ -691,7 +724,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                       visibleDays: _visibleDays,
                                       onViewportChanged: _onChartViewport,
                                       onCreateOnDay: (day) =>
-                                          _createOnceOnDay(context, day),
+                                          account.role.canEdit
+                                          ? _createOnceOnDay(context, day)
+                                          : _viewOnlyToast(context),
                                       transactionNames: transactionNames,
                                       transactions: {
                                         for (final t in transactions) t.id: t,
@@ -1268,11 +1303,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           .valueOrNull
           ?.length,
     );
-    if (edited == null) return;
+    if (edited == null || !context.mounted) return;
     try {
-      await ref
-          .read(accountsProvider(account.projectId).notifier)
-          .updateAccount(edited);
+      final n = ref.read(accountsProvider(account.projectId).notifier);
+      final r = await saveWithConflictCheck(
+        context,
+        save: (force) => n.updateAccount(edited, force: force),
+        reload: n.refresh,
+      );
+      if (r == SaveResult.cancelled) return;
       ref.invalidate(accountProvider(widget.accountId));
       // A seed move shifts every schedule on the server.
       ref.invalidate(transactionsProvider(widget.accountId));
@@ -1297,6 +1336,22 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     } else {
       context.go('/');
     }
+  }
+
+  void _viewOnlyToast(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('View only: you have viewer access to this account'),
+      ),
+    );
+  }
+
+  Future<void> _share(BuildContext context, Account account) async {
+    final left = await showShareDialog(
+      context,
+      ShareTarget.account(account.id, account.name),
+    );
+    if (left && context.mounted) context.go('/');
   }
 
   Future<void> _createOnceOnDay(BuildContext context, DateTime day) async {

@@ -316,15 +316,20 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
           FilledButton.icon(
             key: const ValueKey('goal-add-transactions'),
             onPressed:
-                _saving ||
+                !widget.account.role.canEdit ||
+                    _saving ||
                     _solving ||
                     (_result?.toTransactions(widget.account.id).isEmpty ?? true)
                 ? null
                 : _addTransactions,
             icon: const Icon(Icons.add_rounded, size: 18),
-            label: Text(_saving ? 'Adding…' : 'Add plan to account'),
+            label: Text(
+              !widget.account.role.canEdit
+                  ? 'View only: can’t add to account'
+                  : (_saving ? 'Adding…' : 'Add plan to account'),
+            ),
           ),
-          if (widget.onSaveScenario != null) ...[
+          if (widget.onSaveScenario != null && widget.account.role.canEdit) ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
               key: const ValueKey('goal-save-scenario'),

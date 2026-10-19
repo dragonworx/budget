@@ -148,6 +148,7 @@ class PlanPanel extends StatelessWidget {
                   accountId: account.id,
                   initial: defaultPlanRequest(),
                   creditOnly: true,
+                  readOnly: !account.role.canEdit,
                   onPreview: onPreview,
                   onDone: onDone,
                 ),

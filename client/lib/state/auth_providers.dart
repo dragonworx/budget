@@ -76,6 +76,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   void _signedIn(AuthUser user) {
     // Drop any data cached for a previous user.
     ref.invalidate(projectsProvider);
+    ref.invalidate(myInvitesProvider);
     state = AsyncData(_current.copyWith(user: user));
   }
 

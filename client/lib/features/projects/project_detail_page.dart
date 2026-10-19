@@ -11,9 +11,13 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/conflict_dialog.dart';
 import '../../widgets/account_dialog.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
+import '../../widgets/sharing_ui.dart';
+import '../../data/sharing.dart';
+import '../sharing/share_dialog.dart';
 
 class ProjectDetailPage extends ConsumerWidget {
   const ProjectDetailPage({super.key, required this.projectId});
@@ -26,6 +30,9 @@ class ProjectDetailPage extends ConsumerWidget {
     final accountsAsync = ref.watch(accountsProvider(projectId));
 
     final count = accountsAsync.valueOrNull?.length;
+    final project = projectAsync.valueOrNull;
+    final role = project?.role ?? Role.viewer;
+    final canAdd = project != null && !project.limited && role.canEdit;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -36,6 +43,23 @@ class ProjectDetailPage extends ConsumerWidget {
         titleSpacing: 4,
         title: const Text('Projects'),
         actions: [
+          if (project != null && !project.limited)
+            IconButton(
+              key: const ValueKey('project-share'),
+              tooltip: role.isOwner ? 'Share project' : 'People with access',
+              onPressed: () async {
+                final left = await showShareDialog(
+                  context,
+                  ShareTarget.project(project.id, project.name),
+                );
+                if (left && context.mounted) context.go('/');
+              },
+              icon: Icon(
+                role.isOwner
+                    ? Icons.person_add_alt_1_rounded
+                    : Icons.group_outlined,
+              ),
+            ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: () =>
@@ -53,11 +77,15 @@ class ProjectDetailPage extends ConsumerWidget {
             PageHeading(
               eyebrow: 'Project',
               title: projectAsync.valueOrNull?.name ?? '…',
-              subtitle: count == null || count == 0
-                  ? null
-                  : '$count account${count == 1 ? '' : 's'} · open one to plan its balance over time',
+              subtitle: [
+                if (project != null && project.shared)
+                  '${project.limited ? 'Shared accounts only' : 'Shared with you as ${role.label.toLowerCase()}'}${project.owner != null ? ' by ${project.owner!.displayName}' : ''}',
+                if (count != null && count > 0)
+                  '$count account${count == 1 ? '' : 's'} · open one to plan its balance over time',
+              ].join(' · ').let((t) => t.isEmpty ? null : t),
               actions: [
-                if (count != 0)
+                if (project != null && project.shared) RoleChip(role),
+                if (count != 0 && canAdd)
                   FilledButton.icon(
                     key: const ValueKey('add-account'),
                     onPressed: () => _editAccount(context, ref),
@@ -87,8 +115,10 @@ class ProjectDetailPage extends ConsumerWidget {
                     return EmptyState(
                       icon: Icons.account_balance_wallet_rounded,
                       title: 'No accounts yet',
-                      message: 'Add an account with a starting (seed) balance, then plan its transactions on the timeline.',
-                      action: FilledButton.icon(
+                      message: canAdd
+                          ? 'Add an account with a starting (seed) balance, then plan its transactions on the timeline.'
+                          : 'Nothing has been shared with you here yet.',
+                      action: !canAdd ? null : FilledButton.icon(
                         onPressed: () => _editAccount(context, ref),
                         icon: const Icon(Icons.add_rounded, size: 20),
                         label: const Text('Add account'),
@@ -115,6 +145,12 @@ class ProjectDetailPage extends ConsumerWidget {
                                 width: w,
                                 child: _AccountCard(
                                   account: account,
+                                  canDelete: canAdd,
+                                  canShare: role.isOwner,
+                                  onShare: () => showShareDialog(
+                                    context,
+                                    ShareTarget.account(account.id, account.name),
+                                  ),
                                   onOpen: () => context.go(
                                     '/accounts/${account.id}/timeline',
                                   ),
@@ -167,7 +203,12 @@ class ProjectDetailPage extends ConsumerWidget {
     );
     if (result == null) return;
     try {
-      await notifier.updateAccount(result);
+      if (!context.mounted) return;
+      await saveWithConflictCheck(
+        context,
+        save: (force) => notifier.updateAccount(result, force: force),
+        reload: notifier.refresh,
+      );
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
@@ -198,7 +239,7 @@ class ProjectDetailPage extends ConsumerWidget {
   }
 }
 
-enum _AccountAction { edit, delete }
+enum _AccountAction { edit, delete, share }
 
 class _AccountCard extends ConsumerWidget {
   const _AccountCard({
@@ -206,8 +247,14 @@ class _AccountCard extends ConsumerWidget {
     required this.onOpen,
     required this.onEdit,
     required this.onDelete,
+    required this.onShare,
+    this.canDelete = true,
+    this.canShare = true,
   });
 
+  final VoidCallback onShare;
+  final bool canDelete;
+  final bool canShare;
   final Account account;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
@@ -253,8 +300,13 @@ class _AccountCard extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  if (!account.role.isOwner) ...[
+                    RoleChip(account.role),
+                    const SizedBox(width: 6),
+                  ],
                   Pill(account.currency),
                   const SizedBox(width: 4),
+                  if (account.role.canEdit || canShare)
                   PopupMenuButton<_AccountAction>(
                     tooltip: 'Account actions',
                     padding: EdgeInsets.zero,
@@ -266,16 +318,27 @@ class _AccountCard extends ConsumerWidget {
                     onSelected: (action) => switch (action) {
                       _AccountAction.edit => onEdit(),
                       _AccountAction.delete => onDelete(),
+                      _AccountAction.share => onShare(),
                     },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
+                    itemBuilder: (context) => [
+                      if (canShare)
+                        const PopupMenuItem(
+                          value: _AccountAction.share,
+                          child: ListTile(
+                            leading: Icon(Icons.person_add_alt_1_outlined),
+                            title: Text('Share account…'),
+                          ),
+                        ),
+                      if (account.role.canEdit)
+                      const PopupMenuItem(
                         value: _AccountAction.edit,
                         child: ListTile(
                           leading: Icon(Icons.tune_rounded),
                           title: Text('Account settings'),
                         ),
                       ),
-                      PopupMenuItem(
+                      if (canDelete)
+                      const PopupMenuItem(
                         value: _AccountAction.delete,
                         child: ListTile(
                           leading: Icon(Icons.delete_outline_rounded),
@@ -395,3 +458,7 @@ class _Fact extends StatelessWidget {
 }
 
 String _errorMessage(Object error) => friendlyError(error);
+
+extension _Let<T> on T {
+  R let<R>(R Function(T) f) => f(this);
+}

@@ -97,7 +97,7 @@ class _TxRepo extends TransactionRepository {
       s.txs.values.toList();
 
   @override
-  Future<Transaction> update(Transaction t) async {
+  Future<Transaction> update(Transaction t, {bool force = false}) async {
     s.calls.add('update ${t.id} ${t.interval} ${t.unit?.name}');
     return s.txs[t.id] = t;
   }

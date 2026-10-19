@@ -11,6 +11,10 @@ import '../../data/api_client.dart';
 import '../../state/providers.dart';
 import '../../data/models.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/conflict_dialog.dart';
+import '../../widgets/sharing_ui.dart';
+import '../../data/sharing.dart';
+import '../sharing/share_dialog.dart';
 import '../../widgets/ui.dart';
 
 class ProjectsPage extends ConsumerWidget {
@@ -87,13 +91,11 @@ class ProjectsPage extends ConsumerWidget {
                       ),
                     );
                   }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-                    itemCount: items.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      final project = items[index];
-                      return _ProjectCard(
+                  final invites =
+                      ref.watch(myInvitesProvider).valueOrNull ?? const <Invite>[];
+                  final mine = [for (final p in items) if (!p.shared) p];
+                  final shared = [for (final p in items) if (p.shared) p];
+                  Widget card(Project project) => _ProjectCard(
                         project: project,
                         onOpen: () => context.go('/projects/${project.id}'),
                         onRename: () => _renameProject(
@@ -108,8 +110,36 @@ class ProjectsPage extends ConsumerWidget {
                           project.id,
                           project.name,
                         ),
+                        onShare: () => showShareDialog(
+                          context,
+                          ShareTarget.project(project.id, project.name),
+                        ),
                       );
-                    },
+                  Widget heading(String t, String key) => Padding(
+                    key: ValueKey(key),
+                    padding: const EdgeInsets.fromLTRB(2, 14, 0, 8),
+                    child: Text(
+                      t,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: AppTheme.textMuted,
+                      ),
+                    ),
+                  );
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+                    children: [
+                      if (invites.isNotEmpty) ...[
+                        heading('Invitations for you', 'invites-heading'),
+                        for (final i in invites) _PendingInviteTile(invite: i),
+                      ],
+                      if (shared.isNotEmpty && mine.isNotEmpty)
+                        heading('My projects', 'mine-heading'),
+                      for (final p in mine) ...[card(p), const SizedBox(height: 10)],
+                      if (shared.isNotEmpty) ...[
+                        heading('Shared with me', 'shared-heading'),
+                        for (final p in shared) ...[card(p), const SizedBox(height: 10)],
+                      ],
+                    ],
                   );
                 },
               ),
@@ -145,8 +175,14 @@ class ProjectsPage extends ConsumerWidget {
       initial: current,
     );
     if (name == null || name.isEmpty || name == current) return;
+    if (!context.mounted) return;
     try {
-      await ref.read(projectsProvider.notifier).rename(id, name);
+      final n = ref.read(projectsProvider.notifier);
+      await saveWithConflictCheck(
+        context,
+        save: (force) => n.rename(id, name, force: force),
+        reload: n.refresh,
+      );
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
@@ -179,7 +215,7 @@ class ProjectsPage extends ConsumerWidget {
   }
 }
 
-enum _ProjectAction { rename, delete }
+enum _ProjectAction { share, rename, delete }
 
 Future<String?> _promptName(
   BuildContext context, {
@@ -264,22 +300,28 @@ class _ProjectCard extends ConsumerWidget {
     required this.onOpen,
     required this.onRename,
     required this.onDelete,
+    required this.onShare,
   });
   final Project project;
   final VoidCallback onOpen;
   final VoidCallback onRename;
   final VoidCallback onDelete;
+  final VoidCallback onShare;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final accounts = ref.watch(accountsProvider(project.id)).valueOrNull;
     final meta = [
-      if (accounts != null)
+      if (project.limited)
+        '${project.sharedAccountIds.length} shared account${project.sharedAccountIds.length == 1 ? '' : 's'} only'
+      else if (accounts != null)
         accounts.isEmpty
             ? 'No accounts'
             : '${accounts.length} account${accounts.length == 1 ? '' : 's'}',
-      if (project.createdAt != null)
+      if (project.shared && project.owner != null)
+        'Owner ${project.owner!.displayName}'
+      else if (project.createdAt != null)
         'Created ${_formatDay(project.createdAt!)}',
     ].join(' · ');
     return Material(
@@ -295,7 +337,28 @@ class _ProjectCard extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
           child: Row(
             children: [
-              const IconTile(Icons.folder_rounded),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconTile(
+                    project.limited
+                        ? Icons.folder_special_outlined
+                        : project.shared
+                        ? Icons.folder_shared_rounded
+                        : Icons.folder_rounded,
+                  ),
+                  if (project.shared && project.owner != null)
+                    Positioned(
+                      right: -6,
+                      bottom: -6,
+                      child: RefAvatar(
+                        project.owner!,
+                        key: const ValueKey('owner-avatar'),
+                        radius: 10,
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -319,7 +382,12 @@ class _ProjectCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (accounts != null && accounts.isNotEmpty)
+              if (project.shared)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: RoleChip(project.role),
+                ),
+              if (accounts != null && accounts.isNotEmpty && !project.shared)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: Wrap(
@@ -334,10 +402,20 @@ class _ProjectCard extends ConsumerWidget {
                 tooltip: 'Project actions',
                 icon: const Icon(Icons.more_vert_rounded),
                 onSelected: (a) => switch (a) {
+                  _ProjectAction.share => onShare(),
                   _ProjectAction.rename => onRename(),
                   _ProjectAction.delete => onDelete(),
                 },
-                itemBuilder: (context) => const [
+                itemBuilder: (context) => [
+                  if (!project.limited)
+                    PopupMenuItem(
+                      value: _ProjectAction.share,
+                      child: ListTile(
+                        leading: const Icon(Icons.person_add_alt_1_outlined),
+                        title: Text(project.role.isOwner ? 'Share…' : 'People…'),
+                      ),
+                    ),
+                  if (project.role.isOwner) ...const [
                   PopupMenuItem(
                     value: _ProjectAction.rename,
                     child: ListTile(
@@ -352,6 +430,7 @@ class _ProjectCard extends ConsumerWidget {
                       title: Text('Delete project'),
                     ),
                   ),
+                  ],
                 ],
               ),
               const Icon(
@@ -368,6 +447,32 @@ class _ProjectCard extends ConsumerWidget {
 }
 
 String _errorMessage(Object error) => friendlyError(error);
+
+/// An invite addressed to me that hasn't been accepted yet.
+class _PendingInviteTile extends StatelessWidget {
+  const _PendingInviteTile({required this.invite});
+  final Invite invite;
+
+  @override
+  Widget build(BuildContext context) {
+    final by = invite.invitedBy;
+    return Card(
+      key: ValueKey('my-invite-${invite.id}'),
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: by == null
+            ? const Icon(Icons.mail_outline_rounded)
+            : RefAvatar(by, radius: 16),
+        title: Text(invite.targetLabel),
+        subtitle: Text(
+          '${by?.displayName ?? 'Someone'} invited you as ${invite.role.label.toLowerCase()}. '
+          'Open the link they sent you, or sign out and back in to accept.',
+        ),
+        trailing: RoleChip(invite.role),
+      ),
+    );
+  }
+}
 
 String _formatDay(DateTime value) =>
     DateFormat('d MMM y').format(value.toLocal());

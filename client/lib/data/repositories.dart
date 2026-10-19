@@ -22,8 +22,11 @@ class ProjectRepository {
     return Project.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<Project> rename(String id, String name) async {
-    final data = await _api.patch('/api/projects/$id', body: {'name': name});
+  Future<Project> rename(String id, String name, {int? version}) async {
+    final data = await _api.patch(
+      '/api/projects/$id',
+      body: {'name': name, 'version': ?version},
+    );
     return Project.fromJson(data as Map<String, dynamic>);
   }
 
@@ -53,11 +56,11 @@ class AccountRepository {
     return Account.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<Account> update(Account account) async {
-    final data = await _api.patch(
-      '/api/accounts/${account.id}',
-      body: account.toPatchJson(),
-    );
+  /// With [force], the version is left out (last write wins).
+  Future<Account> update(Account account, {bool force = false}) async {
+    final body = account.toPatchJson();
+    if (force) body.remove('version');
+    final data = await _api.patch('/api/accounts/${account.id}', body: body);
     return Account.fromJson(data as Map<String, dynamic>);
   }
 
@@ -198,10 +201,15 @@ class TransactionRepository {
     return Transaction.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<Transaction> update(Transaction transaction) async {
+  /// Sends the row version unless [force] (then last write wins).
+  Future<Transaction> update(Transaction transaction, {bool force = false}) async {
     final data = await _api.patch(
       '/api/transactions/${transaction.id}',
-      body: transaction.toCreateJson(),
+      body: {
+        ...transaction.toCreateJson(),
+        if (!force && transaction.version != null)
+          'version': transaction.version,
+      },
     );
     return Transaction.fromJson(data as Map<String, dynamic>);
   }

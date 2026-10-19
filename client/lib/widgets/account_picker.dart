@@ -102,6 +102,7 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
                     size: 18,
                   ),
                   onPressed: () => widget.onSelected(a),
+                  trailingIcon: sharedIndicator(a),
                   child: Text(a.name),
                 ),
             ],
@@ -209,7 +210,11 @@ class _DrillDownSheetState extends ConsumerState<_DrillDownSheet> {
                         for (final (pr, accounts) in projects)
                           ListTile(
                             key: ValueKey('$p-project-${pr.id}'),
-                            leading: const Icon(Icons.folder_outlined),
+                            leading: Icon(
+                              pr.shared
+                                  ? Icons.folder_shared_outlined
+                                  : Icons.folder_outlined,
+                            ),
                             title: Text(pr.name),
                             subtitle: Text(
                               '${accounts.length} account${accounts.length == 1 ? '' : 's'}',
@@ -260,6 +265,7 @@ class _DrillDownSheetState extends ConsumerState<_DrillDownSheet> {
                           ),
                           title: Text(a.name),
                           subtitle: Text(a.currency),
+                          trailing: sharedIndicator(a),
                           onTap: () => Navigator.of(context).pop(a),
                         ),
                     ],
@@ -313,7 +319,10 @@ class _ProjectSubmenuState extends State<_ProjectSubmenu> {
       builder: (context, controller, _) => MenuItemButton(
         key: widget.buttonKey,
         closeOnActivate: false,
-        leadingIcon: const Icon(Icons.folder_outlined, size: 18),
+        leadingIcon: Icon(
+          widget.project.shared ? Icons.folder_shared_outlined : Icons.folder_outlined,
+          size: 18,
+        ),
         trailingIcon: const Icon(Icons.chevron_right_rounded, size: 18),
         onHover: (hovering) {
           if (hovering) _open();
@@ -357,4 +366,18 @@ class PickerSectionHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+/// People icon for accounts shared with me (not owned), with my role.
+Widget? sharedIndicator(Account a) {
+  if (a.role.isOwner) return null;
+  return Tooltip(
+    message: 'Shared with you · ${a.role.label.toLowerCase()}',
+    child: Icon(
+      Icons.people_alt_outlined,
+      key: ValueKey('shared-indicator-${a.id}'),
+      size: 16,
+      color: AppTheme.textFaint,
+    ),
+  );
 }

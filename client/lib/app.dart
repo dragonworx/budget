@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'features/admin/admin_page.dart';
 import 'features/auth/invite_page.dart';
 import 'features/auth/sign_in_page.dart';
 import 'features/projects/project_detail_page.dart';
@@ -39,12 +40,22 @@ String? authRedirect({
   return null;
 }
 
+/// Invite links are `<origin>/invite/<token>` (a real path), while the app
+/// routes on the URL hash: start there when no hash route is set.
+String initialLocationFor(Uri base) {
+  final noHashRoute = base.fragment.isEmpty || base.fragment == '/';
+  if (noHashRoute && RegExp(r'^/invite/[^/]+$').hasMatch(base.path)) {
+    return base.path;
+  }
+  return '/';
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier<int>(0);
   ref.listen(authProvider, (_, _) => refresh.value++);
   ref.onDispose(refresh.dispose);
   final router = GoRouter(
-    initialLocation: '/',
+    initialLocation: initialLocationFor(Uri.base),
     refreshListenable: refresh,
     redirect: (context, state) {
       final auth = ref.read(authProvider);
@@ -61,6 +72,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: signInPath,
         builder: (context, state) => const SignInPage(),
       ),
+      GoRoute(path: '/admin', builder: (context, state) => const AdminPage()),
       GoRoute(
         path: '/invite/:token',
         builder: (context, state) =>

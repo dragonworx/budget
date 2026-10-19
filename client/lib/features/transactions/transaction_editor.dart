@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../data/api_client.dart';
 import '../../data/frequency.dart';
 import '../../data/models.dart';
+import '../../widgets/conflict_dialog.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/account_picker.dart';
@@ -63,6 +64,7 @@ Future<EditorOutcome?> showTransactionEditor(
   DateTime? focusDate,
   Set<DateTime> skippedDates = const {},
   String currency = '',
+  bool readOnly = false,
 }) {
   return showSidePanel<EditorOutcome>(
     context,
@@ -75,6 +77,7 @@ Future<EditorOutcome?> showTransactionEditor(
       focusDate: focusDate,
       skippedDates: skippedDates,
       currency: currency,
+      readOnly: readOnly,
     ),
   );
 }
@@ -91,7 +94,11 @@ class TransactionEditor extends ConsumerStatefulWidget {
     this.currency = '',
     this.onDone,
     this.onClosePanel,
+    this.readOnly = false,
   });
+
+  /// Viewer access: fields are shown but can't be changed or saved.
+  final bool readOnly;
 
   /// Called instead of popping the route when embedded in another panel.
   final ValueChanged<EditorOutcome?>? onDone;
@@ -411,13 +418,17 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                         _focusBanner(theme),
                         const SizedBox(height: 12),
                       ],
-                      _detailsSection(theme),
+                      if (widget.readOnly) ...[
+                        const _ViewOnlyNote(),
+                        const SizedBox(height: 12),
+                      ],
+                      _ro(_detailsSection(theme)),
                       const SizedBox(height: 12),
-                      _scheduleSection(theme),
+                      _ro(_scheduleSection(theme)),
                       const SizedBox(height: 12),
                       _previewSection(theme, draft),
                       const SizedBox(height: 12),
-                      _optionsSection(theme),
+                      _ro(_optionsSection(theme)),
                     ],
                   ),
                 ),
@@ -430,6 +441,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       ),
     );
   }
+
+  Widget _ro(Widget child) => widget.readOnly
+      ? IgnorePointer(child: ExcludeFocus(child: child))
+      : child;
 
   Widget _header(ThemeData theme, String title) {
     return Padding(
@@ -517,6 +532,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               ],
             ),
           ),
+          if (!widget.readOnly)
           TextButton.icon(
             key: const ValueKey('skip-occurrence'),
             onPressed: busy ? null : () => _toggleSkip(date),
@@ -1066,7 +1082,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           final roomy = c.maxWidth >= 430;
           return Row(
             children: [
-              if (!_isNew)
+              if (!_isNew && !widget.readOnly)
                 roomy
                     ? TextButton.icon(
                         key: const ValueKey('editor-delete'),
@@ -1088,14 +1104,18 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                         icon: const Icon(Icons.delete_outline_rounded),
                       ),
               const Spacer(),
-              if (roomy) ...[
+              if (roomy && !widget.readOnly) ...[
                 Tooltip(
                   message: 'Ctrl+Enter (⌘+Enter on Mac) saves',
                   child: Text('Ctrl+Enter', style: theme.textTheme.labelSmall),
                 ),
                 const SizedBox(width: 10),
               ],
-              TextButton(onPressed: _close, child: const Text('Cancel')),
+              TextButton(
+                onPressed: _close,
+                child: Text(widget.readOnly ? 'Close' : 'Cancel'),
+              ),
+              if (!widget.readOnly) ...[
               const SizedBox(width: 8),
               FilledButton.icon(
                 key: const ValueKey('editor-save'),
@@ -1103,6 +1123,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                 icon: const Icon(Icons.check_rounded, size: 18),
                 label: Text(_saving ? 'Saving…' : (_isNew ? 'Create' : 'Save')),
               ),
+              ],
             ],
           );
         },
@@ -1211,7 +1232,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   }
 
   Future<void> _save() async {
-    if (_saving) return;
+    if (_saving || widget.readOnly) return;
     setState(() => _endDateError = null);
     if (!_formKey.currentState!.validate()) return;
     if (_recurrenceMode == RecurrenceMode.every &&
@@ -1236,6 +1257,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       direction: _direction,
       startDate: _startDate,
       enabled: _enabled,
+      version: widget.existing?.version,
     );
 
     setState(() => _saving = true);
@@ -1247,7 +1269,16 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       if (widget.existing == null) {
         saved = await notifier.create(draft);
       } else {
-        await notifier.updateTransaction(draft);
+        final r = await saveWithConflictCheck(
+          context,
+          save: (force) => notifier.updateTransaction(draft, force: force),
+          reload: () => ref.invalidate(transactionsProvider(widget.accountId)),
+        );
+        if (r == SaveResult.cancelled) return;
+        if (r == SaveResult.reloaded) {
+          if (mounted) _finish(null);
+          return;
+        }
         saved = draft;
       }
       if (mounted) {
@@ -1277,3 +1308,26 @@ String _unitPlural(RecurrenceUnit unit, [int count = 2]) {
 }
 
 enum _Kind { credit, debit, transfer }
+
+class _ViewOnlyNote extends StatelessWidget {
+  const _ViewOnlyNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('editor-view-only'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.overlay,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.visibility_outlined, size: 18, color: AppTheme.textMuted),
+          SizedBox(width: 10),
+          Expanded(child: Text('View only: you have viewer access to this account.')),
+        ],
+      ),
+    );
+  }
+}

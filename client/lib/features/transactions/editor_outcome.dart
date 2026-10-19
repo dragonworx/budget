@@ -80,7 +80,7 @@ void reportEditorOutcome(
             ]);
           }
         case EditorAction.saved:
-          if (o.previous != null) await notifier.updateTransaction(o.previous!);
+          if (o.previous != null) await notifier.updateTransaction(o.previous!, force: true);
           continue skips;
         skips:
         case EditorAction.skipsChanged:

@@ -149,13 +149,6 @@ void main() {
     expect(_path(c), '/projects/p1');
   });
 
-  testWidgets('invite route stub renders when signed in', (tester) async {
-    final (c, _, _) = await _pump(tester, FakeAuthRepository(user: adminUser));
-    c.read(routerProvider).go('/invite/abc');
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('invite-stub')), findsOneWidget);
-  });
-
   testWidgets('config failure shows retry on sign-in', (tester) async {
     final auth = FakeAuthRepository(failConfig: true);
     await _pump(tester, auth);
