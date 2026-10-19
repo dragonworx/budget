@@ -589,7 +589,7 @@ void main() {
     await reveal();
     expect(pill, findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('shift-right')));
-    await tester.pumpAndSettle(); // eased pan, then refit
+    await tester.pumpAndSettle(); // eased pan (no refit)
     expect(pill, findsNothing);
     expect(tip, findsNothing);
     await tester.pumpAndSettle();

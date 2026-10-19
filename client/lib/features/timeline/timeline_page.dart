@@ -49,9 +49,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   late final AnimationController _viewAnim = AnimationController(
     vsync: this,
     duration: zoomEaseDuration,
-  )
-    ..addListener(_tickView)
-    ..addStatusListener(_onViewAnimStatus);
+  )..addListener(_tickView);
   DateTime _animFromCenter = DateTime(2000);
   DateTime _animToCenter = DateTime(2000);
   double _animFromDays = 1;
@@ -380,18 +378,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         ? addDays(_animToCenter, -_animToDays / 2)
         : _viewStart;
     final span = _unit.step(from, n);
+    // The balance (vertical) range is left untouched: no refit on landing.
     _animateViewport(addDays(span.start, span.days / 2), span.days);
-    _refitOnSettle = true;
-  }
-
-  /// Set by ◀ ▶: refit the balance range once the eased pan lands.
-  bool _refitOnSettle = false;
-
-  void _onViewAnimStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && _refitOnSettle) {
-      _refitOnSettle = false;
-      setState(() => _fitToken++);
-    }
   }
 
   void _setUnit(ViewUnit unit) {
@@ -445,7 +433,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// Instant view change (pan, pinch, wheel, fits); cancels any easing.
   void _onViewport(DateTime start, double visibleDays) {
     _viewAnim.stop();
-    _refitOnSettle = false;
     _applyViewport(start, visibleDays);
   }
 
@@ -604,20 +591,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               ),
                             ),
                           if (account.role.canEdit) ...const [
-                          PopupMenuItem(
-                            value: 'settings',
-                            child: ListTile(
-                              leading: Icon(Icons.tune_rounded),
-                              title: Text('Account settings'),
+                            PopupMenuItem(
+                              value: 'settings',
+                              child: ListTile(
+                                leading: Icon(Icons.tune_rounded),
+                                title: Text('Account settings'),
+                              ),
                             ),
-                          ),
-                          PopupMenuItem(
-                            value: 'import',
-                            child: ListTile(
-                              leading: Icon(Icons.file_upload_outlined),
-                              title: Text('Import transactions'),
+                            PopupMenuItem(
+                              value: 'import',
+                              child: ListTile(
+                                leading: Icon(Icons.file_upload_outlined),
+                                title: Text('Import transactions'),
+                              ),
                             ),
-                          ),
                           ],
                           const PopupMenuItem(
                             value: 'plan',
@@ -656,18 +643,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                           icon: const Icon(Icons.person_add_alt_1_outlined),
                         ),
                       if (account.role.canEdit) ...[
-                      IconButton(
-                        tooltip: 'Import transactions (JSON)',
-                        onPressed: () => _openImport(context, account),
-                        icon: const Icon(Icons.file_upload_outlined),
-                      ),
-                      IconButton(
-                        key: const ValueKey('account-settings'),
-                        tooltip:
-                            'Account settings: seed balance, date, threshold',
-                        onPressed: () => _editAccount(context, account),
-                        icon: const Icon(Icons.tune_rounded),
-                      ),
+                        IconButton(
+                          tooltip: 'Import transactions (JSON)',
+                          onPressed: () => _openImport(context, account),
+                          icon: const Icon(Icons.file_upload_outlined),
+                        ),
+                        IconButton(
+                          key: const ValueKey('account-settings'),
+                          tooltip:
+                              'Account settings: seed balance, date, threshold',
+                          onPressed: () => _editAccount(context, account),
+                          icon: const Icon(Icons.tune_rounded),
+                        ),
                       ],
                       IconButton(
                         key: const ValueKey('open-reminders'),
@@ -1749,7 +1736,10 @@ class _TipsBar extends StatelessWidget {
                 'Drag or tap the dates to add',
               ),
               tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
-              tip(Icons.view_week_rounded, 'Pinch or − / + change unit, ◀ ▶ step'),
+              tip(
+                Icons.view_week_rounded,
+                'Pinch or − / + change unit, ◀ ▶ step',
+              ),
               tip(Icons.mouse_outlined, 'Scroll or pinch to zoom'),
               tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
             ],
