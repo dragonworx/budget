@@ -698,7 +698,7 @@ void main() {
     final text = tester.widget<Text>(
       find.descendant(of: pill, matching: find.byType(Text)),
     );
-    expect(text.data, startsWith('A\$'));
+    expect(text.data, startsWith('\$'));
     expect(text.style?.fontWeight, FontWeight.w800);
     await tester.pump(const Duration(seconds: 10));
     expect(pill, findsOneWidget, reason: 'stays while pinned');

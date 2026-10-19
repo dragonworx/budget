@@ -124,21 +124,21 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(created, isEmpty, reason: 'a tap never creates');
       // Skipped and disabled occurrences don't count.
-      expect(_plain(tester, 'pick-day-totals'), '+A\$2,450  ·  −A\$406');
+      expect(_plain(tester, 'pick-day-totals'), '+\$2,450  ·  −\$406');
       expect(
-        _colorOf(tester, 'pick-day-totals', '+A\$2,450'),
+        _colorOf(tester, 'pick-day-totals', '+\$2,450'),
         AppTheme.creditColor,
       );
       expect(
-        _colorOf(tester, 'pick-day-totals', '−A\$406'),
+        _colorOf(tester, 'pick-day-totals', '−\$406'),
         AppTheme.debitColor,
       );
       expect(
         _plain(tester, 'pick-day-balance'),
-        'Balance end of day: A\$2,994',
+        'Balance end of day: \$2,994',
       );
       expect(
-        _colorOf(tester, 'pick-day-balance', 'A\$2,994'),
+        _colorOf(tester, 'pick-day-balance', '\$2,994'),
         AppTheme.creditColor,
       );
       await tester.tap(find.byKey(const ValueKey('pick-add')), kind: kind);
@@ -166,9 +166,9 @@ void main() {
     await _pump(tester, balanceOn5th: 10);
     await tester.tapAt(Offset(_x(8), _layout.axis.center.dy));
     await tester.pump();
-    expect(_plain(tester, 'pick-day-totals'), '+A\$0  ·  −A\$0');
-    expect(_colorOf(tester, 'pick-day-totals', '+A\$0'), AppTheme.textFaint);
-    expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: A\$500');
+    expect(_plain(tester, 'pick-day-totals'), '+\$0  ·  −\$0');
+    expect(_colorOf(tester, 'pick-day-totals', '+\$0'), AppTheme.textFaint);
+    expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: \$500');
   });
 
   testWidgets('totals show from touch-down and update live while dragging', (
@@ -181,25 +181,25 @@ void main() {
       await tester.pump();
       // Finger still down: the date, the day's totals and balance.
       expect(find.byKey(const ValueKey('pick-bubble')), findsOneWidget);
-      expect(_plain(tester, 'pick-day-totals'), '+A\$2,450  ·  −A\$406');
+      expect(_plain(tester, 'pick-day-totals'), '+\$2,450  ·  −\$406');
       expect(
         _plain(tester, 'pick-day-balance'),
-        'Balance end of day: A\$2,994',
+        'Balance end of day: \$2,994',
       );
       expect(find.text('Release, then tap +'), findsOneWidget);
       expect(find.byKey(const ValueKey('pick-add')), findsNothing);
-      // Drag onto a quiet day, then onto the 12th (−A$180): updates live.
+      // Drag onto a quiet day, then onto the 12th (−$180): updates live.
       await g.moveTo(Offset(_x(8), y));
       await tester.pump();
-      expect(_plain(tester, 'pick-day-totals'), '+A\$0  ·  −A\$0');
-      expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: A\$500');
+      expect(_plain(tester, 'pick-day-totals'), '+\$0  ·  −\$0');
+      expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: \$500');
       await g.moveTo(Offset(_x(11), y));
       await tester.pump();
-      expect(_plain(tester, 'pick-day-totals'), '+A\$0  ·  −A\$180');
+      expect(_plain(tester, 'pick-day-totals'), '+\$0  ·  −\$180');
       await g.up();
       await tester.pump();
       // Released: still there, now with + / close; nothing created.
-      expect(_plain(tester, 'pick-day-totals'), '+A\$0  ·  −A\$180');
+      expect(_plain(tester, 'pick-day-totals'), '+\$0  ·  −\$180');
       expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
       expect(created, isEmpty);
     }
@@ -219,8 +219,8 @@ void main() {
     await g.moveTo(Offset(x, _layout.axis.top - 30));
     await tester.pump();
     expect(find.byKey(const ValueKey('pick-trim')), findsOneWidget);
-    expect(_plain(tester, 'pick-day-totals'), '+A\$2,450  ·  −A\$406');
-    expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: A\$2,994');
+    expect(_plain(tester, 'pick-day-totals'), '+\$2,450  ·  −\$406');
+    expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: \$2,994');
     // Above the line: cancelling, no totals.
     await g.moveTo(Offset(x, _layout.plot.top + 2));
     await tester.pump();

@@ -69,6 +69,18 @@ void Function(String name, double x, bool labelled)? debugVertexLabel;
 void Function(String name, Offset center, double radius, Rect rect)?
 debugVertexLabelRect;
 
+/// Test hook: each transaction label as drawn: its box and its text lines
+/// (the day total first, then names / "+N more").
+@visibleForTesting
+void Function(Rect rect, List<String> lines)? debugVertexLabelLines;
+
+/// Most transaction names listed under a day's total before "+N more".
+const int maxLabelNames = 6;
+
+/// A label kept from the previous paint: its box relative to the dot and
+/// how many names it listed.
+typedef _LabelSpot = ({Rect rect, int names});
+
 /// Test hook: every date-axis label as painted, with its row name
 /// ("Year", "Month", "Week", "Day") and the rect its text occupies.
 @visibleForTesting
@@ -342,7 +354,7 @@ class _BalanceChartState extends State<BalanceChart>
   BalanceExtents? _originY;
 
   /// Vertex keys labelled last paint; see [_BalanceChartPainter.labelMemory].
-  final Map<int, Rect> _labelMemory = <int, Rect>{};
+  final Map<int, _LabelSpot> _labelMemory = <int, _LabelSpot>{};
   static const Duration _holdDelay = Duration(milliseconds: 450);
 
   /// How far above the axis a pick drag goes before it counts as cancelled.
@@ -1214,7 +1226,7 @@ class _BalanceChartState extends State<BalanceChart>
                           ),
                           const SizedBox(width: 12),
                           Text(
-                            formatSignedAmount(
+                            _signedMoney(
                               o.signedDelta.toDouble(),
                               widget.currency,
                             ),
@@ -1475,6 +1487,7 @@ class _BalanceChartState extends State<BalanceChart>
                               (theme.textTheme.labelSmall ?? const TextStyle())
                                   .copyWith(fontWeight: FontWeight.w600),
                           transactionNames: widget.transactionNames,
+                          transactionOrder: widget.transactions.keys.toList(),
                           textScaler: MediaQuery.textScalerOf(context),
                           dataFrom: widget.dataFrom,
                           dataThrough: widget.dataThrough,
@@ -1664,7 +1677,7 @@ class _BalanceChartState extends State<BalanceChart>
               border: Border.all(color: color, width: 1.2),
             ),
             child: Text(
-              formatMoneyAmount(dot.balanceAfter, widget.currency),
+              _money(dot.balanceAfter, widget.currency),
               style: style,
             ),
           ),
@@ -1944,7 +1957,7 @@ class _BalanceChartState extends State<BalanceChart>
     );
     final small = theme.textTheme.labelSmall ?? const TextStyle();
     String money(double v) =>
-        formatMoneyAmount(v, widget.currency, decimalDigits: v == 0 ? 0 : null);
+        _money(v, widget.currency, decimalDigits: v == 0 ? 0 : null);
     final balance = stats?.balance;
     final low = balance != null && belowAlert(balance, widget.lossThreshold);
     return Listener(
@@ -2327,7 +2340,7 @@ class _BalanceChartState extends State<BalanceChart>
         'Start',
         'opening ${dm.format(sum.start)}',
         Text(
-          formatMoneyAmount(sum.startBalance, cur),
+          _money(sum.startBalance, cur),
           key: const ValueKey('selection-start-balance'),
           style: strong,
         ),
@@ -2337,7 +2350,7 @@ class _BalanceChartState extends State<BalanceChart>
         'End',
         'close ${dm.format(sum.end)}',
         Text(
-          formatMoneyAmount(sum.endBalance, cur),
+          _money(sum.endBalance, cur),
           key: const ValueKey('selection-end-balance'),
           style: strong,
         ),
@@ -2353,7 +2366,7 @@ class _BalanceChartState extends State<BalanceChart>
             ? ''
             : '${net >= 0 ? '+' : '−'}${pct.abs().toStringAsFixed(1)}%',
         Text(
-          formatSignedAmount(net, cur),
+          _signedMoney(net, cur),
           key: const ValueKey('selection-net'),
           style: strong.copyWith(color: signColor(net)),
         ),
@@ -2364,7 +2377,7 @@ class _BalanceChartState extends State<BalanceChart>
         'Total gains',
         '',
         Text(
-          formatSignedAmount(sum.gains, cur),
+          _signedMoney(sum.gains, cur),
           key: const ValueKey('selection-gains'),
           style: strong.copyWith(color: signColor(sum.gains)),
         ),
@@ -2374,7 +2387,7 @@ class _BalanceChartState extends State<BalanceChart>
         'Total losses',
         '',
         Text(
-          formatSignedAmount(sum.losses, cur),
+          _signedMoney(sum.losses, cur),
           key: const ValueKey('selection-losses'),
           style: strong.copyWith(color: signColor(sum.losses)),
         ),
@@ -2396,7 +2409,7 @@ class _BalanceChartState extends State<BalanceChart>
           'Lowest',
           sum.lowestDate == null ? '' : dm.format(sum.lowestDate!),
           Text(
-            formatMoneyAmount(sum.lowestBalance!, cur),
+            _money(sum.lowestBalance!, cur),
             key: const ValueKey('selection-lowest'),
             style: strong.copyWith(
               color: belowAlert(sum.lowestBalance!, widget.lossThreshold)
@@ -2408,7 +2421,7 @@ class _BalanceChartState extends State<BalanceChart>
         ),
       row(
         'Alert',
-        '< ${formatMoneyAmount(widget.lossThreshold, cur)}',
+        '< ${_money(widget.lossThreshold, cur)}',
         Text(
           sum.alertDate == null ? 'Never' : dm.format(sum.alertDate!),
           key: const ValueKey('selection-alert'),
@@ -2810,7 +2823,7 @@ class _BalanceChartState extends State<BalanceChart>
                     ),
                   ),
                   Text(
-                    formatMoneyAmount(dot.balanceAfter, widget.currency),
+                    _money(dot.balanceAfter, widget.currency),
                     style: theme.textTheme.labelLarge?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: AppTheme.accent,
@@ -2836,7 +2849,7 @@ class _BalanceChartState extends State<BalanceChart>
         if (o.skipped) 'Skipped',
         if (t != null && !t.enabled) 'Disabled',
         if (t != null && t.overrideOn(o.date) != null)
-          'Once-off (series ${formatSignedAmount(t.signedAmount.toDouble(), widget.currency)})',
+          'Once-off (series ${_signedMoney(t.signedAmount.toDouble(), widget.currency)})',
       ];
       if (children.isNotEmpty) children.add(const Divider(height: 12));
       children.add(
@@ -2858,7 +2871,7 @@ class _BalanceChartState extends State<BalanceChart>
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  formatSignedAmount(amount, widget.currency),
+                  _signedMoney(amount, widget.currency),
                   style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: o.skipped
@@ -2923,7 +2936,7 @@ class _BalanceChartState extends State<BalanceChart>
                 ),
               ),
               Text(
-                formatSignedAmount(g.net, widget.currency),
+                _signedMoney(g.net, widget.currency),
                 style: theme.textTheme.labelLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                   color: g.allSkipped
@@ -2949,7 +2962,7 @@ class _BalanceChartState extends State<BalanceChart>
             style: small.copyWith(color: AppTheme.textFaint),
             children: [
               TextSpan(
-                text: formatMoneyAmount(day.balanceAfter, widget.currency),
+                text: _money(day.balanceAfter, widget.currency),
                 style: small.copyWith(
                   fontWeight: FontWeight.w800,
                   color: low ? AppTheme.debitColor : AppTheme.creditColor,
@@ -3268,6 +3281,7 @@ class _BalanceChartPainter extends CustomPainter {
     required this.strongStyle,
     required this.laneStyle,
     required this.transactionNames,
+    this.transactionOrder = const [],
     required this.textScaler,
     this.dataFrom,
     this.dataThrough,
@@ -3298,10 +3312,14 @@ class _BalanceChartPainter extends CustomPainter {
   /// Vertices labelled on the previous paint. They are placed first so a
   /// shown label keeps its spot while the view moves (hysteresis), instead
   /// of a dot entering at the edge reshuffling the greedy placement.
-  final Map<int, Rect> labelMemory;
+  final Map<int, _LabelSpot> labelMemory;
   final TextStyle strongStyle;
   final TextStyle laneStyle;
   final Map<String, String> transactionNames;
+
+  /// Transaction ids in the order they were added (labels list a day's
+  /// names in this order). Ids not in it follow, by [transactionNames].
+  final List<String> transactionOrder;
   final TextScaler textScaler;
 
   DateTime get _viewEnd => addDays(viewStart, visibleDays);
@@ -4121,7 +4139,7 @@ class _BalanceChartPainter extends CustomPainter {
       );
       final tp = TextPainter(
         text: TextSpan(
-          text: 'Alert < ${formatMoneyAmount(lossThreshold, currency)}',
+          text: 'Alert < ${_money(lossThreshold, currency)}',
           style: TextStyle(
             color: AppTheme.debitColor.withValues(alpha: 0.9),
             fontSize: 10.5,
@@ -4205,13 +4223,10 @@ class _BalanceChartPainter extends CustomPainter {
     }
 
     if (extents.max > scale.yMax) {
-      chip('▲ up to ${formatMoneyAmount(extents.max, currency)} above', true);
+      chip('▲ up to ${_money(extents.max, currency)} above', true);
     }
     if (extents.min < scale.yMin) {
-      chip(
-        '▼ down to ${formatMoneyAmount(extents.min, currency)} below',
-        false,
-      );
+      chip('▼ down to ${_money(extents.min, currency)} below', false);
     }
   }
 
@@ -4294,24 +4309,14 @@ class _BalanceChartPainter extends CustomPainter {
             ..strokeWidth = 1.5,
         );
       }
-      final String name;
-      if (g.all.length == 1) {
-        final rawName = transactionNames[g.all.first.transactionId];
-        name = rawName == null
-            ? ''
-            : (rawName.trim().isEmpty ? 'Transaction' : rawName.trim());
-      } else {
-        name = '';
-      }
       vertices.add(
         _ChartVertex(
           center: center,
-          radius: radius + (g.count >= 2 ? 3 : 0),
-          name: name,
+          radius: radius,
+          names: _dayNames(g),
           amount: net,
           skipped: g.allSkipped,
           debit: net < 0,
-          count: g.count,
           key: day.millisecondsSinceEpoch,
         ),
       );
@@ -4329,7 +4334,7 @@ class _BalanceChartPainter extends CustomPainter {
           _ChartVertex(
             center: c,
             radius: seedVertexRadius(radius),
-            name: 'Opening',
+            names: const ['Opening'],
             amount: seedBal,
             skipped: false,
             debit: false,
@@ -4360,6 +4365,31 @@ class _BalanceChartPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
+  }
+
+  /// Names of the transactions counted on day [g] (the skipped ones only
+  /// when every one is skipped), once each, in the order they were added
+  /// (as the dot popup's Edit menu lists them).
+  List<String> _dayNames(DayGroup g) {
+    final ids = <String>{
+      for (final o in g.allSkipped ? g.all : g.active) o.transactionId,
+    }.toList();
+    final order = {for (final (i, id) in transactionOrder.indexed) id: i};
+    final fallback = {
+      for (final (i, id) in transactionNames.keys.indexed) id: i,
+    };
+    int rank(String id) =>
+        order[id] ?? (order.length + (fallback[id] ?? fallback.length));
+    final sorted = [...ids]
+      ..sort((a, b) {
+        final byRank = rank(a).compareTo(rank(b));
+        return byRank != 0 ? byRank : ids.indexOf(a).compareTo(ids.indexOf(b));
+      });
+    return [
+      for (final id in sorted)
+        if (transactionNames[id] case final raw?)
+          raw.trim().isEmpty ? 'Transaction' : raw.trim(),
+    ];
   }
 
   /// Transaction labels for each occurrence dot, flush left with the dot and
@@ -4412,7 +4442,7 @@ class _BalanceChartPainter extends CustomPainter {
       ...vertices.where((v) => labelMemory.containsKey(v.key)),
       ...vertices.where((v) => !labelMemory.containsKey(v.key)),
     ];
-    final shown = <int, Rect>{};
+    final shown = <int, _LabelSpot>{};
     final style = labelStyle.copyWith(
       fontSize: fontSize,
       height: 1.0,
@@ -4423,7 +4453,9 @@ class _BalanceChartPainter extends CustomPainter {
       text: TextSpan(text: 'Mg', style: style),
       textDirection: TextDirection.ltr,
     )..layout();
-    final labelHeight = probe.height * 2 + 4;
+    final lineHeight = probe.height;
+    // Total + one name: the typical label, for the neighbour check below.
+    final labelHeight = lineHeight * 2 + 4;
     probe.dispose();
 
     canvas.save();
@@ -4442,11 +4474,12 @@ class _BalanceChartPainter extends CustomPainter {
       final vertexStyle = vertex.skipped
           ? style.copyWith(color: AppTheme.textFaint)
           : style;
+      // Main line: the day's net transaction total (never the balance).
       final amount = TextPainter(
         text: TextSpan(
           text: vertex.seed
-              ? formatMoneyAmount(vertex.amount, currency)
-              : formatSignedAmount(vertex.amount, currency),
+              ? _money(vertex.amount, currency)
+              : _signedMoney(vertex.amount, currency),
           style: vertexStyle.copyWith(
             fontWeight: FontWeight.w800,
             color: vertex.skipped
@@ -4461,142 +4494,150 @@ class _BalanceChartPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
         maxLines: 1,
       )..layout();
+      final names = vertex.names;
+      final moreStyle = vertexStyle.copyWith(
+        color: AppTheme.textMuted,
+        fontWeight: FontWeight.w500,
+      );
 
-      // Count chip (2+ on the day) sits left of the text, a touch larger
-      // than the amount so it reads first.
-      final count = vertex.count >= 2
-          ? (TextPainter(
-              text: TextSpan(
-                text: vertex.count > 99 ? '99+' : '${vertex.count}',
-                style: vertexStyle.copyWith(
-                  fontSize: (vertexStyle.fontSize ?? 11) + 1.5,
-                  fontWeight: FontWeight.w800,
-                  height: 1.1,
-                  color: AppTheme.text,
-                ),
-              ),
-              textDirection: TextDirection.ltr,
-              maxLines: 1,
-            )..layout())
-          : null;
-      final pillW = count == null ? 0.0 : countPillWidth(count.width) + 4;
-
-      TextPainter? layoutName(double maxWidth) {
-        if (vertex.name.isEmpty || maxWidth < 16) return null;
-        final painter = TextPainter(
-          text: TextSpan(text: vertex.name, style: vertexStyle),
-          textDirection: TextDirection.ltr,
-          maxLines: 1,
-          ellipsis: '…',
-        )..layout(maxWidth: maxWidth);
-        final readable = painter.didExceedMaxLines
-            ? painter.width >= 16
-            : painter.width >= 4;
-        if (!readable) {
-          painter.dispose();
-          return null;
+      // The text lines under the total when showing [shownNames] names:
+      // those names, then "+N more" for the rest (a lone name is never
+      // replaced by "+1 more"; it is just dropped).
+      List<(String, TextStyle)> linesFor(int shownNames) => [
+        for (final n in names.take(shownNames)) (n, vertexStyle),
+        if (shownNames < names.length && (names.length > 1 || shownNames > 0))
+          ('+${names.length - shownNames} more', moreStyle),
+      ];
+      List<TextPainter>? layoutLines(
+        List<(String, TextStyle)> lines,
+        double maxWidth,
+      ) {
+        final out = <TextPainter>[];
+        for (final (text, st) in lines) {
+          final painter = TextPainter(
+            text: TextSpan(text: text, style: st),
+            textDirection: TextDirection.ltr,
+            maxLines: 1,
+            ellipsis: '…',
+          )..layout(maxWidth: math.max(1, maxWidth));
+          final readable = painter.didExceedMaxLines
+              ? painter.width >= 16
+              : painter.width >= 4;
+          out.add(painter);
+          if (!readable) {
+            for (final p in out) {
+              p.dispose();
+            }
+            return null;
+          }
         }
-        return painter;
+        return out;
       }
 
-      double widthFor(TextPainter? name) =>
-          math.max(amount.width, name?.width ?? 0) + pad + pillW;
-      double heightFor(TextPainter? name) =>
-          math.max(
-            amount.height + (name?.height ?? 0),
-            count == null ? 0.0 : count.height + 2,
-          ) +
-          4;
+      void disposeAll(List<TextPainter>? ps) {
+        for (final p in ps ?? const <TextPainter>[]) {
+          p.dispose();
+        }
+      }
+
+      double heightOf(List<TextPainter> lines) =>
+          lines.fold(amount.height, (h, p) => h + p.height) + 4;
+      double widthOf(List<TextPainter> lines) =>
+          lines.fold(amount.width, (w, p) => math.max(w, p.width)) + pad;
+      bool fits(Rect rect) => vertexLabelFits(
+        rect: rect,
+        plot: plot,
+        anchor: vertex.center,
+        radius: vertex.radius,
+        occupied: placed,
+        anchors: anchors,
+      );
+      void draw(Rect rect, List<TextPainter> lines, int shownNames) {
+        _drawVertexLabel(canvas, amount, lines, rect);
+        debugVertexLabelLines?.call(rect, [
+          amount.plainText,
+          for (final l in lines) l.plainText,
+        ]);
+        placed.add(rect);
+        labeledAt.add(vertex.center);
+        shown[vertex.key] = (
+          rect: rect.shift(-vertex.center),
+          names: shownNames,
+        );
+      }
 
       var drawn = false;
-      // Hysteresis: a label shown last frame first tries the same spot
-      // relative to its dot, so it neither hops sides nor blinks while the
-      // view moves. It only gives way when that spot now truly overlaps.
+      // Hysteresis: a label shown last frame first tries the same box
+      // relative to its dot (same lines, same width), so it neither hops
+      // sides nor blinks while the view moves. It only gives way when that
+      // spot now truly overlaps.
       final last = labelMemory[vertex.key];
-      if (last != null) {
-        final withName =
-            vertex.name.isNotEmpty && last.height > amount.height + 6;
-        final name = withName
-            ? layoutName(math.max(amount.width, last.width - pad - pillW + 0.5))
-            : null;
-        if (!withName || name != null) {
-          // Same box as last frame (re-measuring would let an ellipsised
-          // name shrink a little every frame until it vanished).
-          final rect = last.shift(vertex.center);
-          if (vertexLabelFits(
-            rect: rect,
-            plot: plot,
-            anchor: vertex.center,
-            radius: vertex.radius,
-            occupied: placed,
-            anchors: anchors,
-            attachReach: 96,
-          )) {
-            _drawVertexLabel(canvas, amount, name, rect, vertex, count);
-            placed.add(rect);
-            labeledAt.add(vertex.center);
-            shown[vertex.key] = rect.shift(-vertex.center);
+      if (last != null && last.names <= names.length) {
+        final lines = layoutLines(
+          linesFor(last.names),
+          math.max(amount.width, last.rect.width - pad + 0.5),
+        );
+        if (lines != null) {
+          final rect = last.rect.shift(vertex.center);
+          if ((heightOf(lines) - rect.height).abs() < 0.5 &&
+              vertexLabelFits(
+                rect: rect,
+                plot: plot,
+                anchor: vertex.center,
+                radius: vertex.radius,
+                occupied: placed,
+                anchors: anchors,
+                attachReach: 96,
+              )) {
+            draw(rect, lines, last.names);
             drawn = true;
           }
         }
-        name?.dispose();
+        disposeAll(lines);
       }
-      // Prefer a label with the transaction name; fall back to the amount alone.
-      for (final withName
-          in drawn
-              ? const <bool>[]
-              : vertex.name.isEmpty
-              ? [false]
-              : [true, false]) {
+      // Fresh layout: as many names as fit (most first), each count tried
+      // above then below the dot, flush left with it.
+      final specs = [
+        for (var k = math.min(names.length, maxLabelNames); k >= 0; k--)
+          (k, linesFor(k)),
+        // Last resort for a busy day: the total alone.
+        if (names.length > 1) (0, const <(String, TextStyle)>[]),
+      ];
+      for (final (k, spec) in specs) {
+        if (drawn) break;
+        final height = amount.height + spec.length * lineHeight + 4;
         for (final side in VertexLabelSide.values) {
           final budget = vertexLabelTextBudget(
             plot: plot,
             center: vertex.center,
             radius: vertex.radius,
             side: side,
-            labelHeight: labelHeight,
+            labelHeight: height,
             maxText: maxText,
             minText: minText,
             pad: pad,
             occupied: placed,
             anchors: anchors,
           );
-          if (budget <= 0 || budget - pillW < amount.width) continue;
-          final name = withName ? layoutName(budget - pillW) : null;
-          if (withName && name == null) continue;
-          // Flush left with the dot, directly above or below it. No sideways
-          // nudging: a label that doesn't fit here tries the other side, then
-          // the amount alone, else it is omitted.
+          if (budget <= 0 || budget < amount.width) continue;
+          final lines = layoutLines(spec, budget);
+          if (lines == null) continue;
           final rect = vertexLabelRect(
             center: vertex.center,
             radius: vertex.radius,
             side: side,
-            width: widthFor(name),
-            height: heightFor(name),
+            width: widthOf(lines),
+            height: heightOf(lines),
           );
-          if (!vertexLabelFits(
-            rect: rect,
-            plot: plot,
-            anchor: vertex.center,
-            radius: vertex.radius,
-            occupied: placed,
-            anchors: anchors,
-          )) {
-            name?.dispose();
-            continue;
+          if (fits(rect)) {
+            draw(rect, lines, k);
+            drawn = true;
           }
-          _drawVertexLabel(canvas, amount, name, rect, vertex, count);
-          name?.dispose();
-          placed.add(rect);
-          labeledAt.add(vertex.center);
-          shown[vertex.key] = rect.shift(-vertex.center);
-          drawn = true;
-          break;
+          disposeAll(lines);
+          if (drawn) break;
         }
-        if (drawn) break;
       }
       amount.dispose();
-      count?.dispose();
     }
     canvas.restore();
     labelMemory
@@ -4605,16 +4646,16 @@ class _BalanceChartPainter extends CustomPainter {
     final rectHook = debugVertexLabelRect;
     if (rectHook != null) {
       for (final v in vertices) {
-        final rel = shown[v.key];
+        final rel = shown[v.key]?.rect;
         if (rel == null || !view.contains(v.center)) continue;
-        rectHook(v.name, v.center, v.radius, rel.shift(v.center));
+        rectHook(v.label, v.center, v.radius, rel.shift(v.center));
       }
     }
     final hook = debugVertexLabel;
     if (hook != null) {
       for (final v in vertices) {
         if (!view.contains(v.center)) continue;
-        hook(v.name, v.center.dx, shown.containsKey(v.key));
+        hook(v.label, v.center.dx, shown.containsKey(v.key));
       }
     }
   }
@@ -4654,33 +4695,14 @@ class _BalanceChartPainter extends CustomPainter {
     return rects;
   }
 
+  /// Label box: the day total on top, then each line (names / "+N more")
+  /// under it, left-aligned at the box's inset.
   void _drawVertexLabel(
     Canvas canvas,
     TextPainter amount,
-    TextPainter? name,
+    List<TextPainter> lines,
     Rect rect,
-    _ChartVertex vertex, [
-    TextPainter? count,
-  ]) {
-    final leader = labelLeader(rect, vertex.center, vertex.radius);
-    if (leader != null) {
-      final color = vertex.skipped
-          ? AppTheme.textFaint
-          : vertex.seed
-          ? AppTheme.accent
-          : vertex.debit
-          ? AppTheme.debitColor
-          : AppTheme.creditColor;
-      canvas.drawLine(
-        leader.$1,
-        leader.$2,
-        Paint()
-          ..color = color.withValues(alpha: 0.7)
-          ..strokeWidth = 2.5
-          ..strokeCap = StrokeCap.round
-          ..isAntiAlias = true,
-      );
-    }
+  ) {
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(4));
     canvas.drawRRect(
       rrect,
@@ -4693,34 +4715,14 @@ class _BalanceChartPainter extends CustomPainter {
         ..strokeWidth = 1
         ..color = AppTheme.border,
     );
-    // No accent bar: the box's left edge is the dot's left edge, so the
-    // text inset is symmetric (half the horizontal pad each side).
-    final accent = vertex.skipped
-        ? AppTheme.textFaint
-        : vertex.debit
-        ? AppTheme.debitColor
-        : AppTheme.creditColor;
-    var textLeft = rect.left + 5;
-    if (count != null) {
-      final w = countPillWidth(count.width);
-      final h = count.height + 2;
-      final pill = Rect.fromLTWH(textLeft, rect.center.dy - h / 2, w, h);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(pill, Radius.circular(h / 2)),
-        Paint()..color = accent.withValues(alpha: 0.28),
-      );
-      count.paint(
-        canvas,
-        Offset(
-          pill.center.dx - count.width / 2,
-          pill.center.dy - count.height / 2,
-        ),
-      );
-      textLeft += w + 4;
+    final textLeft = rect.left + 5;
+    var y = rect.top + 2;
+    amount.paint(canvas, Offset(textLeft, y));
+    y += amount.height;
+    for (final line in lines) {
+      line.paint(canvas, Offset(textLeft, y));
+      y += line.height;
     }
-    final textTop = rect.center.dy - (amount.height + (name?.height ?? 0)) / 2;
-    amount.paint(canvas, Offset(textLeft, textTop));
-    name?.paint(canvas, Offset(textLeft, textTop + amount.height));
   }
 
   /// Paints [text] centred in [rect]; returns where it went, or null when
@@ -4783,9 +4785,23 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.highlightY != highlightY ||
         oldDelegate.yRange?.max != yRange?.max ||
         oldDelegate.dataThrough != dataThrough ||
-        !mapEquals(oldDelegate.transactionNames, transactionNames);
+        !mapEquals(oldDelegate.transactionNames, transactionNames) ||
+        !listEquals(oldDelegate.transactionOrder, transactionOrder);
   }
 }
+
+/// Timeline money: no country prefix ("\$250", "−\$180"); the account's
+/// currency is already known on the chart.
+String _money(num amount, String currency, {int? decimalDigits}) =>
+    formatMoneyAmount(
+      amount,
+      currency,
+      decimalDigits: decimalDigits,
+      narrow: true,
+    );
+
+String _signedMoney(num signedAmount, String currency) =>
+    formatSignedAmount(signedAmount, currency, narrow: true);
 
 /// Y-axis money: compact (A\$1.5M) once values reach millions so labels
 /// fit the gutter instead of being cut off.
@@ -4795,47 +4811,44 @@ String _axisMoney(double value, String currency, int digits, double scaleMax) {
   if (scaleMax >= 1e5 && value.abs() >= 1e5) {
     return NumberFormat.compactCurrency(
       name: currency,
-      symbol: MoneyText.symbolFor(currency),
+      symbol: MoneyText.symbolFor(currency, narrow: true),
       decimalDigits: value.abs() >= 1e6 ? 2 : 1,
     ).format(value);
   }
-  return formatMoneyAmount(
-    value,
-    currency,
-    decimalDigits: scaleMax >= 1e6 ? 0 : digits,
-  );
+  return _money(value, currency, decimalDigits: scaleMax >= 1e6 ? 0 : digits);
 }
 
 class _ChartVertex {
   const _ChartVertex({
     required this.center,
     required this.radius,
-    required this.name,
+    required this.names,
     required this.amount,
     required this.skipped,
     required this.debit,
     this.seed = false,
-    this.count = 1,
     this.key = 0,
   });
 
   /// Stable identity across frames (day, or -1 for the opening vertex).
   final int key;
 
-  /// Occurrences grouped on this vertex (label shows "· N" when 2+).
-  final int count;
-
   /// The opening-balance vertex: amount unsigned, in the accent colour.
   final bool seed;
+
+  /// Transaction names listed under the total, in the order added. Empty
+  /// when none are known; the total is still shown.
+  final List<String> names;
+
+  /// For test hooks: the names joined.
+  String get label => names.join(' · ');
 
   final Offset center;
   final double radius;
 
-  /// Empty when the transaction has no known name; the amount is still shown.
-  final String name;
-
-  /// This occurrence's own signed amount (+ credit, − debit). Shown even
-  /// when skipped (greyed); the running balance is read off the axis.
+  /// The day's net transaction total (+ credit, − debit) over its counted
+  /// occurrences (overrides included). Shown even when every one is
+  /// skipped (greyed); the running balance is read off the axis.
   final double amount;
   final bool skipped;
   final bool debit;

@@ -42,7 +42,18 @@ class MoneyText extends StatelessWidget {
     );
   }
 
-  static String symbolFor(String currency) {
+  /// Symbol for [currency]. [narrow]: the bare local symbol with no
+  /// country prefix ("\$" for AUD, CAD, NZD and USD; "€", "£", "¥" ...), as
+  /// on the timeline chart where the account's currency is already known.
+  static String symbolFor(String currency, {bool narrow = false}) {
+    if (narrow) {
+      try {
+        return NumberFormat.simpleCurrency(name: currency.toUpperCase())
+            .currencySymbol;
+      } catch (_) {
+        return '$currency ';
+      }
+    }
     switch (currency.toUpperCase()) {
       case 'USD':
         return '\$';
@@ -62,27 +73,38 @@ class MoneyText extends StatelessWidget {
   }
 }
 
-/// Axis and chart labels. [decimalDigits] overrides the size-based default.
-String formatMoneyAmount(num amount, String currency, {int? decimalDigits}) {
+/// Axis and chart labels. [decimalDigits] overrides the size-based default;
+/// [narrow] drops the country prefix ("\$250" rather than "A\$250").
+String formatMoneyAmount(
+  num amount,
+  String currency, {
+  int? decimalDigits,
+  bool narrow = false,
+}) {
   final digits = decimalDigits ?? (amount.abs() >= 100 ? 0 : 2);
   return NumberFormat.currency(
     name: currency,
-    symbol: MoneyText.symbolFor(currency),
+    symbol: MoneyText.symbolFor(currency, narrow: narrow),
     decimalDigits: digits,
   ).format(amount);
 }
 
 /// A single transaction's amount, signed by direction: "+A$1,830" for a
 /// credit, "−A$22.99" for a debit. Compact ("+A$1.36M") from a million up.
-String formatSignedAmount(num signedAmount, String currency) {
+/// [narrow] drops the country prefix ("+\$1,830").
+String formatSignedAmount(
+  num signedAmount,
+  String currency, {
+  bool narrow = false,
+}) {
   final abs = signedAmount.abs();
   final text = abs >= 1e6
       ? NumberFormat.compactCurrency(
           name: currency,
-          symbol: MoneyText.symbolFor(currency),
+          symbol: MoneyText.symbolFor(currency, narrow: narrow),
           decimalDigits: 2,
         ).format(abs)
-      : formatMoneyAmount(abs, currency);
+      : formatMoneyAmount(abs, currency, narrow: narrow);
   if (abs == 0) return text;
   return '${signedAmount < 0 ? '−' : '+'}$text';
 }
