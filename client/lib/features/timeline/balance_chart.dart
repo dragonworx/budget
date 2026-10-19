@@ -38,6 +38,10 @@ typedef CreateOnDay = void Function(DateTime day);
 /// auto-scrolls near the plot edges, and releasing calls [onCreateOnDay]
 /// for that day. Dragging well above the axis, or Esc, cancels.
 /// With focus: arrow keys pan, +/- zoom time, F fits balances.
+/// Test hook: after each paint, every in-plot vertex as (name, x, labelled).
+@visibleForTesting
+void Function(String name, double x, bool labelled)? debugVertexLabel;
+
 class BalanceChart extends StatefulWidget {
   const BalanceChart({
     super.key,
@@ -256,6 +260,9 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   BalanceExtents? _originY;
+
+  /// Vertex keys labelled last paint; see [_BalanceChartPainter.labelMemory].
+  final Map<int, Rect> _labelMemory = <int, Rect>{};
   static const Duration _holdDelay = Duration(milliseconds: 450);
 
   /// How far above the axis a pick drag goes before it counts as cancelled.
@@ -1141,6 +1148,7 @@ class _BalanceChartState extends State<BalanceChart>
                       valueListenable: _hoverDots,
                       builder: (context, tip, _) => CustomPaint(
                         painter: _BalanceChartPainter(
+                          labelMemory: _labelMemory,
                           series: widget.series,
                           currency: widget.currency,
                           seedDate: widget.seedDate,
@@ -2540,6 +2548,7 @@ Color _dayColor(int weekday) => _dayColors[(weekday - 1).clamp(0, 6)];
 
 class _BalanceChartPainter extends CustomPainter {
   _BalanceChartPainter({
+    required this.labelMemory,
     required this.series,
     required this.currency,
     required this.seedDate,
@@ -2578,6 +2587,11 @@ class _BalanceChartPainter extends CustomPainter {
   final DateTime viewStart;
   final double visibleDays;
   final TextStyle labelStyle;
+
+  /// Vertices labelled on the previous paint. They are placed first so a
+  /// shown label keeps its spot while the view moves (hysteresis), instead
+  /// of a dot entering at the edge reshuffling the greedy placement.
+  final Map<int, Rect> labelMemory;
   final TextStyle strongStyle;
   final TextStyle laneStyle;
   final Map<String, String> transactionNames;
@@ -3493,9 +3507,11 @@ class _BalanceChartPainter extends CustomPainter {
     for (final g in groupByDay(series.occurrences)) {
       final day = g.day;
       final nextDay = addCalendarDays(day, 1);
+      // A view-width margin each side feeds the label layout (see
+      // _paintVertexLabels); those dots fall outside the clip.
       if (day.isBefore(seed) ||
-          !nextDay.isAfter(viewStart) ||
-          day.isAfter(viewEnd)) {
+          !nextDay.isAfter(addDays(viewStart, -visibleDays)) ||
+          day.isAfter(addDays(viewEnd, visibleDays))) {
         continue;
       }
       final yValue = closes[day.millisecondsSinceEpoch];
@@ -3554,6 +3570,7 @@ class _BalanceChartPainter extends CustomPainter {
           skipped: g.allSkipped,
           debit: net < 0,
           count: g.count,
+          key: day.millisecondsSinceEpoch,
         ),
       );
     }
@@ -3563,7 +3580,8 @@ class _BalanceChartPainter extends CustomPainter {
         layout.xOf(seed, viewStart, visibleDays),
         scale.yOf(seedBal),
       );
-      if (layout.plot.inflate(2).contains(c)) {
+      if (layout.plot.inflate(2).contains(c) ||
+          (c.dx - layout.plot.center.dx).abs() < layout.plot.width * 1.5) {
         _paintSeedVertex(canvas, c, seedVertexRadius(radius));
         vertices.add(
           _ChartVertex(
@@ -3574,6 +3592,7 @@ class _BalanceChartPainter extends CustomPainter {
             skipped: false,
             debit: false,
             seed: true,
+            key: -1,
           ),
         );
       }
@@ -3609,8 +3628,18 @@ class _BalanceChartPainter extends CustomPainter {
     List<_ChartVertex> vertices,
   ) {
     if (vertices.isEmpty) return;
-    final plot = layout.plot;
-    final dayPx = plot.width / math.max(visibleDays, 0.001);
+    // Labels are laid out on a strip one view wider on each side, so the
+    // plot's left/right edges never take part in the decision: what is
+    // placed mid-plot depends only on the dots, and labels slide off at the
+    // edges (clipped) instead of hopping sides or blinking during a pan.
+    final view = layout.plot;
+    final plot = Rect.fromLTRB(
+      view.left - view.width,
+      view.top,
+      view.right + view.width,
+      view.bottom,
+    );
+    final dayPx = view.width / math.max(visibleDays, 0.001);
     final fontSize = textScaler.scale(
       dayPx >= 32
           ? 12
@@ -3623,7 +3652,7 @@ class _BalanceChartPainter extends CustomPainter {
         : dayPx >= 12
         ? 120.0
         : 84.0;
-    final maxText = math.min(densityCap, plot.width * 0.34);
+    final maxText = math.min(densityCap, view.width * 0.34);
     const minText = 18.0;
     const pad = 10.0;
     if (maxText < minText) return;
@@ -3634,6 +3663,12 @@ class _BalanceChartPainter extends CustomPainter {
       return b.center.dy.compareTo(a.center.dy);
     });
     final anchors = [for (final vertex in vertices) vertex.center];
+    // Previously labelled vertices first, then the rest, each left to right.
+    final order = [
+      ...vertices.where((v) => labelMemory.containsKey(v.key)),
+      ...vertices.where((v) => !labelMemory.containsKey(v.key)),
+    ];
+    final shown = <int, Rect>{};
     final style = labelStyle.copyWith(
       fontSize: fontSize,
       height: 1.0,
@@ -3647,10 +3682,12 @@ class _BalanceChartPainter extends CustomPainter {
     final labelHeight = probe.height * 2 + 4;
     probe.dispose();
 
+    canvas.save();
+    canvas.clipRect(view);
     final placed = <Rect>[..._markerLabelRects(layout)];
     final labeledAt = <Offset>[];
     final neighborGap = dayPx >= 4.5 ? 10.0 : 30.0;
-    for (final vertex in vertices) {
+    for (final vertex in order) {
       if (!plot.contains(vertex.center)) continue;
       final crowded = labeledAt.any((at) {
         final dx = (vertex.center.dx - at.dx).abs();
@@ -3727,9 +3764,46 @@ class _BalanceChartPainter extends CustomPainter {
           ) +
           4;
 
-      // Prefer a label with the transaction name; fall back to the amount alone.
       var drawn = false;
-      for (final withName in vertex.name.isEmpty ? [false] : [true, false]) {
+      // Hysteresis: a label shown last frame first tries the same spot
+      // relative to its dot, so it neither hops sides nor blinks while the
+      // view moves. It only gives way when that spot now truly overlaps.
+      final last = labelMemory[vertex.key];
+      if (last != null) {
+        final withName =
+            vertex.name.isNotEmpty && last.height > amount.height + 6;
+        final name = withName
+            ? layoutName(math.max(amount.width, last.width - pad - pillW + 0.5))
+            : null;
+        if (!withName || name != null) {
+          // Same box as last frame (re-measuring would let an ellipsised
+          // name shrink a little every frame until it vanished).
+          final rect = last.shift(vertex.center);
+          if (vertexLabelFits(
+            rect: rect,
+            plot: plot,
+            anchor: vertex.center,
+            radius: vertex.radius,
+            occupied: placed,
+            anchors: anchors,
+            attachReach: 96,
+          )) {
+            _drawVertexLabel(canvas, amount, name, rect, vertex, count);
+            placed.add(rect);
+            labeledAt.add(vertex.center);
+            shown[vertex.key] = rect.shift(-vertex.center);
+            drawn = true;
+          }
+        }
+        name?.dispose();
+      }
+      // Prefer a label with the transaction name; fall back to the amount alone.
+      for (final withName
+          in drawn
+              ? const <bool>[]
+              : vertex.name.isEmpty
+              ? [false]
+              : [true, false]) {
         for (final side in VertexLabelSide.values) {
           final budget = vertexLabelTextBudget(
             plot: plot,
@@ -3801,6 +3875,7 @@ class _BalanceChartPainter extends CustomPainter {
           name?.dispose();
           placed.add(rect);
           labeledAt.add(vertex.center);
+          shown[vertex.key] = rect.shift(-vertex.center);
           drawn = true;
           break;
         }
@@ -3808,6 +3883,17 @@ class _BalanceChartPainter extends CustomPainter {
       }
       amount.dispose();
       count?.dispose();
+    }
+    canvas.restore();
+    labelMemory
+      ..clear()
+      ..addAll(shown);
+    final hook = debugVertexLabel;
+    if (hook != null) {
+      for (final v in vertices) {
+        if (!view.contains(v.center)) continue;
+        hook(v.name, v.center.dx, shown.containsKey(v.key));
+      }
     }
   }
 
@@ -3997,7 +4083,11 @@ class _ChartVertex {
     required this.debit,
     this.seed = false,
     this.count = 1,
+    this.key = 0,
   });
+
+  /// Stable identity across frames (day, or -1 for the opening vertex).
+  final int key;
 
   /// Occurrences grouped on this vertex (label shows "· N" when 2+).
   final int count;
