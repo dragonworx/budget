@@ -14,7 +14,6 @@ void main() {
         expect(l.weekBand!.top, l.monthBand.bottom);
         expect(l.dayBand!.top, l.weekBand!.bottom);
         expect(l.dayBand!.bottom, closeTo(size.height, 0.01));
-        expect(l.xControls.bottom, lessThanOrEqualTo(l.plot.bottom));
       }
     }
   });

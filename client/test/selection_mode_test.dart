@@ -235,11 +235,6 @@ void main() {
     expect(_card, findsOneWidget, reason: 'tap outside keeps it');
     expect(_tip, findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('y-scale-in')));
-    await tester.pumpAndSettle();
-    expect(_card, findsOneWidget, reason: 'y zoom keeps it');
-    expect(_range(tester), range);
-
     final mouse = TestPointer(9, PointerDeviceKind.mouse);
     await tester.sendEventToBinding(mouse.hover(Offset(_x(20), _y(400))));
     await tester.sendEventToBinding(mouse.scroll(const Offset(0, 50)));

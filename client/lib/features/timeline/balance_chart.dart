@@ -59,9 +59,6 @@ class BalanceChart extends StatefulWidget {
     this.zeroToken = 0,
     this.onFitRequested,
     this.onZoomStep,
-    this.unitLabel,
-    this.canZoomIn = true,
-    this.canZoomOut = true,
     this.onShift,
     this.transactions = const {},
     this.ghosts = const [],
@@ -92,11 +89,6 @@ class BalanceChart extends StatefulWidget {
   /// +/− keys: one centred zoom step (-1 in, +1 out). Falls back to an
   /// unanimated centred zoom when null.
   final ValueChanged<int>? onZoomStep;
-
-  /// Current time unit's name, shown beside the horizontal scale pair.
-  final String? unitLabel;
-  final bool canZoomIn;
-  final bool canZoomOut;
 
   /// [ / ] keys: shift the view one unit back (-1) / forward (1).
   final ValueChanged<int>? onShift;
@@ -198,36 +190,6 @@ class _BalanceChartState extends State<BalanceChart>
     _wheelDays = next;
     widget.onViewportChanged(addDays(center, -next / 2), next);
     if (done) _stopWheel();
-  }
-
-  /// Eases y-scale button steps; pan / pinch / wheel stay direct.
-  late final AnimationController _yAnim = AnimationController(
-    vsync: this,
-    duration: zoomEaseDuration,
-  )..addListener(_tickY);
-  BalanceExtents? _yFrom;
-  BalanceExtents? _yTo;
-
-  void _tickY() {
-    final from = _yFrom, to = _yTo;
-    if (from == null || to == null) return;
-    setState(
-      () => _yRange = lerpBalanceRange(
-        from,
-        to,
-        Curves.easeOutCubic.transform(_yAnim.value),
-      ),
-    );
-  }
-
-  /// Animates the balance range to [target] from wherever it is now
-  /// (mid-animation included), so repeated taps chain smoothly.
-  void _animateY(BalanceExtents target) {
-    if (!target.min.isFinite || !target.max.isFinite) return;
-    _clearTip();
-    _yFrom = _yRange ?? target;
-    _yTo = target;
-    _yAnim.forward(from: 0);
   }
 
   Size _size = Size.zero;
@@ -333,17 +295,14 @@ class _BalanceChartState extends State<BalanceChart>
       _yRange = includeZero(y);
     }
     if (oldWidget.currencyScale != widget.currencyScale) {
-      _yAnim.stop();
       _yRange = null;
       _scaleDefault = true;
     }
     if (oldWidget.fitToken != widget.fitToken) {
-      _yAnim.stop();
       _yRange = null;
       _scaleDefault = false;
       _fitAwaitingData = !_dataCoversView;
     } else if (_fitAwaitingData && _dataCoversView) {
-      _yAnim.stop();
       _yRange = null;
       _fitAwaitingData = false;
     }
@@ -408,19 +367,16 @@ class _BalanceChartState extends State<BalanceChart>
   void _setYRange(BalanceExtents range) {
     if (!range.min.isFinite || !range.max.isFinite) return;
     _clearTip();
-    _yAnim.stop();
     setState(() => _yRange = range);
   }
 
   void _fitY() {
     _clearTip();
-    _yAnim.stop();
     setState(() => _yRange = null);
   }
 
   @override
   void dispose() {
-    _yAnim.dispose();
     _wheelTicker.dispose();
     _holdTimer?.cancel();
     _autoScroll?.cancel();
@@ -441,7 +397,6 @@ class _BalanceChartState extends State<BalanceChart>
     final touch = event.kind != PointerDeviceKind.mouse;
     if (!touch && (event.buttons & kPrimaryButton) == 0) return;
     _down[event.pointer] = event.localPosition;
-    _yAnim.stop(); // a touch takes over from an easing y-zoom
     if (_down.length >= 2) {
       _multiTouch = true;
       _holdTimer?.cancel();
@@ -1226,10 +1181,6 @@ class _BalanceChartState extends State<BalanceChart>
                 if (_mode == _Gesture.pick && _pickDay != null)
                   ..._pickOverlay(theme),
                 if (_selA != null && _selB != null) ..._selectionOverlay(theme),
-                // Scale controls float above the selection band and card so
-                // the view stays adjustable while a selection is open.
-                if (yRange != null) _yScaleControls(theme),
-                if (widget.onZoomStep != null) _xScaleControls(theme),
                 ValueListenableBuilder<DateTime?>(
                   valueListenable: _hoverDay,
                   builder: (context, day, _) {
@@ -1275,7 +1226,7 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   /// Captures plot taps / drags while the target tool is on (the wheel
-  /// still zooms). Sits under the scale buttons so those keep working.
+  /// still zooms).
   Widget _targetOverlay(BalanceExtents range) {
     final plot = _layout.plot;
     void set(Offset p) {
@@ -1358,15 +1309,13 @@ class _BalanceChartState extends State<BalanceChart>
       color: Colors.white,
     );
     const pillH = 22.0;
-    final controls = layout.yControls.inflate(2);
     final top = (y - pillH / 2)
         .clamp(
           layout.plot.top + 1,
           math.max(layout.plot.top + 1, layout.plot.bottom - pillH - 1),
         )
         .toDouble();
-    final overlaps = top < controls.bottom && top + pillH > controls.top;
-    final left = (overlaps ? controls.right : layout.plot.left) + 3;
+    final left = layout.plot.left + 3;
     return [
       Positioned.fill(
         child: IgnorePointer(
@@ -1405,139 +1354,6 @@ class _BalanceChartState extends State<BalanceChart>
         ),
       ),
     ];
-  }
-
-  /// Scales the balance axis by [factor] around the view's vertical centre.
-  void _scaleY(double factor) {
-    // Chain from the pending target so rapid taps compound without drift;
-    // only the balance axis changes (never the time range).
-    final range = _yAnim.isAnimating ? _yTo : _ensureYRange();
-    if (range == null) return;
-    _animateY(zoomBalanceRange(range, factor, 0.5));
-  }
-
-  /// Compact + / − for the balance axis, at the bottom-left of the y gutter.
-  Widget _yScaleControls(ThemeData theme) {
-    final compact = _size.width < 600;
-    final size = ChartLayout.yControlSize(_size.width);
-    final controls = _layout.yControls;
-    Widget button(IconData icon, String tip, double factor, Key key) =>
-        SizedBox(
-          width: size,
-          height: size,
-          child: IconButton(
-            key: key,
-            tooltip: tip,
-            padding: EdgeInsets.zero,
-            iconSize: compact ? 20 : 16,
-            color: AppTheme.textMuted,
-            onPressed: () => _scaleY(factor),
-            icon: Icon(icon),
-          ),
-        );
-    return Positioned(
-      left: controls.left,
-      top: controls.top,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          // Near-opaque over a selection card so they read clearly on top.
-          color: _selA != null
-              ? const Color(0xF210151C)
-              : const Color(0x9910151C),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0x22FFFFFF)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            button(
-              Icons.unfold_more_rounded,
-              'Stretch balance axis',
-              1 / yScaleStep,
-              const ValueKey('y-scale-in'),
-            ),
-            button(
-              Icons.unfold_less_rounded,
-              'Compress balance axis',
-              yScaleStep,
-              const ValueKey('y-scale-out'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// The y-scale pair turned sideways: compress / stretch time by stepping
-  /// the view unit (larger on the left / smaller on the right), floating at the plot's bottom centre
-  /// with the unit's name between the buttons.
-  Widget _xScaleControls(ThemeData theme) {
-    final compact = _size.width < 600;
-    final size = ChartLayout.yControlSize(_size.width);
-    final controls = _layout.xControls;
-    Widget button(String tip, int dir, bool enabled, Key key) => SizedBox(
-      width: size,
-      height: size,
-      child: IconButton(
-        key: key,
-        tooltip: tip,
-        padding: EdgeInsets.zero,
-        iconSize: compact ? 20 : 16,
-        color: AppTheme.textMuted,
-        onPressed: enabled ? () => widget.onZoomStep!(dir) : null,
-        icon: RotatedBox(
-          quarterTurns: 1,
-          child: Icon(
-            dir < 0 ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
-          ),
-        ),
-      ),
-    );
-    return Positioned(
-      left: controls.left,
-      top: controls.top,
-      width: controls.width,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          // Near-opaque over a selection card so they read clearly on top.
-          color: _selA != null
-              ? const Color(0xF210151C)
-              : const Color(0x9910151C),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0x22FFFFFF)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            button(
-              'Compress time (larger unit, −)',
-              1,
-              widget.canZoomOut,
-              const ValueKey('x-scale-out'),
-            ),
-            Expanded(
-              child: Text(
-                widget.unitLabel ?? '',
-                key: const ValueKey('span-label'),
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.fade,
-                softWrap: false,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color: AppTheme.textMuted,
-                ),
-              ),
-            ),
-            button(
-              'Stretch time (smaller unit, +)',
-              -1,
-              widget.canZoomIn,
-              const ValueKey('x-scale-in'),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   /// Guide line, day highlight and floating date bubble while picking.
@@ -2051,9 +1867,8 @@ class _BalanceChartState extends State<BalanceChart>
     if (phone) {
       // Bottom sheet-like: over the date lanes, leaving the band's upper
       // part (where the line usually is) visible.
-      // Sits just above the floating time-scale buttons so they stay
-      // visible and tappable.
-      final bottom = math.max(6.0, _size.height - layout.xControls.top + 6);
+      // Just above the date lanes.
+      final bottom = math.max(6.0, _size.height - layout.plot.bottom + 6);
       final maxH = math.max(
         120.0,
         math.min(
@@ -2061,7 +1876,6 @@ class _BalanceChartState extends State<BalanceChart>
           math.min(340.0, _size.height - bottom - 8),
         ),
       );
-      // Right-aligned so the balance scale buttons on the left stay clear.
       return Positioned(
         right: 6,
         bottom: bottom,
@@ -2596,28 +2410,11 @@ class ChartLayout {
   /// Whether the day lane carries text (see [dayLabelPlan]).
   final bool showDayText;
 
-  /// The plot spans the full width: y labels, lane names and the y-scale
-  /// buttons float over it instead of sitting in a reserved gutter.
+  /// The plot spans the full width: y labels and lane names float over it
+  /// instead of sitting in a reserved gutter.
   static const double gutter = 0;
   static const double right = 0;
 
-  /// Where the floating y-scale +/- buttons sit (left edge, vertically
-  /// centred); y labels that would overlap them shift right of it.
-  Rect get yControls {
-    final b = yControlSize(size.width);
-    return Rect.fromLTWH(plot.left + 4, plot.center.dy - b, b, b * 2);
-  }
-
-  /// The horizontal (time) pair: bottom centre of the plot, just above the
-  /// date lanes, with room for the unit name between the buttons.
-  Rect get xControls {
-    final b = yControlSize(size.width);
-    final w = b * 2 + (size.width < 600 ? 64 : 72);
-    return Rect.fromLTWH(plot.center.dx - w / 2, plot.bottom - b - 4, w, b);
-  }
-
-  /// 44px touch targets on narrow (phone) charts, 32px on desktop.
-  static double yControlSize(double chartWidth) => chartWidth < 600 ? 44 : 32;
   static const double top = 8;
 
   /// The chart's full size (the plot spans its width).
@@ -3348,14 +3145,8 @@ class _BalanceChartPainter extends CustomPainter {
     final minTop = layout.plot.top + 1;
     final maxTop = math.max(minTop, layout.plot.bottom - painter.height - 1);
     final top = (y - painter.height / 2).clamp(minTop, maxTop).toDouble();
-    // Overlay at the plot's left edge; step right of the floating y-scale
-    // buttons where they share a row.
-    final controls = layout.yControls.inflate(2);
-    final overlapsControls =
-        yRange != null &&
-        top < controls.bottom &&
-        top + painter.height > controls.top;
-    final left = (overlapsControls ? controls.right : layout.plot.left) + 6;
+    // Overlay at the plot's left edge.
+    final left = layout.plot.left + 6;
     final bg = RRect.fromRectAndRadius(
       Rect.fromLTWH(left - 3, top - 1, painter.width + 6, painter.height + 2),
       const Radius.circular(4),
@@ -3645,8 +3436,7 @@ class _BalanceChartPainter extends CustomPainter {
       final w = painter.width + 16;
       final h = painter.height + 6;
       final left = layout.plot.center.dx - w / 2;
-      // The below chip sits over the time-scale buttons, not under them.
-      final y = top ? layout.plot.top + 4 : layout.xControls.top - h - 4;
+      final y = top ? layout.plot.top + 4 : layout.plot.bottom - h - 4;
       canvas.drawRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(left, y, w, h),

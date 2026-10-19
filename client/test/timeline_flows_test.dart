@@ -397,44 +397,41 @@ void main() {
     });
   }
 
-  testWidgets('unit dropdown, − / + and ◀ ▶ snap the view instantly', (
+  testWidgets('unit dropdown, − / + and ◀ ▶ ease the view', (
     tester,
   ) async {
     await _pump(tester);
     BalanceChart chart() =>
         tester.widget<BalanceChart>(find.byType(BalanceChart));
-    expect(find.text('Month'), findsOneWidget);
+    expect(chart().visibleDays, inInclusiveRange(28, 31)); // Month unit
     // Opens centred on today (not aligned); ▶ snaps to a month start.
     final open = chart().viewStart;
     final mid = dayCoord(open) + chart().visibleDays / 2;
     expect(mid, inInclusiveRange(dayCoord(_day), dayCoord(_day) + 1));
     await tester.tap(find.byKey(const ValueKey('shift-right')));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(chart().viewStart, isNot(open), reason: 'mid-ease');
+    await tester.pumpAndSettle();
     final start = chart().viewStart;
     expect(start.day, 1);
     await tester.tap(find.byKey(const ValueKey('shift-right')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(chart().viewStart, DateTime(start.year, start.month + 1));
+    // Rapid taps accumulate from the pending target (no drift).
     await tester.tap(find.byKey(const ValueKey('shift-left')));
+    await tester.pump(const Duration(milliseconds: 40));
     await tester.tap(find.byKey(const ValueKey('shift-left')));
-    await tester.pump();
-    expect(chart().viewStart, DateTime(start.year, start.month - 1));
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.tap(find.byKey(const ValueKey('shift-left')));
+    await tester.pumpAndSettle();
+    expect(chart().viewStart, DateTime(start.year, start.month - 2));
     double center() =>
         dayCoord(chart().viewStart) + chart().visibleDays / 2;
     final c0 = center();
-    // Compress (zoom out) sits on the left, stretch (zoom in) on the right.
-    expect(
-      tester.getCenter(find.byKey(const ValueKey('x-scale-out'))).dx,
-      lessThan(tester.getCenter(find.byKey(const ValueKey('span-label'))).dx),
-    );
-    expect(
-      tester.getCenter(find.byKey(const ValueKey('x-scale-in'))).dx,
-      greaterThan(
-          tester.getCenter(find.byKey(const ValueKey('span-label'))).dx),
-    );
-    await tester.tap(find.byKey(const ValueKey('x-scale-in')));
+    // +/− zoom steps (keyboard; no overlay buttons) keep the centre.
+    chart().onZoomStep!(-1);
     await tester.pump();
-    expect(find.text('3 weeks'), findsOneWidget); // label switches at once
     await tester.pump(const Duration(milliseconds: 100));
     // Mid-ease: between the two spans, same centre date.
     expect(chart().visibleDays, inExclusiveRange(21, 31));
@@ -444,44 +441,18 @@ void main() {
     expect(center(), closeTo(c0, 1e-6));
     // Rapid taps chain from the animated state and still keep the centre.
     for (var i = 0; i < 8; i++) {
-      await tester.tap(find.byKey(const ValueKey('x-scale-out')));
+      chart().onZoomStep!(1);
       await tester.pump(const Duration(milliseconds: 40));
       expect(center(), closeTo(c0, 1e-6));
     }
     await tester.pumpAndSettle();
-    expect(find.text('Year'), findsOneWidget);
-    expect(
-      tester.widget<IconButton>(find.byKey(const ValueKey('x-scale-out')))
-          .onPressed,
-      isNull,
-    );
     expect(chart().visibleDays, anyOf(365, 366));
     expect(center(), closeTo(c0, 1e-6));
-    // ◀ ▶ stay instant and unit-snapped.
+    // ◀ ▶ ease to unit-snapped starts.
     await tester.tap(find.byKey(const ValueKey('shift-left')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(chart().viewStart.month, 1);
     expect(chart().viewStart.day, 1);
-  });
-
-  testWidgets('y-scale buttons ease the balance axis, never the time range', (
-    tester,
-  ) async {
-    await _pump(tester);
-    BalanceChart chart() =>
-        tester.widget<BalanceChart>(find.byType(BalanceChart));
-    final start = chart().viewStart;
-    final days = chart().visibleDays;
-    for (final key in ['y-scale-in', 'y-scale-in', 'y-scale-out']) {
-      await tester.tap(find.byKey(ValueKey(key)));
-      await tester.pump(const Duration(milliseconds: 60));
-      expect(chart().viewStart, start);
-      expect(chart().visibleDays, days);
-    }
-    await tester.pumpAndSettle();
-    expect(chart().viewStart, start);
-    expect(chart().visibleDays, days);
-    expect(tester.takeException(), isNull);
   });
 
   testWidgets('no dot tooltip after a pinch, whichever finger lifts last', (
@@ -614,17 +585,11 @@ void main() {
     expect(text.style?.fontWeight, FontWeight.w800);
     await tester.pump(const Duration(seconds: 10));
     expect(pill, findsOneWidget, reason: 'stays while pinned');
-    // A zoom button clears it (and the popup).
-    await tester.tap(find.byKey(const ValueKey('y-scale-out')));
-    await tester.pump();
-    expect(pill, findsNothing);
-    expect(tip, findsNothing);
-    await tester.pumpAndSettle();
     // ◀ ▶ shift clears it.
     await reveal();
     expect(pill, findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('shift-right')));
-    await tester.pump();
+    await tester.pumpAndSettle(); // eased pan, then refit
     expect(pill, findsNothing);
     expect(tip, findsNothing);
     await tester.pumpAndSettle();

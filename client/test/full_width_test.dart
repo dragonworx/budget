@@ -11,13 +11,4 @@ void main() {
     expect(l.monthBand.width, 360);
     expect(l.dayBand?.left, 0);
   });
-  test('floating y-scale buttons: 44px on phone, 32px on desktop', () {
-    final phone = ChartLayout.of(const Size(360, 600), 31).yControls;
-    expect(phone.width, 44);
-    expect(phone.height, 88);
-    expect(phone.left, greaterThanOrEqualTo(0));
-    final desk = ChartLayout.of(const Size(1300, 700), 31);
-    expect(desk.yControls.width, 32);
-    expect(desk.yControls.center.dy, closeTo(desk.plot.center.dy, 0.01));
-  });
 }

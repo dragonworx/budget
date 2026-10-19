@@ -853,9 +853,6 @@ BalanceExtents _currencyScaleRange(
       : BalanceExtents(-9.5 * unit, 0.5 * unit);
 }
 
-/// Factor for one press of the y-scale buttons.
-const double yScaleStep = 1.25;
-
 /// Half-size of the opening-balance diamond for a transaction dot [radius]:
 /// a touch larger so it reads as the start of the line.
 double seedVertexRadius(double radius) => math.max(4.0, radius + 1.8);
@@ -933,18 +930,6 @@ const double markerGap = 3;
 
 /// Duration of the eased zoom-button transitions (time and balance axes).
 const Duration zoomEaseDuration = Duration(milliseconds: 280);
-
-/// [a] → [b] at [t]: centre linearly, span geometrically, so a zoom about a
-/// fixed centre keeps that centre fixed for every frame.
-BalanceExtents lerpBalanceRange(BalanceExtents a, BalanceExtents b, double t) {
-  final ca = (a.min + a.max) / 2, cb = (b.min + b.max) / 2;
-  final sa = (a.max - a.min).abs(), sb = (b.max - b.min).abs();
-  final span = sa > 0 && sb > 0
-      ? math.exp(math.log(sa) + (math.log(sb) - math.log(sa)) * t)
-      : sa + (sb - sa) * t;
-  final c = ca + (cb - ca) * t;
-  return BalanceExtents(c - span / 2, c + span / 2);
-}
 
 /// Visible span at [t] between [fromDays] and [toDays], geometric.
 double lerpVisibleDays(double fromDays, double toDays, double t) =>

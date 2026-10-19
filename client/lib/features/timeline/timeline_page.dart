@@ -45,11 +45,13 @@ class TimelinePage extends ConsumerStatefulWidget {
 
 class _TimelinePageState extends ConsumerState<TimelinePage>
     with SingleTickerProviderStateMixin {
-  /// Eases the time-scale buttons; pans, pinches, ◀ ▶ and fits are instant.
+  /// Eases unit zoom steps and ◀ ▶; pans, pinches, wheel and fits are instant.
   late final AnimationController _viewAnim = AnimationController(
     vsync: this,
     duration: zoomEaseDuration,
-  )..addListener(_tickView);
+  )
+    ..addListener(_tickView)
+    ..addStatusListener(_onViewAnimStatus);
   DateTime _animFromCenter = DateTime(2000);
   DateTime _animToCenter = DateTime(2000);
   double _animFromDays = 1;
@@ -370,11 +372,26 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _animateViewport(center, days);
   }
 
-  /// ◀ (-1) / ▶ (1): one unit back / forward, snapped to unit starts.
+  /// ◀ (-1) / ▶ (1): one unit back / forward, snapped to unit starts and
+  /// eased. Mid-animation it steps from the pending target, so rapid taps
+  /// accumulate without drift.
   void _shift(int n) {
-    final span = _unit.step(_viewStart, n);
-    _onViewport(span.start, span.days);
-    setState(() => _fitToken++);
+    final from = _viewAnim.isAnimating
+        ? addDays(_animToCenter, -_animToDays / 2)
+        : _viewStart;
+    final span = _unit.step(from, n);
+    _animateViewport(addDays(span.start, span.days / 2), span.days);
+    _refitOnSettle = true;
+  }
+
+  /// Set by ◀ ▶: refit the balance range once the eased pan lands.
+  bool _refitOnSettle = false;
+
+  void _onViewAnimStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && _refitOnSettle) {
+      _refitOnSettle = false;
+      setState(() => _fitToken++);
+    }
   }
 
   void _setUnit(ViewUnit unit) {
@@ -425,9 +442,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     setState(() => _fitToken++);
   }
 
-  /// Instant view change (pan, pinch, ◀ ▶, fits); cancels any easing.
+  /// Instant view change (pan, pinch, wheel, fits); cancels any easing.
   void _onViewport(DateTime start, double visibleDays) {
     _viewAnim.stop();
+    _refitOnSettle = false;
     _applyViewport(start, visibleDays);
   }
 
@@ -720,11 +738,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                       onFitRequested: (mode) =>
                                           _fit(mode, account),
                                       onZoomStep: _zoomStep,
-                                      unitLabel: _unit.label,
-                                      canZoomIn: _unit.index > 0,
-                                      canZoomOut:
-                                          _unit.index <
-                                          ViewUnit.values.length - 1,
                                       onShift: _shift,
                                       series: series,
                                       currency: account.currency,
@@ -1736,7 +1749,7 @@ class _TipsBar extends StatelessWidget {
                 'Drag or tap the dates to add',
               ),
               tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
-              tip(Icons.view_week_rounded, '↔ buttons change unit, ◀ ▶ step'),
+              tip(Icons.view_week_rounded, 'Pinch or − / + change unit, ◀ ▶ step'),
               tip(Icons.mouse_outlined, 'Scroll or pinch to zoom'),
               tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
             ],
