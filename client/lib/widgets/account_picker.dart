@@ -264,7 +264,6 @@ class _DrillDownSheetState extends ConsumerState<_DrillDownSheet> {
                                 : null,
                           ),
                           title: Text(a.name),
-                          subtitle: Text(a.currency),
                           trailing: sharedIndicator(a),
                           onTap: () => Navigator.of(context).pop(a),
                         ),

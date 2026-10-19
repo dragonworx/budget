@@ -198,7 +198,6 @@ void main() {
             size: size,
             child: BalanceChart(
               series: BalanceSeries(points: points, occurrences: occ),
-              currency: 'AUD',
               seedDate: _start.subtract(const Duration(days: 5)),
               viewStart: _start,
               visibleDays: 30,

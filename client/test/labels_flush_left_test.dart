@@ -48,7 +48,6 @@ Future<List<(String, Offset, double, Rect)>> _labels(
           size: size,
           child: BalanceChart(
             series: BalanceSeries(points: points, occurrences: occ),
-            currency: 'AUD',
             // Seed (and Today) markers off-view, so only dots compete.
             seedDate: _start.subtract(const Duration(days: 60)),
             viewStart: _start,

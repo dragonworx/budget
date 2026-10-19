@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
 import '../../state/providers.dart';
+import '../../widgets/money_text.dart';
 
 /// Result of a successful import.
 class ImportResult {
@@ -27,19 +28,16 @@ class ImportResult {
 Future<ImportResult?> showImportDialog(
   BuildContext context, {
   required String accountId,
-  required String currency,
 }) {
   return showDialog<ImportResult>(
     context: context,
-    builder: (_) => _ImportDialog(accountId: accountId, currency: currency),
+    builder: (_) => _ImportDialog(accountId: accountId),
   );
 }
 
 class _ImportDialog extends ConsumerStatefulWidget {
-  const _ImportDialog({required this.accountId, required this.currency});
+  const _ImportDialog({required this.accountId});
   final String accountId;
-  final String currency;
-
   @override
   ConsumerState<_ImportDialog> createState() => _ImportDialogState();
 }
@@ -304,7 +302,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
                   ].join(' · '),
                 ),
                 trailing: Text(
-                  '${credit ? '+' : '−'}${widget.currency} ${item['amount']}',
+                  '${credit ? '+' : '−'}$moneySymbol${item['amount']}',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: credit ? Colors.green.shade800 : Colors.red.shade800,

@@ -6,7 +6,7 @@ import '../data/models.dart';
 import 'money_text.dart';
 import '../theme/app_theme.dart';
 
-/// New / edit account dialog (name, currency, seed balance + date, loss
+/// New / edit account dialog (name, seed balance + date, loss
 /// threshold). Returns the edited account, not yet saved — unless [onSave]
 /// is given: then Save runs it inside the dialog (staying open with the error
 /// shown if it throws) and returns its result.
@@ -66,7 +66,6 @@ class _AccountDialogState extends State<AccountDialog> {
   }
 
   late final TextEditingController _name;
-  late final TextEditingController _currency;
   late final TextEditingController _seedBalance;
   late final TextEditingController _lossThreshold;
   late DateTime _seedDate;
@@ -74,7 +73,6 @@ class _AccountDialogState extends State<AccountDialog> {
   /// New accounts start at Hundreds ([Account.defaultCurrencyScale]).
   late int _currencyScale;
   String? _nameError;
-  String? _currencyError;
   String? _balanceError;
   String? _lossError;
 
@@ -89,11 +87,6 @@ class _AccountDialogState extends State<AccountDialog> {
     super.initState();
     final existing = widget.existing;
     _name = TextEditingController(text: existing?.name ?? '');
-    _currency = TextEditingController(
-      text:
-          existing?.currency ??
-          (NumberFormat.simpleCurrency().currencyName ?? 'USD'),
-    );
     _seedBalance = TextEditingController(
       text: existing?.seedBalance.toString() ?? '0',
     );
@@ -107,7 +100,6 @@ class _AccountDialogState extends State<AccountDialog> {
   @override
   void dispose() {
     _name.dispose();
-    _currency.dispose();
     _seedBalance.dispose();
     _lossThreshold.dispose();
     super.dispose();
@@ -137,28 +129,13 @@ class _AccountDialogState extends State<AccountDialog> {
             ),
             const SizedBox(height: 12),
             TextField(
-              key: const ValueKey('account-currency'),
-              controller: _currency,
-              onChanged: _revalidate,
-              onSubmitted: (_) => _submit(),
-              maxLength: 3,
-              decoration: InputDecoration(
-                labelText: 'Currency',
-                helperText: '3-letter code, e.g. AUD, USD, EUR',
-                errorText: _currencyError,
-                counterText: '',
-              ),
-              textCapitalization: TextCapitalization.characters,
-            ),
-            const SizedBox(height: 12),
-            TextField(
               key: const ValueKey('account-seed'),
               controller: _seedBalance,
               onChanged: _revalidate,
               onSubmitted: (_) => _submit(),
               decoration: InputDecoration(
                 labelText: 'Seed balance',
-                prefixText: '${_symbol()} ',
+                prefixText: '$moneySymbol ',
                 helperText: 'Balance on the seed date, before any transactions',
                 errorText: _balanceError,
               ),
@@ -175,7 +152,7 @@ class _AccountDialogState extends State<AccountDialog> {
               onSubmitted: (_) => _submit(),
               decoration: InputDecoration(
                 labelText: 'Alert threshold',
-                prefixText: '${_symbol()} ',
+                prefixText: '$moneySymbol ',
                 helperText: 'Balances below this show in red',
                 errorText: _lossError,
               ),
@@ -276,20 +253,11 @@ class _AccountDialogState extends State<AccountDialog> {
     );
   }
 
-  String _symbol() {
-    final code = _currency.text.trim().toUpperCase();
-    return code.length == 3 ? MoneyText.symbolFor(code).trim() : '';
-  }
-
   /// Validates every field; returns whether all are valid.
   bool _validate() {
-    final currency = _currency.text.trim().toUpperCase();
     final lossText = _lossThreshold.text.trim();
     setState(() {
       _nameError = _name.text.trim().isEmpty ? 'Enter a name' : null;
-      _currencyError = RegExp(r'^[A-Z]{3}$').hasMatch(currency)
-          ? null
-          : 'Use a 3-letter code, e.g. AUD';
       _balanceError = parseMoneyInput(_seedBalance.text) == null
           ? 'Enter an amount, e.g. 2500 or -120.50'
           : null;
@@ -297,17 +265,12 @@ class _AccountDialogState extends State<AccountDialog> {
           ? null
           : 'Enter an amount, e.g. 200 (or leave empty for 0)';
     });
-    return _nameError == null &&
-        _currencyError == null &&
-        _balanceError == null &&
-        _lossError == null;
+    return _nameError == null && _balanceError == null && _lossError == null;
   }
 
   void _revalidate(String _) {
     if (_submitted) {
       _validate();
-    } else {
-      setState(() {}); // refresh the currency prefix
     }
   }
 
@@ -315,7 +278,6 @@ class _AccountDialogState extends State<AccountDialog> {
     _submitted = true;
     if (!_validate()) return;
     final name = _name.text.trim();
-    final currency = _currency.text.trim().toUpperCase();
     final balance = parseMoneyInput(_seedBalance.text)!;
     final lossText = _lossThreshold.text.trim();
     final lossThreshold = lossText.isEmpty
@@ -326,7 +288,6 @@ class _AccountDialogState extends State<AccountDialog> {
       id: existing?.id ?? '',
       projectId: widget.projectId,
       name: name,
-      currency: currency,
       seedBalance: balance,
       seedDate: _seedDate,
       lossThreshold: lossThreshold,

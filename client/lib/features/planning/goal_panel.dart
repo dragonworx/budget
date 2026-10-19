@@ -235,9 +235,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   }
 
   // --- formatting ------------------------------------------------------------
-
-  String get _cur => widget.account.currency;
-  String _money2(double v) => formatMoneyAmount(v, _cur, decimalDigits: 2);
+  String _money2(double v) => formatMoneyAmount(v, decimalDigits: 2);
   String _date(DateTime d) => DateFormat('d MMM y').format(d);
   String _every(int n, RecurrenceUnit u) {
     final p = FrequencyPreset.of(once: false, interval: n, unit: u);

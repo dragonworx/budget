@@ -138,7 +138,6 @@ Future<(_Repo, List<EditorOutcome?>)> _pump(
             existing: repo.t,
             focusDate: focus,
             readOnly: readOnly,
-            currency: 'AUD',
             onDone: outcomes.add,
           ),
         ),

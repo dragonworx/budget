@@ -63,6 +63,21 @@ void main() {
     expect(find.textContaining('offline'), findsOneWidget);
   });
 
+  testWidgets('the dialog has no currency field; amounts use a plain \$', (
+    tester,
+  ) async {
+    await _open(tester, onSave: (a) async => a);
+    expect(find.byKey(const ValueKey('account-currency')), findsNothing);
+    expect(find.text('Currency'), findsNothing);
+    expect(find.textContaining('3-letter code'), findsNothing);
+    final seed = tester.widget<TextField>(
+      find.byKey(const ValueKey('account-seed')),
+    );
+    expect(seed.decoration?.prefixText, r'$ ');
+    // Currency Scale is a separate setting and stays.
+    expect(find.textContaining('Currency Scale'), findsWidgets);
+  });
+
   test('seedShiftDays counts calendar days', () {
     expect(seedShiftDays(DateTime(2026, 10, 16), DateTime(2026, 10, 23)), 7);
     expect(seedShiftDays(DateTime(2026, 4, 10, 23), DateTime(2026, 4, 3)), -7);
@@ -73,7 +88,6 @@ void main() {
       id: 'a1',
       projectId: 'p1',
       name: 'Main',
-      currency: 'AUD',
       seedBalance: Decimal.zero,
       seedDate: DateTime(2026, 10, 16),
       lossThreshold: Decimal.zero,

@@ -123,7 +123,6 @@ class Harness {
         as: who,
         body: {
           'name': 'Acc $name',
-          'currency': 'AUD',
           'seedDate': '2026-01-01'
         });
     expect(a.status, 201, reason: '${a.json}');

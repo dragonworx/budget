@@ -79,7 +79,6 @@ Future<List<DateTime>> _pump(
                 id: _t(id),
               'off': _t('off', enabled: false),
             },
-            currency: 'AUD',
             seedDate: _start,
             lossThreshold: threshold,
             viewStart: _start,

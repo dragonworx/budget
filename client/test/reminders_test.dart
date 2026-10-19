@@ -37,7 +37,6 @@ final account = Account(
   id: 'a',
   projectId: 'p',
   name: 'Everyday',
-  currency: 'AUD',
   seedBalance: Decimal.zero,
   seedDate: DateTime(2026, 1, 1),
   lossThreshold: Decimal.zero,

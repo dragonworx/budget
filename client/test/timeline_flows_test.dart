@@ -21,7 +21,6 @@ Account _account({Role role = Role.owner}) => Account(
   id: 'acc',
   projectId: 'p',
   name: 'Everyday',
-  currency: 'AUD',
   seedBalance: Decimal.fromInt(1000),
   seedDate: _day.subtract(const Duration(days: 30)),
   lossThreshold: Decimal.zero,

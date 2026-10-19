@@ -90,7 +90,6 @@ class BalanceChart extends StatefulWidget {
   const BalanceChart({
     super.key,
     required this.series,
-    required this.currency,
     required this.seedDate,
     this.seedBalance,
     this.lossThreshold = 0,
@@ -174,7 +173,6 @@ class BalanceChart extends StatefulWidget {
   /// a wider window is still loading.
   final DateTime? dataFrom;
   final DateTime? dataThrough;
-  final String currency;
   final DateTime seedDate;
 
   /// Opening balance on [seedDate]; drawn as the initial vertex. Null: none.
@@ -1226,10 +1224,7 @@ class _BalanceChartState extends State<BalanceChart>
                           ),
                           const SizedBox(width: 12),
                           Text(
-                            formatSignedAmount(
-                              o.signedDelta.toDouble(),
-                              widget.currency,
-                            ),
+                            formatSignedAmount(o.signedDelta.toDouble()),
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               color: o.signedDelta.toDouble() < 0
@@ -1471,7 +1466,6 @@ class _BalanceChartState extends State<BalanceChart>
                         painter: _BalanceChartPainter(
                           labelMemory: _labelMemory,
                           series: widget.series,
-                          currency: widget.currency,
                           seedDate: widget.seedDate,
                           seedBalance: widget.seedBalance,
                           lossThreshold: widget.lossThreshold,
@@ -1676,10 +1670,7 @@ class _BalanceChartState extends State<BalanceChart>
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: color, width: 1.2),
             ),
-            child: Text(
-              formatMoneyAmount(dot.balanceAfter, widget.currency),
-              style: style,
-            ),
+            child: Text(formatMoneyAmount(dot.balanceAfter), style: style),
           ),
         ),
       ),
@@ -1957,7 +1948,7 @@ class _BalanceChartState extends State<BalanceChart>
     );
     final small = theme.textTheme.labelSmall ?? const TextStyle();
     String money(double v) =>
-        formatMoneyAmount(v, widget.currency, decimalDigits: v == 0 ? 0 : null);
+        formatMoneyAmount(v, decimalDigits: v == 0 ? 0 : null);
     final balance = stats?.balance;
     final low = balance != null && belowAlert(balance, widget.lossThreshold);
     return Listener(
@@ -2251,7 +2242,6 @@ class _BalanceChartState extends State<BalanceChart>
     final strong = (theme.textTheme.labelLarge ?? const TextStyle()).copyWith(
       fontWeight: FontWeight.w800,
     );
-    final cur = widget.currency;
     final dm = DateFormat('dd/MM');
     final range = DateFormat('d MMM y');
     Color signColor(double v) => v > 0
@@ -2340,7 +2330,7 @@ class _BalanceChartState extends State<BalanceChart>
         'Start',
         'opening ${dm.format(sum.start)}',
         Text(
-          formatMoneyAmount(sum.startBalance, cur),
+          formatMoneyAmount(sum.startBalance),
           key: const ValueKey('selection-start-balance'),
           style: strong,
         ),
@@ -2350,7 +2340,7 @@ class _BalanceChartState extends State<BalanceChart>
         'End',
         'close ${dm.format(sum.end)}',
         Text(
-          formatMoneyAmount(sum.endBalance, cur),
+          formatMoneyAmount(sum.endBalance),
           key: const ValueKey('selection-end-balance'),
           style: strong,
         ),
@@ -2366,7 +2356,7 @@ class _BalanceChartState extends State<BalanceChart>
             ? ''
             : '${net >= 0 ? '+' : '−'}${pct.abs().toStringAsFixed(1)}%',
         Text(
-          formatSignedAmount(net, cur),
+          formatSignedAmount(net),
           key: const ValueKey('selection-net'),
           style: strong.copyWith(color: signColor(net)),
         ),
@@ -2377,7 +2367,7 @@ class _BalanceChartState extends State<BalanceChart>
         'Total gains',
         '',
         Text(
-          formatSignedAmount(sum.gains, cur),
+          formatSignedAmount(sum.gains),
           key: const ValueKey('selection-gains'),
           style: strong.copyWith(color: signColor(sum.gains)),
         ),
@@ -2387,7 +2377,7 @@ class _BalanceChartState extends State<BalanceChart>
         'Total losses',
         '',
         Text(
-          formatSignedAmount(sum.losses, cur),
+          formatSignedAmount(sum.losses),
           key: const ValueKey('selection-losses'),
           style: strong.copyWith(color: signColor(sum.losses)),
         ),
@@ -2409,7 +2399,7 @@ class _BalanceChartState extends State<BalanceChart>
           'Lowest',
           sum.lowestDate == null ? '' : dm.format(sum.lowestDate!),
           Text(
-            formatMoneyAmount(sum.lowestBalance!, cur),
+            formatMoneyAmount(sum.lowestBalance!),
             key: const ValueKey('selection-lowest'),
             style: strong.copyWith(
               color: belowAlert(sum.lowestBalance!, widget.lossThreshold)
@@ -2421,7 +2411,7 @@ class _BalanceChartState extends State<BalanceChart>
         ),
       row(
         'Alert',
-        '< ${formatMoneyAmount(widget.lossThreshold, cur)}',
+        '< ${formatMoneyAmount(widget.lossThreshold)}',
         Text(
           sum.alertDate == null ? 'Never' : dm.format(sum.alertDate!),
           key: const ValueKey('selection-alert'),
@@ -2823,7 +2813,7 @@ class _BalanceChartState extends State<BalanceChart>
                     ),
                   ),
                   Text(
-                    formatMoneyAmount(dot.balanceAfter, widget.currency),
+                    formatMoneyAmount(dot.balanceAfter),
                     style: theme.textTheme.labelLarge?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: AppTheme.accent,
@@ -2849,7 +2839,7 @@ class _BalanceChartState extends State<BalanceChart>
         if (o.skipped) 'Skipped',
         if (t != null && !t.enabled) 'Disabled',
         if (t != null && t.overrideOn(o.date) != null)
-          'Once-off (series ${formatSignedAmount(t.signedAmount.toDouble(), widget.currency)})',
+          'Once-off (series ${formatSignedAmount(t.signedAmount.toDouble())})',
       ];
       if (children.isNotEmpty) children.add(const Divider(height: 12));
       children.add(
@@ -2871,7 +2861,7 @@ class _BalanceChartState extends State<BalanceChart>
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  formatSignedAmount(amount, widget.currency),
+                  formatSignedAmount(amount),
                   style: theme.textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: o.skipped
@@ -2936,7 +2926,7 @@ class _BalanceChartState extends State<BalanceChart>
                 ),
               ),
               Text(
-                formatSignedAmount(g.net, widget.currency),
+                formatSignedAmount(g.net),
                 style: theme.textTheme.labelLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                   color: g.allSkipped
@@ -2962,7 +2952,7 @@ class _BalanceChartState extends State<BalanceChart>
             style: small.copyWith(color: AppTheme.textFaint),
             children: [
               TextSpan(
-                text: formatMoneyAmount(day.balanceAfter, widget.currency),
+                text: formatMoneyAmount(day.balanceAfter),
                 style: small.copyWith(
                   fontWeight: FontWeight.w800,
                   color: low ? AppTheme.debitColor : AppTheme.creditColor,
@@ -3270,7 +3260,6 @@ class _BalanceChartPainter extends CustomPainter {
   _BalanceChartPainter({
     required this.labelMemory,
     required this.series,
-    required this.currency,
     required this.seedDate,
     this.seedBalance,
     required this.lossThreshold,
@@ -3298,7 +3287,6 @@ class _BalanceChartPainter extends CustomPainter {
   final DateTime? dataFrom;
   final DateTime? dataThrough;
   final BalanceSeries series;
-  final String currency;
   final DateTime seedDate;
 
   /// Opening balance on [seedDate]; drawn as the initial vertex. Null: none.
@@ -3766,7 +3754,7 @@ class _BalanceChartPainter extends CustomPainter {
         Offset(layout.plot.right, y),
         grid,
       );
-      labels.add((y, _axisMoney(value, currency, digits, _absMax(extents))));
+      labels.add((y, _axisMoney(value, digits, _absMax(extents))));
     }
 
     if (scale.yMin < 0 && scale.yMax > 0) {
@@ -3779,7 +3767,7 @@ class _BalanceChartPainter extends CustomPainter {
           ..strokeWidth = 1,
       );
       if ((y - minY).abs() >= 22 && (y - maxY).abs() >= 22) {
-        labels.add((y, _axisMoney(0, currency, digits, _absMax(extents))));
+        labels.add((y, _axisMoney(0, digits, _absMax(extents))));
       }
     }
 
@@ -3813,8 +3801,7 @@ class _BalanceChartPainter extends CustomPainter {
     BalanceExtents extents,
   ) {
     final digits = moneyDigitsForSpan(extents.min, extents.max);
-    final maxLabel =
-        'max ${_axisMoney(extents.max, currency, digits, _absMax(extents))}';
+    final maxLabel = 'max ${_axisMoney(extents.max, digits, _absMax(extents))}';
     final maxY = scale.yOf(extents.max);
     bool onPlot(double y) => y >= layout.plot.top && y <= layout.plot.bottom;
     if (extents.isFlat) {
@@ -3830,8 +3817,7 @@ class _BalanceChartPainter extends CustomPainter {
       }
       return;
     }
-    final minLabel =
-        'min ${_axisMoney(extents.min, currency, digits, _absMax(extents))}';
+    final minLabel = 'min ${_axisMoney(extents.min, digits, _absMax(extents))}';
     final minY = scale.yOf(extents.min);
     // Off-plot extents get a faint label pinned to that edge with an arrow
     // (it points at the absolute height rather than claiming the edge).
@@ -4139,7 +4125,7 @@ class _BalanceChartPainter extends CustomPainter {
       );
       final tp = TextPainter(
         text: TextSpan(
-          text: 'Alert < ${formatMoneyAmount(lossThreshold, currency)}',
+          text: 'Alert < ${formatMoneyAmount(lossThreshold)}',
           style: TextStyle(
             color: AppTheme.debitColor.withValues(alpha: 0.9),
             fontSize: 10.5,
@@ -4223,13 +4209,10 @@ class _BalanceChartPainter extends CustomPainter {
     }
 
     if (extents.max > scale.yMax) {
-      chip('▲ up to ${formatMoneyAmount(extents.max, currency)} above', true);
+      chip('▲ up to ${formatMoneyAmount(extents.max)} above', true);
     }
     if (extents.min < scale.yMin) {
-      chip(
-        '▼ down to ${formatMoneyAmount(extents.min, currency)} below',
-        false,
-      );
+      chip('▼ down to ${formatMoneyAmount(extents.min)} below', false);
     }
   }
 
@@ -4481,8 +4464,8 @@ class _BalanceChartPainter extends CustomPainter {
       final amount = TextPainter(
         text: TextSpan(
           text: vertex.seed
-              ? formatMoneyAmount(vertex.amount, currency)
-              : formatSignedAmount(vertex.amount, currency),
+              ? formatMoneyAmount(vertex.amount)
+              : formatSignedAmount(vertex.amount),
           style: vertexStyle.copyWith(
             fontWeight: FontWeight.w800,
             color: vertex.skipped
@@ -4772,7 +4755,6 @@ class _BalanceChartPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _BalanceChartPainter oldDelegate) {
     return oldDelegate.series != series ||
-        oldDelegate.currency != currency ||
         oldDelegate.seedDate != seedDate ||
         oldDelegate.seedBalance != seedBalance ||
         oldDelegate.lossThreshold != lossThreshold ||
@@ -4795,21 +4777,16 @@ class _BalanceChartPainter extends CustomPainter {
 
 /// Y-axis money: compact (\$1.5M) once values reach millions so labels
 /// fit the gutter instead of being cut off.
-String _axisMoney(double value, String currency, int digits, double scaleMax) {
+String _axisMoney(double value, int digits, double scaleMax) {
   // Six-figure labels no longer fit the axis gutter ("max $556,123"):
   // switch to compact ($556.1K, $1.25M).
   if (scaleMax >= 1e5 && value.abs() >= 1e5) {
     return NumberFormat.compactCurrency(
-      name: currency,
-      symbol: MoneyText.symbolFor(currency),
+      symbol: moneySymbol,
       decimalDigits: value.abs() >= 1e6 ? 2 : 1,
     ).format(value);
   }
-  return formatMoneyAmount(
-    value,
-    currency,
-    decimalDigits: scaleMax >= 1e6 ? 0 : digits,
-  );
+  return formatMoneyAmount(value, decimalDigits: scaleMax >= 1e6 ? 0 : digits);
 }
 
 class _ChartVertex {

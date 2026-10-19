@@ -51,7 +51,6 @@ Future<_H> _pump(WidgetTester tester, {bool canAdd = true}) async {
                 ],
               ),
               transactionNames: const {'bonus': 'Bonus'},
-              currency: 'AUD',
               seedDate: _start.subtract(const Duration(days: 30)),
               viewStart: h.viewStart,
               visibleDays: h.visibleDays,

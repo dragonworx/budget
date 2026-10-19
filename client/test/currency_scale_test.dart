@@ -35,11 +35,16 @@ void main() {
     expect(b.currencyScale, 1000);
     expect(b.toPatchJson()['currencyScale'], 1000);
     expect(b.toCreateJson()['currencyScale'], 1000);
+    // Accounts have no currency: an older payload's field is ignored and
+    // never sent back.
+    for (final json in [b.toJson(), b.toCreateJson(), b.toPatchJson()]) {
+      expect(json.containsKey('currency'), isFalse);
+    }
   });
 
   testWidgets('edit dialog changes Currency Scale', (tester) async {
     final existing = Account(
-      id: 'a1', projectId: 'p1', name: 'Main', currency: 'AUD',
+      id: 'a1', projectId: 'p1', name: 'Main',
       seedBalance: Decimal.zero, seedDate: DateTime(2026, 10, 16),
       lossThreshold: Decimal.zero, currencyScale: 1000,
     );

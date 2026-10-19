@@ -251,7 +251,6 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
                     accountId: widget.account.id,
                     readOnly: _readOnly,
                     existing: _editing!.transaction,
-                    currency: widget.account.currency,
                     skippedDates: _editing!.transaction == null
                         ? const {}
                         : widget.skipsFor(_editing!.transaction!.id),
@@ -405,7 +404,6 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
       highlightKey: t.id == _highlightId ? _highlightKey : null,
       highlighted: t.id == _highlightId,
       transaction: t,
-      currency: widget.account.currency,
       index: canReorder ? index : null,
       readOnly: _readOnly,
       onTap: () => _open(t),
@@ -463,7 +461,6 @@ class _TxRow extends StatelessWidget {
   const _TxRow({
     super.key,
     required this.transaction,
-    required this.currency,
     required this.index,
     required this.onTap,
     required this.onLocate,
@@ -479,7 +476,6 @@ class _TxRow extends StatelessWidget {
   final bool highlighted;
   final Key? highlightKey;
   final Transaction transaction;
-  final String currency;
   final int? index;
   final VoidCallback onTap;
   final VoidCallback onLocate;
@@ -607,7 +603,7 @@ class _TxRow extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    formatSignedAmount(amount, currency),
+                    formatSignedAmount(amount),
                     style: theme.textTheme.labelLarge?.copyWith(
                       color: !t.enabled
                           ? AppTheme.textFaint

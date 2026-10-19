@@ -28,7 +28,6 @@ class Account {
     required this.id,
     required this.projectId,
     required this.name,
-    required this.currency,
     required this.seedBalance,
     required this.seedDate,
     required this.lossThreshold,
@@ -47,7 +46,6 @@ class Account {
   final String id;
   final String projectId;
   final String name;
-  final String currency;
   final Decimal seedBalance;
   final DateTime seedDate;
   final Decimal lossThreshold;
@@ -60,7 +58,6 @@ class Account {
         'projectId': projectId,
         'currencyScale': currencyScale,
         'name': name,
-        'currency': currency,
         'seedBalance': seedBalance.toString(),
         'seedDate': formatDate(seedDate),
         'lossThreshold': lossThreshold.toString(),

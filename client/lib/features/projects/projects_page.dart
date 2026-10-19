@@ -401,17 +401,6 @@ class _ProjectCard extends ConsumerWidget {
                     ),
                   ),
                 ),
-              if (accounts != null && accounts.isNotEmpty && !project.shared)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Wrap(
-                    spacing: 4,
-                    children: [
-                      for (final c in {for (final a in accounts) a.currency})
-                        Pill(c),
-                    ],
-                  ),
-                ),
               PopupMenuButton<_ProjectAction>(
                 tooltip: 'Project actions',
                 icon: const Icon(Icons.more_vert_rounded),

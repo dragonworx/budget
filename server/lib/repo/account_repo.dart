@@ -13,7 +13,7 @@ class AccountRepo {
   Future<List<Account>> listByProject(String projectId) async {
     final rows = await _conn.execute(
       Sql.named('''
-        SELECT id, project_id, name, currency, seed_balance, seed_date,
+        SELECT id, project_id, name, seed_balance, seed_date,
                loss_threshold, display_order, transaction_order, currency_scale, version
         FROM accounts
         WHERE project_id = @projectId
@@ -27,7 +27,7 @@ class AccountRepo {
   Future<Account?> get(String id) async {
     final rows = await _conn.execute(
       Sql.named('''
-        SELECT id, project_id, name, currency, seed_balance, seed_date,
+        SELECT id, project_id, name, seed_balance, seed_date,
                loss_threshold, display_order, transaction_order, currency_scale, version
         FROM accounts WHERE id = @id
       '''),
@@ -40,7 +40,6 @@ class AccountRepo {
   Future<Account> create({
     required String projectId,
     required String name,
-    required String currency,
     required Decimal seedBalance,
     required DateTime seedDate,
     required Decimal lossThreshold,
@@ -51,20 +50,19 @@ class AccountRepo {
     final rows = await _conn.execute(
       Sql.named('''
         INSERT INTO accounts (
-          id, project_id, name, currency, seed_balance, seed_date,
+          id, project_id, name, seed_balance, seed_date,
           loss_threshold, display_order, currency_scale
         ) VALUES (
-          @id, @projectId, @name, @currency, @seedBalance, @seedDate,
+          @id, @projectId, @name, @seedBalance, @seedDate,
           @lossThreshold, @displayOrder, @currencyScale
         )
-        RETURNING id, project_id, name, currency, seed_balance, seed_date,
+        RETURNING id, project_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, transaction_order, currency_scale, version
       '''),
       parameters: {
         'id': id,
         'projectId': projectId,
         'name': name,
-        'currency': currency.toUpperCase(),
         'seedBalance': seedBalance.toString(),
         'seedDate': DateTime.utc(seedDate.year, seedDate.month, seedDate.day),
         'lossThreshold': lossThreshold.toString(),
@@ -78,7 +76,6 @@ class AccountRepo {
   Future<Account?> update(
     String id, {
     String? name,
-    String? currency,
     Decimal? seedBalance,
     DateTime? seedDate,
     Decimal? lossThreshold,
@@ -92,20 +89,18 @@ class AccountRepo {
       Sql.named('''
         UPDATE accounts SET
           name = @name,
-          currency = @currency,
           seed_balance = @seedBalance,
           seed_date = @seedDate,
           loss_threshold = @lossThreshold,
           display_order = @displayOrder,
           currency_scale = @currencyScale
         WHERE id = @id
-        RETURNING id, project_id, name, currency, seed_balance, seed_date,
+        RETURNING id, project_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, transaction_order, currency_scale, version
       '''),
       parameters: {
         'id': id,
         'name': name ?? existing.name,
-        'currency': (currency ?? existing.currency).toUpperCase(),
         'seedBalance': (seedBalance ?? existing.seedBalance).toString(),
         'lossThreshold': (lossThreshold ?? existing.lossThreshold).toString(),
         'seedDate': seedDate == null
@@ -197,7 +192,7 @@ class AccountRepo {
       Sql.named('''
         UPDATE accounts SET transaction_order = @transactionOrder
         WHERE id = @id
-        RETURNING id, project_id, name, currency, seed_balance, seed_date,
+        RETURNING id, project_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, transaction_order, currency_scale, version
       '''),
       parameters: {
@@ -227,8 +222,8 @@ class AccountRepo {
   }
 
   Account _fromRow(ResultRow row) {
-    final seedBalanceRaw = row[4];
-    final transactionOrderRaw = row[8];
+    final seedBalanceRaw = row[3];
+    final transactionOrderRaw = row[7];
     final List<String> transactionOrder;
     if (transactionOrderRaw == null) {
       transactionOrder = const [];
@@ -238,19 +233,18 @@ class AccountRepo {
       transactionOrder = const [];
     }
 
-    final seedDate = row[5] as DateTime;
+    final seedDate = row[4] as DateTime;
     return Account(
       id: row[0].toString(),
       projectId: row[1].toString(),
       name: row[2] as String,
-      currency: (row[3] as String).trim(),
       seedBalance: Decimal.parse(seedBalanceRaw.toString()),
       seedDate: DateTime.utc(seedDate.year, seedDate.month, seedDate.day),
-      lossThreshold: Decimal.parse(row[6].toString()),
-      displayOrder: row[7] as int,
+      lossThreshold: Decimal.parse(row[5].toString()),
+      displayOrder: row[6] as int,
       transactionOrder: transactionOrder,
-      currencyScale: row[9] as int,
-      version: row.length > 10 ? (row[10] as int? ?? 1) : 1,
+      currencyScale: row[8] as int,
+      version: row.length > 9 ? (row[9] as int? ?? 1) : 1,
     );
   }
 }

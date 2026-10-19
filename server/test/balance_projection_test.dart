@@ -8,7 +8,6 @@ Account _account() => Account(
       id: 'a',
       projectId: 'p',
       name: 'A',
-      currency: 'AUD',
       seedBalance: Decimal.parse('1000'),
       seedDate: DateTime.utc(2026, 1, 1),
       lossThreshold: Decimal.zero,

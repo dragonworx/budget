@@ -34,7 +34,7 @@ void main() {
     final d = scenarioDelta(r, DateTime(2027, 2, 19));
     expect(d.balance, closeTo(420, 1e-9));
     expect(d.alertShiftDays, 21);
-    expect(scenarioDeltaText(r, DateTime(2027, 2, 19), 'AUD'),
+    expect(scenarioDeltaText(r, DateTime(2027, 2, 19)),
         allOf(contains('+\$420'), contains('alert +3 wks')));
   });
 

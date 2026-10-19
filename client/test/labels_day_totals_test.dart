@@ -65,7 +65,6 @@ Future<List<(Rect, List<String>)>> _labels(
           size: size,
           child: BalanceChart(
             series: BalanceSeries(points: points, occurrences: occ),
-            currency: 'AUD',
             seedDate: _start.subtract(const Duration(days: 60)),
             viewStart: _start,
             visibleDays: 30,
@@ -108,21 +107,13 @@ void _expectNoOverlap(List<(Rect, List<String>)> labels) {
 void main() {
   tearDown(() => debugVertexLabelLines = null);
 
-  test('money everywhere has no country prefix; input still accepts it', () {
-    expect(MoneyText.symbolFor('AUD'), r'$');
-    expect(MoneyText.symbolFor('aud'), r'$');
-    expect(MoneyText.symbolFor('USD'), r'$');
-    expect(MoneyText.symbolFor('CAD'), r'$');
-    expect(MoneyText.symbolFor('NZD'), r'$');
-    expect(MoneyText.symbolFor('EUR'), '€');
-    expect(MoneyText.symbolFor('GBP'), '£');
-    expect(MoneyText.symbolFor('JPY'), '¥');
-    expect(MoneyText.symbolFor('CHF'), 'CHF ');
-    expect(formatSignedAmount(-180, 'AUD'), r'−$180');
-    expect(formatSignedAmount(2400, 'AUD'), r'+$2,400');
-    expect(formatMoneyAmount(250, 'AUD'), r'$250');
-    expect(formatMoneyAmount(12.5, 'EUR'), '€12.50');
-    expect(formatSignedAmount(1.36e6, 'AUD'), r'+$1.36M');
+  test('money is a plain "\$" everywhere; input still accepts a prefix', () {
+    expect(moneySymbol, r'$');
+    expect(formatSignedAmount(-180), r'−$180');
+    expect(formatSignedAmount(2400), r'+$2,400');
+    expect(formatMoneyAmount(250), r'$250');
+    expect(formatMoneyAmount(12.5), r'$12.50');
+    expect(formatSignedAmount(1.36e6), r'+$1.36M');
     expect(parseMoneyInput(r'A$1,250.50'), Decimal.parse('1250.50'));
     expect(parseMoneyInput(r'$1,250.50'), Decimal.parse('1250.50'));
     expect(parseMoneyInput(r'-A$20'), Decimal.parse('-20'));

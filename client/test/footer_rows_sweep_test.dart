@@ -53,7 +53,6 @@ Future<List<(String, String, Rect)>> _paint(
               ],
               occurrences: const [],
             ),
-            currency: 'AUD',
             seedDate: _start,
             viewStart: _start,
             visibleDays: days,

@@ -56,7 +56,6 @@ void main() {
           (await AccountRepo(c).create(
                   projectId: pid,
                   name: name,
-                  currency: 'AUD',
                   seedBalance: Decimal.zero,
                   seedDate: DateTime.utc(2026, 10, 1),
                   lossThreshold: Decimal.zero))

@@ -24,7 +24,6 @@ final _account = Account(
   id: 'acc',
   projectId: 'p',
   name: 'A',
-  currency: 'AUD',
   seedBalance: Decimal.fromInt(1000),
   seedDate: DateTime(2026, 1, 1),
   lossThreshold: Decimal.zero,

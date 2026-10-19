@@ -40,7 +40,6 @@ Future<_Harness> _pump(WidgetTester tester) async {
             size: _size,
             child: BalanceChart(
               series: BalanceSeries(points: points),
-              currency: 'AUD',
               seedDate: _start.subtract(const Duration(days: 60)),
               viewStart: h.viewStart,
               visibleDays: h.visibleDays,

@@ -249,7 +249,7 @@ void main() {
     final ownerB = await subscribe(b, 'owner');
     final outsider = await subscribe(b, 'outsider');
     final acc = await call(a, 'POST', '/api/projects/$pid/accounts', 'owner',
-        body: {'name': 'A1', 'currency': 'AUD', 'seedDate': '2026-01-01'},
+        body: {'name': 'A1', 'seedDate': '2026-01-01'},
         clientTag: 'tab-1');
     final aid = acc.json['id'] as String;
     final ev = await ownerB.waitAction('account.created', entityId: aid);
@@ -273,7 +273,7 @@ void main() {
         await call(a, 'POST', '/api/projects', 'own2', body: {'name': 'RT2'});
     final pid = p.json['id'] as String;
     final acc = await call(a, 'POST', '/api/projects/$pid/accounts', 'own2',
-        body: {'name': 'A', 'currency': 'AUD', 'seedDate': '2026-01-01'});
+        body: {'name': 'A', 'seedDate': '2026-01-01'});
     final aid = acc.json['id'] as String;
     await login('guest');
     final gid = await userId('guest');
@@ -312,7 +312,7 @@ void main() {
     final cursor = first.events.firstWhere((e) => e.event == 'ready').id!;
     first.close();
     final acc = await call(a, 'POST', '/api/projects/$pid/accounts', 'own3',
-        body: {'name': 'Late', 'currency': 'AUD', 'seedDate': '2026-01-01'});
+        body: {'name': 'Late', 'seedDate': '2026-01-01'});
     final again = await subscribe(b, 'own3', since: cursor);
     final ev =
         await again.waitAction('account.created', entityId: acc.json['id']);
@@ -348,7 +348,7 @@ void main() {
         body: {'name': 'nope', 'version': 999});
     expect(conflict.status, 409);
     final bad = await call(a, 'POST', '/api/projects/$pid/accounts', 'own4',
-        body: {'name': 'x', 'currency': 'TOOLONG', 'seedDate': '2026-01-01'});
+        body: {'name': 'x', 'seedDate': 'not-a-date'});
     expect(bad.status, 400);
     final after = (await admin!.execute(
             Sql.named(

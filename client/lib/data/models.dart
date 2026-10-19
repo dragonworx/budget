@@ -158,7 +158,6 @@ class Account {
     required this.id,
     required this.projectId,
     required this.name,
-    required this.currency,
     required this.seedBalance,
     required this.seedDate,
     required this.lossThreshold,
@@ -202,7 +201,6 @@ class Account {
   final String id;
   final String projectId;
   final String name;
-  final String currency;
   final Decimal seedBalance;
   final DateTime seedDate;
 
@@ -219,7 +217,6 @@ class Account {
       id: json['id'] as String,
       projectId: (json['projectId'] ?? json['project_id']) as String,
       name: json['name'] as String,
-      currency: json['currency'] as String,
       seedBalance: parseMoney(json['seedBalance'] ?? json['seed_balance']),
       seedDate: parseDate(json['seedDate'] ?? json['seed_date']),
       lossThreshold: loss == null ? Decimal.zero : parseMoney(loss),
@@ -239,7 +236,6 @@ class Account {
     'id': id,
     'projectId': projectId,
     'name': name,
-    'currency': currency,
     'seedBalance': moneyToJson(seedBalance),
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
@@ -250,7 +246,6 @@ class Account {
 
   Map<String, dynamic> toCreateJson() => {
     'name': name,
-    'currency': currency,
     'seedBalance': moneyToJson(seedBalance),
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
@@ -259,7 +254,6 @@ class Account {
 
   Map<String, dynamic> toPatchJson() => {
     'name': name,
-    'currency': currency,
     'seedBalance': moneyToJson(seedBalance),
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
@@ -272,7 +266,6 @@ class Account {
     String? id,
     String? projectId,
     String? name,
-    String? currency,
     Decimal? seedBalance,
     DateTime? seedDate,
     Decimal? lossThreshold,
@@ -289,7 +282,6 @@ class Account {
       id: id ?? this.id,
       projectId: projectId ?? this.projectId,
       name: name ?? this.name,
-      currency: currency ?? this.currency,
       seedBalance: seedBalance ?? this.seedBalance,
       seedDate: seedDate ?? this.seedDate,
       lossThreshold: lossThreshold ?? this.lossThreshold,

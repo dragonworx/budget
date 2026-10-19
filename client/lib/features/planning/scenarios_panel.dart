@@ -15,14 +15,13 @@ Color scenarioColor(int i) =>
 String scenarioDeltaText(
   GoalResult r,
   DateTime? baselineAlert,
-  String currency,
 ) {
   final d = scenarioDelta(r, baselineAlert);
   final parts = <String>[];
   final end = r.values?.endDate;
   if (d.balance != null) {
     final b = d.balance!;
-    final money = formatMoneyAmount(b.abs(), currency);
+    final money = formatMoneyAmount(b.abs());
     final by = end == null ? '' : ' by ${DateFormat('d MMM yy').format(end)}';
     parts.add(
       b.abs() < 0.005 ? 'no change$by' : '${b > 0 ? '+' : '−'}$money$by',
@@ -158,11 +157,7 @@ class ScenariosPanel extends ConsumerWidget {
                         ? 'Excluded — not on the chart'
                         : r == null
                         ? (results.isLoading ? 'Solving…' : 'Can’t solve now')
-                        : scenarioDeltaText(
-                            r,
-                            insights?.alertDate,
-                            account.currency,
-                          ),
+                        : scenarioDeltaText(r, insights?.alertDate),
                     key: ValueKey('scenario-delta-${s.id}'),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: s.included ? AppTheme.text : AppTheme.textFaint,

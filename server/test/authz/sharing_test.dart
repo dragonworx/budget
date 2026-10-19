@@ -163,7 +163,7 @@ void main() {
     final s = await h.seed('own3', 'AcctShare');
     final other = await h.call('POST', '/api/projects/${s.p}/accounts',
         as: 'own3',
-        body: {'name': 'Secret', 'currency': 'AUD', 'seedDate': '2026-01-01'});
+        body: {'name': 'Secret', 'seedDate': '2026-01-01'});
     await h.login('friend');
     final r = await h.call('POST', '/api/accounts/${s.a}/invites',
         as: 'own3', body: {'email': h.email('friend'), 'role': 'editor'});

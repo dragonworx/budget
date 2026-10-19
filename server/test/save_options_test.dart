@@ -74,7 +74,7 @@ void main() {
   Future<String> account(String who, String p, String name) async {
     final a = await h.call('POST', '/api/projects/$p/accounts',
         as: who,
-        body: {'name': name, 'currency': 'AUD', 'seedDate': '2026-01-01'});
+        body: {'name': name, 'seedDate': '2026-01-01'});
     expect(a.status, 201, reason: '${a.json}');
     return a.json['id'] as String;
   }

@@ -164,7 +164,6 @@ Router buildAccountsApi(Session conn) {
         final updated = await repo.update(
           id,
           name: optionalString(body, 'name'),
-          currency: optionalString(body, 'currency'),
           seedBalance: body.containsKey('seedBalance')
               ? parseDecimal(body['seedBalance'])
               : null,

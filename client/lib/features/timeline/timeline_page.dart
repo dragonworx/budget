@@ -327,11 +327,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       BalanceQuery(accountId: widget.accountId, from: _dataFrom, to: _dataTo);
 
   Future<void> _openImport(BuildContext context, Account account) async {
-    final result = await showImportDialog(
-      context,
-      accountId: account.id,
-      currency: account.currency,
-    );
+    final result = await showImportDialog(context, accountId: account.id);
     if (result == null || !context.mounted) return;
     ref.invalidate(transactionsProvider(widget.accountId));
     ref.invalidate(accountProvider(widget.accountId));
@@ -730,7 +726,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                       onZoomStep: _zoomStep,
                                       onShift: _shift,
                                       series: series,
-                                      currency: account.currency,
                                       seedDate: account.seedDate,
                                       seedBalance: account.seedBalance
                                           .toDouble(),
@@ -1104,7 +1099,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               const SizedBox(width: 10),
               Flexible(
                 child: Text(
-                  'Keep alert line (${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}) in fits',
+                  'Keep alert line (${formatMoneyAmount(account.lossThreshold.toDouble())}) in fits',
                 ),
               ),
             ],
@@ -1289,7 +1284,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       initialEndDate: initialEndDate,
       focusDate: focusDate,
       onceOnly: onceOnly,
-      currency: account.currency,
       skippedDates: existing == null ? const {} : _skipsFor(existing.id),
     );
     _invalidateBalance();
@@ -1529,7 +1523,7 @@ class _AccountHeader extends StatelessWidget {
     ];
     if (i.lowestBalance != null && i.lowestDate != null) {
       parts.add(
-        'low ${formatMoneyAmount(i.lowestBalance!, account.currency)} '
+        'low ${formatMoneyAmount(i.lowestBalance!)} '
         '${short.format(i.lowestDate!)}',
       );
     }
@@ -1589,7 +1583,7 @@ class _AccountHeader extends StatelessWidget {
               if (compact && today != null)
                 Text(
                   [
-                    'Today ${formatMoneyAmount(today.toDouble(), account.currency, decimalDigits: 2)}',
+                    'Today ${formatMoneyAmount(today.toDouble(), decimalDigits: 2)}',
                     ?_compactInsights(),
                   ].join(' · '),
                   key: const ValueKey('header-today'),
@@ -1602,7 +1596,7 @@ class _AccountHeader extends StatelessWidget {
                 )
               else
                 Text(
-                  'Seed ${formatMoneyAmount(account.seedBalance.toDouble(), account.currency, decimalDigits: 2)} on ${DateFormat('d MMM y').format(account.seedDate)} · ${account.currency}',
+                  'Seed ${formatMoneyAmount(account.seedBalance.toDouble(), decimalDigits: 2)} on ${DateFormat('d MMM y').format(account.seedDate)}',
                   style: theme.textTheme.bodySmall,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1617,7 +1611,7 @@ class _AccountHeader extends StatelessWidget {
             label: 'LOWEST · 12 MO',
             value: insights!.lowestBalance == null
                 ? '—'
-                : formatMoneyAmount(insights!.lowestBalance!, account.currency),
+                : formatMoneyAmount(insights!.lowestBalance!),
             detail: insights!.lowestDate == null
                 ? null
                 : DateFormat('d MMM y').format(insights!.lowestDate!),
@@ -1635,7 +1629,7 @@ class _AccountHeader extends StatelessWidget {
             value: runwayText(insights!, account),
             detail: insights!.alertDate == null
                 ? null
-                : 'alert < ${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}',
+                : 'alert < ${formatMoneyAmount(account.lossThreshold.toDouble())}',
             warn: insights!.alertDate != null,
           ),
         ],
@@ -1663,11 +1657,7 @@ class _AccountHeader extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  formatMoneyAmount(
-                    today.toDouble(),
-                    account.currency,
-                    decimalDigits: 2,
-                  ),
+                  formatMoneyAmount(today.toDouble(), decimalDigits: 2),
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: loss ? AppTheme.debitColor : AppTheme.text,
                     fontWeight: FontWeight.w700,

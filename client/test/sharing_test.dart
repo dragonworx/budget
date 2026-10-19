@@ -23,7 +23,6 @@ Account _acct(String id, {Role role = Role.owner}) => Account(
   id: id,
   projectId: 'p1',
   name: 'Everyday',
-  currency: 'AUD',
   seedBalance: Decimal.zero,
   seedDate: DateTime(2026, 10, 1),
   lossThreshold: Decimal.zero,

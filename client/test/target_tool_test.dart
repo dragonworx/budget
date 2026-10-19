@@ -33,7 +33,6 @@ Future<(List<(DateTime, double)>, List<DateTime>, List<DateTime>)> _pump(
                   ),
               ],
             ),
-            currency: 'AUD',
             seedDate: _start.subtract(const Duration(days: 30)),
             viewStart: _start,
             visibleDays: _days,

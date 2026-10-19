@@ -66,10 +66,8 @@ Router buildProjectsApi(Session conn) {
 
       final body = await readJsonObject(request);
       final name = requireString(body, 'name');
-      final currency = optionalString(body, 'currency') ?? 'USD';
-      if (currency.length != 3) {
-        return jsonError(400, 'currency must be a 3-letter ISO code');
-      }
+      // A 'currency' field (older clients / exports) is ignored: accounts
+      // no longer have a currency; money shows a plain "$".
       final seedBalance = parseDecimal(body['seedBalance'] ?? '0');
       final seedDate = parseDate(requireString(body, 'seedDate'));
       final lossThreshold = body.containsKey('lossThreshold')
@@ -80,7 +78,6 @@ Router buildProjectsApi(Session conn) {
       final account = await accounts.create(
         projectId: projectId,
         name: name,
-        currency: currency,
         seedBalance: seedBalance,
         seedDate: seedDate,
         lossThreshold: lossThreshold,

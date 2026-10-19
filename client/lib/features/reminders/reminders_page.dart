@@ -87,15 +87,12 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
     }
     final items = expandOccurrences(txs, from: from, to: to, skipped: skipped);
     final byDay = groupByDay(items);
-    final currency = widget.account.currency;
-
     final calendar = _Calendar(
       month: _month,
       grid: grid,
       today: _today,
       selected: _selected,
       byDay: byDay,
-      currency: currency,
       onMonth: (m) => setState(() => _month = m),
       onToday: () => setState(() {
         _month = DateTime(_today.year, _today.month);
@@ -113,7 +110,6 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
       controller: _listScroll,
       accounts: byId,
       showAccount: _allAccounts && accounts.length > 1,
-      currency: currency,
       loading: loading && items.isEmpty,
       onRange: (r) => setState(() => _range = r),
       onOpen: _open,
@@ -218,7 +214,6 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
       accountId: t.accountId,
       existing: t,
       focusDate: item.date,
-      currency: a.currency,
       readOnly: !a.role.canEdit,
       skippedDates: {
         for (final o in series?.occurrences ?? const <Occurrence>[])
@@ -253,7 +248,6 @@ class _Calendar extends StatefulWidget {
     required this.today,
     required this.selected,
     required this.byDay,
-    required this.currency,
     required this.onMonth,
     required this.onToday,
     required this.onDayTap,
@@ -264,7 +258,6 @@ class _Calendar extends StatefulWidget {
   final DateTime today;
   final DateTime? selected;
   final Map<DateTime, List<ReminderItem>> byDay;
-  final String currency;
   final ValueChanged<DateTime> onMonth;
   final VoidCallback onToday;
   final ValueChanged<DateTime> onDayTap;
@@ -431,28 +424,17 @@ class _CalendarState extends State<_Calendar> {
       bottom: above ? size.height - row * cellH + 4 : null,
       width: w,
       child: IgnorePointer(
-        child: DayTooltipCard(
-          date: _tip!,
-          totals: totals,
-          currency: widget.currency,
-        ),
+        child: DayTooltipCard(date: _tip!, totals: totals),
       ),
     );
   }
 }
 
 class DayTooltipCard extends StatelessWidget {
-  const DayTooltipCard({
-    super.key,
-    required this.date,
-    required this.totals,
-    required this.currency,
-  });
+  const DayTooltipCard({super.key, required this.date, required this.totals});
 
   final DateTime date;
   final DayTotals totals;
-  final String currency;
-
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
@@ -468,8 +450,8 @@ class DayTooltipCard extends StatelessWidget {
               const Spacer(),
               Text(
                 signed
-                    ? formatSignedAmount(v.toDouble(), currency)
-                    : formatMoneyAmount(v.toDouble(), currency),
+                    ? formatSignedAmount(v.toDouble())
+                    : formatMoneyAmount(v.toDouble()),
                 style: t.bodySmall?.copyWith(
                   color: color,
                   fontFeatures: const [FontFeature.tabularFigures()],
@@ -631,7 +613,6 @@ class _ReminderList extends StatelessWidget {
     required this.controller,
     required this.accounts,
     required this.showAccount,
-    required this.currency,
     required this.loading,
     required this.onRange,
     required this.onOpen,
@@ -645,7 +626,6 @@ class _ReminderList extends StatelessWidget {
   final ScrollController controller;
   final Map<String, Account> accounts;
   final bool showAccount;
-  final String currency;
   final bool loading;
   final ValueChanged<ReminderRange> onRange;
   final void Function(ReminderItem, Account?) onOpen;
@@ -699,8 +679,8 @@ class _ReminderList extends StatelessWidget {
                   children: [
                     Text('Upcoming', style: t.titleMedium),
                     Text(
-                      '${totals.count} · +${formatMoneyAmount(totals.gains.toDouble(), currency)}'
-                      ' / −${formatMoneyAmount(totals.losses.toDouble(), currency)}',
+                      '${totals.count} · +${formatMoneyAmount(totals.gains.toDouble())}'
+                      ' / −${formatMoneyAmount(totals.losses.toDouble())}',
                       key: const ValueKey('reminders-range-totals'),
                       style: t.bodySmall?.copyWith(color: AppTheme.textMuted),
                     ),
@@ -783,14 +763,14 @@ class _ReminderList extends StatelessWidget {
                 ),
                 if (totals.gains > Decimal.zero)
                   Text(
-                    '+${formatMoneyAmount(totals.gains.toDouble(), currency)}',
+                    '+${formatMoneyAmount(totals.gains.toDouble())}',
                     style: t.labelMedium?.copyWith(color: AppTheme.creditColor),
                   ),
                 if (totals.gains > Decimal.zero && totals.losses > Decimal.zero)
                   const SizedBox(width: 8),
                 if (totals.losses > Decimal.zero)
                   Text(
-                    '−${formatMoneyAmount(totals.losses.toDouble(), currency)}',
+                    '−${formatMoneyAmount(totals.losses.toDouble())}',
                     style: t.labelMedium?.copyWith(color: AppTheme.debitColor),
                   ),
               ],
@@ -863,10 +843,7 @@ class _ReminderList extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              formatSignedAmount(
-                i.signed.toDouble(),
-                acc?.currency ?? currency,
-              ),
+              formatSignedAmount(i.signed.toDouble()),
               style: t.bodyMedium?.copyWith(
                 color: i.isGain ? AppTheme.creditColor : AppTheme.debitColor,
                 fontFeatures: const [FontFeature.tabularFigures()],

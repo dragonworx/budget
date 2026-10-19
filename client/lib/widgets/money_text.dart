@@ -1,84 +1,30 @@
 import 'package:decimal/decimal.dart';
-import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../theme/app_theme.dart';
+/// The one money symbol. Accounts have no currency: every amount shows a
+/// plain "\$" (the account's currency *scale* is a separate setting).
+const String moneySymbol = '\$';
 
-class MoneyText extends StatelessWidget {
-  const MoneyText(
-    this.amount, {
-    super.key,
-    required this.currency,
-    this.style,
-    this.colorBySign = false,
-  });
-
-  final Decimal amount;
-  final String currency;
-  final TextStyle? style;
-  final bool colorBySign;
-
-  @override
-  Widget build(BuildContext context) {
-    final format = NumberFormat.currency(
-      name: currency,
-      symbol: symbolFor(currency),
-    );
-    final value = amount.toDouble();
-    final color = !colorBySign
-        ? null
-        : value < 0
-        ? AppTheme.debitColor
-        : value > 0
-        ? AppTheme.creditColor
-        : null;
-
-    return Text(
-      format.format(value),
-      style: (style ?? Theme.of(context).textTheme.titleMedium)?.copyWith(
-        color: color,
-        fontFeatures: const [FontFeature.tabularFigures()],
-      ),
-    );
-  }
-
-  /// Symbol for [currency]: the bare local symbol with no country prefix
-  /// ("\$" for AUD, CAD, NZD and USD; "€", "£", "¥", "₹" ...). The account's
-  /// currency is shown alongside where it matters, so "A\$" is redundant.
-  /// Codes without a known symbol fall back to the code ("CHF ").
-  static String symbolFor(String currency) {
-    final code = currency.trim().toUpperCase();
-    String symbol;
-    try {
-      symbol = NumberFormat.simpleCurrency(name: code).currencySymbol;
-    } catch (_) {
-      symbol = code;
-    }
-    return symbol == code ? '$code ' : symbol;
-  }
-}
-
-/// Axis and chart labels. [decimalDigits] overrides the size-based default.
-String formatMoneyAmount(num amount, String currency, {int? decimalDigits}) {
+/// Axis and chart labels: "\$2,400", "\$12.50". [decimalDigits] overrides
+/// the size-based default (none from \$100, else 2).
+String formatMoneyAmount(num amount, {int? decimalDigits}) {
   final digits = decimalDigits ?? (amount.abs() >= 100 ? 0 : 2);
   return NumberFormat.currency(
-    name: currency,
-    symbol: MoneyText.symbolFor(currency),
+    symbol: moneySymbol,
     decimalDigits: digits,
   ).format(amount);
 }
 
-/// A single transaction's amount, signed by direction: "+$1,830" for a
-/// credit, "−$22.99" for a debit. Compact ("+$1.36M") from a million up.
-String formatSignedAmount(num signedAmount, String currency) {
+/// A single transaction's amount, signed by direction: "+\$1,830" for a
+/// credit, "−\$22.99" for a debit. Compact ("+\$1.36M") from a million up.
+String formatSignedAmount(num signedAmount) {
   final abs = signedAmount.abs();
   final text = abs >= 1e6
       ? NumberFormat.compactCurrency(
-          name: currency,
-          symbol: MoneyText.symbolFor(currency),
+          symbol: moneySymbol,
           decimalDigits: 2,
         ).format(abs)
-      : formatMoneyAmount(abs, currency);
+      : formatMoneyAmount(abs);
   if (abs == 0) return text;
   return '${signedAmount < 0 ? '−' : '+'}$text';
 }

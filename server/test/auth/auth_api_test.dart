@@ -264,7 +264,7 @@ void main() {
         201);
     final a = await call(h, 'POST', '/api/projects/$pid/accounts',
         cookie: alice,
-        body: {'name': 'Acc', 'currency': 'AUD', 'seedDate': '2026-01-01'});
+        body: {'name': 'Acc', 'seedDate': '2026-01-01'});
     expect(a.status, 201, reason: '${a.json}');
     final aid = a.json['id'];
     final t = await call(h, 'POST', '/api/accounts/$aid/transactions',
@@ -312,7 +312,7 @@ void main() {
         cookie: bob, body: {'name': 'Bob P'});
     final ba = await call(h, 'POST', '/api/projects/${bp.json['id']}/accounts',
         cookie: bob,
-        body: {'name': 'B', 'currency': 'AUD', 'seedDate': '2026-01-01'});
+        body: {'name': 'B', 'seedDate': '2026-01-01'});
     final xfer = await call(
         h, 'POST', '/api/accounts/${ba.json['id']}/transactions',
         cookie: bob,

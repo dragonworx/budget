@@ -13,7 +13,6 @@ Account _acct(String id, String project, String name) => Account(
   id: id,
   projectId: project,
   name: name,
-  currency: 'AUD',
   seedBalance: Decimal.zero,
   seedDate: DateTime(2026, 10, 1),
   lossThreshold: Decimal.zero,

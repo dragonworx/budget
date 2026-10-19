@@ -95,7 +95,6 @@ Future<EditorOutcome?> showTransactionEditor(
   bool onceOnly = false,
   DateTime? focusDate,
   Set<DateTime> skippedDates = const {},
-  String currency = '',
   bool readOnly = false,
 }) {
   return showSidePanel<EditorOutcome>(
@@ -109,7 +108,6 @@ Future<EditorOutcome?> showTransactionEditor(
       onceOnly: onceOnly,
       focusDate: focusDate,
       skippedDates: skippedDates,
-      currency: currency,
       readOnly: readOnly,
     ),
   );
@@ -125,7 +123,6 @@ class TransactionEditor extends ConsumerStatefulWidget {
     this.onceOnly = false,
     this.focusDate,
     this.skippedDates = const {},
-    this.currency = '',
     this.onDone,
     this.onClosePanel,
     this.readOnly = false,
@@ -150,8 +147,6 @@ class TransactionEditor extends ConsumerStatefulWidget {
   final bool onceOnly;
   final DateTime? focusDate;
   final Set<DateTime> skippedDates;
-  final String currency;
-
   @override
   ConsumerState<TransactionEditor> createState() => _TransactionEditorState();
 }
@@ -596,10 +591,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
-  String get _currency => widget.currency.isEmpty ? 'AUD' : widget.currency;
-
   String _signed(Decimal signed) =>
-      formatSignedAmount(signed.toDouble(), _currency);
+      formatSignedAmount(signed.toDouble());
 
   Widget _focusBanner(ThemeData theme) {
     final date = _day(widget.focusDate!);
@@ -687,9 +680,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   }
 
   Widget _detailsSection(ThemeData theme) {
-    final symbol = widget.currency.isEmpty
-        ? ''
-        : MoneyText.symbolFor(widget.currency).trim();
+    const symbol = moneySymbol;
     return SectionCard(
       title: 'Details',
       icon: Icons.edit_note_rounded,
@@ -1070,7 +1061,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         : formatSignedAmount(
             (_direction == TransactionDirection.credit ? 1 : -1) *
                 amount.toDouble(),
-            widget.currency.isEmpty ? 'AUD' : widget.currency,
           );
     String? total;
     if (amount != null && count != null && count > 1) {
@@ -1079,7 +1069,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           amount.toDouble() *
           count;
       total =
-          '${formatSignedAmount(sum, widget.currency.isEmpty ? 'AUD' : widget.currency)} over $count occurrences';
+          '${formatSignedAmount(sum)} over $count occurrences';
     }
     return SectionCard(
       title: 'Occurrences',

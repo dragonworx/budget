@@ -60,7 +60,6 @@ void main() {
       final account = await AccountRepo(c).create(
         projectId: project.id,
         name: 'A',
-        currency: 'AUD',
         seedBalance: Decimal.zero,
         seedDate: DateTime.utc(2026, 10, 16),
         lossThreshold: Decimal.zero,
@@ -102,7 +101,6 @@ void main() {
       final a = await repo.create(
         projectId: project.id,
         name: 'A',
-        currency: 'AUD',
         seedBalance: Decimal.fromInt(3500),
         seedDate: DateTime.utc(2026, 10, 1),
         lossThreshold: Decimal.zero,
@@ -120,7 +118,6 @@ void main() {
       final b = await repo.create(
         projectId: project.id,
         name: 'B',
-        currency: 'AUD',
         seedBalance: Decimal.fromInt(-650),
         seedDate: DateTime.utc(2026, 10, 1),
         lossThreshold: Decimal.zero,
@@ -134,9 +131,13 @@ void main() {
         final res = await api.call(Request(
             'POST', Uri.parse('http://x/${project.id}/accounts'),
             body: jsonEncode(
-                {'currency': 'AUD', 'seedDate': '2026-10-01', ...body})));
+                // An older client's currency field is ignored, even invalid.
+                {'currency': 'TOOLONG', 'seedDate': '2026-10-01', ...body})));
         expect(res.statusCode, 201);
-        return jsonDecode(await res.readAsString()) as Map<String, dynamic>;
+        final json =
+            jsonDecode(await res.readAsString()) as Map<String, dynamic>;
+        expect(json.containsKey('currency'), isFalse);
+        return json;
       }
 
       // No explicit scale: Hundreds, whatever the seed balance.

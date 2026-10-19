@@ -268,7 +268,7 @@ class _AccountCard extends ConsumerWidget {
     final value = today.valueOrNull;
     final low = value != null && belowAlert(value, account.lossThreshold);
     String money(num v) =>
-        formatMoneyAmount(v, account.currency, decimalDigits: 2);
+        formatMoneyAmount(v, decimalDigits: 2);
     return Material(
       color: AppTheme.surface,
       shape: RoundedRectangleBorder(
@@ -305,8 +305,6 @@ class _AccountCard extends ConsumerWidget {
                     RoleChip(account.role),
                     const SizedBox(width: 6),
                   ],
-                  Pill(account.currency),
-                  const SizedBox(width: 4),
                   if (account.role.canEdit || canShare)
                   PopupMenuButton<_AccountAction>(
                     tooltip: 'Account actions',

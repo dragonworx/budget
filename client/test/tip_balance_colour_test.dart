@@ -36,7 +36,6 @@ Future<TextSpan> _balanceSpan(WidgetTester tester, double threshold) async {
                 ),
               ],
             ),
-            currency: 'AUD',
             seedDate: _start.subtract(const Duration(days: 5)),
             lossThreshold: threshold,
             viewStart: _start,
