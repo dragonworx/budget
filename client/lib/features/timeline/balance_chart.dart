@@ -23,6 +23,10 @@ import 'zoom_level.dart';
 typedef ViewportChanged = void Function(DateTime viewStart, double visibleDays);
 typedef CreateOnDay = void Function(DateTime day);
 
+/// The dot popup's Edit: open [transaction]'s editor (the series editor for
+/// a recurring one), focused on the tapped occurrence [date].
+typedef EditOccurrence = void Function(Transaction transaction, DateTime date);
+
 /// Release in the Trim zone: end [transaction] on [day] ([removed] loaded
 /// occurrences after it disappear). The receiver confirms before saving.
 typedef TrimOnDay = void Function(
@@ -83,7 +87,13 @@ class BalanceChart extends StatefulWidget {
     this.onTargetChanged,
     this.onPlanPeriod,
     this.onTrimOnDay,
+    this.onEditTransaction,
   });
+
+  /// "Edit" in the dot popup (a menu, in creation order, when the dot has
+  /// several transactions). Null: no Edit (viewers). Only an explicit tap on
+  /// Edit / a menu item calls this; other taps never edit.
+  final EditOccurrence? onEditTransaction;
 
   /// Trim zone release (see the class docs). Null: no Trim (viewers).
   final TrimOnDay? onTrimOnDay;
@@ -1023,11 +1033,158 @@ class _BalanceChartState extends State<BalanceChart>
     }
     // Touch tips stay until the next tap; mouse clicks time out.
     if (_touchDown) return;
+    _armTapTipTimer();
+  }
+
+  void _armTapTipTimer() {
+    _tapTipTimer?.cancel();
     _tapTipTimer = Timer(_tapTipDuration, () {
       if (!mounted || !_tapTip) return;
+      // Not while the mouse is on the card (reaching for Edit).
+      if (_overTipCard) return _armTapTipTimer();
       _tapTip = false;
       _hoverDots.value = null;
     });
+  }
+
+  /// The popup card, for hit-testing hover against it.
+  final GlobalKey _tipCardKey = GlobalKey();
+
+  /// The multi-transaction Edit menu is open.
+  bool _editMenuOpen = false;
+
+  /// The mouse is over (or within a short reach of) the popup card.
+  bool _overTipCard = false;
+
+  /// Whether [pos] (chart-local) is on the popup card or in the gap between
+  /// it and its dot, so moving from the dot to Edit keeps the tip.
+  bool _tipCardContains(Offset pos) {
+    if (widget.onEditTransaction == null || _hoverDots.value == null) {
+      return false;
+    }
+    final card = _tipCardKey.currentContext?.findRenderObject();
+    final me = context.findRenderObject();
+    if (card is! RenderBox || me is! RenderBox || !card.attached) return false;
+    final topLeft = me.globalToLocal(card.localToGlobal(Offset.zero));
+    return (topLeft & card.size).inflate(18).contains(pos);
+  }
+
+  void _hideTip() {
+    _tapTipTimer?.cancel();
+    _tapTip = false;
+    _stickyTip = false;
+    _overTipCard = false;
+    _hoverDots.value = null;
+  }
+
+  /// Transactions the popup's Edit offers, once each, in creation order
+  /// (the server lists them by created_at; recurring occurrences use their
+  /// series), each with the tapped occurrence's date and signed amount.
+  List<(Transaction, Occurrence)> _editTargets(_DotTip tip) {
+    final seen = <String, (Transaction, Occurrence)>{};
+    for (final d in tip.dots) {
+      for (final o in d.occurrences) {
+        final t = widget.transactions[o.transactionId];
+        if (t != null) seen.putIfAbsent(t.id, () => (t, o));
+      }
+    }
+    final order = {
+      for (final (i, id) in widget.transactions.keys.indexed) id: i,
+    };
+    return seen.values.toList()
+      ..sort((a, b) => order[a.$1.id]!.compareTo(order[b.$1.id]!));
+  }
+
+  String _nameOf(Transaction t) {
+    final raw = widget.transactionNames[t.id] ?? t.name;
+    return raw.trim().isEmpty ? 'Transaction' : raw.trim();
+  }
+
+  Widget _editLink(ThemeData theme, List<(Transaction, Occurrence)> targets) {
+    final many = targets.length > 1;
+    void open(Transaction t, Occurrence o) {
+      _hideTip();
+      widget.onEditTransaction?.call(t, dateOnly(o.date));
+    }
+
+    return Builder(
+      builder: (context) => Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          key: const ValueKey('tip-edit'),
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            minimumSize: const Size(64, 36),
+          ),
+          icon: const Icon(Icons.edit_outlined, size: 16),
+          label: Text(many ? 'Edit…' : 'Edit'),
+          onPressed: () async {
+            if (!many) return open(targets.single.$1, targets.single.$2);
+            final box = context.findRenderObject()! as RenderBox;
+            final overlay =
+                Overlay.of(context).context.findRenderObject()! as RenderBox;
+            final r = Rect.fromPoints(
+              box.localToGlobal(Offset.zero, ancestor: overlay),
+              box.localToGlobal(
+                box.size.bottomRight(Offset.zero),
+                ancestor: overlay,
+              ),
+            );
+            _editMenuOpen = true;
+            _tapTipTimer?.cancel();
+            final picked = await showMenu<int>(
+              context: context,
+              position: RelativeRect.fromRect(r, Offset.zero & overlay.size),
+              items: [
+                for (final (i, (t, o)) in targets.indexed)
+                  PopupMenuItem<int>(
+                    key: ValueKey('tip-edit-item-${t.id}'),
+                    value: i,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 200),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _nameOf(t),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            formatSignedAmount(
+                              o.signedDelta.toDouble(),
+                              widget.currency,
+                            ),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: o.signedDelta.toDouble() < 0
+                                  ? AppTheme.debitColor
+                                  : AppTheme.creditColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            );
+            if (!mounted) return;
+            _editMenuOpen = false;
+            if (picked == null) {
+              // Dismissed: the popup stays; a mouse-pinned one times out
+              // as usual.
+              if (_tapTip && !_touchDown) _armTapTipTimer();
+              return;
+            }
+            final (t, o) = targets[picked];
+            open(t, o);
+          },
+        ),
+      ),
+    );
   }
 
   void _onPointerSignal(PointerSignalEvent event) {
@@ -1206,6 +1363,8 @@ class _BalanceChartState extends State<BalanceChart>
         onHover: _onHover,
         onExit: (_) {
           _hoverDay.value = null;
+          // The Edit menu's overlay takes the mouse: keep its popup up.
+          if (_editMenuOpen) return;
           _hoverDots.value = null;
           _tapTip = false;
           if (_overAdd || _overDot) {
@@ -2160,6 +2319,13 @@ class _BalanceChartState extends State<BalanceChart>
     if (_pointer != null || _multiTouch || _size == Size.zero) return;
     final pos = event.localPosition;
     final layout = _layout;
+    _overTipCard = _tipCardContains(pos);
+    if (_overTipCard) {
+      // Heading for (or on) the popup's Edit: keep the tip, no "+".
+      if (_hoverDay.value != null) _hoverDay.value = null;
+      if (_overAdd) setState(() => _overAdd = false);
+      return;
+    }
     if (!_hasSelection) _updateDotHover(layout, pos);
     final axisBottom =
         (layout.dayBand ?? layout.weekBand ?? layout.monthBand).bottom;
@@ -2535,6 +2701,14 @@ class _BalanceChartState extends State<BalanceChart>
         ),
       );
     }
+    final editTargets = widget.onEditTransaction == null
+        ? const <(Transaction, Occurrence)>[]
+        : _editTargets(tip);
+    if (editTargets.isNotEmpty) {
+      extra += 40;
+      children.add(const SizedBox(height: 4));
+      children.add(_editLink(theme, editTargets));
+    }
     final estHeight = 30.0 + shown.length * 66.0 + (more > 0 ? 20 : 0) + extra;
     // Right of the dot, flipping left / up near the edges.
     var left = tip.anchor.dx + 14;
@@ -2561,16 +2735,20 @@ class _BalanceChartState extends State<BalanceChart>
       top = o.dy;
     }
     final ring = tip.dots.first.radius + 5;
+    // With Edit the card takes taps (so Edit is reachable on touch and a
+    // tap on the card never falls through to the chart); without it the
+    // whole popup stays pointer-transparent.
+    final tappable = editTargets.isNotEmpty;
     return Positioned.fill(
-      child: IgnorePointer(
-        child: Stack(
-          children: [
-            // Highlight ring on the hovered dot.
-            Positioned(
-              left: tip.anchor.dx - ring,
-              top: tip.anchor.dy - ring,
-              width: ring * 2,
-              height: ring * 2,
+      child: Stack(
+        children: [
+          // Highlight ring on the hovered dot.
+          Positioned(
+            left: tip.anchor.dx - ring,
+            top: tip.anchor.dy - ring,
+            width: ring * 2,
+            height: ring * 2,
+            child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -2579,14 +2757,23 @@ class _BalanceChartState extends State<BalanceChart>
                 ),
               ),
             ),
-            Positioned(
-              left: left,
-              top: top,
-              width: width,
-              child: _tooltipCard(theme, children),
+          ),
+          Positioned(
+            left: left,
+            top: top,
+            width: width,
+            child: IgnorePointer(
+              ignoring: !tappable,
+              child: Listener(
+                onPointerSignal: _onPointerSignal,
+                child: KeyedSubtree(
+                  key: _tipCardKey,
+                  child: _tooltipCard(theme, children),
+                ),
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

@@ -16,7 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 final _today = DateTime.now();
 final _day = DateTime(_today.year, _today.month, _today.day);
 
-Account _account() => Account(
+Account _account({Role role = Role.owner}) => Account(
   id: 'acc',
   projectId: 'p',
   name: 'Everyday',
@@ -25,6 +25,7 @@ Account _account() => Account(
   seedDate: _day.subtract(const Duration(days: 30)),
   lossThreshold: Decimal.zero,
   currencyScale: 1000,
+  role: role,
 );
 
 Transaction _tx(String id, String name, {TransactionDirection? dir}) =>
@@ -49,6 +50,7 @@ class _Store {
   };
   final skips = <String, Set<DateTime>>{};
   final calls = <String>[];
+  Role role = Role.owner;
 }
 
 class _AccountRepo extends AccountRepository {
@@ -56,7 +58,7 @@ class _AccountRepo extends AccountRepository {
   final _Store s;
 
   @override
-  Future<Account> get(String id) async => _account();
+  Future<Account> get(String id) async => _account(role: s.role);
 
   @override
   Future<BalanceSeries> balance(
@@ -129,6 +131,7 @@ class _TxRepo extends TransactionRepository {
 Future<_Store> _pump(
   WidgetTester tester, {
   Size size = const Size(1440, 900),
+  void Function(_Store store)? setup,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -137,6 +140,9 @@ Future<_Store> _pump(
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
   final store = _Store();
+  setup?.call(store);
+  // A fresh scope per pump (a reused one would keep the last store's data).
+  await tester.pumpWidget(const SizedBox());
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -148,6 +154,33 @@ Future<_Store> _pump(
   );
   await tester.pumpAndSettle();
   return store;
+}
+
+/// Taps (touch or mouse click) across the plot until a dot popup shows;
+/// returns where.
+Future<Offset> _revealTip(WidgetTester tester, PointerDeviceKind kind) async {
+  final plot = tester.getRect(find.byType(BalanceChart));
+  final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+  for (var fy = 0.1; fy < 0.8; fy += 0.03) {
+    for (var fx = 0.3; fx < 0.98; fx += 0.04) {
+      final p = Offset(
+        plot.left + plot.width * fx,
+        plot.top + plot.height * fy,
+      );
+      await tester.tapAt(p, kind: kind);
+      await tester.pump();
+      if (tip.evaluate().isNotEmpty) return p;
+    }
+  }
+  fail('a tap should reveal some dot');
+}
+
+/// Salary a day after Rent, so every dot holds one transaction.
+void _singles(_Store s) {
+  final t = s.txs['salary']!;
+  s.txs['salary'] = t.copyWith(
+    startDate: t.startDate.add(const Duration(days: 1)),
+  );
 }
 
 /// Opens [name]'s series in the editor through the Transactions panel
@@ -690,6 +723,165 @@ void main() {
       expect(yPill, findsNothing);
       expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
       expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('popup Edit (one transaction) opens its editor; touch and '
+      'mouse', (tester) async {
+    for (final (size, kind) in [
+      (const Size(390, 844), PointerDeviceKind.touch),
+      (const Size(1440, 900), PointerDeviceKind.mouse),
+    ]) {
+      final store = await _pump(tester, size: size, setup: _singles);
+      await _revealTip(tester, kind);
+      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      final edit = find.byKey(const ValueKey('tip-edit'));
+      expect(edit, findsOneWidget);
+      expect(
+        find.descendant(of: edit, matching: find.text('Edit')),
+        findsOneWidget,
+      );
+      // Which transaction the popup shows.
+      final name = ['Rent', 'Salary'].firstWhere(
+        (n) => find
+            .descendant(of: tip, matching: find.text(n))
+            .evaluate()
+            .isNotEmpty,
+      );
+      // A tap on the card itself (not Edit) does nothing and keeps it up.
+      final card = tester.getRect(tip);
+      await tester.tapAt(card.topLeft + const Offset(20, 12), kind: kind);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(tip, findsOneWidget);
+      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      await tester.tap(edit, kind: kind);
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-name')),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(field.controller?.text, name);
+      expect(tip, findsNothing);
+      expect(
+        store.calls.where(
+          (c) => c.startsWith('create') || c.startsWith('update'),
+        ),
+        isEmpty,
+      );
+    }
+  });
+
+  testWidgets('mouse: moving from the dot onto Edit keeps the hover popup', (
+    tester,
+  ) async {
+    await _pump(tester, setup: _singles);
+    final plot = tester.getRect(find.byType(BalanceChart));
+    final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: plot.topLeft);
+    Offset? dot;
+    for (var fy = 0.1; fy < 0.8 && dot == null; fy += 0.02) {
+      for (var fx = 0.3; fx < 0.98 && dot == null; fx += 0.02) {
+        final p = Offset(
+          plot.left + plot.width * fx,
+          plot.top + plot.height * fy,
+        );
+        await mouse.moveTo(p);
+        await tester.pump();
+        if (tip.evaluate().isNotEmpty) dot = p;
+      }
+    }
+    expect(dot, isNotNull);
+    final target = tester.getCenter(find.byKey(const ValueKey('tip-edit')));
+    for (var i = 1; i <= 10; i++) {
+      await mouse.moveTo(Offset.lerp(dot, target, i / 10)!);
+      await tester.pump();
+      expect(tip, findsOneWidget, reason: 'step $i');
+    }
+    await tester.pump(const Duration(seconds: 8));
+    expect(tip, findsOneWidget, reason: 'stays while on the card');
+    await mouse.down(target);
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+    await mouse.removePointer();
+  });
+
+  testWidgets('popup Edit (several) lists them in creation order with name '
+      'and amount; the pick opens that series', (tester) async {
+    for (final (size, kind, salaryFirst) in [
+      (const Size(390, 844), PointerDeviceKind.touch, false),
+      (const Size(1440, 900), PointerDeviceKind.mouse, true),
+    ]) {
+      final store = await _pump(
+        tester,
+        size: size,
+        setup: (s) {
+          if (!salaryFirst) return;
+          // Salary created first: the server lists it first.
+          final rent = s.txs.remove('rent')!;
+          s.txs['rent'] = rent;
+        },
+      );
+      await _revealTip(tester, kind);
+      final edit = find.byKey(const ValueKey('tip-edit'));
+      expect(
+        find.descendant(of: edit, matching: find.text('Edit…')),
+        findsOneWidget,
+      );
+      await tester.tap(edit, kind: kind);
+      await tester.pumpAndSettle();
+      final rent = find.byKey(const ValueKey('tip-edit-item-rent'));
+      final salary = find.byKey(const ValueKey('tip-edit-item-salary'));
+      expect(rent, findsOneWidget);
+      expect(salary, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('occurrence-tooltip')),
+        findsOneWidget,
+        reason: 'popup stays up behind its menu',
+      );
+      final rentY = tester.getCenter(rent).dy;
+      final salaryY = tester.getCenter(salary).dy;
+      expect(salaryFirst ? salaryY < rentY : rentY < salaryY, isTrue);
+      expect(
+        find.descendant(of: rent, matching: find.text('Rent')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: rent, matching: find.textContaining('50')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: salary, matching: find.textContaining('4,200')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      await tester.tap(salary, kind: kind);
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-name')),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(field.controller?.text, 'Salary');
+      expect(
+        store.calls.where(
+          (c) => c.startsWith('create') || c.startsWith('update'),
+        ),
+        isEmpty,
+      );
+    }
+  });
+
+  testWidgets('viewers get no Edit in the popup', (tester) async {
+    for (final kind in [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
+      await _pump(tester, setup: (s) => s.role = Role.viewer);
+      await _revealTip(tester, kind);
+      expect(find.byKey(const ValueKey('occurrence-tooltip')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tip-edit')), findsNothing);
     }
   });
 

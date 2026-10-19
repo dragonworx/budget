@@ -753,6 +753,14 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                               removed,
                                             )
                                           : null,
+                                      onEditTransaction: account.role.canEdit
+                                          ? (t, date) => _openEditor(
+                                              context,
+                                              account,
+                                              existing: t,
+                                              focusDate: date,
+                                            )
+                                          : null,
                                       transactionNames: transactionNames,
                                       transactions: {
                                         for (final t in transactions) t.id: t,
