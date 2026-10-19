@@ -767,6 +767,12 @@ void main() {
         find.descendant(of: tip, matching: find.textContaining(text.data!)),
         findsWidgets,
       );
+      // Both pills are cyan (not the mint today / accent line colours).
+      for (final key in ['x-highlight', 'y-highlight']) {
+        final box = tester.widget<Container>(find.byKey(ValueKey(key)));
+        final deco = box.decoration! as BoxDecoration;
+        expect((deco.border! as Border).top.color, guideColor, reason: key);
+      }
       // The lit column is the pill's day.
       final c = tester.getRect(col);
       expect(c.center.dx, closeTo(tester.getRect(pill).center.dx, c.width + 2));

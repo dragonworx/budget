@@ -1608,9 +1608,8 @@ class _BalanceChartState extends State<BalanceChart>
     final layout = _layout;
     final y = dot.center.dy;
     if (y < layout.plot.top || y > layout.plot.bottom) return const [];
-    final color = belowAlert(dot.balanceAfter, widget.lossThreshold)
-        ? AppTheme.debitColor
-        : _lineColor;
+    // Cyan, so the dot's crosshair never reads as the (mint) today line.
+    const color = guideColor;
     final style = (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
       fontWeight: FontWeight.w800,
       color: Colors.white,
@@ -1678,9 +1677,8 @@ class _BalanceChartState extends State<BalanceChart>
     final x = dot.center.dx;
     if (x < layout.plot.left || x > layout.plot.right) return const [];
     final day = _highlightDay(dot);
-    final color = belowAlert(dot.balanceAfter, widget.lossThreshold)
-        ? AppTheme.debitColor
-        : _lineColor;
+    // Cyan, so the dot's crosshair never reads as the (mint) today line.
+    const color = guideColor;
     final axis = layout.axis;
     final x0 = layout.xOf(day, widget.viewStart, widget.visibleDays);
     final x1 = layout.xOf(
@@ -3153,6 +3151,11 @@ const _dayColors = <Color>[
 const _plotBg = Color(0xFF131921);
 const _laneText = Color(0xFFC6CEDA);
 const _lineColor = AppTheme.accent;
+
+/// The active dot's crosshair (guides to both axes and their pills): a
+/// clear cyan, distinct from the mint today line and the balance line.
+@visibleForTesting
+const Color guideColor = Color(0xFF22D3EE);
 const _gridColor = Color(0xFF243040);
 
 Color _yearColor(int index) =>
@@ -3817,7 +3820,8 @@ class _BalanceChartPainter extends CustomPainter {
       color: AppTheme.mint.withValues(alpha: 0.9),
       label: 'Today',
       labelColor: AppTheme.mint,
-      dashed: true,
+      // Solid, unlike the dashed dot crosshair and seed marker.
+      dashed: false,
       alignLeft: todayFirst,
       offset: sameDay ? markerGap : 0,
     );
