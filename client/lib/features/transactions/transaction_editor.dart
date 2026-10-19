@@ -8,6 +8,7 @@ import '../../data/api_client.dart';
 import '../../data/frequency.dart';
 import '../../data/models.dart';
 import '../../widgets/conflict_dialog.dart';
+import '../../state/realtime_providers.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/account_picker.dart';
@@ -153,6 +154,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   @override
   void initState() {
     super.initState();
+    final id = widget.existing?.id;
+    _openedEvent = id == null ? null : ref.read(remoteChangesProvider)[id]?.id;
     final existing = widget.existing;
     _name = TextEditingController(text: existing?.name ?? '');
     _amount = TextEditingController(text: existing?.amount.toString() ?? '');
@@ -414,6 +417,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                     children: [
+                      ?_remoteBanner(theme),
                       if (widget.focusDate != null && !_isNew) ...[
                         _focusBanner(theme),
                         const SizedBox(height: 12),
@@ -437,6 +441,47 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Remote change event already known when the editor opened.
+  int? _openedEvent;
+
+  /// "Updated by X" when someone else changed this series while it's open
+  /// (the form keeps your edits; saving then asks Reload / Overwrite).
+  Widget? _remoteBanner(ThemeData theme) {
+    final id = widget.existing?.id;
+    if (id == null) return null;
+    final ev = ref.watch(remoteChangesProvider)[id];
+    if (ev == null || ev.id == _openedEvent) return null;
+    final deleted = ev.action.endsWith('.deleted');
+    final pid = ref.watch(accountProvider(widget.accountId)).valueOrNull?.projectId;
+    final who = actorName(ref, pid, ev.actorId) ?? 'someone else';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        key: const ValueKey('editor-remote-banner'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppTheme.warning.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppTheme.warning.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.sync_rounded, size: 16, color: AppTheme.warning),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                deleted
+                    ? 'Deleted by $who. Close to discard.'
+                    : 'Updated by $who. Your edits are kept; saving will ask before overwriting.',
+                style: theme.textTheme.bodySmall?.copyWith(color: AppTheme.text),
+              ),
+            ),
+          ],
         ),
       ),
     );

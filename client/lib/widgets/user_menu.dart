@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/auth_repository.dart';
 import '../state/auth_providers.dart';
+import '../state/realtime_providers.dart';
 import '../theme/app_theme.dart';
 
 class UserAvatar extends StatelessWidget {
@@ -126,7 +127,10 @@ class UserMenu extends ConsumerWidget {
       ],
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: UserAvatar(user: user),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [const RealtimeDot(), UserAvatar(user: user)],
+        ),
       ),
     );
   }

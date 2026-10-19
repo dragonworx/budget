@@ -10,6 +10,7 @@ import '../../data/models.dart';
 import '../../widgets/conflict_dialog.dart';
 import '../../data/sharing.dart';
 import '../sharing/share_dialog.dart';
+import '../../state/realtime_providers.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/account_dialog.dart';
@@ -23,6 +24,7 @@ import '../planning/scenarios_panel.dart' show scenarioColor;
 import 'selection_period.dart';
 import '../planning/goal_panel.dart';
 import '../planning/plan_panel.dart';
+import '../reminders/reminders_page.dart';
 import '../transactions/transaction_editor.dart';
 import '../transactions/transactions_panel.dart';
 import 'balance_chart.dart';
@@ -537,6 +539,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               ),
               actions: compact
                   ? [
+                      const RealtimeDot(),
+                      IconButton(
+                        key: const ValueKey('open-reminders'),
+                        tooltip: 'Reminders calendar',
+                        onPressed: () => showReminders(context, account),
+                        icon: const Icon(Icons.calendar_month_rounded),
+                      ),
                       IconButton(
                         key: const ValueKey('open-transactions'),
                         tooltip: 'Transactions (${transactions.length})',
@@ -611,6 +620,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                       const SizedBox(width: 4),
                     ]
                   : [
+                      const RealtimeDot(),
                       if (!account.role.canEdit)
                         const Padding(
                           padding: EdgeInsets.only(right: 8),
@@ -641,6 +651,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                         icon: const Icon(Icons.tune_rounded),
                       ),
                       ],
+                      IconButton(
+                        key: const ValueKey('open-reminders'),
+                        tooltip: 'Reminders calendar',
+                        onPressed: () => showReminders(context, account),
+                        icon: const Icon(Icons.calendar_month_rounded),
+                      ),
                       const SizedBox(width: 6),
                       OutlinedButton.icon(
                         key: const ValueKey('open-transactions'),

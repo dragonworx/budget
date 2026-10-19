@@ -8,6 +8,7 @@ import '../../data/models.dart';
 import '../../data/sharing.dart';
 import '../../state/auth_providers.dart';
 import '../../state/providers.dart';
+import '../../state/realtime_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/sharing_ui.dart';
@@ -169,6 +170,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(sharingEpochProvider, (_, _) => _load());
     final theme = Theme.of(context);
     final info = _info;
     final isOwner = info?.role == Role.owner;

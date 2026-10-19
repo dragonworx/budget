@@ -15,6 +15,7 @@ import '../../widgets/conflict_dialog.dart';
 import '../../widgets/sharing_ui.dart';
 import '../../data/sharing.dart';
 import '../sharing/share_dialog.dart';
+import '../../state/realtime_providers.dart';
 import '../../widgets/ui.dart';
 
 class ProjectsPage extends ConsumerWidget {
@@ -386,6 +387,19 @@ class _ProjectCard extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: RoleChip(project.role),
+                )
+              else if (ownedProjectShared(ref, project))
+                const Padding(
+                  padding: EdgeInsets.only(right: 6),
+                  child: Tooltip(
+                    message: 'Shared with others',
+                    child: Icon(
+                      Icons.people_alt_outlined,
+                      key: ValueKey('owned-shared-badge'),
+                      size: 18,
+                      color: AppTheme.accent,
+                    ),
+                  ),
                 ),
               if (accounts != null && accounts.isNotEmpty && !project.shared)
                 Padding(

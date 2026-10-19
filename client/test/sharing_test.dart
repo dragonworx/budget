@@ -394,6 +394,8 @@ void main() {
     expect(find.byKey(const ValueKey('owner-avatar')), findsNWidgets(2));
     expect(find.byKey(const ValueKey('role-chip-viewer')), findsOneWidget);
     expect(find.text('1 shared account only · Owner Bob'), findsOneWidget);
+    // My own project has another member -> shared badge.
+    expect(find.byKey(const ValueKey('owned-shared-badge')), findsOneWidget);
   });
 
   testWidgets('viewer gets a read-only transactions panel', (tester) async {

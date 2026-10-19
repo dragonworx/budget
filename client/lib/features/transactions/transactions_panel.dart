@@ -677,11 +677,14 @@ class _TxRow extends StatelessWidget {
                       behavior: HitTestBehavior.opaque,
                       onTap: readOnly ? null : () => onToggle(!t.enabled),
                       child: IgnorePointer(
-                        child: Transform.scale(
+                        child: Opacity(
+                          opacity: readOnly ? 0.4 : 1,
+                          child: Transform.scale(
                           scale: touch ? 0.9 : 0.8,
                           child: Switch(
                             value: t.enabled,
                             onChanged: readOnly ? null : onToggle,
+                          ),
                           ),
                         ),
                       ),

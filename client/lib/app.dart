@@ -10,6 +10,7 @@ import 'features/projects/project_detail_page.dart';
 import 'features/projects/projects_page.dart';
 import 'features/timeline/timeline_page.dart';
 import 'state/auth_providers.dart';
+import 'state/realtime_providers.dart';
 import 'theme/app_theme.dart';
 
 const signInPath = '/sign-in';
@@ -104,7 +105,9 @@ class BudgetApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
+    ref.watch(realtimeControllerProvider);
     return MaterialApp.router(
+      scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'Budget Tool',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
