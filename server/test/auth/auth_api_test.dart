@@ -49,6 +49,7 @@ void main() {
       allowlist: allow,
       devBypass: devBypass,
       sessionSecret: 'test-secret-test-secret-test-secret',
+      rateLimitAuthPerMinute: 0, // many logins from one test IP
     );
     return buildHandler(conn!, config,
         verifier: GoogleIdTokenVerifier(

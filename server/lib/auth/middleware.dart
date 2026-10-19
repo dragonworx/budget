@@ -2,6 +2,7 @@ import 'package:shelf/shelf.dart';
 
 import '../api/json_helpers.dart';
 import '../config.dart';
+import '../hardening/logging.dart';
 import '../repo/user_repo.dart';
 import 'session_store.dart';
 
@@ -124,6 +125,7 @@ Middleware authMiddleware(SessionStore sessions) {
           }
           return inner(request);
         }
+        requestInfoOf(request)?.userId = info.user.id;
         return inner(request.change(context: {
           'auth': AuthContext(info.user, token!, isDev: info.isDev),
         }));

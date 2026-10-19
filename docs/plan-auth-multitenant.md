@@ -215,6 +215,9 @@ Authz is central: `server/lib/auth/authz.dart` holds the policy table (method + 
 
 ### 4c. Real-time event contract (implemented in P5a)
 
+P6c additions: every response carries `X-Request-Id` (a sane inbound one is honoured); rate-limited requests get `429 {"error":"rate limited"}` with `Retry-After`; `/ready` is the readiness probe.
+
+
 **Transport**: `GET /api/events` (session cookie or bearer; same-origin `EventSource('/api/events', {withCredentials: true})` works). Response `text/event-stream`, `cache-control: no-cache`, `x-accel-buffering: no`. `401` without a session, `400` for a non-integer cursor, `503` if realtime is not wired. The dev proxy and Caddy (`flush_interval -1`) stream it unbuffered.
 
 **Cursor**: every change has a global integer `id` (= `audit_log.id`). Resume with the standard `Last-Event-ID` header (EventSource sends it automatically on reconnect) or `?since=<id>` (use this when creating a new EventSource after a page reload; keep the last seen id in memory/localStorage).
@@ -227,6 +230,7 @@ Authz is central: `server/lib/auth/authz.dart` holds the policy table (method + 
 | `ready` | current cursor | `{lastEventId, userId}` | sent once after connect; when resuming, it comes **after** the replayed `change` events |
 | `resync` | newest id | `{lastEventId, reason}` | cursor too old (>24 h), too far behind (>1000 events) or ahead of the log: drop caches and refetch everything, then continue from `lastEventId` |
 | `goodbye` | – | `{reason}` | `"session ended"` (logout/expiry, checked on each heartbeat) or `"account disabled"`; the server closes the stream — do **not** auto-reconnect, go to sign-in |
+| `reconnect` | – | `{reason, lastEventId}` | server shutting down/redeploying (P6c); sent after `retry: 1000` — **do** reconnect (with Last-Event-ID) to another replica |
 | `error` | – | `{error}` | server-side failure handling an event; treat like `resync` |
 | comment | – | `: ping` | heartbeat every 25 s |
 

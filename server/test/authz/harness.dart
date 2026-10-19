@@ -51,6 +51,7 @@ class Harness {
       adminEmails: admins.isEmpty ? ['admin@$domain'] : admins,
       allowlist: ['@$domain'],
       sessionSecret: 'test-secret-test-secret-test-secret',
+      rateLimitAuthPerMinute: 0, // many logins from one test IP
     );
     h = buildHandler(conn!, config,
         verifier: GoogleIdTokenVerifier(

@@ -96,6 +96,7 @@ class _EventStream {
     // the queue holds live events until catch-up has run.
     _subs.add(bus.events.listen((e) => _enqueue(() => _handle(e))));
     _subs.add(bus.gaps.listen((_) => _enqueue(() => _catchUp(_cursor))));
+    _subs.add(bus.shutdowns.listen((reason) => unawaited(_reconnect(reason))));
     if (since == null) {
       _enqueue(() async {
         final max = await _maxId();
@@ -180,6 +181,16 @@ class _EventStream {
   Future<void> _goodbye(String reason) async {
     if (_closed) return;
     _send('goodbye', {'reason': reason});
+    await _close();
+    await _out.close();
+  }
+
+  /// Server shutdown: ask the client to reconnect soon (another replica will
+  /// serve it; Last-Event-ID resumes without loss), then close.
+  Future<void> _reconnect(String reason) async {
+    if (_closed) return;
+    _write('retry: 1000\n\n');
+    _send('reconnect', {'reason': reason, 'lastEventId': _cursor});
     await _close();
     await _out.close();
   }

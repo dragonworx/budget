@@ -8,6 +8,12 @@ import 'event.dart';
 class EventBus {
   final _events = StreamController<BudgetEvent>.broadcast(sync: true);
   final _gaps = StreamController<void>.broadcast(sync: true);
+  final _shutdown = StreamController<String>.broadcast(sync: true);
+
+  /// Server is shutting down: streams should tell clients to reconnect
+  /// (to another replica) and close.
+  Stream<String> get shutdowns => _shutdown.stream;
+  void shutdown(String reason) => _shutdown.add(reason);
 
   /// Live events, in NOTIFY (commit) order.
   Stream<BudgetEvent> get events => _events.stream;
@@ -27,5 +33,6 @@ class EventBus {
   Future<void> close() async {
     await _events.close();
     await _gaps.close();
+    await _shutdown.close();
   }
 }

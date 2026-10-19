@@ -76,9 +76,16 @@ requires it); `PUBLIC_ORIGIN` must be the public https URL.
 
 ## 6. Operations
 
-- **Health**: every api container has a `/health` healthcheck (checks the DB); Caddy only routes to
-  healthy replicas (`health_uri /health`) and discovers replicas via Docker DNS every 5 s.
-  `/ready` is routed too and becomes the readiness check once the API adds it (P6 hardening).
+- **Health**: `/health` is liveness (process + DB). `/ready` is readiness: 200 only when the DB pool
+  and the LISTEN connection are healthy and the replica is not draining (503 otherwise). The compose
+  healthcheck uses `/ready`; Caddy only routes to healthy replicas (switching Caddy's `health_uri`
+  to `/ready` is recommended) and discovers replicas via Docker DNS every 5 s.
+- **Hardening env** (defaults in brackets): `TRUSTED_PROXIES` (CIDRs allowed to set X-Forwarded-For),
+  `RATE_LIMIT_AUTH_PER_MIN` [20, per IP on /api/auth/*], `RATE_LIMIT_PER_MIN` [600, per session],
+  `SESSION_CACHE_TTL_SECONDS` [10, 0 disables], `SHUTDOWN_GRACE_SECONDS` [10],
+  `CLEANUP_INTERVAL_MINUTES` [60]. Rate limits are in memory **per replica**, so the effective limit is
+  roughly N× with N replicas. On SIGTERM a replica stops accepting, sends SSE clients a `reconnect`
+  event, drains in-flight requests, then closes the pool. Logs are JSON lines with reqId/userId/ms.
 - **Scale**: `API_REPLICAS=4 docker compose ... up -d` (stateless; sessions live in Postgres).
 - **Real-time**: Caddy uses `flush_interval -1`, so `/api/events` (SSE) streams without buffering.
 - **Logs**: `docker compose -f deploy/docker-compose.prod.yml logs -f api caddy`.

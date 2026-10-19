@@ -18,6 +18,12 @@ class Config {
     this.sessionSecret = devSessionSecret,
     this.sessionTtlDays = 30,
     this.dbPoolSize = 10,
+    this.trustedProxies = const ['127.0.0.1', '::1'],
+    this.rateLimitAuthPerMinute = 20,
+    this.rateLimitPerMinute = 600,
+    this.sessionCacheTtl = const Duration(seconds: 10),
+    this.shutdownGrace = const Duration(seconds: 10),
+    this.cleanupInterval = const Duration(hours: 1),
   });
 
   static const defaultAdminEmail = 'musicartscience@gmail.com';
@@ -54,6 +60,15 @@ class Config {
       sessionSecret: v('SESSION_SECRET', devSessionSecret),
       sessionTtlDays: int.parse(v('SESSION_TTL_DAYS', '30')),
       dbPoolSize: int.parse(v('DB_POOL_SIZE', '10')),
+      trustedProxies: csv(v('TRUSTED_PROXIES', '127.0.0.1,::1')),
+      rateLimitAuthPerMinute: int.parse(v('RATE_LIMIT_AUTH_PER_MIN', '20')),
+      rateLimitPerMinute: int.parse(v('RATE_LIMIT_PER_MIN', '600')),
+      sessionCacheTtl:
+          Duration(seconds: int.parse(v('SESSION_CACHE_TTL_SECONDS', '10'))),
+      shutdownGrace:
+          Duration(seconds: int.parse(v('SHUTDOWN_GRACE_SECONDS', '10'))),
+      cleanupInterval:
+          Duration(minutes: int.parse(v('CLEANUP_INTERVAL_MINUTES', '60'))),
     );
   }
 
@@ -72,6 +87,19 @@ class Config {
   final String sessionSecret;
   final int sessionTtlDays;
   final int dbPoolSize;
+
+  /// Peers whose X-Forwarded-For is trusted (IPs or CIDRs, e.g. the Docker
+  /// network Caddy runs on). Anyone else's XFF header is ignored.
+  final List<String> trustedProxies;
+
+  /// Per client IP on /api/auth/* (0 = off).
+  final int rateLimitAuthPerMinute;
+
+  /// Per session (or per IP when anonymous) on all /api routes (0 = off).
+  final int rateLimitPerMinute;
+  final Duration sessionCacheTtl;
+  final Duration shutdownGrace;
+  final Duration cleanupInterval;
 
   bool get isProduction => appEnv == 'production' || appEnv == 'prod';
   String get primaryAdminEmail =>

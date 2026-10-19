@@ -8,6 +8,7 @@ import 'package:budget_server/api/events.dart';
 import 'package:budget_server/api/router.dart';
 import 'package:budget_server/auth/google_verifier.dart';
 import 'package:budget_server/auth/jwks_cache.dart';
+import 'package:budget_server/auth/session_store.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
 import 'package:budget_server/realtime/event_bus.dart';
@@ -30,16 +31,23 @@ class Instance {
   late Pool<void> pool;
   late EventBus bus;
   late PgListener listener;
+  late SessionStore sessions;
   late HttpServer server;
   String get base => 'http://127.0.0.1:${server.port}';
 
   Future<void> start(TestKey key, Config config) async {
     pool = openPool(config);
     bus = EventBus();
-    listener = PgListener(() => openConnection(config), bus)..start();
+    sessions = SessionStore(pool,
+        secret: config.sessionSecret, cacheTtl: const Duration(minutes: 5));
+    listener = PgListener(() => openConnection(config), bus, extraChannels: {
+      SessionStore.invalidationChannel: sessions.handleInvalidation,
+    })
+      ..start();
     await listener.ready.timeout(const Duration(seconds: 10));
     final handler = buildHandler(pool, config,
         bus: bus,
+        sessions: sessions,
         eventsSettings: const EventsSettings(
             heartbeat: Duration(milliseconds: 300), maxReplay: 50),
         verifier: GoogleIdTokenVerifier(
@@ -152,6 +160,7 @@ void main() {
       googleClientId: clientId,
       allowlist: const ['@$domain'],
       sessionSecret: 'test-secret-test-secret-test-secret',
+      rateLimitAuthPerMinute: 0, // many logins from one test IP
       dbPoolSize: 4,
     );
     await a.start(key, config);
@@ -371,7 +380,21 @@ void main() {
     sub.close();
   });
 
-  test('logout ends the stream with goodbye', () async {
+  test('shutdown: SSE clients get a reconnect event and the stream closes',
+      () async {
+    if (admin == null) return markTestSkipped('no test DB');
+    final sub = await subscribe(b, 'restarter');
+    b.bus.shutdown('server shutting down');
+    final ev = await sub.waitFor((d, e) => e == 'reconnect');
+    expect(ev['reason'], 'server shutting down');
+    expect(ev['lastEventId'], isA<int>());
+    await sub.done.future.timeout(const Duration(seconds: 3));
+    sub.close();
+  });
+
+  test(
+      'logout on A ends the stream on B (session cache invalidated via NOTIFY)',
+      () async {
     if (admin == null) return markTestSkipped('no test DB');
     final sub = await subscribe(b, 'leaver');
     await call(a, 'POST', '/api/auth/logout', 'leaver');

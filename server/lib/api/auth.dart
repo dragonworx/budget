@@ -7,6 +7,7 @@ import '../auth/google_verifier.dart';
 import '../auth/middleware.dart';
 import '../auth/session_store.dart';
 import '../config.dart';
+import '../hardening/client_ip.dart';
 import '../repo/audit_repo.dart';
 import '../repo/invite_repo.dart';
 import '../repo/user_repo.dart';
@@ -31,10 +32,7 @@ Router buildAuthApi({
   final allowlist = Allowlist(config, db);
   final router = Router();
 
-  String? ip(Request r) =>
-      r.headers['x-forwarded-for']?.split(',').first.trim() ??
-      (r.context['shelf.io.connection_info'] as dynamic)?.remoteAddress?.address
-          as String?;
+  String? ip(Request r) => clientIpOf(r);
 
   Future<Response> startSession(Request r, User user,
       {bool isDev = false,

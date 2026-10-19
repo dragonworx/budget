@@ -19,8 +19,22 @@ class SessionStore {
   SessionStore(this._db,
       {required String secret,
       this.ttl = const Duration(days: 30),
-      this.touchEvery = const Duration(hours: 1)})
-      : _hmac = Hmac(sha256, utf8.encode(secret));
+      this.touchEvery = const Duration(hours: 1),
+      this.cacheTtl = Duration.zero,
+      DateTime Function()? clock})
+      : _hmac = Hmac(sha256, utf8.encode(secret)),
+        _clock = clock ?? DateTime.now;
+
+  /// NOTIFY channel carrying `{"hash": hex}` or `{"userId": id}` so every
+  /// replica drops cached sessions on logout / disable.
+  static const invalidationChannel = 'budget_sessions';
+
+  /// In-memory lookup cache TTL (0 = off). Entries are dropped on logout,
+  /// logout-all and user disable, locally and on other replicas via NOTIFY.
+  final Duration cacheTtl;
+  final DateTime Function() _clock;
+  final _cache = <String, (SessionInfo, DateTime)>{};
+  int cacheHits = 0;
 
   final Session _db;
   final Hmac _hmac;
@@ -56,6 +70,24 @@ class SessionStore {
   Future<SessionInfo?> lookup(String token) async {
     if (token.isEmpty || token.length > 200) return null;
     final h = hash(token);
+    final key = _hex(h);
+    if (cacheTtl > Duration.zero) {
+      final hit = _cache[key];
+      if (hit != null && _clock().isBefore(hit.$2)) {
+        cacheHits++;
+        return hit.$1;
+      }
+      _cache.remove(key);
+    }
+    final info = await _lookupDb(h);
+    if (info != null && cacheTtl > Duration.zero) {
+      if (_cache.length > 10000) _cache.clear();
+      _cache[key] = (info, _clock().add(cacheTtl));
+    }
+    return info;
+  }
+
+  Future<SessionInfo?> _lookupDb(Uint8List h) async {
     final rows = await _db.execute(
       Sql.named('''
         SELECT $userCols, s.is_dev, s.last_seen_at < now() - make_interval(secs => @touch)
@@ -85,16 +117,54 @@ class SessionStore {
     return SessionInfo(userFromRow(r), r[7] as bool);
   }
 
-  Future<void> delete(String token) => _db.execute(
-        Sql.named('DELETE FROM sessions WHERE id_hash = @h'),
-        parameters: {'h': TypedValue(Type.byteArray, hash(token))},
-      );
+  Future<void> delete(String token) async {
+    final h = hash(token);
+    await _db.execute(
+      Sql.named('DELETE FROM sessions WHERE id_hash = @h'),
+      parameters: {'h': TypedValue(Type.byteArray, h)},
+    );
+    await _invalidate({'hash': _hex(h)});
+  }
 
-  Future<void> deleteAllForUser(String userId) => _db.execute(
-        Sql.named('DELETE FROM sessions WHERE user_id = @u'),
-        parameters: {'u': userId},
-      );
+  Future<void> deleteAllForUser(String userId) async {
+    await _db.execute(
+      Sql.named('DELETE FROM sessions WHERE user_id = @u'),
+      parameters: {'u': userId},
+    );
+    await _invalidate({'userId': userId});
+  }
 
-  Future<void> purgeExpired() =>
-      _db.execute('DELETE FROM sessions WHERE expires_at < now()');
+  Future<void> _invalidate(Map<String, String> what) async {
+    handleInvalidation(jsonEncode(what));
+    // Delivered to other replicas on commit.
+    await _db.execute(Sql.named('SELECT pg_notify(@c, @p)'),
+        parameters: {'c': invalidationChannel, 'p': jsonEncode(what)});
+  }
+
+  /// Applies an invalidation payload (local or from NOTIFY).
+  void handleInvalidation(String payload) {
+    if (_cache.isEmpty) return;
+    try {
+      final m = jsonDecode(payload) as Map<String, dynamic>;
+      if (m['hash'] != null) _cache.remove(m['hash']);
+      if (m['userId'] != null) {
+        _cache.removeWhere((_, v) => v.$1.user.id == m['userId']);
+      }
+    } catch (_) {
+      _cache.clear();
+    }
+  }
+
+  /// Drops every cached entry (e.g. after the listener reconnects).
+  void clearCache() => _cache.clear();
+
+  static String _hex(List<int> b) =>
+      b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+
+  /// Deletes expired sessions; returns how many.
+  Future<int> purgeExpired() async {
+    final r = await _db
+        .execute('DELETE FROM sessions WHERE expires_at < now() RETURNING 1');
+    return r.length;
+  }
 }

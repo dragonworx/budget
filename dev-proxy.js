@@ -5,7 +5,7 @@
 const http = require('http'), net = require('net'), fs = require('fs'), path = require('path');
 const PORT = +process.env.PROXY_PORT || 8000, API = +process.env.API_PORT || 8080, WEB = +process.env.WEB_PORT || 5080;
 const STATIC = process.env.WEB_MODE === 'debug' ? null : (process.env.STATIC_DIR || path.join(__dirname, 'client/build/web-live'));
-const isApi = u => u.startsWith('/api/') || u === '/api' || u.startsWith('/health');
+const isApi = u => u.startsWith('/api/') || u === '/api' || u.startsWith('/health') || u.startsWith('/ready');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.otf': 'font/otf', '.ttf': 'font/ttf', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.symbols': 'text/plain' };
 function serveStatic(req, res) {
   const root = fs.realpathSync(STATIC); // resolve the symlink per request so rebuild swaps are atomic
@@ -22,7 +22,8 @@ const srv = http.createServer((req, res) => {
   if (STATIC && !isApi(req.url)) {
     try { return serveStatic(req, res); } catch (e) { res.writeHead(503, { 'content-type': 'text/plain' }); return res.end('web build not ready yet (' + e.code + ') — see tmux window "web"'); }
   }
-  const up = http.request({ host: '127.0.0.1', port: isApi(req.url) ? API : WEB, method: req.method, path: req.url, headers: req.headers },
+  const up = http.request({ host: '127.0.0.1', port: isApi(req.url) ? API : WEB, method: req.method, path: req.url,
+    headers: { ...req.headers, 'x-forwarded-for': (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'] + ', ' : '') + req.socket.remoteAddress } },
     r => {
       // Server-Sent Events (/api/events): stream every chunk immediately, never time out.
       if (String(r.headers['content-type'] || '').startsWith('text/event-stream')) {

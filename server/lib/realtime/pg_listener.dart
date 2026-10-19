@@ -11,11 +11,18 @@ import 'event_bus.dart';
 /// publishes each notification to [bus]. Reconnects with backoff (1 s .. 30 s)
 /// and signals a gap after every reconnect so subscribers re-read audit_log.
 class PgListener {
-  PgListener(this._open, this.bus, {this.onLog});
+  PgListener(this._open, this.bus,
+      {this.onLog, this.extraChannels = const {}, this.onReconnect});
 
   final Future<Connection> Function() _open;
   final EventBus bus;
   final void Function(String)? onLog;
+
+  /// Other channels to LISTEN on (e.g. session-cache invalidation).
+  final Map<String, void Function(String payload)> extraChannels;
+
+  /// Called after a reconnect (notifications may have been missed).
+  final void Function()? onReconnect;
 
   Connection? _conn;
   bool _stopped = false;
@@ -42,18 +49,29 @@ class PgListener {
             onLog?.call('realtime: bad payload ignored: $e');
           }
         });
+        final extra = [
+          for (final e in extraChannels.entries)
+            conn.channels[e.key].listen(e.value)
+        ];
         // Make sure LISTEN is registered before declaring readiness.
         await conn.execute('LISTEN ${BudgetEvent.channel}');
+        for (final ch in extraChannels.keys) {
+          await conn.execute('LISTEN $ch');
+        }
         _failures = 0;
         if (first) {
           first = false;
           if (!_ready.isCompleted) _ready.complete();
         } else {
           onLog?.call('realtime: listener reconnected');
+          onReconnect?.call();
           bus.gap();
         }
         await conn.closed;
         await sub.cancel();
+        for (final x in extra) {
+          await x.cancel();
+        }
       } catch (e) {
         onLog?.call('realtime: listener error: $e');
       }

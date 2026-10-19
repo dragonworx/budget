@@ -11,6 +11,11 @@ import '../auth/authz_middleware.dart';
 import '../db_scope.dart';
 import '../realtime/event_bus.dart';
 import 'events.dart';
+import '../hardening/client_ip.dart';
+import '../hardening/lifecycle.dart';
+import '../hardening/logging.dart';
+import '../hardening/rate_limit.dart';
+import '../hardening/security_headers.dart';
 import 'accounts.dart';
 import 'admin.dart';
 import 'sharing.dart';
@@ -22,11 +27,39 @@ import 'transactions.dart';
 Handler buildHandler(Session base, Config config,
     {GoogleIdTokenVerifier? verifier,
     EventBus? bus,
-    EventsSettings eventsSettings = const EventsSettings()}) {
+    EventsSettings eventsSettings = const EventsSettings(),
+    SessionStore? sessions,
+    Log? log,
+    Lifecycle? lifecycle,
+    Future<Map<String, Object?>> Function()? readiness}) {
   final conn = base is ScopedDb ? base : ScopedDb(base);
   final root = Router();
-  final sessions = SessionStore(conn,
-      secret: config.sessionSecret, ttl: Duration(days: config.sessionTtlDays));
+  log ??= Log();
+  lifecycle ??= Lifecycle();
+  sessions ??= SessionStore(conn,
+      secret: config.sessionSecret,
+      ttl: Duration(days: config.sessionTtlDays),
+      cacheTtl: config.sessionCacheTtl);
+  final lc = lifecycle;
+
+  // Readiness: DB reachable, realtime listener up, not draining. Used by
+  // Compose healthchecks and Caddy's active health checks.
+  root.get('/ready', (Request request) async {
+    if (lc.draining) return jsonError(503, 'draining', details: {'ok': false});
+    final Map<String, Object?> status;
+    try {
+      status = readiness != null
+          ? await readiness().timeout(const Duration(seconds: 3))
+          : (await conn
+              .execute('SELECT 1')
+              .then((_) => {'ok': true, 'db': true}));
+    } catch (e) {
+      return jsonError(503, 'not ready', details: {'ok': false, 'db': false});
+    }
+    return status['ok'] == true
+        ? jsonOk(status)
+        : jsonError(503, 'not ready', details: status);
+  });
 
   root.get('/health', (Request request) async {
     try {
@@ -61,17 +94,24 @@ Handler buildHandler(Session base, Config config,
       buildEventsApi(conn, sessions, bus, settings: eventsSettings).call);
 
   return const Pipeline()
+      .addMiddleware(requestLogging(
+          log, ClientIpResolver(config.trustedProxies),
+          quiet: (r) => r.url.path == 'health' || r.url.path == 'ready'))
+      .addMiddleware(securityHeaders(hsts: config.secureCookies))
       .addMiddleware(corsMiddleware(config))
+      .addMiddleware(lc.middleware())
       .addMiddleware(noStoreApi())
-      .addMiddleware(_errorMiddleware())
-      .addMiddleware(logRequests())
+      .addMiddleware(_errorMiddleware(log))
+      .addMiddleware(rateLimitMiddleware(
+          auth: RateLimiter(config.rateLimitAuthPerMinute),
+          general: RateLimiter(config.rateLimitPerMinute)))
       .addMiddleware(csrfMiddleware(config))
       .addMiddleware(authMiddleware(sessions))
       .addMiddleware(authzMiddleware(conn))
       .addHandler(root.call);
 }
 
-Middleware _errorMiddleware() {
+Middleware _errorMiddleware(Log log) {
   return (Handler inner) {
     return (Request request) async {
       try {
@@ -79,9 +119,16 @@ Middleware _errorMiddleware() {
       } on FormatException catch (e) {
         return jsonError(400, e.message);
       } catch (e, st) {
-        // ignore: avoid_print
-        print('Unhandled error: $e\n$st');
-        return jsonError(500, 'internal server error');
+        final id = requestInfoOf(request)?.id;
+        log.error('unhandled', {
+          'reqId': id,
+          'method': request.method,
+          'path': '/${request.url.path}',
+          'error': e.toString(),
+          'stack': st.toString().split('\n').take(8).join('\n'),
+        });
+        return jsonError(500, 'internal server error',
+            details: {'requestId': id});
       }
     };
   };
@@ -94,9 +141,12 @@ Middleware noStoreApi() {
     return (Request request) async {
       final response = await inner(request);
       final path = '/${request.url.path}';
-      if (!path.startsWith('/api') && path != '/health') return response;
+      if (!path.startsWith('/api') && path != '/health' && path != '/ready') {
+        return response;
+      }
       return response.change(headers: {
-        'cache-control': 'no-store, no-cache, must-revalidate, max-age=0',
+        'cache-control':
+            'no-store, no-cache, must-revalidate, max-age=0, no-transform',
         'pragma': 'no-cache',
         'expires': '0',
       });
