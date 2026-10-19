@@ -11,7 +11,7 @@ import 'json_helpers.dart';
 import 'transactions.dart' show parseTransactionBody;
 
 /// Registers `GET /<id>/balance` on [router].
-void attachBalanceRoutes(Router router, Connection conn) {
+void attachBalanceRoutes(Router router, Session conn) {
   final accounts = AccountRepo(conn);
   final transactions = TransactionRepo(conn);
 
@@ -119,9 +119,8 @@ void attachBalanceRoutes(Router router, Connection conn) {
       final account = await accounts.get(id);
       if (account == null) return jsonError(404, 'account not found');
       final q = request.url.queryParameters;
-      final from = q['from'] == null
-          ? DateTime.now().toUtc()
-          : parseDate(q['from']!);
+      final from =
+          q['from'] == null ? DateTime.now().toUtc() : parseDate(q['from']!);
       final days = int.tryParse(q['days'] ?? '') ?? 365;
       final horizon = int.tryParse(q['horizonDays'] ?? '') ?? 1825;
       if (days < 1 || horizon < 1 || days > 36500 || horizon > 36500) {

@@ -1,6 +1,6 @@
 # Plan: Google sign-in + multi-tenant sharing + real-time sync
 
-Status: plan only (nothing implemented). Base commit: f8f4509.
+Status: P1 (server auth foundation) implemented; P2+ planned. Base commit: f8f4509.
 
 ## 0. Current architecture (what we're changing)
 
@@ -138,6 +138,25 @@ Effective role for an account = max(project_members.role, account_shares.role). 
 6. Logout: `POST /api/auth/logout` deletes session row, clears cookie, client calls `google.accounts.id.disableAutoSelect()`. "Sign out everywhere" deletes all user sessions. Disabling a user/removing from allowlist deletes their sessions.
 7. Dev bypass: `POST /api/auth/dev-login` only exists when `AUTH_DEV_BYPASS=true` **and** `APP_ENV != production` (server exits at startup otherwise). Cookie `Secure` dropped when `PUBLIC_ORIGIN` is http://localhost. The ngrok dev URL keeps bypass on until the real client id is set, then can use real Google.
 8. `SESSION_SECRET` used to HMAC session tokens (token = random 32 bytes; stored hash = HMAC(secret, token)) and invite tokens, so a DB leak alone doesn't yield usable tokens.
+
+### 4a. Auth API contract (implemented in P1)
+
+All responses JSON. `user` = `{id, email, name, pictureUrl, isAdmin}`. Errors = `{error, details?}`.
+Session cookie: `budget_session=<token>; Path=/; HttpOnly; SameSite=Lax; Max-Age=<SESSION_TTL_DAYS*86400>` (+`Secure` when PUBLIC_ORIGIN is https). `Authorization: Bearer <token>` is accepted too.
+
+| Method & path | Auth | Request | Response |
+|---|---|---|---|
+| `GET /api/auth/config` | public | – | `200 {googleClientId, devBypass, user: user\|null}` |
+| `GET /api/auth/me` | session | – | `200 {user}` / `401` |
+| `POST /api/auth/google` | public | `{credential}` (GIS ID token) | `200 {user}` + Set-Cookie; `400` missing credential; `401` invalid token; `403` not on allowlist (`details.email`) or disabled |
+| `POST /api/auth/dev-login` | public, only when `AUTH_DEV_BYPASS=true` and not production (else `404`) | – | `200 {user}` (first ADMIN_EMAILS user) + Set-Cookie |
+| `GET /api/auth/dev-login?redirect=/path` | same as above | – | `302` to the same-site path + Set-Cookie (open in a browser to get a dev session before P2) |
+| `POST /api/auth/logout` | any | – | `200 {ok:true}`, cookie cleared, session deleted |
+| `POST /api/auth/logout-all` | session | – | `200 {ok:true}`, all the user's sessions deleted |
+
+Every other `/api/*` route returns `401 {error:"authentication required"}` without a valid session, and `404` for resources outside the user's projects. `/health` is public (checks the DB, `503` when down).
+CSRF: unsafe `/api/*` requests with an `Origin` header must come from an allowed origin (`403 origin not allowed`); requests without `Origin` need `X-Requested-With`, a JSON content type, or bearer auth (`403 missing CSRF header`). Clients should send `X-Requested-With: budget` on all mutations.
+CORS: only `PUBLIC_ORIGIN`, `CORS_ORIGINS` and (outside production) `http://localhost:8000` / `http://127.0.0.1:8000`, with credentials.
 
 ## 5. Sharing UX
 

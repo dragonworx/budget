@@ -14,7 +14,7 @@ const maxScenariosPerAccount = 8;
 /// or patch (all optional) body. The request is checked by parsing it as a
 /// goal request so a stored scenario can always be re-solved.
 ({String? name, int? colorIndex, bool? included, Map<String, dynamic>? request})
-parseScenarioBody(Map<String, dynamic> body, {required bool create}) {
+    parseScenarioBody(Map<String, dynamic> body, {required bool create}) {
   String? name = optionalString(body, 'name')?.trim();
   if (create && (name == null || name.isEmpty)) {
     throw const FormatException('name is required');
@@ -41,7 +41,7 @@ parseScenarioBody(Map<String, dynamic> body, {required bool create}) {
 
 /// `/<accountId>/scenarios` CRUD. Scenarios are what-ifs only; they never
 /// touch the account's transactions.
-void attachScenarioRoutes(Router router, Connection conn) {
+void attachScenarioRoutes(Router router, Session conn) {
   final accounts = AccountRepo(conn);
   final repo = ScenarioRepo(conn);
 
@@ -77,8 +77,7 @@ void attachScenarioRoutes(Router router, Connection conn) {
         return jsonError(409, 'at most $maxScenariosPerAccount scenarios');
       }
       final used = {for (final s in existing) s.colorIndex};
-      final color =
-          b.colorIndex ??
+      final color = b.colorIndex ??
           List.generate(8, (i) => i).firstWhere(
             (i) => !used.contains(i),
             orElse: () => existing.length % 8,

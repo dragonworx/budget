@@ -87,7 +87,7 @@ GoalBaseline goalBaseline({
 }
 
 /// Registers `POST /<accountId>/goal` on [router].
-void attachGoalRoutes(Router router, Connection conn) {
+void attachGoalRoutes(Router router, Session conn) {
   final accounts = AccountRepo(conn);
   final transactions = TransactionRepo(conn);
 

@@ -4,7 +4,7 @@ import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
 
 Future<void> main(List<String> args) async {
-  final config = Config.fromEnvironment();
+  final config = Config.fromEnvironment(loadEnvironment());
   final conn = await openConnection(config);
 
   // Prefer package-root/migrations (next to pubspec.yaml); fall back to CWD.
@@ -21,7 +21,8 @@ Future<void> main(List<String> args) async {
   );
 
   try {
-    await applyMigrations(conn, migrationsDir: migrationsDir);
+    await applyMigrations(conn,
+        migrationsDir: migrationsDir, adminEmail: config.primaryAdminEmail);
     // ignore: avoid_print
     print('Migrations applied successfully.');
     exitCode = 0;

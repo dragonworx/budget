@@ -12,6 +12,7 @@ import 'package:budget_server/repo/project_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
+import 'helpers.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -42,7 +43,8 @@ void main() {
       markTestSkipped('no test database');
       return;
     }
-    final project = await ProjectRepo(c).create('seed shift test');
+    final project = await ProjectRepo(c)
+        .create('seed shift test', ownerId: await testOwnerId(c));
     try {
       final account = await AccountRepo(c).create(
         projectId: project.id,

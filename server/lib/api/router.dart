@@ -1,34 +1,56 @@
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
-import 'package:shelf_cors_headers/shelf_cors_headers.dart';
 import 'package:shelf_router/shelf_router.dart';
 
+import '../auth/google_verifier.dart';
+import '../auth/jwks_cache.dart';
+import '../auth/middleware.dart';
+import '../auth/session_store.dart';
+import '../config.dart';
 import 'accounts.dart';
+import 'auth.dart';
 import 'json_helpers.dart';
 import 'projects.dart';
 import 'transactions.dart';
 
-Handler buildHandler(Connection conn) {
+Handler buildHandler(Session conn, Config config,
+    {GoogleIdTokenVerifier? verifier}) {
   final root = Router();
+  final sessions = SessionStore(conn,
+      secret: config.sessionSecret, ttl: Duration(days: config.sessionTtlDays));
 
-  root.get('/health', (Request request) => jsonOk({'ok': true}));
+  root.get('/health', (Request request) async {
+    try {
+      await conn.execute('SELECT 1');
+      return jsonOk({'ok': true});
+    } catch (_) {
+      return jsonError(503, 'database unavailable');
+    }
+  });
+  root.mount(
+      '/api/auth',
+      buildAuthApi(
+        config: config,
+        db: conn,
+        sessions: sessions,
+        verifier: verifier ??
+            GoogleIdTokenVerifier(
+              clientId: config.googleClientId,
+              jwks: JwksCache(httpJwksFetcher()),
+            ),
+      ).call);
   root.mount('/api/projects', buildProjectsApi(conn).call);
   root.mount('/api/accounts', buildAccountsApi(conn).call);
   root.mount('/api/transactions', transactionsRouter(conn).call);
 
   return const Pipeline()
-      .addMiddleware(corsHeaders(
-        headers: {
-          ACCESS_CONTROL_ALLOW_ORIGIN: '*',
-          ACCESS_CONTROL_ALLOW_METHODS:
-              'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-          ACCESS_CONTROL_ALLOW_HEADERS:
-              'Origin,Content-Type,Accept,Authorization,Cache-Control,Pragma',
-        },
-      ))
+      .addMiddleware(corsMiddleware(config))
       .addMiddleware(noStoreApi())
       .addMiddleware(_errorMiddleware())
       .addMiddleware(logRequests())
+      .addMiddleware(csrfMiddleware(config))
+      .addMiddleware(authMiddleware(sessions))
+      .addMiddleware(ownershipMiddleware(conn))
       .addHandler(root.call);
 }
 

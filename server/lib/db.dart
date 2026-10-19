@@ -6,20 +6,18 @@ import 'repo/currency_scale_backfill.dart';
 
 import 'config.dart';
 
-/// Opens a Postgres connection from [Config.databaseUrl].
-Future<Connection> openConnection(Config config) async {
-  final uri = Uri.parse(config.databaseUrl);
+/// Parses [Config.databaseUrl] into an endpoint + SSL mode.
+(Endpoint, SslMode) parseDatabaseUrl(String url) {
+  final uri = Uri.parse(url);
   final userInfo = uri.userInfo.split(':');
   final username =
       userInfo.isNotEmpty ? Uri.decodeComponent(userInfo.first) : '';
   final password = userInfo.length > 1
       ? Uri.decodeComponent(userInfo.sublist(1).join(':'))
       : '';
-
   final database =
       uri.path.isNotEmpty ? uri.path.replaceFirst('/', '') : 'budget';
-
-  return Connection.open(
+  return (
     Endpoint(
       host: uri.host.isEmpty ? 'localhost' : uri.host,
       port: uri.hasPort ? uri.port : 5432,
@@ -27,18 +25,35 @@ Future<Connection> openConnection(Config config) async {
       username: username,
       password: password,
     ),
-    settings: ConnectionSettings(
-      sslMode: (uri.queryParameters['sslmode'] ?? 'disable') == 'disable'
-          ? SslMode.disable
-          : SslMode.require,
+    (uri.queryParameters['sslmode'] ?? 'disable') == 'disable'
+        ? SslMode.disable
+        : SslMode.require,
+  );
+}
+
+/// Opens a connection pool (the API server's shared DB handle).
+Pool<void> openPool(Config config) {
+  final (endpoint, ssl) = parseDatabaseUrl(config.databaseUrl);
+  return Pool.withEndpoints(
+    [endpoint],
+    settings: PoolSettings(
+      maxConnectionCount: config.dbPoolSize,
+      sslMode: ssl,
     ),
   );
+}
+
+/// Opens a single Postgres connection from [Config.databaseUrl].
+Future<Connection> openConnection(Config config) async {
+  final (endpoint, ssl) = parseDatabaseUrl(config.databaseUrl);
+  return Connection.open(endpoint, settings: ConnectionSettings(sslMode: ssl));
 }
 
 /// Applies pending SQL files from [migrationsDir] in name order.
 Future<void> applyMigrations(
   Connection conn, {
   required String migrationsDir,
+  String adminEmail = Config.defaultAdminEmail,
 }) async {
   await conn.execute('''
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -70,6 +85,11 @@ Future<void> applyMigrations(
     final sql = await file.readAsString();
     final statements = splitSqlStatements(sql);
     await conn.runTx((session) async {
+      // Settings readable by migrations via current_setting('budget.*').
+      await session.execute(
+        Sql.named("SELECT set_config('budget.admin_email', @e, true)"),
+        parameters: {'e': adminEmail.toLowerCase()},
+      );
       for (final statement in statements) {
         await session.execute(statement);
       }

@@ -13,6 +13,7 @@ import 'package:budget_server/repo/project_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
+import 'helpers.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -20,8 +21,8 @@ void main() {
     expect(parseCurrencyScale({}), isNull);
     expect(parseCurrencyScale({'currencyScale': 1000}), 1000);
     expect(parseCurrencyScale({'currencyScale': '10'}), 10);
-    expect(() => parseCurrencyScale({'currencyScale': 50}),
-        throwsFormatException);
+    expect(
+        () => parseCurrencyScale({'currencyScale': 50}), throwsFormatException);
   });
 
   test('autoCurrencyScale fits the span in 9 units', () {
@@ -53,7 +54,8 @@ void main() {
       markTestSkipped('no test database');
       return;
     }
-    final project = await ProjectRepo(c).create('currency scale test');
+    final project = await ProjectRepo(c)
+        .create('currency scale test', ownerId: await testOwnerId(c));
     try {
       final account = await AccountRepo(c).create(
         projectId: project.id,
@@ -92,13 +94,17 @@ void main() {
       markTestSkipped('no test database');
       return;
     }
-    final project = await ProjectRepo(c).create('currency backfill test');
+    final project = await ProjectRepo(c)
+        .create('currency backfill test', ownerId: await testOwnerId(c));
     try {
       final repo = AccountRepo(c);
       final a = await repo.create(
-        projectId: project.id, name: 'A', currency: 'AUD',
+        projectId: project.id,
+        name: 'A',
+        currency: 'AUD',
         seedBalance: Decimal.fromInt(3500),
-        seedDate: DateTime.utc(2026, 10, 1), lossThreshold: Decimal.zero,
+        seedDate: DateTime.utc(2026, 10, 1),
+        lossThreshold: Decimal.zero,
       );
       // Weekly +2000 income for a year pushes the peak past $100k.
       await c.execute(
@@ -111,9 +117,12 @@ void main() {
         parameters: {'a': a.id},
       );
       final b = await repo.create(
-        projectId: project.id, name: 'B', currency: 'AUD',
+        projectId: project.id,
+        name: 'B',
+        currency: 'AUD',
         seedBalance: Decimal.fromInt(-650),
-        seedDate: DateTime.utc(2026, 10, 1), lossThreshold: Decimal.zero,
+        seedDate: DateTime.utc(2026, 10, 1),
+        lossThreshold: Decimal.zero,
       );
       await backfillCurrencyScales(c);
       expect((await repo.get(a.id))!.currencyScale, 100000);
@@ -123,15 +132,23 @@ void main() {
       Future<Map<String, dynamic>> create(Map<String, Object?> body) async {
         final res = await api.call(Request(
             'POST', Uri.parse('http://x/${project.id}/accounts'),
-            body: jsonEncode({'currency': 'AUD', 'seedDate': '2026-10-01',
-              ...body})));
+            body: jsonEncode(
+                {'currency': 'AUD', 'seedDate': '2026-10-01', ...body})));
         expect(res.statusCode, 201);
         return jsonDecode(await res.readAsString()) as Map<String, dynamic>;
       }
-      expect((await create({'name': 'C', 'seedBalance': '25000'}))
-          ['currencyScale'], 10000);
-      expect((await create({'name': 'D', 'seedBalance': '25000',
-        'currencyScale': 10}))['currencyScale'], 10);
+
+      expect(
+          (await create(
+              {'name': 'C', 'seedBalance': '25000'}))['currencyScale'],
+          10000);
+      expect(
+          (await create({
+            'name': 'D',
+            'seedBalance': '25000',
+            'currencyScale': 10
+          }))['currencyScale'],
+          10);
     } finally {
       await ProjectRepo(c).delete(project.id);
     }

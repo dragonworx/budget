@@ -12,6 +12,7 @@ import 'package:budget_server/repo/project_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
+import 'helpers.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -46,8 +47,10 @@ void main() {
       markTestSkipped('no test database');
       return;
     }
-    final p1 = await ProjectRepo(c).create('transfer test 1');
-    final p2 = await ProjectRepo(c).create('transfer test 2');
+    final p1 = await ProjectRepo(c)
+        .create('transfer test 1', ownerId: await testOwnerId(c));
+    final p2 = await ProjectRepo(c)
+        .create('transfer test 2', ownerId: await testOwnerId(c));
     try {
       Future<String> acct(String pid, String name) async =>
           (await AccountRepo(c).create(

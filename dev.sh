@@ -14,6 +14,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"; LOGS=/workspace/dev-logs; PGDATA=/workspace/dev-data/pg
 PGBIN=$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)
+[ -f "$ROOT/.env" ] || { [ -f "$ROOT/.env.example" ] && sed "s/^SESSION_SECRET=$/SESSION_SECRET=$(openssl rand -hex 32)/" "$ROOT/.env.example" > "$ROOT/.env" && echo "created .env from .env.example (AUTH_DEV_BYPASS=true)"; }
+# Auth/app settings come from $ROOT/.env (read by the server itself); DB/host below override it.
 export PATH="$HOME/flutter/bin:$PATH" DATABASE_URL=postgres://budget:budget@127.0.0.1:5432/budget API_HOST=127.0.0.1 API_PORT=8080
 WEB_PORT=5080; PROXY_PORT=8000; S=budget; WEB_MODE=${WEB_MODE:-release}; export WEB_MODE
 pg_start() {

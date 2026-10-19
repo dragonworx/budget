@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:postgres/postgres.dart';
 
 import 'package:shelf/shelf.dart';
 
@@ -60,3 +61,7 @@ int? optionalInt(Map<String, dynamic> json, String key) {
   if (v is String) return int.parse(v);
   throw FormatException('Invalid field: $key');
 }
+
+/// The transaction runner behind a DB handle (a `Pool` in the server, a
+/// `Connection` in tests; both implement `Session` and `SessionExecutor`).
+SessionExecutor txOf(Session db) => db as SessionExecutor;

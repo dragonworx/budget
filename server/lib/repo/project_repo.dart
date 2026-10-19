@@ -9,9 +9,11 @@ class ProjectRepo {
   final Session _conn;
   final _uuid = const Uuid();
 
-  Future<List<Project>> list() async {
+  Future<List<Project>> list({required String ownerId}) async {
     final rows = await _conn.execute(
-      'SELECT id, name, created_at FROM projects ORDER BY created_at ASC',
+      Sql.named('SELECT id, name, created_at FROM projects '
+          'WHERE owner_id = @o::uuid ORDER BY created_at ASC'),
+      parameters: {'o': ownerId},
     );
     return rows.map(_fromRow).toList();
   }
@@ -25,15 +27,15 @@ class ProjectRepo {
     return _fromRow(rows.first);
   }
 
-  Future<Project> create(String name) async {
+  Future<Project> create(String name, {required String ownerId}) async {
     final id = _uuid.v4();
     final rows = await _conn.execute(
       Sql.named('''
-        INSERT INTO projects (id, name)
-        VALUES (@id, @name)
+        INSERT INTO projects (id, name, owner_id, created_by)
+        VALUES (@id, @name, @owner::uuid, @owner::uuid)
         RETURNING id, name, created_at
       '''),
-      parameters: {'id': id, 'name': name},
+      parameters: {'id': id, 'name': name, 'owner': ownerId},
     );
     return _fromRow(rows.first);
   }

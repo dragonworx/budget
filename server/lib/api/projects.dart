@@ -3,19 +3,20 @@ import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
+import '../auth/middleware.dart';
 import '../domain/models.dart';
 import '../repo/account_repo.dart';
 import '../repo/project_repo.dart';
 import 'json_helpers.dart';
 
 /// All `/api/projects...` routes on one router (specific paths before `/<id>`).
-Router buildProjectsApi(Connection conn) {
+Router buildProjectsApi(Session conn) {
   final projects = ProjectRepo(conn);
   final accounts = AccountRepo(conn);
   final router = Router();
 
   router.get('/', (Request request) async {
-    final items = await projects.list();
+    final items = await projects.list(ownerId: requireAuth(request).user.id);
     return jsonOk({'projects': items.map((p) => p.toJson()).toList()});
   });
 
@@ -23,7 +24,8 @@ Router buildProjectsApi(Connection conn) {
     try {
       final body = await readJsonObject(request);
       final name = requireString(body, 'name');
-      final project = await projects.create(name);
+      final project =
+          await projects.create(name, ownerId: requireAuth(request).user.id);
       return jsonOk(project.toJson(), status: 201);
     } on FormatException catch (e) {
       return jsonError(400, e.message);

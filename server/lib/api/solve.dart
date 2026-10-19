@@ -12,7 +12,7 @@ import '../repo/transaction_repo.dart';
 import 'json_helpers.dart';
 
 /// Registers `POST /<accountId>/solve` on [router].
-void attachSolveRoutes(Router router, Connection conn) {
+void attachSolveRoutes(Router router, Session conn) {
   final accounts = AccountRepo(conn);
   final transactionRepo = TransactionRepo(conn);
 

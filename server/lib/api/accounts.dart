@@ -15,7 +15,7 @@ import 'solve.dart';
 import 'transactions.dart' show parseTransactionBody;
 
 /// All `/api/accounts...` routes on one router (specific paths before `/<id>`).
-Router buildAccountsApi(Connection conn) {
+Router buildAccountsApi(Session conn) {
   final accounts = AccountRepo(conn);
   final transactions = TransactionRepo(conn);
   final router = Router();
@@ -42,7 +42,7 @@ Router buildAccountsApi(Connection conn) {
               .toList() ??
           const <DateTime>[];
       // A transfer creates both sides atomically.
-      final transaction = await conn.runTx((tx) async {
+      final transaction = await txOf(conn).runTx((tx) async {
         final transactions = TransactionRepo(tx);
         var created = await transactions.create(
           accountId: accountId,
@@ -104,7 +104,7 @@ Router buildAccountsApi(Connection conn) {
           'toSkip': dupes.length,
         });
       }
-      final result = await conn
+      final result = await txOf(conn)
           .runTx((tx) => TransactionRepo(tx).importItems(accountId, items));
       return jsonOk({
         'created': result.created.length,
@@ -157,7 +157,7 @@ Router buildAccountsApi(Connection conn) {
           : null;
       // Seed date change moves every schedule by the same calendar-day
       // delta, atomically with the account update.
-      final account = await conn.runTx((tx) async {
+      final account = await txOf(conn).runTx((tx) async {
         final repo = AccountRepo(tx);
         final before = await repo.get(id);
         if (before == null) return null;

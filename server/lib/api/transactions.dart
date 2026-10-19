@@ -8,7 +8,7 @@ import '../domain/models.dart';
 import '../repo/transaction_repo.dart';
 import 'json_helpers.dart';
 
-Router transactionsRouter(Connection conn) {
+Router transactionsRouter(Session conn) {
   final transactions = TransactionRepo(conn);
   final router = Router();
 
@@ -47,7 +47,7 @@ Router transactionsRouter(Connection conn) {
       final clearCount = body.containsKey('occurrenceCount') &&
           body['occurrenceCount'] == null;
 
-      final transaction = await conn.runTx((tx) async {
+      final transaction = await txOf(conn).runTx((tx) async {
         final transactions = TransactionRepo(tx);
         var updated = (await transactions.update(
           id,
@@ -96,7 +96,7 @@ Router transactionsRouter(Connection conn) {
   });
 
   router.delete('/<id>', (Request request, String id) async {
-    final ok = await conn.runTx((tx) => TransactionRepo(tx).delete(id));
+    final ok = await txOf(conn).runTx((tx) => TransactionRepo(tx).delete(id));
     if (!ok) return jsonError(404, 'transaction not found');
     return Response(204);
   });
@@ -112,7 +112,7 @@ Router transactionsRouter(Connection conn) {
         return jsonError(400, 'skipped must be a boolean');
       }
       final d = parseDate(date);
-      await conn.runTx((tx) async {
+      await txOf(conn).runTx((tx) async {
         final repo = TransactionRepo(tx);
         await repo.setSkip(id, d, skipped);
         final peerId = transaction.transfer?.peerId;
