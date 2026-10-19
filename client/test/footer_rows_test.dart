@@ -29,11 +29,15 @@ void main() {
     expect(monthLabel(oct, 14), 'O');
     expect(monthLabel(oct, 6), '');
   });
-  test('week labels keep the Monday date style', () {
+  test('week labels are always the ISO week number', () {
     final mon = DateTime(2026, 10, 12);
-    expect(weekLabel(mon, 80), 'Oct 12');
+    expect(weekLabel(mon, 80), 'Week 42');
+    expect(weekLabel(mon, 52), 'W42');
+    expect(weekLabel(mon, 100, measure: (t) => t.length * 20.0), 'W42');
+    expect(weekLabel(mon, 50, measure: (t) => t.length * 20.0), '');
     expect(weekLabel(mon, 40), 'W42');
     expect(weekLabel(mon, 24), '');
+    expect(weekLabel(DateTime(2026, 12, 28), 80), 'Week 53');
     expect(isoWeekNumber(DateTime(2026, 1, 1)), 1);
     expect(isoWeekNumber(DateTime(2027, 1, 1)), 53);
     expect(isoWeekNumber(DateTime(2024, 12, 30)), 1);

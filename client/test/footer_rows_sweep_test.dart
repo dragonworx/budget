@@ -1,7 +1,7 @@
 // Regression: every date-axis label is painted inside its own row (Year,
 // Month, Week, Day) at every zoom and viewport width, clear of the row-name
-// chip, never overlapping a neighbour, and the Week row never shows bare day
-// numerals (those read as days and belong to the Day row only).
+// chip, never overlapping a neighbour, and the Week row only ever shows the
+// ISO week number ("Week 42" / "W42"), never a date or bare day numeral.
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:decimal/decimal.dart';
@@ -113,10 +113,12 @@ void main() {
               reason: ctx,
             );
             if (row == 'Week') {
+              // Always the ISO week number, in full, never a date or a bare
+              // numeral (both read as days).
               expect(
-                RegExp(r'^\d+$').hasMatch(text),
-                isFalse,
-                reason: '$ctx: a bare numeral reads as a day',
+                RegExp(r'^(Week |W)([1-9]|[1-4]\d|5[0-3])$').hasMatch(text),
+                isTrue,
+                reason: '$ctx: not a week number',
               );
             }
             if (row != 'Day') byRow.putIfAbsent(row, () => []).add(rect);

@@ -3479,7 +3479,12 @@ class _BalanceChartPainter extends CustomPainter {
             ? weekSegments(viewStart, viewEnd)
             : const [],
         viewEnd,
-        (segment, width) => weekLabel(segment.start, width),
+        (segment, width) => weekLabel(
+          segment.start,
+          // _paintCentered lays out in the deflated rect, less 2px.
+          width - 4,
+          measure: (t) => _laneTextWidth(t),
+        ),
         (segment) => _weekColor(segment.colorIndex),
         _laneText,
         'Week',
@@ -3636,8 +3641,7 @@ class _BalanceChartPainter extends CustomPainter {
         if (open.width <= 0) continue;
         final label = labelFor(segment, open.width);
         if (label.isEmpty) continue;
-        final painted = _paintCentered(canvas, open.deflate(1), label, style);
-        if (painted != null) debugAxisLabel?.call(laneName, label, painted);
+        _paintCentered(canvas, open.deflate(1), label, style, row: laneName);
       }
     }
     // Row name, right-aligned in a small chip at the left edge.
@@ -3668,6 +3672,18 @@ class _BalanceChartPainter extends CustomPainter {
     );
     namePainter.dispose();
     canvas.restore();
+  }
+
+  /// Width of [text] in the lane label style, as _paintCentered lays it out.
+  double _laneTextWidth(String text) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: laneStyle.copyWith(height: 1.05)),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    final w = tp.width;
+    tp.dispose();
+    return w;
   }
 
   double _laneNameWidth(ChartLayout layout) =>
@@ -4728,8 +4744,15 @@ class _BalanceChartPainter extends CustomPainter {
   }
 
   /// Paints [text] centred in [rect]; returns where it went, or null when
-  /// it didn't fit and nothing was painted.
-  Rect? _paintCentered(Canvas canvas, Rect rect, String text, TextStyle style) {
+  /// it didn't fit and nothing was painted. With [row], reports the label to
+  /// [debugAxisLabel].
+  Rect? _paintCentered(
+    Canvas canvas,
+    Rect rect,
+    String text,
+    TextStyle style, {
+    String? row,
+  }) {
     if (rect.width < 8 || rect.height < 8 || text.isEmpty) return null;
     final maxLines = text.contains('\n') ? 2 : 1;
     final painter = TextPainter(
@@ -4748,6 +4771,14 @@ class _BalanceChartPainter extends CustomPainter {
       rect.center.dy - painter.height / 2,
     );
     final painted = at & painter.size;
+    if (row != null) {
+      // Report what is actually shown: an ellipsised label ends in "…".
+      debugAxisLabel?.call(
+        row,
+        painter.didExceedMaxLines ? '$text…' : text,
+        painted,
+      );
+    }
     painter.paint(canvas, at);
     painter.dispose();
     return painted;

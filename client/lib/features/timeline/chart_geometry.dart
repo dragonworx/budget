@@ -966,14 +966,21 @@ String monthLabel(DateTime month, double width) {
   return '';
 }
 
-/// Week row label (the week's Monday): "Oct 12", else the ISO week number
-/// "W42", else blank. Never a bare day numeral: that reads as a day and
-/// belongs to the Day row only.
-String weekLabel(DateTime monday, double width) {
-  if (width >= 52) {
-    return '${_monthNames[monday.month - 1].substring(0, 3)} ${monday.day}';
+/// Week row label: always the ISO week number of the week starting
+/// [monday], never a date (dates read as days). "Week 42" when it fits,
+/// else "W42", else blank. A bare "42" is never used: it reads as a day.
+/// [measure] gives a label's painted width; without it a rough estimate
+/// (about 8.5px per character) is used.
+String weekLabel(
+  DateTime monday,
+  double width, {
+  double Function(String text)? measure,
+}) {
+  final n = isoWeekNumber(monday);
+  final fits = measure ?? (String t) => t.length * 8.5;
+  for (final label in ['Week $n', 'W$n']) {
+    if (fits(label) <= width) return label;
   }
-  if (width >= 30) return 'W${isoWeekNumber(monday)}';
   return '';
 }
 
