@@ -36,4 +36,14 @@ void main() {
     expect(i.zeroDate, isNull);
     expect(i.toJson()['lowest'], {'date': '2026-01-02', 'balance': '120.00'});
   });
+
+  test('equal to the threshold is not an alert (strictly below only)', () {
+    final flat = [for (var d = 1; d <= 5; d++) _p(d, '0')];
+    final zero = BalanceInsights.of(flat, threshold: 0);
+    expect(zero.alertDate, isNull, reason: '0 balance, 0 threshold');
+    expect(zero.zeroDate, isNull);
+    final i = BalanceInsights.of([_p(1, '100'), _p(2, '100'), _p(3, '99.99')],
+        threshold: 100);
+    expect(i.alertDate, DateTime.utc(2026, 1, 3));
+  });
 }

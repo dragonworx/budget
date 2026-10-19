@@ -13,7 +13,8 @@ class BalanceInsights {
   final DateTime? lowestDate;
   final double? lowestBalance;
 
-  /// First day the closing balance is at or below the alert threshold.
+  /// First day the closing balance is below the alert threshold (a
+  /// balance equal to it is not an alert).
   final DateTime? alertDate;
 
   /// First day the closing balance is below zero.
@@ -35,7 +36,7 @@ class BalanceInsights {
         low = v;
         lowDate = p.date;
       }
-      if (alert == null && v <= threshold) alert = p.date;
+      if (alert == null && v < threshold) alert = p.date;
       if (zero == null && v < 0) zero = p.date;
     }
     return BalanceInsights(

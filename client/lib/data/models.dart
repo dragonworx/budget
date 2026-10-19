@@ -206,7 +206,7 @@ class Account {
   final Decimal seedBalance;
   final DateTime seedDate;
 
-  /// Closing balances at or below this value are a loss.
+  /// Closing balances below this value are a loss (equal is not).
   final Decimal lossThreshold;
   final List<String> transactionOrder;
   final int displayOrder;
@@ -943,7 +943,7 @@ class BalanceInsights {
   final DateTime? lowestDate;
   final double? lowestBalance;
 
-  /// First day at or below the alert threshold (null: not within horizon).
+  /// First day below the alert threshold (null: not within horizon).
   final DateTime? alertDate;
 
   /// First day below zero (null: not within horizon).

@@ -155,9 +155,33 @@ void main() {
       final a = r.affordability!;
       expect(a['affordable'], isFalse);
       // 500 after purchase; bills from 5 Jan: 400, 300, 200 (19 Jan, on the
-      // line: still safe), 100 (26 Jan) < 200.
+      // line: still safe and not an alert), 100 (26 Jan) < 200.
       expect(a['safeUntil'], '2026-01-25');
-      expect(r.alertDate, DateTime.utc(2026, 1, 19));
+      expect(r.alertDate, DateTime.utc(2026, 1, 26));
+    });
+
+    test('a balance equal to the alert line is no alert', () {
+      // Flat 1000 with the threshold at 1000: touching, never below.
+      final r = _solver(threshold: 1000).solve(GoalRequest(
+        solveFor: GoalVar.targetBalance,
+        startDate: _start,
+        endDate: DateTime.utc(2026, 3, 1),
+        oneOff: -0.0001,
+      ));
+      expect(r.alertDate, isNull);
+      expect(r.affordability!['affordable'], isTrue);
+      final z = GoalSolver(
+        baseline: GoalBaseline(
+            from: _start, opening: 0, closes: List.filled(800, 0.0)),
+        threshold: 0,
+        today: _start,
+        horizonDays: 790,
+      ).solve(GoalRequest(
+        solveFor: GoalVar.targetBalance,
+        startDate: _start,
+        endDate: DateTime.utc(2026, 3, 1),
+      ));
+      expect(z.alertDate, isNull, reason: '0 balance, 0 threshold');
     });
 
     test('interest compounds daily on the whole balance', () {

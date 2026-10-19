@@ -18,6 +18,7 @@ import '../../widgets/ui.dart';
 import '../../widgets/sharing_ui.dart';
 import '../../data/sharing.dart';
 import '../sharing/share_dialog.dart';
+import '../../data/alert.dart';
 
 class ProjectDetailPage extends ConsumerWidget {
   const ProjectDetailPage({super.key, required this.projectId});
@@ -265,7 +266,7 @@ class _AccountCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final today = ref.watch(todayBalanceProvider(account.id));
     final value = today.valueOrNull;
-    final low = value != null && value <= account.lossThreshold;
+    final low = value != null && belowAlert(value, account.lossThreshold);
     String money(num v) =>
         formatMoneyAmount(v, account.currency, decimalDigits: 2);
     return Material(
@@ -397,7 +398,7 @@ class _AccountCard extends ConsumerWidget {
                     const SizedBox(width: 12),
                     _Fact(
                       label: 'Alert at',
-                      value: '≤ ${money(account.lossThreshold.toDouble())}',
+                      value: '< ${money(account.lossThreshold.toDouble())}',
                       alignEnd: true,
                     ),
                   ],

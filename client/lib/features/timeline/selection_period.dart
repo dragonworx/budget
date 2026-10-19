@@ -1,6 +1,7 @@
 import '../../data/models.dart';
 import 'chart_geometry.dart';
 import 'zoom_level.dart';
+import '../../data/alert.dart';
 
 /// Summary of a day-snapped selection [start]..[end] (both inclusive).
 ///
@@ -30,7 +31,7 @@ class PeriodSummary {
   final double? lowestBalance;
   final DateTime? lowestDate;
 
-  /// First day in the range closing at or below the alert threshold.
+  /// First day in the range closing below the alert threshold (equal is not an alert).
   final DateTime? alertDate;
 
   final DateTime start;
@@ -127,7 +128,7 @@ PeriodSummary summarizePeriod({
       low = v;
       lowDate = d;
     }
-    if (alert == null && v <= threshold) alert = d;
+    if (alert == null && belowAlert(v, threshold)) alert = d;
   }
   return PeriodSummary(
     lowestBalance: low,

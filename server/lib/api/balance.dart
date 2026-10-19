@@ -113,7 +113,7 @@ void attachBalanceRoutes(Router router, Session conn) {
 
   /// `GET /<id>/insights?from=YYYY-MM-DD&days=365&horizonDays=1825`:
   /// lowest closing balance over `days` from `from`, and the first dates
-  /// at/below the alert threshold and below zero within `horizonDays`.
+  /// below the alert threshold and below zero within `horizonDays`.
   router.get('/<id>/insights', (Request request, String id) async {
     try {
       final account = await accounts.get(id);

@@ -518,7 +518,9 @@ class GoalSolver {
     for (var k = 0; k < s.length; k++) {
       final d = p.start.add(Duration(days: k));
       if (lowest == null || s[k] < lowest.balance) lowest = GoalPoint(d, s[k]);
-      if (alert == null && s[k] <= threshold) alert = d;
+      // Strictly below (equal is not an alert), with the same cent
+      // tolerance as the affordability floor below.
+      if (alert == null && s[k] < threshold - 0.005) alert = d;
     }
 
     Map<String, Object?>? afford;

@@ -35,6 +35,7 @@ import 'fit_ranges.dart';
 import 'ghost_line.dart';
 import 'view_units.dart';
 import 'zoom_level.dart';
+import '../../data/alert.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
   const TimelinePage({super.key, required this.accountId});
@@ -1556,7 +1557,7 @@ class _AccountHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final today = todayPoint?.closingBalance;
-    final loss = today != null && today <= account.lossThreshold;
+    final loss = today != null && belowAlert(today, account.lossThreshold);
     return Row(
       children: [
         Flexible(
@@ -1639,7 +1640,10 @@ class _AccountHeader extends StatelessWidget {
                 : DateFormat('d MMM y').format(insights!.lowestDate!),
             warn:
                 insights!.lowestBalance != null &&
-                insights!.lowestBalance! <= account.lossThreshold.toDouble(),
+                belowAlert(
+                  insights!.lowestBalance!,
+                  account.lossThreshold.toDouble(),
+                ),
           ),
           const SizedBox(width: 8),
           _InsightChip(
@@ -1648,7 +1652,7 @@ class _AccountHeader extends StatelessWidget {
             value: runwayText(insights!, account),
             detail: insights!.alertDate == null
                 ? null
-                : 'alert ≤ ${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}',
+                : 'alert < ${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}',
             warn: insights!.alertDate != null,
           ),
         ],

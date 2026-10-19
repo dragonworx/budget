@@ -19,6 +19,7 @@ import 'occurrence_info.dart';
 import 'selection_period.dart';
 import 'trim.dart';
 import 'zoom_level.dart';
+import '../../data/alert.dart';
 
 typedef ViewportChanged = void Function(DateTime viewStart, double visibleDays);
 typedef CreateOnDay = void Function(DateTime day);
@@ -156,7 +157,7 @@ class BalanceChart extends StatefulWidget {
   /// Opening balance on [seedDate]; drawn as the initial vertex. Null: none.
   final double? seedBalance;
 
-  /// Closing balances at or below this value are drawn as a loss.
+  /// Closing balances below this value are drawn as a loss (equal is not).
   final double lossThreshold;
 
   /// Account currency scale (dollars per y grid step). When set, the chart
@@ -1607,7 +1608,7 @@ class _BalanceChartState extends State<BalanceChart>
     final layout = _layout;
     final y = dot.center.dy;
     if (y < layout.plot.top || y > layout.plot.bottom) return const [];
-    final color = dot.balanceAfter < widget.lossThreshold
+    final color = belowAlert(dot.balanceAfter, widget.lossThreshold)
         ? AppTheme.debitColor
         : _lineColor;
     final style = (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
@@ -1677,7 +1678,7 @@ class _BalanceChartState extends State<BalanceChart>
     final x = dot.center.dx;
     if (x < layout.plot.left || x > layout.plot.right) return const [];
     final day = _highlightDay(dot);
-    final color = dot.balanceAfter < widget.lossThreshold
+    final color = belowAlert(dot.balanceAfter, widget.lossThreshold)
         ? AppTheme.debitColor
         : _lineColor;
     final axis = layout.axis;
@@ -2316,7 +2317,7 @@ class _BalanceChartState extends State<BalanceChart>
             formatMoneyAmount(sum.lowestBalance!, cur),
             key: const ValueKey('selection-lowest'),
             style: strong.copyWith(
-              color: sum.lowestBalance! <= widget.lossThreshold
+              color: belowAlert(sum.lowestBalance!, widget.lossThreshold)
                   ? AppTheme.debitColor
                   : null,
             ),
@@ -2325,7 +2326,7 @@ class _BalanceChartState extends State<BalanceChart>
         ),
       row(
         'Alert',
-        '≤ ${formatMoneyAmount(widget.lossThreshold, cur)}',
+        '< ${formatMoneyAmount(widget.lossThreshold, cur)}',
         Text(
           sum.alertDate == null ? 'Never' : dm.format(sum.alertDate!),
           key: const ValueKey('selection-alert'),
@@ -2855,7 +2856,7 @@ class _BalanceChartState extends State<BalanceChart>
       extra += 22;
       // Balance after the day's transactions: bold, green at or above the
       // alert threshold (0 when the account has none), red below it.
-      final low = day.balanceAfter < widget.lossThreshold;
+      final low = belowAlert(day.balanceAfter, widget.lossThreshold);
       children.add(
         Text.rich(
           key: const ValueKey('tip-balance'),
@@ -3996,7 +3997,7 @@ class _BalanceChartPainter extends CustomPainter {
       );
       final tp = TextPainter(
         text: TextSpan(
-          text: 'Alert ≤ ${formatMoneyAmount(lossThreshold, currency)}',
+          text: 'Alert < ${formatMoneyAmount(lossThreshold, currency)}',
           style: TextStyle(
             color: AppTheme.debitColor.withValues(alpha: 0.9),
             fontSize: 10.5,
@@ -4045,7 +4046,7 @@ class _BalanceChartPainter extends CustomPainter {
     canvas.restore();
   }
 
-  bool _isLoss(double value) => value <= lossThreshold;
+  bool _isLoss(double value) => belowAlert(value, lossThreshold);
 
   /// Chips at the top / bottom edge when balances in view lie beyond the
   /// vertical range, so clipped data is noticed (drag or Shift+wheel to it).

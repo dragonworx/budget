@@ -161,4 +161,17 @@ void main() {
     expect(s.alertDate, isNull);
     expect(s.lowestBalance, 1000);
   });
+
+  test('a balance equal to the threshold is not an alert day', () {
+    final s = summarizePeriod(
+      series: daily(),
+      start: d(4),
+      end: d(12),
+      seedDate: d(1),
+      seedBalance: 1000,
+      threshold: 1300,
+    );
+    // 1300 from 5th equals the threshold (no alert); 1270 on 10th is below.
+    expect(s.alertDate, d(10));
+  });
 }

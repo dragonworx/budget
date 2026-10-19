@@ -178,7 +178,7 @@ class _AccountDialogState extends State<AccountDialog> {
               decoration: InputDecoration(
                 labelText: 'Alert threshold',
                 prefixText: '${_symbol()} ',
-                helperText: 'Balances at or below this show in red',
+                helperText: 'Balances below this show in red',
                 errorText: _lossError,
               ),
               keyboardType: const TextInputType.numberWithOptions(
