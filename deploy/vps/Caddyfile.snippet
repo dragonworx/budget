@@ -1,10 +1,16 @@
-# Add to the VPS Caddyfile, replacing budget.example.com with your domain.
-# Host Caddy (systemd):        reverse_proxy 127.0.0.1:8081
-# Containerised Caddy (on the "caddy" docker network): reverse_proxy budget-web:80
-budget.example.com {
+# budget.fresneldigital.com -> budget-web container.
+# Paste into the VPS Caddyfile (or `import` this file), then `sudo systemctl reload caddy`.
+#
+# Port mapping (deploy/vps/docker-compose.yml):
+#   budget-web listens on :80 inside Docker, published on the host as 127.0.0.1:${WEB_PORT:-8081}.
+#   budget-web proxies /api/* (incl. SSE /api/events) to the api replicas on :8080 internally,
+#   so Caddy only needs this one upstream.
+#
+# Host Caddy (systemd, default):  reverse_proxy 127.0.0.1:8081
+# Containerised Caddy on the external "caddy" docker network:  reverse_proxy budget-web:80
+budget.fresneldigital.com {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8081 {
-		flush_interval -1   # keep SSE (/api/events) streaming
-		header_up X-Forwarded-Proto {scheme}
+		flush_interval -1 # keep SSE (/api/events) streaming
 	}
 }
