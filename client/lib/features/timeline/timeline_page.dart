@@ -966,6 +966,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       children: [
         _unitGroup(theme, compact: false),
         const SizedBox(width: 8),
+        _fitMenu(account, compact: false),
+        const SizedBox(width: 8),
         Tooltip(
           message: 'Jump to a date',
           child: OutlinedButton.icon(
@@ -977,8 +979,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             ),
           ),
         ),
-        const SizedBox(width: 8),
-        _fitMenu(account, compact: false),
         const SizedBox(width: 8),
         OutlinedButton.icon(
           onPressed: () => _centerOn(DateTime.now()),

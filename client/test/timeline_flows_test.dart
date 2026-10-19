@@ -1106,4 +1106,18 @@ void main() {
       }
     }
   });
+
+  testWidgets('desktop toolbar: View sits before the date-range (calendar) '
+      'button; phone toolbar order unchanged', (tester) async {
+    double x(String key) => tester.getCenter(find.byKey(ValueKey(key))).dx;
+    await _pump(tester);
+    expect(x('fit-menu'), lessThan(x('jump-to-date')));
+    expect(
+      x('jump-to-date'),
+      lessThan(tester.getCenter(find.text('Today')).dx),
+    );
+    await _pump(tester, size: const Size(390, 844));
+    expect(x('jump-to-date'), lessThan(x('open-plan-compact')));
+    expect(x('open-plan-compact'), lessThan(x('fit-menu')));
+  });
 }
