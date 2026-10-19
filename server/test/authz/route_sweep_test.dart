@@ -23,6 +23,7 @@ const _mounts = {
     'buildInvitesApi': 'invites',
   },
   'admin.dart': {'buildAdminApi': 'admin'},
+  'events.dart': {'buildEventsApi': 'events'},
 };
 
 /// All `(METHOD, path-below-/api)` registered on routers in lib/api.

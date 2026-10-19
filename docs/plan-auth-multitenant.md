@@ -1,6 +1,6 @@
 # Plan: Google sign-in + multi-tenant sharing + real-time sync
 
-Status: P1 (server auth) and P3 (tenancy/authz/sharing API) implemented; others planned. Base commit: f8f4509.
+Status: P1 (server auth), P3 (tenancy/authz/sharing API) and P5a (realtime server) implemented; others planned. Base commit: f8f4509.
 
 ## 0. Current architecture (what we're changing)
 
@@ -212,6 +212,41 @@ Authz is central: `server/lib/auth/authz.dart` holds the policy table (method + 
 | `DELETE /api/admin/allowlist/<urlencoded pattern>` | – | `{removed}`; `404` |
 
 **Audit log / events (for P5)**: every successful mutation writes `audit_log(id bigserial, at, user_id, project_id, account_id, action, entity, entity_id, detail jsonb)`; `id` is the global event sequence. Actions: `project.created|updated|deleted|ownership_transferred`, `account.created|updated|deleted|reordered`, `transaction.created|updated|deleted`, `transactions.imported`, `skip.changed`, `scenario.created|updated|deleted`, `invite.created|accepted|revoked|link_rotated`, `membership.changed|revoked|left`, `account_share.changed|revoked|left`, `admin.user_updated|allowlist_added|allowlist_removed`. `detail` may hold `version`, `date`, `peerAccountId`, `role`, `auto`.
+
+### 4c. Real-time event contract (implemented in P5a)
+
+**Transport**: `GET /api/events` (session cookie or bearer; same-origin `EventSource('/api/events', {withCredentials: true})` works). Response `text/event-stream`, `cache-control: no-cache`, `x-accel-buffering: no`. `401` without a session, `400` for a non-integer cursor, `503` if realtime is not wired. The dev proxy and Caddy (`flush_interval -1`) stream it unbuffered.
+
+**Cursor**: every change has a global integer `id` (= `audit_log.id`). Resume with the standard `Last-Event-ID` header (EventSource sends it automatically on reconnect) or `?since=<id>` (use this when creating a new EventSource after a page reload; keep the last seen id in memory/localStorage).
+
+**Stream frames** (each `data:` is one JSON object):
+| event | id line | data | meaning |
+|---|---|---|---|
+| (preamble) | – | `retry: 3000` | reconnect after 3 s |
+| `change` | event id | `ChangeEvent` | a committed change you may read |
+| `ready` | current cursor | `{lastEventId, userId}` | sent once after connect; when resuming, it comes **after** the replayed `change` events |
+| `resync` | newest id | `{lastEventId, reason}` | cursor too old (>24 h), too far behind (>1000 events) or ahead of the log: drop caches and refetch everything, then continue from `lastEventId` |
+| `goodbye` | – | `{reason}` | `"session ended"` (logout/expiry, checked on each heartbeat) or `"account disabled"`; the server closes the stream — do **not** auto-reconnect, go to sign-in |
+| `error` | – | `{error}` | server-side failure handling an event; treat like `resync` |
+| comment | – | `: ping` | heartbeat every 25 s |
+
+**ChangeEvent**
+```json
+{"id": 1234, "action": "transaction.updated", "entity": "transaction",
+ "entityId": "<uuid|string>", "projectId": "<uuid|null>", "accountId": "<uuid|null>",
+ "actorId": "<user uuid>", "subjectUserId": "<user uuid|null>",
+ "clientId": "<X-Client-Id of the request|null>", "at": "2026-10-19T02:33:25Z",
+ "detail": {"version": 7}}
+```
+- `action` values are those listed in 4b plus `membership.added` / `account_share.added` (an invite to an existing user grants access immediately; `invite.created` is only for pending invites). `entity` is the part before the dot.
+- `detail` may contain `version` (new row version for updates/creates), `date` (skips), `peerAccountId`, `role` (membership/share changes, invite acceptance), `disabled` (admin), `auto` (invite accepted on sign-in).
+- **Echo suppression**: send a per-tab random `X-Client-Id` header on every request; events caused by that tab carry it in `clientId`, so the tab can skip them.
+- **Delivery filter** (per user, re-evaluated on every access-changing event): all events of projects you are a member of; for account-only shares, events of those accounts plus project-level (`project.*`) events; `admin.*` to admins; and any event whose `subjectUserId` is you (so you are told about your own grant/role change/revocation even though you lose access). After `membership.revoked|left` / `account_share.revoked|left` for you, nothing more from that project/account is delivered: drop it from the UI.
+- **Ordering/at-least-once**: events are delivered in commit order per replica; the client should treat them as idempotent invalidation hints (refetch the affected project/account/transaction lists, or compare `detail.version` with the cached row). Duplicates by `id` can be ignored.
+
+**Client mapping (P5b)**: `project.*` → invalidate projects list (+ project); `account.*` → accounts of `projectId` (+ account); `transaction.*`, `transactions.imported`, `skip.changed` → transactions/balance/insights of `accountId` (and of `detail.peerAccountId` for transfers); `scenario.*` → scenarios of `accountId`; `membership.*`, `account_share.*`, `invite.*` → projects list and members/shares dialogs; if `subjectUserId == me` and the action is a revocation/leave, navigate away from that project/account with a notice.
+
+**Server internals**: each mutating request runs in one DB transaction (handler writes + `audit_log` insert + `pg_notify('budget_events', <ChangeEvent JSON>)`), so events fire only on commit and a rollback (any non-2xx) leaves no audit row. Each replica keeps one dedicated LISTEN connection (`lib/realtime/pg_listener.dart`, reconnect with 1–30 s backoff); after a reconnect every stream catches up from `audit_log` so nothing is lost. Caveat: ids come from a sequence, so a transaction that commits late can produce an id lower than one already delivered; live delivery handles this (de-dupe by id, not high-water mark), but a client resuming with `Last-Event-ID` could miss such an event in that narrow window — the client should do a full refresh on long disconnects anyway.
 
 ## 5. Sharing UX
 

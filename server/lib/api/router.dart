@@ -8,6 +8,9 @@ import '../auth/middleware.dart';
 import '../auth/session_store.dart';
 import '../config.dart';
 import '../auth/authz_middleware.dart';
+import '../db_scope.dart';
+import '../realtime/event_bus.dart';
+import 'events.dart';
 import 'accounts.dart';
 import 'admin.dart';
 import 'sharing.dart';
@@ -16,8 +19,11 @@ import 'json_helpers.dart';
 import 'projects.dart';
 import 'transactions.dart';
 
-Handler buildHandler(Session conn, Config config,
-    {GoogleIdTokenVerifier? verifier}) {
+Handler buildHandler(Session base, Config config,
+    {GoogleIdTokenVerifier? verifier,
+    EventBus? bus,
+    EventsSettings eventsSettings = const EventsSettings()}) {
+  final conn = base is ScopedDb ? base : ScopedDb(base);
   final root = Router();
   final sessions = SessionStore(conn,
       secret: config.sessionSecret, ttl: Duration(days: config.sessionTtlDays));
@@ -51,6 +57,8 @@ Handler buildHandler(Session conn, Config config,
   root.mount('/api/invites', buildInvitesApi(conn, config).call);
   root.mount('/api/admin', buildAdminApi(conn, config, sessions).call);
   root.mount('/api/transactions', transactionsRouter(conn).call);
+  root.mount('/api/events',
+      buildEventsApi(conn, sessions, bus, settings: eventsSettings).call);
 
   return const Pipeline()
       .addMiddleware(corsMiddleware(config))

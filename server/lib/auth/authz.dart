@@ -186,6 +186,8 @@ const policies = <Policy>[
       min: _o, event: 'invite.link_rotated'),
   Policy('DELETE', 'invites/:i', Scope.invite,
       min: _o, event: 'invite.revoked'),
+  // Realtime (SSE; per-event filtering happens in the stream)
+  Policy('GET', 'events', Scope.auth),
   // Admin
   Policy('GET', 'admin/users', Scope.admin),
   Policy('PATCH', 'admin/users/:u', Scope.admin, event: 'admin.user_updated'),

@@ -23,8 +23,20 @@ const srv = http.createServer((req, res) => {
     try { return serveStatic(req, res); } catch (e) { res.writeHead(503, { 'content-type': 'text/plain' }); return res.end('web build not ready yet (' + e.code + ') — see tmux window "web"'); }
   }
   const up = http.request({ host: '127.0.0.1', port: isApi(req.url) ? API : WEB, method: req.method, path: req.url, headers: req.headers },
-    r => { res.writeHead(r.statusCode, r.headers); r.pipe(res); });
-  up.on('error', e => { res.writeHead(502); res.end('proxy: ' + e.message); });
+    r => {
+      // Server-Sent Events (/api/events): stream every chunk immediately, never time out.
+      if (String(r.headers['content-type'] || '').startsWith('text/event-stream')) {
+        req.socket.setTimeout(0); req.socket.setNoDelay(true); req.socket.setKeepAlive(true);
+        res.writeHead(r.statusCode, { ...r.headers, 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no' });
+        res.flushHeaders();
+        r.on('data', c => res.write(c));
+        r.on('end', () => res.end());
+        res.on('close', () => up.destroy()); // client went away -> drop the upstream stream
+        return;
+      }
+      res.writeHead(r.statusCode, r.headers); r.pipe(res);
+    });
+  up.on('error', e => { if (!res.headersSent) res.writeHead(502); res.end('proxy: ' + e.message); });
   req.pipe(up);
 });
 srv.on('upgrade', (req, sock, head) => {

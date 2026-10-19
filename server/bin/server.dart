@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:budget_server/api/router.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
+import 'package:budget_server/realtime/event_bus.dart';
+import 'package:budget_server/realtime/pg_listener.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 
 Future<void> main(List<String> args) async {
@@ -21,13 +23,21 @@ Future<void> main(List<String> args) async {
   final conn = openPool(config);
   await conn.execute('SELECT 1');
 
-  final handler = buildHandler(conn, config);
+  final bus = EventBus();
+  final listener = PgListener(() => openConnection(config), bus,
+      // ignore: avoid_print
+      onLog: print)
+    ..start();
+  await listener.ready.timeout(const Duration(seconds: 10));
+
+  final handler = buildHandler(conn, config, bus: bus);
   final server = await shelf_io.serve(handler, config.host, config.port);
   // ignore: avoid_print
   print('Budget API listening on http://${server.address.host}:${server.port}');
 
   for (final sig in [ProcessSignal.sigint, ProcessSignal.sigterm]) {
     sig.watch().listen((_) async {
+      await listener.stop();
       await server.close(force: true);
       await conn.close();
       exit(0);

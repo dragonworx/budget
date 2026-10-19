@@ -4,6 +4,7 @@ import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 
 import '../api/json_helpers.dart';
+import '../db_scope.dart';
 import '../repo/account_repo.dart';
 import '../repo/audit_repo.dart';
 import '../repo/project_repo.dart';
@@ -19,7 +20,7 @@ Access? accessOf(Request r) => r.context['access'] as Access?;
 /// - optimistic concurrency (`If-Match` / body `version` on PATCH -> 409),
 /// - an audit_log row for every successful mutation.
 /// Unknown routes are denied (404). No access -> 404; too low a role -> 403.
-Middleware authzMiddleware(Session db) {
+Middleware authzMiddleware(ScopedDb db) {
   final authz = Authz(db);
   final audit = AuditRepo(db);
   return (inner) => (request) async {
@@ -136,64 +137,88 @@ Middleware authzMiddleware(Session db) {
                   403, 'requires editor role on the linked transfer account');
             }
           }
+        }
 
-          // Optimistic concurrency.
-          if (policy.versioned != null) {
+        Future<Response> handle() async {
+          // Optimistic concurrency, checked under a row lock.
+          if (mutating && policy.versioned != null) {
             final expected = _expectedVersion(request, body);
             if (expected != null) {
-              final current = await _current(db, policy.versioned!, params);
-              if (current != null && current['version'] != expected) {
+              final v = await _lockVersion(db, policy.versioned!, params);
+              if (v != null && v != expected) {
+                final current = await _current(db, policy.versioned!, params);
                 final redacted =
-                    await _redact(authz, uid, current) as Map<String, dynamic>;
+                    await _redact(authz, uid, current) as Map<String, dynamic>?;
                 return jsonError(409, 'version conflict',
                         details: {'current': redacted})
                     .change(headers: {'x-conflict': 'version'});
               }
             }
           }
-        }
 
-        final res = await inner(request.change(context: {'access': access}));
+          final res = await inner(request.change(context: {'access': access}));
 
-        // Peer redaction on JSON that may contain transfer links.
-        var out = res;
-        if ((res.headers['content-type'] ?? '').contains('json') &&
-            (rest[0] == 'accounts' || rest[0] == 'transactions')) {
-          final text = await res.readAsString();
-          if (text.contains('"peerAccountId"')) {
-            final redacted = await _redact(authz, uid, jsonDecode(text));
-            out = res.change(body: jsonEncode(redacted));
-          } else {
-            out = res.change(body: text);
-          }
-        }
-
-        if (mutating &&
-            policy.event != null &&
-            res.statusCode >= 200 &&
-            res.statusCode < 300) {
-          String? created;
+          // Peer redaction on JSON that may contain transfer links; and the
+          // JSON body for the audit row.
+          var out = res;
           Map<String, dynamic>? resJson;
-          if (out.headers['content-type']?.contains('json') ?? false) {
-            final text = await out.readAsString();
-            out = out.change(body: text);
+          if ((res.headers['content-type'] ?? '').contains('json')) {
+            final text = await res.readAsString();
+            Object? decoded;
             try {
-              final d = jsonDecode(text);
-              if (d is Map<String, dynamic>) resJson = d;
+              decoded = jsonDecode(text);
             } catch (_) {}
-            created = resJson?['id']?.toString();
+            if (decoded is Map<String, dynamic>) resJson = decoded;
+            if ((rest[0] == 'accounts' || rest[0] == 'transactions') &&
+                text.contains('"peerAccountId"')) {
+              out = res.change(
+                  body: jsonEncode(await _redact(authz, uid, decoded)));
+            } else {
+              out = res.change(body: text);
+            }
           }
-          await audit.recordRequest(
-            userId: uid,
-            policy: policy,
-            access: access,
-            params: params,
-            createdId: created,
-            response: resJson,
-          );
+
+          final success = res.statusCode >= 200 && res.statusCode < 300;
+          if (mutating && !success) throw RollbackWith<Response>(out);
+          if (mutating && policy.event != null) {
+            await audit.recordRequest(
+              userId: uid,
+              policy: policy,
+              access: access!,
+              params: params,
+              createdId: resJson?['id']?.toString(),
+              response: resJson,
+              clientId: request.headers['x-client-id'],
+            );
+          }
+          return out;
         }
-        return out;
+
+        if (!mutating) return handle();
+        // The handler's writes, its audit row and its NOTIFY commit together.
+        try {
+          return await db.runInRequestTx(handle);
+        } on RollbackWith<Response> catch (e) {
+          return e.value;
+        }
       };
+}
+
+Future<int?> _lockVersion(
+    Session db, String table, Map<String, String> p) async {
+  final id = switch (table) {
+    'projects' => p['p'],
+    'accounts' => p['a'],
+    'transactions' => p['t'],
+    'scenarios' => p['s'],
+    _ => null,
+  };
+  if (id == null || !uuidRe.hasMatch(id)) return null;
+  final r = await db.execute(
+    Sql.named('SELECT version FROM $table WHERE id = @id::uuid FOR UPDATE'),
+    parameters: {'id': id},
+  );
+  return r.isEmpty ? null : r.first[0] as int;
 }
 
 int? _expectedVersion(Request r, Map<String, dynamic>? body) {

@@ -36,23 +36,28 @@ Router buildAuthApi({
       (r.context['shelf.io.connection_info'] as dynamic)?.remoteAddress?.address
           as String?;
 
-  final invites = InviteRepo(db, secret: config.sessionSecret);
-  final audit = AuditRepo(db);
-
   Future<Response> startSession(Request r, User user,
       {bool isDev = false,
       Response Function(Map<String, String>)? build}) async {
-    // Pending invites for this email become memberships on sign-in.
-    for (final inv in await invites.acceptAllFor(user.email, user.id)) {
-      await audit.record(
-        userId: user.id,
-        action: 'invite.accepted',
-        projectId: inv.projectId,
-        accountId: inv.accountId,
-        entityId: inv.id,
-        detail: {'role': inv.role.name, 'auto': true},
-      );
-    }
+    // Pending invites for this email become memberships on sign-in; each
+    // grant and its audit event commit together.
+    await txOf(db).runTx((tx) async {
+      final txAudit = AuditRepo(tx);
+      final accepted = await InviteRepo(tx, secret: config.sessionSecret)
+          .acceptAllFor(user.email, user.id);
+      for (final inv in accepted) {
+        await txAudit.record(
+          userId: user.id,
+          action: 'invite.accepted',
+          projectId: inv.projectId,
+          accountId: inv.accountId,
+          entityId: inv.id,
+          subjectUserId: user.id,
+          clientId: r.headers['x-client-id'],
+          detail: {'role': inv.role.name, 'auto': true},
+        );
+      }
+    });
     final token = await sessions.create(user.id,
         userAgent: r.headers['user-agent'], ip: ip(r), isDev: isDev);
     final headers = {'set-cookie': sessionCookieHeader(config, token)};
