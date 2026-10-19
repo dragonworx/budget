@@ -1045,14 +1045,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
+  /// View options. The fit modes themselves are keyboard-only (F / A / H,
+  /// listed in the shortcuts sheet); this menu keeps the alert-line option
+  /// for those fits and, on phones, Go to today / seed date.
   Widget _fitMenu(Account account, {required bool compact}) {
     return PopupMenuButton<Object>(
       key: const ValueKey('fit-menu'),
-      tooltip: 'Fit the view',
+      tooltip: 'View options',
       onSelected: (choice) {
-        if (choice is FitMode) {
-          _fit(choice, account);
-        } else if (choice == 'today') {
+        if (choice == 'today') {
           _centerOn(DateTime.now());
         } else if (choice == 'seed') {
           _centerOn(account.seedDate);
@@ -1065,21 +1066,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       },
       position: PopupMenuPosition.under,
       itemBuilder: (context) => [
-        for (final mode in FitMode.values)
-          PopupMenuItem(
-            value: mode,
-            child: Row(
-              children: [
-                Icon(_fitIcon(mode), size: 18),
-                const SizedBox(width: 10),
-                Expanded(child: Text(mode.label)),
-                const SizedBox(width: 24),
-                KeyCap(mode.shortcut),
-              ],
-            ),
-          ),
         if (compact) ...[
-          const PopupMenuDivider(),
           const PopupMenuItem<Object>(
             value: 'today',
             child: Row(
@@ -1100,8 +1087,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               ],
             ),
           ),
+          const PopupMenuDivider(),
         ],
-        const PopupMenuDivider(),
         PopupMenuItem<Object>(
           key: const ValueKey('fit-threshold'),
           value: 'threshold',
@@ -1115,8 +1102,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 color: _fitThreshold ? AppTheme.accent : null,
               ),
               const SizedBox(width: 10),
-              Text(
-                'Keep alert line (${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}) in fits',
+              Flexible(
+                child: Text(
+                  'Keep alert line (${formatMoneyAmount(account.lossThreshold.toDouble(), account.currency)}) in fits',
+                ),
               ),
             ],
           ),
@@ -1126,16 +1115,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           ? const SizedBox(
               width: 44,
               height: 44,
-              child: Icon(Icons.fit_screen_rounded),
+              child: Icon(Icons.visibility_outlined),
             )
           : IgnorePointer(
               child: OutlinedButton.icon(
                 onPressed: () {},
-                icon: const Icon(Icons.fit_screen_rounded, size: 18),
+                icon: const Icon(Icons.visibility_outlined, size: 18),
                 label: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Fit'),
+                    Text('View'),
                     SizedBox(width: 2),
                     Icon(Icons.expand_more_rounded, size: 18),
                   ],
@@ -1185,12 +1174,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       ],
     );
   }
-
-  IconData _fitIcon(FitMode mode) => switch (mode) {
-    FitMode.all => Icons.fit_screen_rounded,
-    FitMode.vertical => Icons.height_rounded,
-    FitMode.horizontal => Icons.width_full_rounded,
-  };
 
   String _shortDate(DateTime d) => DateFormat('d MMM y').format(d);
 

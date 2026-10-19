@@ -1061,4 +1061,49 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(seconds: 5));
   });
+
+  testWidgets('View menu has no fit modes; keeps alert option (+ go-tos on '
+      'phones) and starts without a divider', (tester) async {
+    for (final (size, compact) in [
+      (const Size(390, 844), true),
+      (const Size(1440, 900), false),
+    ]) {
+      await _pump(tester, size: size);
+      await tester.tap(find.byKey(const ValueKey('fit-menu')));
+      await tester.pumpAndSettle();
+      for (final gone in ['Fit all', 'Fit vertical', 'Fit horizontal']) {
+        expect(find.text(gone), findsNothing, reason: gone);
+      }
+      expect(find.byKey(const ValueKey('fit-threshold')), findsOneWidget);
+      expect(find.text('Go to today'), compact ? findsOneWidget : findsNothing);
+      expect(
+        find.text('Go to seed date'),
+        compact ? findsOneWidget : findsNothing,
+      );
+      final entries = tester
+          .widgetList(
+            find.byWidgetPredicate(
+              (w) => w is PopupMenuItem || w is PopupMenuDivider,
+            ),
+          )
+          .toList();
+      expect(entries.first, isNot(isA<PopupMenuDivider>()));
+      expect(entries.last, isA<PopupMenuItem>());
+      if (!compact) expect(find.text('View'), findsOneWidget);
+      // Toggling the alert option still works.
+      await tester.tap(find.byKey(const ValueKey('fit-threshold')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('fit-threshold')), findsNothing);
+      if (!compact) {
+        // The fit modes stay as keyboard shortcuts, listed in the sheet.
+        await tester.tap(find.byKey(const ValueKey('shortcuts-help')));
+        await tester.pumpAndSettle();
+        expect(find.text('Fit balance to what is in view'), findsOneWidget);
+        expect(find.text('Fit all data'), findsOneWidget);
+        expect(find.text('Fit all data horizontally'), findsOneWidget);
+        await tester.tap(find.text('Got it'));
+        await tester.pumpAndSettle();
+      }
+    }
+  });
 }
