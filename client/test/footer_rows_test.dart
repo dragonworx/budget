@@ -32,7 +32,11 @@ void main() {
   test('week labels keep the Monday date style', () {
     final mon = DateTime(2026, 10, 12);
     expect(weekLabel(mon, 80), 'Oct 12');
-    expect(weekLabel(mon, 24), '12');
+    expect(weekLabel(mon, 40), 'W42');
+    expect(weekLabel(mon, 24), '');
+    expect(isoWeekNumber(DateTime(2026, 1, 1)), 1);
+    expect(isoWeekNumber(DateTime(2027, 1, 1)), 53);
+    expect(isoWeekNumber(DateTime(2024, 12, 30)), 1);
     expect(weekLabel(mon, 8), '');
   });
 }

@@ -966,13 +966,24 @@ String monthLabel(DateTime month, double width) {
   return '';
 }
 
-/// Week row label (the week's Monday): "Oct 12", "12", or blank.
+/// Week row label (the week's Monday): "Oct 12", else the ISO week number
+/// "W42", else blank. Never a bare day numeral: that reads as a day and
+/// belongs to the Day row only.
 String weekLabel(DateTime monday, double width) {
   if (width >= 52) {
     return '${_monthNames[monday.month - 1].substring(0, 3)} ${monday.day}';
   }
-  if (width >= 18) return '${monday.day}';
+  if (width >= 30) return 'W${isoWeekNumber(monday)}';
   return '';
+}
+
+/// ISO 8601 week number (1-53) of [date]: weeks start Monday and week 1
+/// holds the year's first Thursday.
+int isoWeekNumber(DateTime date) {
+  final d = DateTime.utc(date.year, date.month, date.day);
+  final thursday = d.add(Duration(days: DateTime.thursday - d.weekday));
+  final jan1 = DateTime.utc(thursday.year);
+  return thursday.difference(jan1).inDays ~/ 7 + 1;
 }
 
 /// Span multiplier for one vertical wheel event of [dy] logical pixels

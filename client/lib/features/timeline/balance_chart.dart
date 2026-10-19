@@ -63,6 +63,11 @@ typedef TrimOnDay = void Function(
 @visibleForTesting
 void Function(String name, double x, bool labelled)? debugVertexLabel;
 
+/// Test hook: every date-axis label as painted, with its row name
+/// ("Year", "Month", "Week", "Day") and the rect its text occupies.
+@visibleForTesting
+void Function(String row, String text, Rect rect)? debugAxisLabel;
+
 class BalanceChart extends StatefulWidget {
   const BalanceChart({
     super.key,
@@ -3531,6 +3536,7 @@ class _BalanceChartPainter extends CustomPainter {
       compactWidth: math.max(w('W', dowStyle), w('28', numStyle)),
       numeralWidth: w('28', numStyle),
     );
+    final nameW = _laneNameWidth(layout);
     canvas.save();
     canvas.clipRect(band);
     for (final segment in daySegments(viewStart, _viewEnd)) {
@@ -3558,10 +3564,26 @@ class _BalanceChartPainter extends CustomPainter {
             maxLines: 1,
           )..layout(),
       ];
+      // Keep the text wholly inside the Day row: drop the weekday line when
+      // both don't fit its height, and skip a label that would run under
+      // the row-name chip or past the plot edge rather than clip it.
+      if (painters.length > 1 &&
+          painters.fold<double>(0, (a, p) => a + p.height) > band.height) {
+        painters.removeAt(0).dispose();
+      }
       final total = painters.fold<double>(0, (a, p) => a + p.height);
+      final textW = painters.fold<double>(0, (a, p) => math.max(a, p.width));
+      final fits =
+          total <= band.height &&
+          cx - textW / 2 >= band.left + nameW &&
+          cx + textW / 2 <= band.right;
       var y = band.top + (band.height - total) / 2;
       for (final p in painters) {
-        p.paint(canvas, Offset(cx - p.width / 2, y));
+        if (fits) {
+          final at = Offset(cx - p.width / 2, y);
+          p.paint(canvas, at);
+          debugAxisLabel?.call('Day', p.plainText, at & p.size);
+        }
         y += p.height;
         p.dispose();
       }
@@ -3614,7 +3636,8 @@ class _BalanceChartPainter extends CustomPainter {
         if (open.width <= 0) continue;
         final label = labelFor(segment, open.width);
         if (label.isEmpty) continue;
-        _paintCentered(canvas, open.deflate(1), label, style);
+        final painted = _paintCentered(canvas, open.deflate(1), label, style);
+        if (painted != null) debugAxisLabel?.call(laneName, label, painted);
       }
     }
     // Row name, right-aligned in a small chip at the left edge.
@@ -4704,8 +4727,10 @@ class _BalanceChartPainter extends CustomPainter {
     name?.paint(canvas, Offset(textLeft, textTop + amount.height));
   }
 
-  void _paintCentered(Canvas canvas, Rect rect, String text, TextStyle style) {
-    if (rect.width < 8 || rect.height < 8 || text.isEmpty) return;
+  /// Paints [text] centred in [rect]; returns where it went, or null when
+  /// it didn't fit and nothing was painted.
+  Rect? _paintCentered(Canvas canvas, Rect rect, String text, TextStyle style) {
+    if (rect.width < 8 || rect.height < 8 || text.isEmpty) return null;
     final maxLines = text.contains('\n') ? 2 : 1;
     final painter = TextPainter(
       text: TextSpan(text: text, style: style),
@@ -4716,16 +4741,16 @@ class _BalanceChartPainter extends CustomPainter {
     )..layout(maxWidth: math.max(1, rect.width - 2));
     if (painter.height > rect.height + 1) {
       painter.dispose();
-      return;
+      return null;
     }
-    painter.paint(
-      canvas,
-      Offset(
-        rect.center.dx - painter.width / 2,
-        rect.center.dy - painter.height / 2,
-      ),
+    final at = Offset(
+      rect.center.dx - painter.width / 2,
+      rect.center.dy - painter.height / 2,
     );
+    final painted = at & painter.size;
+    painter.paint(canvas, at);
     painter.dispose();
+    return painted;
   }
 
   @override
