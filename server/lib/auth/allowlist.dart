@@ -14,7 +14,7 @@ bool matchesPattern(String email, Iterable<String> patterns) {
 
 /// Who may sign in: admins, AUTH_OPEN_SIGNUP, AUTH_ALLOWLIST (env),
 /// `allowed_emails` (DB, admin-managed) and, when
-/// AUTH_INVITES_BYPASS_ALLOWLIST, anyone with a pending invite (P3).
+/// AUTH_INVITES_BYPASS_ALLOWLIST, anyone with a pending invite.
 class Allowlist {
   Allowlist(this.config, this._db);
   final Config config;
@@ -36,9 +36,6 @@ class Allowlist {
   }
 
   Future<bool> _hasPendingInvite(String email) async {
-    // The invites table arrives in P3 (migration 010).
-    final t = await _db.execute("SELECT to_regclass('invites') IS NOT NULL");
-    if (t.first[0] != true) return false;
     final rows = await _db.execute(
       Sql.named('SELECT 1 FROM invites WHERE lower(email) = @e '
           'AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now() LIMIT 1'),

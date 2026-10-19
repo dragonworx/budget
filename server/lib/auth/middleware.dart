@@ -1,6 +1,3 @@
-import 'dart:convert';
-
-import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 
 import '../api/json_helpers.dart';
@@ -130,64 +127,5 @@ Middleware authMiddleware(SessionStore sessions) {
         return inner(request.change(context: {
           'auth': AuthContext(info.user, token!, isDev: info.isDev),
         }));
-      };
-}
-
-final _uuidRe = RegExp(
-    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    caseSensitive: false);
-
-/// P1 tenancy guard: every `/api/projects/<id>`, `/api/accounts/<id>` and
-/// `/api/transactions/<id>` route (and any `transferToAccountId` in a body)
-/// must belong to a project owned by the signed-in user; otherwise 404.
-/// P3 replaces this with role-based checks via project membership.
-Middleware ownershipMiddleware(Session db) {
-  return (inner) => (request) async {
-        final auth = authOf(request);
-        final seg = request.url.pathSegments;
-        if (auth == null || seg.length < 3 || seg[0] != 'api') {
-          return inner(request);
-        }
-        final kind = seg[1];
-        const queries = {
-          'projects': 'SELECT 1 FROM projects p WHERE p.id = @id::uuid '
-              'AND p.owner_id = @u::uuid',
-          'accounts': 'SELECT 1 FROM accounts a JOIN projects p '
-              'ON p.id = a.project_id WHERE a.id = @id::uuid AND p.owner_id = @u::uuid',
-          'transactions': 'SELECT 1 FROM transactions t JOIN accounts a '
-              'ON a.id = t.account_id JOIN projects p ON p.id = a.project_id '
-              'WHERE t.id = @id::uuid AND p.owner_id = @u::uuid',
-        };
-        final q = queries[kind];
-        if (q == null) return inner(request);
-        Future<bool> owns(String sql, String id) async {
-          if (!_uuidRe.hasMatch(id)) return false;
-          final r = await db.execute(Sql.named(sql),
-              parameters: {'id': id, 'u': auth.user.id});
-          return r.isNotEmpty;
-        }
-
-        if (!await owns(q, seg[2])) {
-          return jsonError(
-              404, '${kind.substring(0, kind.length - 1)} not found');
-        }
-
-        // Transfers must target an account the user also owns.
-        if ((request.method == 'POST' || request.method == 'PATCH') &&
-            (kind == 'accounts' || kind == 'transactions')) {
-          final raw = await request.readAsString();
-          request = request.change(body: raw);
-          if (raw.contains('transferToAccountId')) {
-            Object? decoded;
-            try {
-              decoded = jsonDecode(raw);
-            } catch (_) {}
-            final to = decoded is Map ? decoded['transferToAccountId'] : null;
-            if (to != null && !await owns(queries['accounts']!, '$to')) {
-              return jsonError(404, 'transfer account not found');
-            }
-          }
-        }
-        return inner(request);
       };
 }

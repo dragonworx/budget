@@ -1,6 +1,6 @@
 # Plan: Google sign-in + multi-tenant sharing + real-time sync
 
-Status: P1 (server auth foundation) implemented; P2+ planned. Base commit: f8f4509.
+Status: P1 (server auth) and P3 (tenancy/authz/sharing API) implemented; others planned. Base commit: f8f4509.
 
 ## 0. Current architecture (what we're changing)
 
@@ -157,6 +157,61 @@ Session cookie: `budget_session=<token>; Path=/; HttpOnly; SameSite=Lax; Max-Age
 Every other `/api/*` route returns `401 {error:"authentication required"}` without a valid session, and `404` for resources outside the user's projects. `/health` is public (checks the DB, `503` when down).
 CSRF: unsafe `/api/*` requests with an `Origin` header must come from an allowed origin (`403 origin not allowed`); requests without `Origin` need `X-Requested-With`, a JSON content type, or bearer auth (`403 missing CSRF header`). Clients should send `X-Requested-With: budget` on all mutations.
 CORS: only `PUBLIC_ORIGIN`, `CORS_ORIGINS` and (outside production) `http://localhost:8000` / `http://127.0.0.1:8000`, with credentials.
+
+### 4b. Tenancy, sharing & admin API contract (implemented in P3)
+
+**Roles** `viewer < editor < owner`. Project role comes from `project_members` (the owner is a member with role `owner`); account role = max(project role, `account_shares` role). Users with only account shares see the project as a limited container (`access: "account"`) listing just their accounts.
+Authz is central: `server/lib/auth/authz.dart` holds the policy table (method + path -> scope + minimum role + audit event); `authz_middleware.dart` enforces it before any handler. Unknown `/api` routes -> `404`. No access -> `404 {error:"not found"}`; role too low -> `403 {error:"requires <role> role", details:{role}}`; admin-only -> `403 {error:"admin only"}`.
+
+**Changes to existing payloads**
+- Every project/account/transaction/scenario JSON now has `version` (int).
+- `GET /api/projects` -> `{projects:[{id,name,createdAt,version, role, access:"project"|"account", shared:bool, owner:{id,email,name,pictureUrl}, sharedAccountIds:[...]}]}` (owned + shared).
+- `POST /api/projects` response adds `role:"owner"`. `GET /api/projects/<p>` adds `role`, `access`.
+- `GET /api/projects/<p>/accounts` -> each account adds `role` (effective); limited users only get their shared accounts.
+- Transfer links (`transaction.transfer`) add `peerReadable:bool`; when false, `peerAccountName`, `peerProjectName`, `peerProjectId` are `null` (ids `peerAccountId`/`peerTransactionId` are kept).
+
+**Optimistic concurrency** on `PATCH /api/projects/<p>`, `/api/accounts/<a>`, `/api/transactions/<t>`, `/api/accounts/<a>/scenarios/<s>`: send `version` in the body or `If-Match: "<version>"`. Mismatch -> `409 {error:"version conflict", details:{current:<row json>}}` (header `x-conflict: version`). Omitting it = last write wins. Any real change bumps `version` (DB trigger).
+
+**Role requirements (existing routes)**: all GETs and compute POSTs (`/balance`, `/project`, `/insights`, `/solve`, `/goal`) = viewer; creating/editing/deleting transactions, skips, imports, reorder, scenarios, account PATCH = editor on the account; creating accounts and deleting an account = editor via *project* membership; project rename/delete = owner. Transfers need editor on both accounts; changing/deleting a linked transfer row needs editor on the peer account too (`403`).
+
+**Project sharing**
+| Method & path | Role | Body | Response |
+|---|---|---|---|
+| `GET /api/projects/<p>/members` | viewer (incl. limited) | – | `{role, members:[{userId,email,name,pictureUrl,role,addedAt}], accountShares:[{accountId,accountName,userId,email,name,pictureUrl,role,addedAt}], invites?:[Invite]}` (`invites` + all accountShares for owner only; limited users see only the owner) |
+| `POST /api/projects/<p>/invites` | owner | `{email, role?:"viewer"\|"editor"}` (default viewer) | existing user: `201 {id:userId, status:"added", member:{userId,email,name,pictureUrl,role}}`; otherwise `201 {id, status:"invited", invite:Invite, token, inviteUrl}`; `409` already a member |
+| `PATCH /api/projects/<p>/members/<userId>` | owner | `{role:"viewer"\|"editor"}` | `{userId, role}`; `404` if not a member / is owner |
+| `DELETE /api/projects/<p>/members/<userId>` | owner | – | `{removed:userId}`; `404` for owner/non-member |
+| `POST /api/projects/<p>/leave` | member | – | `{left:p}`; `409` for the owner |
+| `POST /api/projects/<p>/transfer-ownership` | owner | `{userId}` (must be a member) | `{projectId, ownerId}`; old owner becomes editor; `409` name clash |
+
+**Account sharing**
+| Method & path | Role | Body | Response |
+|---|---|---|---|
+| `GET /api/accounts/<a>/shares` | viewer | – | `{role, shares:[AccountShare], invites?:[Invite]}` (share-only users see just themselves; invites for project owner) |
+| `POST /api/accounts/<a>/invites` | project owner | `{email, role?}` | as project invites (`status:"added"` grants an account share) |
+| `PATCH /api/accounts/<a>/shares/<userId>` | project owner | `{role}` | `{userId, role}` |
+| `DELETE /api/accounts/<a>/shares/<userId>` | project owner | – | `{removed:userId}` |
+| `POST /api/accounts/<a>/leave` | share holder | – | `{left:a}`; `404` if no share |
+
+**Invites** — `Invite = {id, email, role, projectId, accountId, projectName, accountName, invitedBy:{id,email,name}, status:"pending"|"accepted"|"revoked"|"expired", createdAt, expiresAt}`. Links are `${PUBLIC_ORIGIN}/invite/<token>` (client route); tokens are only returned on create/rotate (stored hashed), valid 14 days. Pending invites are auto-accepted when that email signs in (and let it past the allowlist when `AUTH_INVITES_BYPASS_ALLOWLIST=true`).
+| Method & path | Who | Body | Response |
+|---|---|---|---|
+| `GET /api/invites` | signed in | – | `{invites:[Invite]}` pending for my email |
+| `POST /api/invites/preview` | signed in | `{token}` | `{invite:Invite, emailMatches:bool}`; `404` unknown token |
+| `POST /api/invites/accept` | signed in, email must match | `{token}` | `{id, projectId, accountId, role}`; `403` other email; `410 {details:{status}}` not pending |
+| `POST /api/invites/<id>/link` | project owner | – | `{id, token, inviteUrl}` (old link stops working); `410` not pending |
+| `DELETE /api/invites/<id>` | project owner | – | `{revoked:id}`; `410` not pending |
+
+**Admin** (`isAdmin` users; admin status comes from `ADMIN_EMAILS`, not editable)
+| Method & path | Body | Response |
+|---|---|---|
+| `GET /api/admin/users` | – | `{users:[{id,email,name,pictureUrl,isAdmin,disabled,createdAt,lastLoginAt,ownedProjects}]}` |
+| `PATCH /api/admin/users/<id>` | `{disabled:bool}` | `{id,email,disabled}`; disabling ends their sessions; `400` for yourself |
+| `GET /api/admin/allowlist` | – | `{env:[...], admins:[...], openSignup, invitesBypassAllowlist, entries:[{pattern,createdAt,addedBy}]}` |
+| `POST /api/admin/allowlist` | `{pattern}` (email or `@domain`) | `201 {id, pattern}`; `400` invalid |
+| `DELETE /api/admin/allowlist/<urlencoded pattern>` | – | `{removed}`; `404` |
+
+**Audit log / events (for P5)**: every successful mutation writes `audit_log(id bigserial, at, user_id, project_id, account_id, action, entity, entity_id, detail jsonb)`; `id` is the global event sequence. Actions: `project.created|updated|deleted|ownership_transferred`, `account.created|updated|deleted|reordered`, `transaction.created|updated|deleted`, `transactions.imported`, `skip.changed`, `scenario.created|updated|deleted`, `invite.created|accepted|revoked|link_rotated`, `membership.changed|revoked|left`, `account_share.changed|revoked|left`, `admin.user_updated|allowlist_added|allowlist_removed`. `detail` may hold `version`, `date`, `peerAccountId`, `role`, `auto`.
 
 ## 5. Sharing UX
 

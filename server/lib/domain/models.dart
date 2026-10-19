@@ -7,16 +7,19 @@ class Project {
     required this.id,
     required this.name,
     required this.createdAt,
+    this.version = 1,
   });
 
   final String id;
   final String name;
   final DateTime createdAt;
+  final int version;
 
   Map<String, Object?> toJson() => {
         'id': id,
         'name': name,
         'createdAt': createdAt.toUtc().toIso8601String(),
+        'version': version,
       };
 }
 
@@ -32,7 +35,10 @@ class Account {
     required this.displayOrder,
     required this.transactionOrder,
     this.currencyScale = defaultCurrencyScale,
+    this.version = 1,
   });
+
+  final int version;
 
   /// Allowed y-axis units (currency units per grid step).
   static const currencyScales = [1, 10, 100, 1000, 10000, 100000, 1000000];
@@ -60,6 +66,7 @@ class Account {
         'lossThreshold': lossThreshold.toString(),
         'displayOrder': displayOrder,
         'transactionOrder': transactionOrder,
+        'version': version,
       };
 }
 
@@ -80,7 +87,10 @@ class Transaction {
     required this.enabled,
     required this.createdAt,
     this.transfer,
+    this.version = 1,
   });
+
+  final int version;
 
   final String id;
   final String accountId;
@@ -118,6 +128,7 @@ class Transaction {
         'enabled': enabled,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'transfer': transfer?.toJson(),
+        'version': version,
       };
 
   Transaction copyWith({
@@ -158,6 +169,7 @@ class Transaction {
       enabled: enabled ?? this.enabled,
       createdAt: createdAt ?? this.createdAt,
       transfer: transfer,
+      version: version,
     );
   }
 }

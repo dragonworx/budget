@@ -3,6 +3,8 @@ import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
+import '../auth/authz.dart';
+import '../auth/authz_middleware.dart';
 import '../auth/middleware.dart';
 import '../domain/models.dart';
 import '../repo/account_repo.dart';
@@ -16,8 +18,8 @@ Router buildProjectsApi(Session conn) {
   final router = Router();
 
   router.get('/', (Request request) async {
-    final items = await projects.list(ownerId: requireAuth(request).user.id);
-    return jsonOk({'projects': items.map((p) => p.toJson()).toList()});
+    final items = await projects.listAccessible(requireAuth(request).user.id);
+    return jsonOk({'projects': items});
   });
 
   router.post('/', (Request request) async {
@@ -26,7 +28,7 @@ Router buildProjectsApi(Session conn) {
       final name = requireString(body, 'name');
       final project =
           await projects.create(name, ownerId: requireAuth(request).user.id);
-      return jsonOk(project.toJson(), status: 201);
+      return jsonOk({...project.toJson(), 'role': 'owner'}, status: 201);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     } on ServerException catch (e) {
@@ -41,8 +43,19 @@ Router buildProjectsApi(Session conn) {
       (Request request, String projectId) async {
     final project = await projects.get(projectId);
     if (project == null) return jsonError(404, 'project not found');
-    final items = await accounts.listByProject(projectId);
-    return jsonOk({'accounts': items.map((a) => a.toJson()).toList()});
+    final access = accessOf(request)!;
+    final me = requireAuth(request).user.id;
+    final shared = await _sharedRoles(conn, projectId, me);
+    final items = (await accounts.listByProject(projectId))
+        .where((a) => !access.limited || shared.containsKey(a.id))
+        .map((a) => {
+              ...a.toJson(),
+              'role':
+                  (Role.max(access.projectRole, shared[a.id]) ?? Role.viewer)
+                      .name,
+            })
+        .toList();
+    return jsonOk({'accounts': items});
   });
 
   router.post('/<projectId>/accounts',
@@ -91,7 +104,12 @@ Router buildProjectsApi(Session conn) {
   router.get('/<id>', (Request request, String id) async {
     final project = await projects.get(id);
     if (project == null) return jsonError(404, 'project not found');
-    return jsonOk(project.toJson());
+    final access = accessOf(request)!;
+    return jsonOk({
+      ...project.toJson(),
+      'role': access.role!.name,
+      'access': access.limited ? 'account' : 'project',
+    });
   });
 
   router.patch('/<id>', (Request request, String id) async {
@@ -118,4 +136,18 @@ Router buildProjectsApi(Session conn) {
   });
 
   return router;
+}
+
+/// accountId -> role for accounts in [projectId] shared directly with [userId].
+Future<Map<String, Role>> _sharedRoles(
+    Session db, String projectId, String userId) async {
+  final rows = await db.execute(
+    Sql.named('''
+      SELECT s.account_id::text, s.role::text FROM account_shares s
+      JOIN accounts a ON a.id = s.account_id
+      WHERE a.project_id = @p::uuid AND s.user_id = @u::uuid
+    '''),
+    parameters: {'p': projectId, 'u': userId},
+  );
+  return {for (final r in rows) r[0] as String: Role.parse(r[1])!};
 }

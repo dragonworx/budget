@@ -124,15 +124,31 @@ final _dataMigrations = <String, Future<void> Function(Session)>{
   '006_currency_scale_backfill': backfillCurrencyScales,
 };
 
-/// Splits a SQL file into individual statements (no procedure bodies expected).
+/// Splits a SQL file into statements on `;`, keeping `$$ ... $$` bodies
+/// (plpgsql functions) intact. Whole-line `--` comments are dropped.
 List<String> splitSqlStatements(String sql) {
-  final withoutComments = sql
+  final text = sql
       .split('\n')
       .where((line) => !line.trimLeft().startsWith('--'))
       .join('\n');
-  return withoutComments
-      .split(';')
-      .map((s) => s.trim())
-      .where((s) => s.isNotEmpty)
-      .toList();
+  final out = <String>[];
+  final buf = StringBuffer();
+  var inDollar = false;
+  for (var i = 0; i < text.length; i++) {
+    if (text.startsWith(r'$$', i)) {
+      inDollar = !inDollar;
+      buf.write(r'$$');
+      i++;
+      continue;
+    }
+    final ch = text[i];
+    if (ch == ';' && !inDollar) {
+      out.add(buf.toString());
+      buf.clear();
+    } else {
+      buf.write(ch);
+    }
+  }
+  out.add(buf.toString());
+  return out.map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
 }

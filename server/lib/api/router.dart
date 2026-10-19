@@ -7,7 +7,10 @@ import '../auth/jwks_cache.dart';
 import '../auth/middleware.dart';
 import '../auth/session_store.dart';
 import '../config.dart';
+import '../auth/authz_middleware.dart';
 import 'accounts.dart';
+import 'admin.dart';
+import 'sharing.dart';
 import 'auth.dart';
 import 'json_helpers.dart';
 import 'projects.dart';
@@ -39,8 +42,14 @@ Handler buildHandler(Session conn, Config config,
               jwks: JwksCache(httpJwksFetcher()),
             ),
       ).call);
-  root.mount('/api/projects', buildProjectsApi(conn).call);
-  root.mount('/api/accounts', buildAccountsApi(conn).call);
+  final projectsApi = buildProjectsApi(conn);
+  attachProjectSharingRoutes(projectsApi, conn, config);
+  final accountsApi = buildAccountsApi(conn);
+  attachAccountSharingRoutes(accountsApi, conn, config);
+  root.mount('/api/projects', projectsApi.call);
+  root.mount('/api/accounts', accountsApi.call);
+  root.mount('/api/invites', buildInvitesApi(conn, config).call);
+  root.mount('/api/admin', buildAdminApi(conn, config, sessions).call);
   root.mount('/api/transactions', transactionsRouter(conn).call);
 
   return const Pipeline()
@@ -50,7 +59,7 @@ Handler buildHandler(Session conn, Config config,
       .addMiddleware(logRequests())
       .addMiddleware(csrfMiddleware(config))
       .addMiddleware(authMiddleware(sessions))
-      .addMiddleware(ownershipMiddleware(conn))
+      .addMiddleware(authzMiddleware(conn))
       .addHandler(root.call);
 }
 

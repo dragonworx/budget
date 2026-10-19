@@ -10,7 +10,7 @@ const _enrichedCols = '''
   t.id, t.account_id, t.name, t.direction, t.amount, t.start_date,
   t.recurrence_mode, t.interval, t.unit, t.end_mode, t.end_date,
   t.occurrence_count, t.enabled, t.created_at, t.transfer_id,
-  p.id, pa.id, pa.name, pp.id, pp.name''';
+  p.id, pa.id, pa.name, pp.id, pp.name, t.version AS t_version''';
 const _peerJoin = '''
   LEFT JOIN transactions p
     ON t.transfer_id IS NOT NULL AND p.transfer_id = t.transfer_id AND p.id <> t.id
@@ -88,7 +88,9 @@ class TransactionRepo {
         )
         RETURNING id, account_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
-                  occurrence_count, enabled, created_at, transfer_id
+                  occurrence_count, enabled, created_at, transfer_id,
+                  NULL::uuid, NULL::uuid, NULL::text, NULL::uuid, NULL::text,
+                  version AS t_version
       '''),
       parameters: {
         'id': id,
@@ -180,7 +182,9 @@ class TransactionRepo {
         WHERE id = @id
         RETURNING id, account_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
-                  occurrence_count, enabled, created_at, transfer_id
+                  occurrence_count, enabled, created_at, transfer_id,
+                  NULL::uuid, NULL::uuid, NULL::text, NULL::uuid, NULL::text,
+                  version AS t_version
       '''),
       parameters: {
         'id': id,
@@ -427,7 +431,9 @@ class TransactionRepo {
       endDate = DateTime.utc(e.year, e.month, e.day);
     }
     final unitRaw = row[8] as String?;
+    final version = row.toColumnMap()['t_version'];
     return Transaction(
+      version: version is int ? version : 1,
       id: row[0].toString(),
       accountId: row[1].toString(),
       name: row[2] as String,

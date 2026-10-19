@@ -12,7 +12,10 @@ class Scenario {
     required this.included,
     required this.request,
     required this.createdAt,
+    this.version = 1,
   });
+
+  final int version;
 
   final String id;
   final String accountId;
@@ -30,6 +33,7 @@ class Scenario {
     'included': included,
     'request': request,
     'createdAt': createdAt.toUtc().toIso8601String(),
+    'version': version,
   };
 }
 
@@ -40,7 +44,7 @@ class ScenarioRepo {
   final _uuid = const Uuid();
 
   static const _cols =
-      'id, account_id, name, color_index, included, request, created_at';
+      'id, account_id, name, color_index, included, request, created_at, version';
 
   Future<List<Scenario>> listByAccount(String accountId) async {
     final rows = await _conn.execute(
@@ -135,6 +139,7 @@ class ScenarioRepo {
           ? jsonDecode(req) as Map<String, dynamic>
           : Map<String, dynamic>.from(req as Map),
       createdAt: m['created_at'] as DateTime,
+      version: (m['version'] as int?) ?? 1,
     );
   }
 }

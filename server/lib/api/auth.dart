@@ -7,6 +7,8 @@ import '../auth/google_verifier.dart';
 import '../auth/middleware.dart';
 import '../auth/session_store.dart';
 import '../config.dart';
+import '../repo/audit_repo.dart';
+import '../repo/invite_repo.dart';
 import '../repo/user_repo.dart';
 import 'json_helpers.dart';
 
@@ -34,9 +36,23 @@ Router buildAuthApi({
       (r.context['shelf.io.connection_info'] as dynamic)?.remoteAddress?.address
           as String?;
 
+  final invites = InviteRepo(db, secret: config.sessionSecret);
+  final audit = AuditRepo(db);
+
   Future<Response> startSession(Request r, User user,
       {bool isDev = false,
       Response Function(Map<String, String>)? build}) async {
+    // Pending invites for this email become memberships on sign-in.
+    for (final inv in await invites.acceptAllFor(user.email, user.id)) {
+      await audit.record(
+        userId: user.id,
+        action: 'invite.accepted',
+        projectId: inv.projectId,
+        accountId: inv.accountId,
+        entityId: inv.id,
+        detail: {'role': inv.role.name, 'auto': true},
+      );
+    }
     final token = await sessions.create(user.id,
         userAgent: r.headers['user-agent'], ip: ip(r), isDev: isDev);
     final headers = {'set-cookie': sessionCookieHeader(config, token)};
@@ -87,7 +103,6 @@ Router buildAuthApi({
       picture: id.picture,
       isAdmin: allowlist.isAdmin(id.email),
     );
-    // P3: accept pending invites for user.email here.
     return startSession(r, user);
   });
 

@@ -14,7 +14,7 @@ class AccountRepo {
     final rows = await _conn.execute(
       Sql.named('''
         SELECT id, project_id, name, currency, seed_balance, seed_date,
-               loss_threshold, display_order, transaction_order, currency_scale
+               loss_threshold, display_order, transaction_order, currency_scale, version
         FROM accounts
         WHERE project_id = @projectId
         ORDER BY display_order ASC, name ASC
@@ -28,7 +28,7 @@ class AccountRepo {
     final rows = await _conn.execute(
       Sql.named('''
         SELECT id, project_id, name, currency, seed_balance, seed_date,
-               loss_threshold, display_order, transaction_order, currency_scale
+               loss_threshold, display_order, transaction_order, currency_scale, version
         FROM accounts WHERE id = @id
       '''),
       parameters: {'id': id},
@@ -58,7 +58,7 @@ class AccountRepo {
           @lossThreshold, @displayOrder, @currencyScale
         )
         RETURNING id, project_id, name, currency, seed_balance, seed_date,
-                  loss_threshold, display_order, transaction_order, currency_scale
+                  loss_threshold, display_order, transaction_order, currency_scale, version
       '''),
       parameters: {
         'id': id,
@@ -100,7 +100,7 @@ class AccountRepo {
           currency_scale = @currencyScale
         WHERE id = @id
         RETURNING id, project_id, name, currency, seed_balance, seed_date,
-                  loss_threshold, display_order, transaction_order, currency_scale
+                  loss_threshold, display_order, transaction_order, currency_scale, version
       '''),
       parameters: {
         'id': id,
@@ -174,7 +174,7 @@ class AccountRepo {
         UPDATE accounts SET transaction_order = @transactionOrder
         WHERE id = @id
         RETURNING id, project_id, name, currency, seed_balance, seed_date,
-                  loss_threshold, display_order, transaction_order, currency_scale
+                  loss_threshold, display_order, transaction_order, currency_scale, version
       '''),
       parameters: {
         'id': id,
@@ -226,6 +226,7 @@ class AccountRepo {
       displayOrder: row[7] as int,
       transactionOrder: transactionOrder,
       currencyScale: row[9] as int,
+      version: row.length > 10 ? (row[10] as int? ?? 1) : 1,
     );
   }
 }
