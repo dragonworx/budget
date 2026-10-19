@@ -159,7 +159,7 @@
         var key=clientId+'|'+mode;
         if(inited!==key){google.accounts.id.initialize(mode==='redirect'
           ?{client_id:clientId,ux_mode:'redirect',login_uri:location.origin+'/api/auth/google/redirect'}
-          :{client_id:clientId,callback:function(r){window.__gisCb&&window.__gisCb(r.credential)},ux_mode:'popup',use_fedcm_for_prompt:true});inited=key}
+          :{client_id:clientId,callback:function(r){window.__gisCb&&window.__gisCb(r.credential)},ux_mode:'popup',use_fedcm_for_prompt:true,use_fedcm_for_button:true});inited=key}
         window.__gisCb=cb;
         google.accounts.id.renderButton(el,{type:'standard',theme:'filled_black',size:'large',shape:'pill',text:'signin_with',width:Math.min(400,Math.round(width||280))});
       }).catch(function(e){el.textContent=String(e.message||e);el.style.color='#f88';el.style.font='13px sans-serif'})},
