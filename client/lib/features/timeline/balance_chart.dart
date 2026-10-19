@@ -1779,11 +1779,13 @@ class _BalanceChartState extends State<BalanceChart>
         ? AppTheme.debitColor
         : AppTheme.accent;
     final pinned = _pickPinned;
-    final stats = pinned ? pickDayStats(day) : null;
-    final bubbleW = pinned
-        ? (trim != null ? 300.0 : 256.0)
-        : (trim != null ? 220.0 : 168.0);
-    final bubbleH = pinned ? (stats!.balance == null ? 80.0 : 100.0) : 52.0;
+    // The day's totals show from touch-down, live while dragging (Trim zone
+    // included), and stay on release; not while cancelling.
+    final stats = cancelled ? null : pickDayStats(day);
+    final bubbleW = trim != null ? 300.0 : 256.0;
+    final bubbleH = stats == null
+        ? 60.0
+        : (stats.balance == null ? 80.0 : 100.0);
     final range = _ensureYRange();
     // Above the finger on touch so it stays visible; just above the cursor
     // otherwise. Clamped inside the chart.
@@ -1791,7 +1793,8 @@ class _BalanceChartState extends State<BalanceChart>
     final bx = (cx - bubbleW / 2)
         .clamp(4.0, math.max(4.0, _size.width - bubbleW - 4))
         .toDouble();
-    final by = (pos.dy - lift - bubbleH / 2)
+    // Bottom-anchored, so a taller bubble grows away from the finger.
+    final by = (pos.dy - lift + 30 - bubbleH)
         .clamp(4.0, math.max(4.0, _size.height - bubbleH - 4))
         .toDouble();
     final trimName = trim == null
@@ -1852,68 +1855,17 @@ class _BalanceChartState extends State<BalanceChart>
         child: pinned
             ? KeyedSubtree(
                 key: _pinKey,
-                child: _pinnedBubble(
+                child: _pickBubble(theme, day, trim, trimName, stats),
+              )
+            : IgnorePointer(
+                child: _pickBubble(
                   theme,
                   day,
                   trim,
                   trimName,
-                  cancelled,
-                  stats!,
-                ),
-              )
-            : IgnorePointer(
-                child: Material(
-                  key: const ValueKey('pick-bubble'),
-                  elevation: 10,
-                  color: cancelled
-                      ? AppTheme.overlay
-                      : trim != null
-                      ? AppTheme.debitColor
-                      : AppTheme.accent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (trim != null)
-                          Text(
-                            'Trim…',
-                            key: const ValueKey('pick-trim'),
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        Text(
-                          trim != null
-                              ? '$trimName ends ${formatOccurrenceDate(day)}'
-                              : formatOccurrenceDate(day),
-                          key: const ValueKey('pick-date'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: cancelled
-                                ? AppTheme.textMuted
-                                : AppTheme.onAccent,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        if (trim == null)
-                          Text(
-                            cancelled
-                                ? 'Release to cancel'
-                                : 'Release, then tap +',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: cancelled
-                                  ? AppTheme.textFaint
-                                  : AppTheme.onAccent.withValues(alpha: 0.8),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                  stats,
+                  interactive: false,
+                  cancelled: cancelled,
                 ),
               ),
       ),
@@ -1954,19 +1906,26 @@ class _BalanceChartState extends State<BalanceChart>
     return PickDayStats(gains: gains, losses: losses, balance: balance);
   }
 
-  /// The released pick's bubble: date (or "`name` ends `date`"), the "+"
-  /// add button, scissors for Trim in the Trim zone, and close.
-  Widget _pinnedBubble(
+  /// The pick's bubble: date (or "Trim…" and "`name` ends `date`"), the
+  /// day's money in / out and closing balance ([stats]; null while
+  /// cancelling). Once released ([interactive]) it adds the "+" add
+  /// button, scissors for Trim in the Trim zone, and close.
+  Widget _pickBubble(
     ThemeData theme,
     DateTime day,
     TrimTarget? trim,
     String trimName,
-    bool cancelled,
-    PickDayStats stats,
-  ) {
+    PickDayStats? stats, {
+    bool interactive = true,
+    bool cancelled = false,
+  }) {
     // A dark card like the dot popup, edged in the action colour, so the
     // day's green / red totals read clearly.
-    final fg = trim != null ? AppTheme.debitColor : AppTheme.accent;
+    final fg = cancelled
+        ? AppTheme.textFaint
+        : trim != null
+        ? AppTheme.debitColor
+        : AppTheme.accent;
     final btn = IconButton.styleFrom(
       backgroundColor: fg.withValues(alpha: 0.18),
       foregroundColor: fg,
@@ -1975,7 +1934,7 @@ class _BalanceChartState extends State<BalanceChart>
     final small = theme.textTheme.labelSmall ?? const TextStyle();
     String money(double v) =>
         formatMoneyAmount(v, widget.currency, decimalDigits: v == 0 ? 0 : null);
-    final balance = stats.balance;
+    final balance = stats?.balance;
     final low = balance != null && belowAlert(balance, widget.lossThreshold);
     return Listener(
       onPointerSignal: _onPointerSignal,
@@ -2009,7 +1968,11 @@ class _BalanceChartState extends State<BalanceChart>
                     Text(
                       trim != null
                           ? '$trimName ends ${formatOccurrenceDate(day)}'
-                          : 'Tap + to add here',
+                          : cancelled
+                          ? 'Release to cancel'
+                          : interactive
+                          ? 'Tap + to add here'
+                          : 'Release, then tap +',
                       key: trim != null ? const ValueKey('pick-date') : null,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -2018,39 +1981,41 @@ class _BalanceChartState extends State<BalanceChart>
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    // The day's money in (green) and out (red), overrides
-                    // included (they come from the projected occurrences).
-                    Text.rich(
-                      key: const ValueKey('pick-day-totals'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      TextSpan(
-                        style: small.copyWith(fontWeight: FontWeight.w700),
-                        children: [
-                          TextSpan(
-                            text: '+${money(stats.gains)}',
-                            style: TextStyle(
-                              color: stats.gains > 0
-                                  ? AppTheme.creditColor
-                                  : AppTheme.textFaint,
+                    if (stats != null) ...[
+                      const SizedBox(height: 3),
+                      // The day's money in (green) and out (red), overrides
+                      // included (they come from the projected occurrences).
+                      Text.rich(
+                        key: const ValueKey('pick-day-totals'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        TextSpan(
+                          style: small.copyWith(fontWeight: FontWeight.w700),
+                          children: [
+                            TextSpan(
+                              text: '+${money(stats.gains)}',
+                              style: TextStyle(
+                                color: stats.gains > 0
+                                    ? AppTheme.creditColor
+                                    : AppTheme.textFaint,
+                              ),
                             ),
-                          ),
-                          const TextSpan(
-                            text: '  ·  ',
-                            style: TextStyle(color: AppTheme.textFaint),
-                          ),
-                          TextSpan(
-                            text: '−${money(stats.losses)}',
-                            style: TextStyle(
-                              color: stats.losses > 0
-                                  ? AppTheme.debitColor
-                                  : AppTheme.textFaint,
+                            const TextSpan(
+                              text: '  ·  ',
+                              style: TextStyle(color: AppTheme.textFaint),
                             ),
-                          ),
-                        ],
+                            TextSpan(
+                              text: '−${money(stats.losses)}',
+                              style: TextStyle(
+                                color: stats.losses > 0
+                                    ? AppTheme.debitColor
+                                    : AppTheme.textFaint,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                     if (balance != null)
                       Text.rich(
                         key: const ValueKey('pick-day-balance'),
@@ -2075,7 +2040,7 @@ class _BalanceChartState extends State<BalanceChart>
                   ],
                 ),
               ),
-              if (trim != null)
+              if (interactive && trim != null)
                 IconButton(
                   key: const ValueKey('pick-trim-action'),
                   tooltip:
@@ -2084,22 +2049,24 @@ class _BalanceChartState extends State<BalanceChart>
                   icon: const Icon(Icons.content_cut_rounded, size: 20),
                   onPressed: () => _actOnPin(trim: true),
                 ),
-              const SizedBox(width: 2),
-              IconButton(
-                key: const ValueKey('pick-add'),
-                tooltip: 'Add a transaction on ${formatOccurrenceDate(day)}',
-                style: btn,
-                icon: const Icon(Icons.add_rounded, size: 22),
-                onPressed: () => _actOnPin(trim: false),
-              ),
-              IconButton(
-                key: const ValueKey('pick-close'),
-                tooltip: 'Close',
-                color: AppTheme.textMuted,
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.close_rounded, size: 18),
-                onPressed: _clearPin,
-              ),
+              if (interactive) ...[
+                const SizedBox(width: 2),
+                IconButton(
+                  key: const ValueKey('pick-add'),
+                  tooltip: 'Add a transaction on ${formatOccurrenceDate(day)}',
+                  style: btn,
+                  icon: const Icon(Icons.add_rounded, size: 22),
+                  onPressed: () => _actOnPin(trim: false),
+                ),
+                IconButton(
+                  key: const ValueKey('pick-close'),
+                  tooltip: 'Close',
+                  color: AppTheme.textMuted,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  onPressed: _clearPin,
+                ),
+              ],
             ],
           ),
         ),

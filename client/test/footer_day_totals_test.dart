@@ -39,6 +39,7 @@ Future<List<DateTime>> _pump(
   WidgetTester tester, {
   required int balanceOn5th,
   double threshold = 0,
+  List<String>? trims,
 }) async {
   tester.view.physicalSize = _size;
   tester.view.devicePixelRatio = 1;
@@ -85,6 +86,9 @@ Future<List<DateTime>> _pump(
             visibleDays: _days,
             onViewportChanged: (_, _) {},
             onCreateOnDay: created.add,
+            onTrimOnDay: trims == null
+                ? null
+                : (t, d, n) => trims.add('${t.id} ${d.day}'),
           ),
         ),
       ),
@@ -165,5 +169,72 @@ void main() {
     expect(_plain(tester, 'pick-day-totals'), '+A\$0  ·  −A\$0');
     expect(_colorOf(tester, 'pick-day-totals', '+A\$0'), AppTheme.textFaint);
     expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: A\$500');
+  });
+
+  testWidgets('totals show from touch-down and update live while dragging', (
+    tester,
+  ) async {
+    for (final kind in [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
+      final created = await _pump(tester, balanceOn5th: 2994);
+      final y = _layout.axis.center.dy;
+      final g = await tester.startGesture(Offset(_x(4), y), kind: kind);
+      await tester.pump();
+      // Finger still down: the date, the day's totals and balance.
+      expect(find.byKey(const ValueKey('pick-bubble')), findsOneWidget);
+      expect(_plain(tester, 'pick-day-totals'), '+A\$2,450  ·  −A\$406');
+      expect(
+        _plain(tester, 'pick-day-balance'),
+        'Balance end of day: A\$2,994',
+      );
+      expect(find.text('Release, then tap +'), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-add')), findsNothing);
+      // Drag onto a quiet day, then onto the 12th (−A$180): updates live.
+      await g.moveTo(Offset(_x(8), y));
+      await tester.pump();
+      expect(_plain(tester, 'pick-day-totals'), '+A\$0  ·  −A\$0');
+      expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: A\$500');
+      await g.moveTo(Offset(_x(11), y));
+      await tester.pump();
+      expect(_plain(tester, 'pick-day-totals'), '+A\$0  ·  −A\$180');
+      await g.up();
+      await tester.pump();
+      // Released: still there, now with + / close; nothing created.
+      expect(_plain(tester, 'pick-day-totals'), '+A\$0  ·  −A\$180');
+      expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
+      expect(created, isEmpty);
+    }
+  });
+
+  testWidgets('Trim zone keeps the day totals beside "Trim…"; cancel hides', (
+    tester,
+  ) async {
+    final trims = <String>[];
+    final created = await _pump(tester, balanceOn5th: 2994, trims: trims);
+    final x = _x(4);
+    final g = await tester.startGesture(
+      Offset(x, _layout.axis.center.dy),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump();
+    await g.moveTo(Offset(x, _layout.axis.top - 30));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('pick-trim')), findsOneWidget);
+    expect(_plain(tester, 'pick-day-totals'), '+A\$2,450  ·  −A\$406');
+    expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: A\$2,994');
+    // Above the line: cancelling, no totals.
+    await g.moveTo(Offset(x, _layout.plot.top + 2));
+    await tester.pump();
+    expect(find.text('Release to cancel'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pick-day-totals')), findsNothing);
+    await g.moveTo(Offset(x, _layout.axis.top - 30));
+    await tester.pump();
+    await g.up();
+    await tester.pump();
+    expect(trims, isEmpty, reason: 'release never trims');
+    expect(find.byKey(const ValueKey('pick-day-totals')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('pick-trim-action')));
+    await tester.pump();
+    expect(trims, ['rent 5']);
+    expect(created, isEmpty);
   });
 }
