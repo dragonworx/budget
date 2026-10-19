@@ -17,10 +17,19 @@ import 'fit_ranges.dart';
 import 'ghost_line.dart';
 import 'occurrence_info.dart';
 import 'selection_period.dart';
+import 'trim.dart';
 import 'zoom_level.dart';
 
 typedef ViewportChanged = void Function(DateTime viewStart, double visibleDays);
 typedef CreateOnDay = void Function(DateTime day);
+
+/// Release in the Trim zone: end [transaction] on [day] ([removed] loaded
+/// occurrences after it disappear). The receiver confirms before saving.
+typedef TrimOnDay = void Function(
+  Transaction transaction,
+  DateTime day,
+  int removed,
+);
 
 /// Step chart of closing balance with a calendar axis.
 ///
@@ -36,7 +45,10 @@ typedef CreateOnDay = void Function(DateTime day);
 /// Pressing on the date axis (month/week/day lanes) picks a date instead:
 /// a bubble, guide line and day highlight follow the pointer, the view
 /// auto-scrolls near the plot edges, and releasing calls [onCreateOnDay]
-/// for that day. Dragging well above the axis, or Esc, cancels.
+/// for that day. Dragging up into the balance fill (below the line) offers
+/// "Trim…" instead when [onTrimOnDay] is set and a recurring series runs
+/// past that day: release calls [onTrimOnDay]. Dragging above the line, or
+/// Esc, cancels.
 /// With focus: arrow keys pan, +/- zoom time, F fits balances.
 /// Test hook: after each paint, every in-plot vertex as (name, x, labelled).
 @visibleForTesting
@@ -70,7 +82,11 @@ class BalanceChart extends StatefulWidget {
     this.targetMode = false,
     this.onTargetChanged,
     this.onPlanPeriod,
+    this.onTrimOnDay,
   });
+
+  /// Trim zone release (see the class docs). Null: no Trim (viewers).
+  final TrimOnDay? onTrimOnDay;
 
   /// "Plan…" in the selection card: opens the goal planner pre-filled with
   /// the selected range. Opens a panel only; never edits data.
@@ -225,6 +241,9 @@ class _BalanceChartState extends State<BalanceChart>
   Offset? _pickPos;
   bool _pickCancelled = false;
   bool _pickTouch = false;
+
+  /// Set while the pick is in the Trim zone: the series it would end.
+  TrimTarget? _pickTrim;
   Timer? _autoScroll;
 
   /// A long-press on a dot (touch) shows its tooltip instead of opening it.
@@ -453,6 +472,7 @@ class _BalanceChartState extends State<BalanceChart>
         _mode = _Gesture.pick;
         _pickTouch = touch;
         _pickCancelled = false;
+        _pickTrim = null;
         _pickPos = event.localPosition;
         _pickDay = _dayAt(event.localPosition.dx);
       });
@@ -733,13 +753,68 @@ class _BalanceChartState extends State<BalanceChart>
     widget.onViewportChanged(view.$1, view.$2);
   }
 
+  /// Zone and trim target for a pick at [pos] when the view starts at
+  /// [start].
+  (PickZone, TrimTarget?) _zoneAt(Offset pos, DateTime day, DateTime start) {
+    final layout = _layout;
+    final range = _ensureYRange();
+    final scale = range == null
+        ? null
+        : _YScale(range.min, range.max, layout.plot);
+    final closing = _closingOn(day);
+    final lineY = scale == null || closing == null ? null : scale.yOf(closing);
+    TrimTarget? target;
+    final inFill = lineY != null && pos.dy >= lineY && pos.dy < layout.axis.top;
+    if (inFill && widget.onTrimOnDay != null && scale != null) {
+      target = chooseTrimTarget(
+        day: day,
+        pointer: pos,
+        transactions: widget.transactions,
+        occurrences: widget.series.occurrences,
+        dotOf: (o) {
+          final c = _closingOn(o.date);
+          if (c == null) return null;
+          return Offset(
+            layout.xOf(_stepAtDay(o.date), start, widget.visibleDays),
+            scale.yOf(c),
+          );
+        },
+      );
+    }
+    final zone = pickZone(
+      y: pos.dy,
+      axisTop: layout.axis.top,
+      lineY: lineY,
+      canTrim: target != null,
+      cancelMargin: pickCancelMargin,
+    );
+    return (zone, zone == PickZone.trim ? target : null);
+  }
+
+  /// Closing balance at the end of [day] (last point on or before it).
+  double? _closingOn(DateTime day) {
+    final d = dateOnly(day);
+    BalancePoint? best;
+    for (final p in widget.series.points) {
+      final pd = dateOnly(p.date);
+      if (pd.isAfter(d)) continue;
+      if (best == null || pd.isAfter(dateOnly(best.date))) best = p;
+    }
+    return best?.closingBalance.toDouble();
+  }
+
+  static DateTime _stepAtDay(DateTime date) => addDays(dateOnly(date), 0.5);
+
   void _updatePick(Offset pos) {
     final layout = _layout;
-    final cancelled = pos.dy < layout.axis.top - pickCancelMargin;
+    final day = layout.dateAt(pos.dx, widget.viewStart, widget.visibleDays);
+    final (zone, trim) = _zoneAt(pos, day, widget.viewStart);
+    final cancelled = zone == PickZone.discard;
     setState(() {
       _pickPos = pos;
       _pickCancelled = cancelled;
-      _pickDay = layout.dateAt(pos.dx, widget.viewStart, widget.visibleDays);
+      _pickTrim = trim;
+      _pickDay = day;
     });
     final depth = cancelled ? 0.0 : layout.edgeDepth(pos.dx);
     if (depth == 0) {
@@ -771,8 +846,12 @@ class _BalanceChartState extends State<BalanceChart>
     final delta = autoScrollDays(depth, widget.visibleDays) * 0.016;
     final start = addDays(widget.viewStart, delta);
     widget.onViewportChanged(start, widget.visibleDays);
+    final day = layout.dateAt(pos.dx, start, widget.visibleDays);
+    final (zone, trim) = _zoneAt(pos, day, start);
     setState(() {
-      _pickDay = layout.dateAt(pos.dx, start, widget.visibleDays);
+      _pickDay = day;
+      _pickTrim = trim;
+      _pickCancelled = zone == PickZone.discard;
     });
   }
 
@@ -780,14 +859,21 @@ class _BalanceChartState extends State<BalanceChart>
     _autoScroll?.cancel();
     _autoScroll = null;
     final day = _pickDay;
+    final trim = _pickTrim;
     final ok = commit && !_pickCancelled && day != null;
     setState(() {
       _mode = _Gesture.none;
       _pickDay = null;
       _pickPos = null;
       _pickCancelled = false;
+      _pickTrim = null;
     });
-    if (ok) widget.onCreateOnDay(day);
+    if (!ok) return;
+    if (trim != null) {
+      widget.onTrimOnDay?.call(trim.transaction, day, trim.removed.length);
+    } else {
+      widget.onCreateOnDay(day);
+    }
   }
 
   void _onPointerUp(PointerUpEvent event) {
@@ -1379,8 +1465,15 @@ class _BalanceChartState extends State<BalanceChart>
     final right = x1.clamp(layout.plot.left, layout.plot.right).toDouble();
     final cx = (left + right) / 2;
     final cancelled = _pickCancelled;
-    final color = cancelled ? AppTheme.textFaint : AppTheme.accent;
-    const bubbleW = 168.0, bubbleH = 52.0;
+    final trim = _pickTrim;
+    final color = cancelled
+        ? AppTheme.textFaint
+        : trim != null
+        ? AppTheme.debitColor
+        : AppTheme.accent;
+    final bubbleW = trim != null ? 220.0 : 168.0;
+    const bubbleH = 52.0;
+    final range = _ensureYRange();
     // Above the finger on touch so it stays visible; just above the cursor
     // otherwise. Clamped inside the chart.
     final lift = _pickTouch ? 84.0 : 56.0;
@@ -1390,7 +1483,40 @@ class _BalanceChartState extends State<BalanceChart>
     final by = (pos.dy - lift - bubbleH / 2)
         .clamp(4.0, math.max(4.0, _size.height - bubbleH - 4))
         .toDouble();
+    final trimName = trim == null
+        ? ''
+        : (trim.transaction.name.trim().isEmpty
+              ? 'Transaction'
+              : trim.transaction.name.trim());
     return [
+      if (trim != null && range != null)
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              key: const ValueKey('trim-preview'),
+              painter: GhostLinePainter(
+                ghosts: [
+                  GhostLine(
+                    points: trimmedPoints(widget.series.points, trim.removed),
+                    color: AppTheme.debitColor,
+                    from: addCalendarDays(day, 1),
+                  ),
+                ],
+                plot: layout.plot,
+                xOf: (d) => layout.xOf(d, widget.viewStart, widget.visibleDays),
+                yOf: _YScale(range.min, range.max, layout.plot).yOf,
+                repaintKey: (
+                  widget.viewStart,
+                  widget.visibleDays,
+                  range.min,
+                  range.max,
+                  day,
+                  trim.transaction.id,
+                ),
+              ),
+            ),
+          ),
+        ),
       Positioned(
         left: left,
         top: layout.plot.top,
@@ -1416,7 +1542,11 @@ class _BalanceChartState extends State<BalanceChart>
           child: Material(
             key: const ValueKey('pick-bubble'),
             elevation: 10,
-            color: cancelled ? AppTheme.overlay : AppTheme.accent,
+            color: cancelled
+                ? AppTheme.overlay
+                : trim != null
+                ? AppTheme.debitColor
+                : AppTheme.accent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
@@ -1424,22 +1554,36 @@ class _BalanceChartState extends State<BalanceChart>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (trim != null)
+                    Text(
+                      'Trim…',
+                      key: const ValueKey('pick-trim'),
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   Text(
-                    formatOccurrenceDate(day),
+                    trim != null
+                        ? '$trimName ends ${formatOccurrenceDate(day)}'
+                        : formatOccurrenceDate(day),
                     key: const ValueKey('pick-date'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleSmall?.copyWith(
                       color: cancelled ? AppTheme.textMuted : AppTheme.onAccent,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  Text(
-                    cancelled ? 'Release to cancel' : 'Release to add here',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: cancelled
-                          ? AppTheme.textFaint
-                          : AppTheme.onAccent.withValues(alpha: 0.8),
+                  if (trim == null)
+                    Text(
+                      cancelled ? 'Release to cancel' : 'Release to add here',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: cancelled
+                            ? AppTheme.textFaint
+                            : AppTheme.onAccent.withValues(alpha: 0.8),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),

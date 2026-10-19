@@ -28,6 +28,8 @@ import '../reminders/reminders_page.dart';
 import '../transactions/transaction_editor.dart';
 import '../transactions/transactions_panel.dart';
 import 'balance_chart.dart';
+import 'occurrence_info.dart';
+import 'trim.dart';
 import 'chart_geometry.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
@@ -743,6 +745,14 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           account.role.canEdit
                                           ? _createOnceOnDay(context, day)
                                           : _viewOnlyToast(context),
+                                      onTrimOnDay: account.role.canEdit
+                                          ? (t, day, removed) => _confirmTrim(
+                                              context,
+                                              t,
+                                              day,
+                                              removed,
+                                            )
+                                          : null,
                                       transactionNames: transactionNames,
                                       transactions: {
                                         for (final t in transactions) t.id: t,
@@ -1368,6 +1378,78 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       ShareTarget.account(account.id, account.name),
     );
     if (left && context.mounted) context.go('/');
+  }
+
+  /// Release in the chart's Trim zone: confirm, then end the series on
+  /// [day] (inclusive, like the editor's "On date") through the normal
+  /// versioned update, so a concurrent edit gets the Reload/Overwrite ask.
+  Future<void> _confirmTrim(
+    BuildContext context,
+    Transaction t,
+    DateTime day,
+    int removed,
+  ) async {
+    final name = t.name.trim().isEmpty ? 'Transaction' : t.name.trim();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const ValueKey('trim-dialog'),
+        title: Text('Trim “$name”?'),
+        content: Text(
+          '“$name” will end on ${formatOccurrenceDate(day)}: an occurrence on '
+          'that day still happens, later ones stop'
+          '${removed > 0 ? ' ($removed in the loaded range)' : ''}.'
+          '${t.endMode == EndMode.untilDate && t.endDate != null
+              ? '\nCurrently ends ${formatOccurrenceDate(t.endDate!)}.'
+              : t.endMode == EndMode.count
+              ? '\nCurrently ends after ${t.occurrenceCount} times.'
+              : '\nCurrently repeats forever.'}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('trim-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Trim'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    // Latest copy (and version) of the series.
+    final current =
+        ref
+            .read(transactionsProvider(widget.accountId))
+            .valueOrNull
+            ?.where((x) => x.id == t.id)
+            .firstOrNull ??
+        t;
+    try {
+      final n = ref.read(transactionsProvider(widget.accountId).notifier);
+      final r = await saveWithConflictCheck(
+        context,
+        save: (force) =>
+            n.updateTransaction(trimmedTransaction(current, day), force: force),
+        reload: n.refresh,
+      );
+      if (r == SaveResult.cancelled) return;
+      _invalidateBalance();
+      if (context.mounted && r == SaveResult.saved) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('“$name” now ends ${formatOccurrenceDate(day)}'),
+          ),
+        );
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
+      }
+    }
   }
 
   Future<void> _createOnceOnDay(BuildContext context, DateTime day) async {

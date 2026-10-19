@@ -160,6 +160,33 @@ Future<void> _editFromPanel(WidgetTester tester, String name) async {
 }
 
 void main() {
+  testWidgets('Trim release asks first, then ends the series on that day', (
+    tester,
+  ) async {
+    final store = await _pump(tester);
+    final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
+    expect(chart.onTrimOnDay, isNotNull, reason: 'editors can trim');
+    final day = _day.add(const Duration(days: 10));
+    // Cancel: nothing saved.
+    chart.onTrimOnDay!(store.txs['rent']!, day, 3);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('trim-dialog')), findsOneWidget);
+    expect(find.textContaining('Currently repeats forever'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(store.calls.where((c) => c.startsWith('update')), isEmpty);
+    // Confirm: saved through the normal update with the until-date end.
+    chart.onTrimOnDay!(store.txs['rent']!, day, 3);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('trim-confirm')));
+    await tester.pumpAndSettle();
+    final rent = store.txs['rent']!;
+    expect(rent.endMode, EndMode.untilDate);
+    expect(rent.endDate, day);
+    expect(store.txs['salary']!.endMode, EndMode.never);
+    expect(find.textContaining('now ends'), findsOneWidget);
+  });
+
   testWidgets('mouse hover near a dot shows the info popup; away hides it', (
     tester,
   ) async {
@@ -397,9 +424,7 @@ void main() {
     });
   }
 
-  testWidgets('unit dropdown, − / + and ◀ ▶ ease the view', (
-    tester,
-  ) async {
+  testWidgets('unit dropdown, − / + and ◀ ▶ ease the view', (tester) async {
     await _pump(tester);
     BalanceChart chart() =>
         tester.widget<BalanceChart>(find.byType(BalanceChart));
@@ -426,8 +451,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('shift-left')));
     await tester.pumpAndSettle();
     expect(chart().viewStart, DateTime(start.year, start.month - 2));
-    double center() =>
-        dayCoord(chart().viewStart) + chart().visibleDays / 2;
+    double center() => dayCoord(chart().viewStart) + chart().visibleDays / 2;
     final c0 = center();
     // +/− zoom steps (keyboard; no overlay buttons) keep the centre.
     chart().onZoomStep!(-1);
@@ -640,10 +664,7 @@ void main() {
     expect(tester.getRect(tip), before, reason: 'scrub lift');
     // Tap again on the shown dot while it is pinned: still the same rect.
     // (Where the scrub started: the shown dot is the one nearest there.)
-    final g2 = await tester.startGesture(
-      spot,
-      kind: PointerDeviceKind.touch,
-    );
+    final g2 = await tester.startGesture(spot, kind: PointerDeviceKind.touch);
     await tester.pump();
     final pressed = tester.getRect(tip);
     expect(pressed, before);
