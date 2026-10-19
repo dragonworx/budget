@@ -628,6 +628,71 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('active dot also guides down to the date lanes and lights its '
+      'date', (tester) async {
+    for (final (size, kind) in [
+      (const Size(390, 844), PointerDeviceKind.touch),
+      (const Size(1440, 900), PointerDeviceKind.mouse),
+    ]) {
+      final store = await _pump(tester, size: size);
+      final chart = tester.getRect(find.byType(BalanceChart));
+      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      final pill = find.byKey(const ValueKey('x-highlight'));
+      final line = find.byKey(const ValueKey('x-highlight-line'));
+      final col = find.byKey(const ValueKey('x-highlight-day'));
+      final yPill = find.byKey(const ValueKey('y-highlight'));
+      Future<void> reveal() async {
+        for (var fy = 0.1; fy < 0.8; fy += 0.03) {
+          for (var fx = 0.3; fx < 0.98; fx += 0.04) {
+            final p = Offset(
+              chart.left + chart.width * fx,
+              chart.top + chart.height * fy,
+            );
+            await tester.tapAt(p, kind: kind);
+            await tester.pump();
+            if (tip.evaluate().isNotEmpty) return;
+          }
+        }
+        fail('a tap should reveal some dot');
+      }
+
+      expect(pill, findsNothing);
+      await reveal();
+      expect(pill, findsOneWidget);
+      expect(line, findsOneWidget);
+      expect(col, findsOneWidget);
+      expect(yPill, findsOneWidget);
+      // Pill sits in the date lanes (bottom of the chart), bold, and names
+      // the same day as the popup.
+      expect(tester.getRect(pill).bottom, greaterThan(chart.bottom - 40));
+      final text = tester.widget<Text>(
+        find.descendant(of: pill, matching: find.byType(Text)),
+      );
+      expect(text.style?.fontWeight, FontWeight.w800);
+      expect(text.data, matches(RegExp(r'^\w{3} \d{1,2} \w{3}$')));
+      expect(
+        find.descendant(of: tip, matching: find.textContaining(text.data!)),
+        findsWidgets,
+      );
+      // The lit column is the pill's day.
+      final c = tester.getRect(col);
+      expect(c.center.dx, closeTo(tester.getRect(pill).center.dx, c.width + 2));
+      // Navigation clears both guides together.
+      await tester.tap(find.byKey(const ValueKey('shift-right')));
+      await tester.pumpAndSettle();
+      expect(pill, findsNothing);
+      expect(yPill, findsNothing);
+      // A tap on empty space clears them too.
+      await reveal();
+      await tester.tapAt(Offset(chart.left + 8, chart.top + 6), kind: kind);
+      await tester.pump();
+      expect(pill, findsNothing);
+      expect(yPill, findsNothing);
+      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('touch popup keeps its exact rect across pointer up', (
     tester,
   ) async {

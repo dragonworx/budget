@@ -1291,6 +1291,7 @@ class _BalanceChartState extends State<BalanceChart>
                     return Stack(
                       children: [
                         ..._yHighlight(theme, tip!),
+                        ..._xHighlight(theme, tip),
                         _tooltip(theme, tip),
                       ],
                     );
@@ -1444,6 +1445,102 @@ class _BalanceChartState extends State<BalanceChart>
               formatMoneyAmount(dot.balanceAfter, widget.currency),
               style: style,
             ),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// The date of the dot [_yHighlight] follows: its occurrences' day, or
+  /// the seed date for the opening-balance diamond.
+  DateTime _highlightDay(_Dot dot) =>
+      dateOnly(dot.occurrence?.date ?? widget.seedDate);
+
+  /// Matching vertical guide from the active dot down to the date lanes,
+  /// the dot's day lit across the lanes, and its exact date on a pill in the
+  /// day lane (styled like the y pill), so the date reads even when that
+  /// day's tick is thinned out. Same lifetime as [_yHighlight].
+  List<Widget> _xHighlight(ThemeData theme, _DotTip tip) {
+    final dot = _highlightDot(tip);
+    final layout = _layout;
+    final x = dot.center.dx;
+    if (x < layout.plot.left || x > layout.plot.right) return const [];
+    final day = _highlightDay(dot);
+    final color = dot.balanceAfter < widget.lossThreshold
+        ? AppTheme.debitColor
+        : _lineColor;
+    final axis = layout.axis;
+    final x0 = layout.xOf(day, widget.viewStart, widget.visibleDays);
+    final x1 = layout.xOf(
+      addCalendarDays(day, 1),
+      widget.viewStart,
+      widget.visibleDays,
+    );
+    final colLeft = math.max(axis.left, math.min(x0, x1));
+    final colRight = math.min(axis.right, math.max(x0, x1));
+    final style = (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
+      fontWeight: FontWeight.w800,
+      color: Colors.white,
+    );
+    const pillH = 22.0;
+    final band = layout.dayBand ?? layout.weekBand ?? layout.monthBand;
+    final pillTop = (band.center.dy - pillH / 2)
+        .clamp(axis.top, math.max(axis.top, axis.bottom - pillH))
+        .toDouble();
+    final label = DateFormat('EEE d MMM').format(day);
+    final textW = (TextPainter(
+      text: TextSpan(text: label, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout()).width;
+    final pillW = textW + 16;
+    final pillLeft = (x - pillW / 2)
+        .clamp(axis.left + 1, math.max(axis.left + 1, axis.right - pillW - 1))
+        .toDouble();
+    return [
+      Positioned.fill(
+        child: IgnorePointer(
+          child: CustomPaint(
+            key: const ValueKey('x-highlight-line'),
+            painter: _GuideLinePainter(
+              from: Offset(x, dot.center.dy + dot.radius + 2),
+              to: Offset(x, axis.top),
+              color: color.withValues(alpha: 0.7),
+            ),
+          ),
+        ),
+      ),
+      if (colRight > colLeft)
+        Positioned(
+          left: colLeft,
+          top: axis.top,
+          width: colRight - colLeft,
+          height: axis.height,
+          child: IgnorePointer(
+            child: ColoredBox(
+              key: const ValueKey('x-highlight-day'),
+              color: color.withValues(alpha: 0.22),
+            ),
+          ),
+        ),
+      Positioned(
+        left: pillLeft,
+        top: pillTop,
+        width: pillW,
+        height: pillH,
+        child: IgnorePointer(
+          child: Container(
+            key: const ValueKey('x-highlight'),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Color.alphaBlend(
+                color.withValues(alpha: 0.35),
+                AppTheme.raised,
+              ),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: color, width: 1.2),
+            ),
+            child: Text(label, style: style, maxLines: 1, softWrap: false),
           ),
         ),
       ),
@@ -4354,7 +4451,8 @@ double autoScrollDays(double depth, double visibleDays) {
   return (addDays(anchor, -f1 * days), days);
 }
 
-/// Dashed horizontal guide from the y axis to the active dot.
+/// Dashed guide from an axis to the active dot (horizontal to the y axis,
+/// vertical down to the date lanes).
 class _GuideLinePainter extends CustomPainter {
   _GuideLinePainter({
     required this.from,
@@ -4371,12 +4469,16 @@ class _GuideLinePainter extends CustomPainter {
       ..color = color
       ..strokeWidth = 1.5;
     const dash = 5.0, gap = 4.0;
-    final dir = to.dx >= from.dx ? 1.0 : -1.0;
-    final len = (to.dx - from.dx).abs();
+    final v = to - from;
+    final len = v.distance;
+    if (len <= 0) return;
+    final dir = v / len;
     for (var d = 0.0; d < len; d += dash + gap) {
-      final a = from.dx + dir * d;
-      final b = from.dx + dir * math.min(len, d + dash);
-      canvas.drawLine(Offset(a, from.dy), Offset(b, from.dy), paint);
+      canvas.drawLine(
+        from + dir * d,
+        from + dir * math.min(len, d + dash),
+        paint,
+      );
     }
   }
 
