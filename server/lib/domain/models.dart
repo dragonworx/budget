@@ -88,9 +88,20 @@ class Transaction {
     required this.createdAt,
     this.transfer,
     this.version = 1,
+    this.overrides = const {},
   });
 
   final int version;
+
+  /// Once-off overrides of single occurrences (date-only UTC keys).
+  final Map<DateTime, AmountOverride> overrides;
+
+  /// Signed amount of the occurrence on [date]: its override, else the
+  /// series amount.
+  Decimal signedAmountOn(DateTime date) {
+    final o = overrides[DateTime.utc(date.year, date.month, date.day)];
+    return o == null ? signedAmount : o.signed;
+  }
 
   final String id;
   final String accountId;
@@ -129,6 +140,12 @@ class Transaction {
         'createdAt': createdAt.toUtc().toIso8601String(),
         'transfer': transfer?.toJson(),
         'version': version,
+        'overrides': [
+          for (final e
+              in (overrides.entries.toList()
+                ..sort((a, b) => a.key.compareTo(b.key))))
+            {'date': formatDate(e.key), ...e.value.toJson()},
+        ],
       };
 
   Transaction copyWith({
@@ -170,8 +187,45 @@ class Transaction {
       createdAt: createdAt ?? this.createdAt,
       transfer: transfer,
       version: version,
+      overrides: overrides,
     );
   }
+
+  Transaction withOverrides(Map<DateTime, AmountOverride> overrides) =>
+      Transaction(
+        id: id,
+        accountId: accountId,
+        name: name,
+        direction: direction,
+        amount: amount,
+        startDate: startDate,
+        recurrenceMode: recurrenceMode,
+        interval: interval,
+        unit: unit,
+        endMode: endMode,
+        endDate: endDate,
+        occurrenceCount: occurrenceCount,
+        enabled: enabled,
+        createdAt: createdAt,
+        transfer: transfer,
+        version: version,
+        overrides: overrides,
+      );
+}
+
+/// A once-off override of one occurrence's amount and direction.
+class AmountOverride {
+  const AmountOverride({required this.direction, required this.amount});
+
+  final Direction direction;
+  final Decimal amount;
+
+  Decimal get signed => direction == Direction.credit ? amount : -amount;
+
+  Map<String, Object?> toJson() => {
+        'direction': direction.name,
+        'amount': amount.toString(),
+      };
 }
 
 /// The other side of a transfer, as seen from one row.

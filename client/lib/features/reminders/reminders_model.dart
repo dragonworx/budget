@@ -10,8 +10,16 @@ class ReminderItem {
   final Transaction transaction;
   final DateTime date;
 
-  bool get isGain => transaction.direction == TransactionDirection.credit;
-  Decimal get signed => isGain ? transaction.amount : -transaction.amount;
+  /// A once-off override of this date, if any.
+  OccurrenceOverride? get override => transaction.overrideOn(date);
+
+  bool get isGain =>
+      (override?.direction ?? transaction.direction) ==
+      TransactionDirection.credit;
+
+  /// This occurrence's amount (its override, else the series amount).
+  Decimal get amount => override?.amount ?? transaction.amount;
+  Decimal get signed => isGain ? amount : -amount;
 }
 
 /// Gains / losses for one day (or any group of items).
@@ -51,9 +59,9 @@ class DayTotals {
     for (final i in items) {
       n++;
       if (i.isGain) {
-        g += i.transaction.amount;
+        g += i.amount;
       } else {
-        l += i.transaction.amount;
+        l += i.amount;
       }
     }
     return DayTotals(gains: g, losses: l, count: n);
@@ -106,7 +114,7 @@ List<ReminderItem> expandOccurrences(
     if (c != 0) return c;
     // Gains first, then larger amounts, then name.
     if (a.isGain != b.isGain) return a.isGain ? -1 : 1;
-    final m = b.transaction.amount.compareTo(a.transaction.amount);
+    final m = b.amount.compareTo(a.amount);
     return m != 0 ? m : a.transaction.name.compareTo(b.transaction.name);
   });
   return out;

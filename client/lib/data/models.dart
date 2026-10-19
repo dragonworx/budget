@@ -383,10 +383,27 @@ class Transaction {
     this.enabled = true,
     this.transfer,
     this.version,
+    this.overrides = const {},
   });
 
   /// Row version for optimistic concurrency (null: last write wins).
   final int? version;
+
+  /// Once-off overrides of single occurrences, by (local, date-only) day.
+  final Map<DateTime, OccurrenceOverride> overrides;
+
+  /// The override on [date], if any.
+  OccurrenceOverride? overrideOn(DateTime date) =>
+      overrides[DateTime(date.year, date.month, date.day)];
+
+  /// Signed amount of the series (positive in, negative out).
+  Decimal get signedAmount =>
+      direction == TransactionDirection.credit ? amount : -amount;
+
+  /// Signed amount of the occurrence on [date] (its override, else the
+  /// series amount).
+  Decimal signedAmountOn(DateTime date) =>
+      overrideOn(date)?.signed ?? signedAmount;
 
   final String id;
   final String accountId;
@@ -471,6 +488,13 @@ class Transaction {
           ? TransferLink.fromJson(json['transfer'] as Map<String, dynamic>)
           : null,
       version: (json['version'] as num?)?.toInt(),
+      overrides: {
+        for (final o in (json['overrides'] as List?) ?? const [])
+          parseDate((o as Map)['date']): OccurrenceOverride(
+            direction: TransactionDirection.fromJson(o['direction'] as String),
+            amount: parseMoney(o['amount']),
+          ),
+      },
     );
   }
 
@@ -548,8 +572,29 @@ class Transaction {
           ? null
           : (occurrenceCount ?? this.occurrenceCount),
       enabled: enabled ?? this.enabled,
+      overrides: overrides,
     );
   }
+}
+
+/// A once-off override of one occurrence's amount and direction.
+class OccurrenceOverride {
+  const OccurrenceOverride({required this.direction, required this.amount});
+
+  final TransactionDirection direction;
+  final Decimal amount;
+
+  Decimal get signed =>
+      direction == TransactionDirection.credit ? amount : -amount;
+
+  @override
+  bool operator ==(Object other) =>
+      other is OccurrenceOverride &&
+      other.direction == direction &&
+      other.amount == amount;
+
+  @override
+  int get hashCode => Object.hash(direction, amount);
 }
 
 /// The other side of a transfer, as seen from one series.

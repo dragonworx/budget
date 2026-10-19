@@ -1,3 +1,4 @@
+import 'package:decimal/decimal.dart';
 import 'api_client.dart';
 import '../features/planning/goal_models.dart';
 import 'models.dart';
@@ -229,6 +230,66 @@ class TransactionRepository {
       body: raw,
     );
     return data as Map<String, dynamic>;
+  }
+
+  /// Once-off: [date]'s occurrence takes [amount] / [direction] instead of
+  /// the series value. Sends [version] (stale: 409) unless null.
+  Future<Transaction> setOverride(
+    String transactionId,
+    DateTime date, {
+    required TransactionDirection direction,
+    required Decimal amount,
+    int? version,
+  }) async {
+    final data = await _api.put(
+      '/api/transactions/$transactionId/overrides/${formatDate(date)}',
+      body: {
+        'direction': direction.toJson(),
+        'amount': moneyToJson(amount),
+        'version': ?version,
+      },
+    );
+    return Transaction.fromJson(data as Map<String, dynamic>);
+  }
+
+  /// Clears the override on [date] (null: every override of the series),
+  /// restoring the natural series value.
+  Future<void> clearOverrides(String transactionId, {DateTime? date}) =>
+      _api.delete(
+        '/api/transactions/$transactionId/overrides'
+        '${date == null ? '' : '/${formatDate(date)}'}',
+      );
+
+  /// "From now on": ends the series the day before [date] and starts a new
+  /// one there with [edited]'s name, amount, direction, frequency and
+  /// enabled flag, keeping the original end condition. Atomic server-side.
+  /// Returns the shortened original and the new series (null when [date]
+  /// is the first occurrence: then the whole series was updated).
+  Future<({Transaction original, Transaction? created})> split(
+    Transaction edited,
+    DateTime date, {
+    bool force = false,
+  }) async {
+    final data = await _api.post(
+      '/api/transactions/${edited.id}/split',
+      body: {
+        'date': formatDate(date),
+        'name': edited.name,
+        'direction': edited.direction.toJson(),
+        'amount': moneyToJson(edited.amount),
+        'interval': ?edited.interval,
+        'unit': ?edited.unit?.toJson(),
+        'enabled': edited.enabled,
+        if (!force && edited.version != null) 'version': edited.version,
+      },
+    ) as Map<String, dynamic>;
+    final created = data['created'];
+    return (
+      original: Transaction.fromJson(data['original'] as Map<String, dynamic>),
+      created: created is Map<String, dynamic>
+          ? Transaction.fromJson(created)
+          : null,
+    );
   }
 
   Future<void> skipOccurrence(

@@ -33,7 +33,8 @@ class OccurrenceGenerator {
           Occurrence(
             transactionId: transaction.id,
             date: date,
-            signedDelta: transaction.signedAmount,
+            // A once-off override replaces this occurrence's amount.
+            signedDelta: transaction.signedAmountOn(date),
             skipped: isSkipped,
           ),
         );

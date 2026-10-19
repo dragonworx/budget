@@ -2751,6 +2751,8 @@ class _BalanceChartState extends State<BalanceChart>
       final status = [
         if (o.skipped) 'Skipped',
         if (t != null && !t.enabled) 'Disabled',
+        if (t != null && t.overrideOn(o.date) != null)
+          'Once-off (series ${formatSignedAmount(t.signedAmount.toDouble(), widget.currency)})',
       ];
       if (children.isNotEmpty) children.add(const Divider(height: 12));
       children.add(

@@ -229,6 +229,68 @@ class TransactionsNotifier
     _touchPeer(t?.transfer);
   }
 
+  /// Once-off override of one occurrence (see
+  /// [TransactionRepository.setOverride]).
+  Future<Transaction> setOverride(
+    String transactionId,
+    DateTime date, {
+    required TransactionDirection direction,
+    required Decimal amount,
+    int? version,
+  }) async {
+    final updated = await ref
+        .read(transactionRepositoryProvider)
+        .setOverride(
+          transactionId,
+          date,
+          direction: direction,
+          amount: amount,
+          version: version,
+        );
+    _replace(updated);
+    return updated;
+  }
+
+  /// Clears one override ([date]) or all of them; refreshes the series.
+  Future<void> clearOverrides(String transactionId, {DateTime? date}) async {
+    await ref
+        .read(transactionRepositoryProvider)
+        .clearOverrides(transactionId, date: date);
+    final fresh = await ref
+        .read(transactionRepositoryProvider)
+        .listForAccount(arg);
+    final before = (state.valueOrNull ?? [])
+        .where((s) => s.id == transactionId)
+        .firstOrNull;
+    state = AsyncData(fresh);
+    _touchPeer(before?.transfer);
+  }
+
+  /// "From now on" split; reloads the list (a new series appears).
+  Future<({Transaction original, Transaction? created})> split(
+    Transaction edited,
+    DateTime date, {
+    bool force = false,
+  }) async {
+    final r = await ref
+        .read(transactionRepositoryProvider)
+        .split(edited, date, force: force);
+    final fresh = await ref
+        .read(transactionRepositoryProvider)
+        .listForAccount(arg);
+    state = AsyncData(fresh);
+    _touchPeer(r.original.transfer);
+    return r;
+  }
+
+  void _replace(Transaction updated) {
+    final current = state.valueOrNull ?? [];
+    state = AsyncData([
+      for (final s in current) s.id == updated.id ? updated : s,
+    ]);
+    _touchPeer(updated.transfer);
+  }
+
   Future<void> reorder(List<String> transactionIds) async {
     final account = await ref
         .read(accountRepositoryProvider)

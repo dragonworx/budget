@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../domain/enums.dart';
 import '../domain/models.dart';
 import '../domain/transaction_import.dart';
+import '../engine/occurrence_gen.dart';
 
 const _enrichedCols = '''
   t.id, t.account_id, t.name, t.direction, t.amount, t.start_date,
@@ -33,7 +34,246 @@ class TransactionRepo {
       '''),
       parameters: {'accountId': accountId},
     );
-    return rows.map(_fromRow).toList();
+    return _attachOverrides(rows.map(_fromRow).toList());
+  }
+
+  /// Loads every row's once-off overrides onto it.
+  Future<List<Transaction>> _attachOverrides(List<Transaction> list) async {
+    if (list.isEmpty) return list;
+    final rows = await _conn.execute(
+      Sql.named('''
+        SELECT transaction_id::text, date, amount::text, direction
+        FROM occurrence_overrides WHERE transaction_id = ANY (@ids::uuid[])
+      '''),
+      parameters: {
+        'ids': [for (final t in list) t.id]
+      },
+    );
+    if (rows.isEmpty) return list;
+    final byId = <String, Map<DateTime, AmountOverride>>{};
+    for (final r in rows) {
+      final d = r[1] as DateTime;
+      byId.putIfAbsent(
+              r[0] as String, () => {})[DateTime.utc(d.year, d.month, d.day)] =
+          AmountOverride(
+        amount: Decimal.parse(r[2] as String),
+        direction: Direction.parse(r[3] as String),
+      );
+    }
+    return [
+      for (final t in list)
+        byId[t.id] == null ? t : t.withOverrides(byId[t.id]!),
+    ];
+  }
+
+  /// Sets (or replaces) the once-off override of [transactionId]'s
+  /// occurrence on [date]. Throws [FormatException] when [date] is not an
+  /// occurrence of the series. Mirrors onto a transfer peer (opposite
+  /// direction) and bumps the version(s). Call inside a DB transaction.
+  Future<Transaction> setOverride(String transactionId, DateTime date,
+      {required Direction direction, required Decimal amount}) async {
+    final t = await get(transactionId);
+    if (t == null) throw StateError('transaction not found');
+    if (amount < Decimal.zero) throw FormatException('amount must be >= 0');
+    final d = _date(date);
+    if (!_isOccurrence(t, d)) {
+      throw FormatException('${_fmt(d)} is not an occurrence of this series');
+    }
+    Future<void> put(String id, Direction dir) => _conn.execute(
+          Sql.named('''
+            INSERT INTO occurrence_overrides (transaction_id, date, amount, direction)
+            VALUES (@t::uuid, @d, @amount::numeric, @dir)
+            ON CONFLICT (transaction_id, date)
+            DO UPDATE SET amount = EXCLUDED.amount, direction = EXCLUDED.direction
+          '''),
+          parameters: {
+            't': id,
+            'd': d,
+            'amount': amount.toString(),
+            'dir': dir.name,
+          },
+        );
+    await put(t.id, direction);
+    final peer = t.transfer?.peerId;
+    if (peer != null) {
+      await put(peer,
+          direction == Direction.credit ? Direction.debit : Direction.credit);
+    }
+    await _bump([t.id, if (peer != null) peer]);
+    return (await get(t.id))!;
+  }
+
+  /// Removes the override on [date] ([date] null: every override of the
+  /// series), restoring the natural series value. Mirrors onto a transfer
+  /// peer; bumps the version when anything was removed. Returns how many
+  /// overrides were removed (on this row).
+  Future<int> clearOverrides(String transactionId, {DateTime? date}) async {
+    final t = await get(transactionId);
+    if (t == null) throw StateError('transaction not found');
+    final peer = t.transfer?.peerId;
+    final rows = await _conn.execute(
+      Sql.named('''
+        DELETE FROM occurrence_overrides
+        WHERE transaction_id = ANY (@ids::uuid[])
+          ${date == null ? '' : 'AND date = @d'}
+        RETURNING transaction_id::text
+      '''),
+      parameters: {
+        'ids': [t.id, if (peer != null) peer],
+        if (date != null) 'd': _date(date),
+      },
+    );
+    final mine = rows.where((r) => r[0] == t.id).length;
+    if (rows.isNotEmpty) await _bump([t.id, if (peer != null) peer]);
+    return mine;
+  }
+
+  /// Drops overrides of [id] that no longer fall on an occurrence (after a
+  /// schedule change). Returns how many were removed.
+  Future<int> pruneOverrides(String id) async {
+    final t = await get(id);
+    if (t == null || t.overrides.isEmpty) return 0;
+    final stale = [
+      for (final d in t.overrides.keys)
+        if (!_isOccurrence(t, d)) d,
+    ];
+    for (final d in stale) {
+      await _conn.execute(
+        Sql.named('DELETE FROM occurrence_overrides '
+            'WHERE transaction_id = @t::uuid AND date = @d'),
+        parameters: {'t': id, 'd': d},
+      );
+    }
+    return stale.length;
+  }
+
+  /// Version bump for changes stored beside the row (overrides), so stale
+  /// editors of the series get a 409 like any other change.
+  Future<void> _bump(List<String> ids) => _conn.execute(
+        Sql.named('UPDATE transactions SET version = version + 1 '
+            'WHERE id = ANY (@ids::uuid[])'),
+        parameters: {'ids': ids},
+      );
+
+  bool _isOccurrence(Transaction t, DateTime d) =>
+      OccurrenceGenerator.datesForTransaction(t, d, d)
+          .any((x) => x.year == d.year && x.month == d.month && x.day == d.day);
+
+  static String _fmt(DateTime d) => formatDate(d);
+
+  /// "From now on": ends [id] the day before its occurrence on [date] and
+  /// creates a new series from [date] with the edited values in [next]
+  /// (name, direction, amount, interval/unit, enabled; its start is [date]).
+  /// The new series keeps the original end condition: never stays never,
+  /// an end date stays, and "after N" keeps the remaining count. Skips and
+  /// overrides after [date] move to the new series; an override on [date]
+  /// itself is dropped (the edited values apply). A transfer gets a new
+  /// peer for the new series. On the series' first occurrence it is a plain
+  /// update instead. Call inside one DB transaction (all or nothing).
+  Future<({Transaction original, Transaction? created})> splitAt(
+    String id,
+    DateTime date, {
+    required String name,
+    required Direction direction,
+    required Decimal amount,
+    int? interval,
+    RecurrenceUnit? unit,
+    bool? enabled,
+  }) async {
+    final t = await get(id);
+    if (t == null) throw StateError('transaction not found');
+    if (t.recurrenceMode != RecurrenceMode.every) {
+      throw FormatException('only a repeating series can be split');
+    }
+    final d = _date(date);
+    if (!_isOccurrence(t, d)) {
+      throw FormatException('${_fmt(d)} is not an occurrence of this series');
+    }
+    final start = _date(t.startDate);
+    final first = OccurrenceGenerator.datesForTransaction(t, start, d);
+    final before = first.where((x) => x.isBefore(d)).length;
+    if (before == 0) {
+      // First occurrence: "from now on" is the whole series.
+      final updated = (await update(id,
+          name: name,
+          direction: direction,
+          amount: amount,
+          interval: interval,
+          unit: unit,
+          enabled: enabled))!;
+      await clearOverrides(id, date: d);
+      await syncPeer(updated);
+      return (original: (await get(id))!, created: null);
+    }
+    int? remaining;
+    if (t.endMode == EndMode.count) {
+      remaining = t.occurrenceCount! - before;
+      if (remaining < 1) {
+        throw FormatException('no occurrences left from ${_fmt(d)}');
+      }
+    }
+    final created = await create(
+      accountId: t.accountId,
+      name: name,
+      direction: direction,
+      amount: amount,
+      startDate: d,
+      recurrenceMode: RecurrenceMode.every,
+      interval: interval ?? t.interval,
+      unit: unit ?? t.unit,
+      endMode: t.endMode,
+      endDate: t.endMode == EndMode.untilDate ? t.endDate : null,
+      occurrenceCount: remaining,
+      enabled: enabled ?? t.enabled,
+    );
+    // Skips from the split date on and later overrides belong to the new
+    // series now (an override on the date itself gives way to the edit).
+    for (final (table, op) in [
+      ('skipped_occurrences', '>='),
+      ('occurrence_overrides', '>'),
+    ]) {
+      await _conn.execute(
+        Sql.named('''
+          UPDATE $table SET transaction_id = @n::uuid
+          WHERE transaction_id = @o::uuid AND date $op @d
+        '''),
+        parameters: {'n': created.id, 'o': t.id, 'd': d},
+      );
+    }
+    await _conn.execute(
+      Sql.named('''
+        DELETE FROM occurrence_overrides
+        WHERE transaction_id = @o::uuid AND date >= @d
+      '''),
+      parameters: {'o': t.id, 'd': d},
+    );
+    final ended = (await update(id,
+        endMode: EndMode.untilDate,
+        endDate: d.subtract(const Duration(days: 1)),
+        clearOccurrenceCount: true))!;
+    // Keep the new series right after the original in the account order.
+    await _conn.execute(
+      Sql.named('''
+        UPDATE accounts SET transaction_order = (
+          SELECT array_agg(x ORDER BY ord) FROM (
+            SELECT x, i::numeric AS ord
+            FROM unnest(array_remove(transaction_order, @n::uuid))
+              WITH ORDINALITY AS u(x, i)
+            UNION ALL
+            SELECT @n::uuid, array_position(transaction_order, @o::uuid) + 0.5
+          ) q
+        )
+        WHERE id = @a::uuid AND @o::uuid = ANY (transaction_order)
+      '''),
+      parameters: {'a': t.accountId, 'n': created.id, 'o': t.id},
+    );
+    if (t.transfer?.peerAccountId != null) {
+      await syncPeer(ended);
+      await linkNewPeer(created, t.transfer!.peerAccountId!);
+      final linked = (await get(created.id))!;
+      await syncPeer(linked);
+    }
+    return (original: (await get(id))!, created: (await get(created.id))!);
   }
 
   Future<Transaction?> get(String id) async {
@@ -46,7 +286,7 @@ class TransactionRepo {
       parameters: {'id': id},
     );
     if (rows.isEmpty) return null;
-    return _fromRow(rows.first);
+    return (await _attachOverrides([_fromRow(rows.first)])).single;
   }
 
   Future<Transaction> create({
@@ -526,6 +766,7 @@ class TransactionRepo {
       parameters: {'s': source.id, 'p': peerId},
     );
     await _copySkips(source.id, peerId);
+    await _copyOverrides(source.id, peerId);
   }
 
   /// Moves the peer row of a transfer into [accountId] (changing where the
@@ -577,6 +818,24 @@ class TransactionRepo {
           WHERE account_id = @a::uuid AND transfer_id IS NOT NULL)
       '''),
       parameters: {'a': accountId},
+    );
+  }
+
+  /// Mirrors [fromId]'s overrides onto its transfer peer [toId] (opposite
+  /// direction).
+  Future<void> _copyOverrides(String fromId, String toId) async {
+    await _conn.execute(
+      Sql.named('DELETE FROM occurrence_overrides WHERE transaction_id = @t'),
+      parameters: {'t': toId},
+    );
+    await _conn.execute(
+      Sql.named('''
+        INSERT INTO occurrence_overrides (transaction_id, date, amount, direction)
+        SELECT @t::uuid, date, amount,
+               CASE direction WHEN 'credit' THEN 'debit' ELSE 'credit' END
+        FROM occurrence_overrides WHERE transaction_id = @f
+      '''),
+      parameters: {'t': toId, 'f': fromId},
     );
   }
 

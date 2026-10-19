@@ -19,7 +19,27 @@ import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
 import 'solve_sheet.dart';
 
-enum EditorAction { created, saved, deleted, skipsChanged }
+enum EditorAction {
+  created,
+  saved,
+  deleted,
+  skipsChanged,
+
+  /// Save once-off: one occurrence ([EditorOutcome.date]) overridden.
+  overridden,
+
+  /// One occurrence's override cleared (back to the series value).
+  overrideCleared,
+
+  /// Every override of the series cleared.
+  overridesCleared,
+
+  /// From now on: the series was split at [EditorOutcome.date].
+  split,
+}
+
+/// The editor's save choices on a repeating series' occurrence.
+enum SaveOption { series, onceOff, fromNowOn }
 
 /// What happened in one editor session, so callers can report it
 /// accurately (and offer undo).
@@ -31,9 +51,19 @@ class EditorOutcome {
     this.skipped = const {},
     this.restored = const {},
     this.skippedBefore = const {},
+    this.date,
+    this.original,
   });
 
   final EditorAction action;
+
+  /// The occurrence an override / split applies to.
+  final DateTime? date;
+
+  /// Split: the original series as shortened (it now ends the day before
+  /// [date]); [transaction] is the new series (or, on the first occurrence,
+  /// the updated whole series).
+  final Transaction? original;
 
   /// Created / saved / deleted series (for skips: the series).
   final Transaction transaction;
@@ -241,7 +271,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
 
   bool get _dirty => _signature() != _initialSignature;
 
-  EditorOutcome? _outcome(EditorAction? action, [Transaction? t]) {
+  EditorOutcome? _outcome(
+    EditorAction? action, [
+    Transaction? t,
+    DateTime? date,
+    Transaction? original,
+  ]) {
     final added = _skipped.difference(_skippedInitially);
     final removed = _skippedInitially.difference(_skipped);
     final existing = widget.existing;
@@ -256,6 +291,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       skipped: added,
       restored: removed,
       skippedBefore: _skippedInitially,
+      date: date,
+      original: original,
     );
   }
 
@@ -559,48 +596,91 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
+  String get _currency => widget.currency.isEmpty ? 'AUD' : widget.currency;
+
+  String _signed(Decimal signed) =>
+      formatSignedAmount(signed.toDouble(), _currency);
+
   Widget _focusBanner(ThemeData theme) {
     final date = _day(widget.focusDate!);
     final skipped = _skipped.contains(date);
     final busy = _skipBusy.contains(date);
+    final existing = widget.existing!;
+    final override = existing.overrideOn(date);
+    final String detail;
+    if (skipped) {
+      detail = 'Skipped: it does not affect the balance';
+    } else if (override != null) {
+      detail = 'Once-off ${_signed(override.signed)} on this date · '
+          'series ${_signed(existing.signedAmount)}';
+    } else if (_offerSaveOptions) {
+      detail = 'Save changes the whole series. The arrow next to Save '
+          'offers this date only, or from now on';
+    } else {
+      detail = 'Edits below change the whole series';
+    }
     return Container(
       key: const ValueKey('focus-banner'),
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 6),
       decoration: AppTheme.panel(
         color: AppTheme.accentSoft.withValues(alpha: 0.6),
         edge: AppTheme.accent.withValues(alpha: 0.4),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Icon(Icons.event_rounded, size: 18, color: AppTheme.accent),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Occurrence on ${formatOccurrenceDate(date)}',
-                  style: theme.textTheme.labelLarge,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                override != null ? Icons.edit_calendar_rounded : Icons.event_rounded,
+                size: 18,
+                color: AppTheme.accent,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Occurrence on ${formatOccurrenceDate(date)}',
+                      style: theme.textTheme.labelLarge,
+                    ),
+                    Text(
+                      detail,
+                      key: const ValueKey('focus-banner-detail'),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
                 ),
-                Text(
-                  skipped
-                      ? 'Skipped: it does not affect the balance'
-                      : 'Edits below change the whole series',
-                  style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+          if (!widget.readOnly)
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 4,
+              children: [
+                if (override != null)
+                  TextButton.icon(
+                    key: const ValueKey('editor-clear-override'),
+                    onPressed: _saving ? null : () => _clearOverride(date),
+                    icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                    label: Text(
+                      'Reset to series ${_signed(existing.signedAmount)}',
+                    ),
+                  ),
+                TextButton.icon(
+                  key: const ValueKey('skip-occurrence'),
+                  onPressed: busy ? null : () => _toggleSkip(date),
+                  icon: Icon(
+                    skipped ? Icons.replay_rounded : Icons.block_rounded,
+                    size: 18,
+                  ),
+                  label: Text(skipped ? 'Unskip' : 'Skip this one'),
                 ),
               ],
             ),
-          ),
-          if (!widget.readOnly)
-          TextButton.icon(
-            key: const ValueKey('skip-occurrence'),
-            onPressed: busy ? null : () => _toggleSkip(date),
-            icon: Icon(
-              skipped ? Icons.replay_rounded : Icons.block_rounded,
-              size: 18,
-            ),
-            label: Text(skipped ? 'Unskip' : 'Skip this one'),
-          ),
         ],
       ),
     );
@@ -1035,6 +1115,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               if (draft.recurrenceMode == RecurrenceMode.every &&
                   draft.endMode == EndMode.never)
                 'Repeats with no end',
+              if (!_isNew && widget.existing!.overrides.isNotEmpty)
+                '${widget.existing!.overrides.length} once-off',
               if (!_isNew) 'Tap a date to skip or restore it',
             ].join(' · '),
             style: theme.textTheme.bodySmall,
@@ -1049,7 +1131,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final isFocus = date == focus;
     final busy = _skipBusy.contains(date);
     final canToggle = !_isNew && _sameScheduleAsSaved();
-    final label = Text(
+    final override = canToggle ? widget.existing!.overrideOn(date) : null;
+    final text = Text(
       formatOccurrenceDate(date),
       style: theme.textTheme.labelMedium?.copyWith(
         color: skipped
@@ -1059,8 +1142,29 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         fontWeight: isFocus ? FontWeight.w700 : FontWeight.w500,
       ),
     );
+    final label = override == null
+        ? text
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              text,
+              const SizedBox(width: 4),
+              Text(
+                _signed(override.signed),
+                key: ValueKey('chip-override-${formatDate(date)}'),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: override.direction == TransactionDirection.credit
+                      ? AppTheme.creditColor
+                      : AppTheme.debitColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          );
     return Tooltip(
-      message: !canToggle
+      message: override != null
+          ? 'Once-off ${_signed(override.signed)}'
+          : !canToggle
           ? (_isNew
                 ? 'Save first to skip dates'
                 : 'Save schedule changes first')
@@ -1117,6 +1221,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             value: _enabled,
             onChanged: (value) => setState(() => _enabled = value),
           ),
+          if (!_isNew && widget.existing!.overrides.isNotEmpty)
+            _overridesRow(theme),
           const SizedBox(height: 4),
           if (!_transferMode)
             Align(
@@ -1132,13 +1238,365 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
+  Widget _overridesRow(ThemeData theme) {
+    final n = widget.existing!.overrides.length;
+    return Padding(
+      key: const ValueKey('editor-overrides'),
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.edit_calendar_rounded,
+            size: 18,
+            color: AppTheme.textMuted,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$n once-off override${n == 1 ? '' : 's'} on single dates',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+          if (!widget.readOnly)
+            TextButton(
+              key: const ValueKey('editor-clear-overrides'),
+              onPressed: _saving ? null : _clearAllOverrides,
+              child: const Text('Clear all'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Save offers "once-off" / "from now on" only when the editor was opened
+  /// on one occurrence of a saved repeating series.
+  bool get _offerSaveOptions =>
+      !_isNew &&
+      !widget.readOnly &&
+      widget.focusDate != null &&
+      widget.existing!.recurrenceMode == RecurrenceMode.every;
+
+  bool get _focusIsFirst =>
+      _day(widget.focusDate!) == _day(widget.existing!.startDate);
+
+  /// Edits other than amount / direction (once-off can't apply those).
+  bool get _onlyAmountChanged {
+    final e = widget.existing!;
+    final d = _draft();
+    return d.name == e.name &&
+        d.enabled == e.enabled &&
+        _sameScheduleAsSaved() &&
+        _transferMode == e.isTransfer &&
+        d.transfer?.peerAccountId == e.transfer?.peerAccountId;
+  }
+
+  /// Why "Save once-off" is unavailable (null: available).
+  String? get _onceOffBlock {
+    if (!_onlyAmountChanged) {
+      return 'Only the amount can change for one date';
+    }
+    final amount = parseMoneyInput(_amount.text);
+    if (amount == null) return null; // the form validator explains
+    final date = _day(widget.focusDate!);
+    final e = widget.existing!;
+    final current = e.overrideOn(date)?.signed ?? e.signedAmount;
+    final next = _direction == TransactionDirection.credit ? amount : -amount;
+    if (next == current) return 'Change the amount first';
+    return null;
+  }
+
+  /// Why "From now on" is unavailable (null: available).
+  String? get _forwardBlock {
+    final e = widget.existing!;
+    final d = _draft();
+    final keepsFrame = _day(d.startDate) == _day(e.startDate) &&
+        d.recurrenceMode == RecurrenceMode.every &&
+        d.endMode == e.endMode &&
+        d.endDate == e.endDate &&
+        d.occurrenceCount == e.occurrenceCount &&
+        _transferMode == e.isTransfer &&
+        d.transfer?.peerAccountId == e.transfer?.peerAccountId;
+    if (!keepsFrame) return 'Start, end and transfer changes need Save';
+    if (!_dirty) return 'Change something first';
+    return null;
+  }
+
+  Widget _saveButton() {
+    final label = Text(_saving ? 'Saving…' : (_isNew ? 'Create' : 'Save'));
+    if (!_offerSaveOptions) {
+      return FilledButton.icon(
+        key: const ValueKey('editor-save'),
+        onPressed: _saving ? null : _save,
+        icon: const Icon(Icons.check_rounded, size: 18),
+        label: label,
+      );
+    }
+    final date = formatOccurrenceDate(_day(widget.focusDate!));
+    final onceBlock = _onceOffBlock;
+    final forwardBlock = _forwardBlock;
+    Widget item({
+      required String key,
+      required IconData icon,
+      required String title,
+      required String hint,
+      required VoidCallback? onPressed,
+    }) {
+      return MenuItemButton(
+        key: ValueKey(key),
+        leadingIcon: Icon(icon, size: 20),
+        onPressed: onPressed,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 240),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(title),
+                Text(
+                  hint,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  softWrap: true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    const radius = Radius.circular(20);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FilledButton.icon(
+          key: const ValueKey('editor-save'),
+          style: FilledButton.styleFrom(
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.horizontal(left: radius),
+            ),
+          ),
+          onPressed: _saving ? null : _save,
+          icon: const Icon(Icons.check_rounded, size: 18),
+          label: label,
+        ),
+        const SizedBox(width: 2),
+        MenuAnchor(
+          alignmentOffset: const Offset(-180, 4),
+          menuChildren: [
+            item(
+              key: 'save-option-series',
+              icon: Icons.check_rounded,
+              title: 'Save',
+              hint: 'The whole series',
+              onPressed: () => _saveAs(SaveOption.series),
+            ),
+            item(
+              key: 'save-option-once',
+              icon: Icons.event_available_rounded,
+              title: 'Save once-off',
+              hint: onceBlock ?? 'Only $date (amount)',
+              onPressed:
+                  onceBlock == null ? () => _saveAs(SaveOption.onceOff) : null,
+            ),
+            item(
+              key: 'save-option-forward',
+              icon: Icons.east_rounded,
+              title: 'From now on',
+              hint: forwardBlock ??
+                  (_focusIsFirst
+                      ? 'First occurrence: same as Save'
+                      : '$date onwards; earlier dates keep the old values'),
+              onPressed: forwardBlock == null
+                  ? () => _saveAs(SaveOption.fromNowOn)
+                  : null,
+            ),
+          ],
+          builder: (context, controller, _) => Tooltip(
+            message: 'More save options',
+            excludeFromSemantics: true,
+            child: Semantics(
+              label: 'More save options',
+              button: true,
+              expanded: controller.isOpen,
+              child: FilledButton(
+              key: const ValueKey('editor-save-menu'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(40, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.horizontal(right: radius),
+                ),
+              ),
+              onPressed: _saving
+                  ? null
+                  : () => controller.isOpen
+                        ? controller.close()
+                        : controller.open(),
+                child: const Icon(Icons.arrow_drop_down_rounded, size: 22),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _saveAs(SaveOption option) => switch (option) {
+    SaveOption.series => _save(),
+    SaveOption.onceOff => _saveOnceOff(),
+    SaveOption.fromNowOn => _saveFromNowOn(),
+  };
+
+  Future<void> _saveOnceOff() async {
+    if (_saving || widget.readOnly || !_offerSaveOptions) return;
+    if (!_formKey.currentState!.validate()) return;
+    if (_onceOffBlock != null) return;
+    final existing = widget.existing!;
+    final date = _day(widget.focusDate!);
+    final amount = parseMoneyInput(_amount.text)!;
+    final notifier = ref.read(transactionsProvider(widget.accountId).notifier);
+    setState(() => _saving = true);
+    try {
+      // Back to the natural value: that is clearing the override.
+      final natural = amount == existing.amount &&
+          _direction == existing.direction;
+      Transaction saved = existing;
+      final r = await saveWithConflictCheck(
+        context,
+        save: (force) async {
+          if (natural) {
+            await notifier.clearOverrides(existing.id, date: date);
+          } else {
+            saved = await notifier.setOverride(
+              existing.id,
+              date,
+              direction: _direction,
+              amount: amount,
+              version: force ? null : existing.version,
+            );
+          }
+        },
+        reload: () => ref.invalidate(transactionsProvider(widget.accountId)),
+      );
+      if (r == SaveResult.cancelled) return;
+      if (r == SaveResult.reloaded) {
+        if (mounted) _finish(null);
+        return;
+      }
+      if (mounted) {
+        _finish(
+          _outcome(
+            natural ? EditorAction.overrideCleared : EditorAction.overridden,
+            saved,
+            date,
+          ),
+        );
+      }
+    } catch (error) {
+      _toast(error);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveFromNowOn() async {
+    if (_saving || widget.readOnly || !_offerSaveOptions) return;
+    if (_forwardBlock != null) return;
+    // The first occurrence onwards is the whole series.
+    if (_focusIsFirst) return _save();
+    final draft = _validatedDraft();
+    if (draft == null) return;
+    final date = _day(widget.focusDate!);
+    final notifier = ref.read(transactionsProvider(widget.accountId).notifier);
+    setState(() => _saving = true);
+    try {
+      ({Transaction original, Transaction? created})? result;
+      final r = await saveWithConflictCheck(
+        context,
+        save: (force) async =>
+            result = await notifier.split(draft, date, force: force),
+        reload: () => ref.invalidate(transactionsProvider(widget.accountId)),
+      );
+      if (r == SaveResult.cancelled) return;
+      if (r == SaveResult.reloaded) {
+        if (mounted) _finish(null);
+        return;
+      }
+      if (mounted) {
+        _finish(
+          _outcome(
+            EditorAction.split,
+            result!.created ?? result!.original,
+            date,
+            result!.original,
+          ),
+        );
+      }
+    } catch (error) {
+      _toast(error);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _clearOverride(DateTime date) async {
+    final existing = widget.existing!;
+    if (_dirty) {
+      final ok = await showConfirmDialog(
+        context,
+        title: 'Reset this date?',
+        message:
+            'Your other edits are not saved and will be discarded. '
+            '${formatOccurrenceDate(date)} goes back to the series value '
+            '${_signed(existing.signedAmount)}.',
+        confirmLabel: 'Reset',
+      );
+      if (!ok || !mounted) return;
+    }
+    await _runClear(EditorAction.overrideCleared, date: date);
+  }
+
+  Future<void> _clearAllOverrides() async {
+    final existing = widget.existing!;
+    final n = existing.overrides.length;
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Clear $n once-off override${n == 1 ? '' : 's'}?',
+      message:
+          'Every date goes back to the series value '
+          '${_signed(existing.signedAmount)}.'
+          '${_dirty ? ' Your other edits are not saved and will be discarded.' : ''}',
+      confirmLabel: 'Clear all',
+    );
+    if (!ok || !mounted) return;
+    await _runClear(EditorAction.overridesCleared);
+  }
+
+  Future<void> _runClear(EditorAction action, {DateTime? date}) async {
+    final existing = widget.existing!;
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(transactionsProvider(widget.accountId).notifier)
+          .clearOverrides(existing.id, date: date);
+      if (mounted) _finish(_outcome(action, existing, date));
+    } catch (error) {
+      _toast(error);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Widget _footer(ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 16, 12),
       child: LayoutBuilder(
         builder: (context, c) {
           // Narrow panels: icon-only delete, no shortcut hint.
-          final roomy = c.maxWidth >= 430;
+          // (the save-options arrow needs a little more room).
+          final roomy = c.maxWidth >= (_offerSaveOptions ? 490 : 430);
           return Row(
             children: [
               if (!_isNew && !widget.readOnly)
@@ -1176,12 +1634,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               ),
               if (!widget.readOnly) ...[
               const SizedBox(width: 8),
-              FilledButton.icon(
-                key: const ValueKey('editor-save'),
-                onPressed: _saving ? null : _save,
-                icon: const Icon(Icons.check_rounded, size: 18),
-                label: Text(_saving ? 'Saving…' : (_isNew ? 'Create' : 'Save')),
-              ),
+              _saveButton(),
               ],
             ],
           );
@@ -1290,26 +1743,26 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     });
   }
 
-  Future<void> _save() async {
-    if (_saving || widget.readOnly) return;
+  /// Validates the form; returns what to save (null: invalid, errors shown).
+  Transaction? _validatedDraft() {
     setState(() => _endDateError = null);
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) return null;
     if (_recurrenceMode == RecurrenceMode.every &&
         _endMode == EndMode.untilDate &&
         _endDate == null) {
       setState(() => _endDateError = 'Pick an end date');
-      return;
+      return null;
     }
     if (_endDate != null && _endDate!.isBefore(_startDate)) {
       setState(() => _endDateError = 'Must be on or after the start date');
-      return;
+      return null;
     }
     if (_transferMode && _transfer == null) {
       setState(() => _transferError = 'Pick the other account');
-      return;
+      return null;
     }
 
-    final draft = _draft(amount: parseMoneyInput(_amount.text)!).copyWith(
+    return _draft(amount: parseMoneyInput(_amount.text)!).copyWith(
       id: widget.existing?.id ?? const Uuid().v4(),
       accountId: widget.accountId,
       name: _name.text.trim(),
@@ -1318,6 +1771,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       enabled: _enabled,
       version: widget.existing?.version,
     );
+  }
+
+  Future<void> _save() async {
+    if (_saving || widget.readOnly) return;
+    final draft = _validatedDraft();
+    if (draft == null) return;
 
     setState(() => _saving = true);
     try {

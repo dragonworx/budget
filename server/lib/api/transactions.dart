@@ -86,6 +86,9 @@ Router transactionsRouter(Session conn) {
           }
           updated = (await transactions.get(id))!;
         }
+        // A schedule change can orphan overrides: drop those that no
+        // longer sit on an occurrence.
+        await transactions.pruneOverrides(id);
         await transactions.syncPeer(updated);
         return (await transactions.get(id))!;
       });
@@ -122,6 +125,88 @@ Router transactionsRouter(Session conn) {
         'transactionId': id,
         'date': formatDate(d),
         'skipped': skipped,
+      });
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  // Once-off override of one occurrence's amount / direction.
+  router.put('/<id>/overrides/<date>',
+      (Request request, String id, String date) async {
+    try {
+      if (await transactions.get(id) == null) {
+        return jsonError(404, 'transaction not found');
+      }
+      final body = await readJsonObject(request);
+      final amount = parseDecimal(body['amount']);
+      final direction = Direction.parse(requireString(body, 'direction'));
+      final d = parseDate(date);
+      final t = await txOf(conn).runTx((tx) => TransactionRepo(tx)
+          .setOverride(id, d, direction: direction, amount: amount));
+      return jsonOk(t.toJson());
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  // Clear one override (restores the natural series value).
+  router.delete('/<id>/overrides/<date>',
+      (Request request, String id, String date) async {
+    try {
+      if (await transactions.get(id) == null) {
+        return jsonError(404, 'transaction not found');
+      }
+      final d = parseDate(date);
+      final t = await txOf(conn).runTx((tx) async {
+        final repo = TransactionRepo(tx);
+        await repo.clearOverrides(id, date: d);
+        return (await repo.get(id))!;
+      });
+      return jsonOk(t.toJson());
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  // Clear every override of the series.
+  router.delete('/<id>/overrides', (Request request, String id) async {
+    if (await transactions.get(id) == null) {
+      return jsonError(404, 'transaction not found');
+    }
+    final (t, removed) = await txOf(conn).runTx((tx) async {
+      final repo = TransactionRepo(tx);
+      final n = await repo.clearOverrides(id);
+      return ((await repo.get(id))!, n);
+    });
+    return jsonOk({...t.toJson(), 'cleared': removed});
+  });
+
+  // "From now on": split the series at an occurrence, atomically.
+  router.post('/<id>/split', (Request request, String id) async {
+    try {
+      if (await transactions.get(id) == null) {
+        return jsonError(404, 'transaction not found');
+      }
+      final body = await readJsonObject(request);
+      final date = parseDate(requireString(body, 'date'));
+      final unit = body['unit'] == null
+          ? null
+          : RecurrenceUnit.parse(body['unit'].toString());
+      final r = await txOf(conn).runTx((tx) => TransactionRepo(tx).splitAt(
+            id,
+            date,
+            name: requireString(body, 'name'),
+            direction: Direction.parse(requireString(body, 'direction')),
+            amount: parseDecimal(body['amount']),
+            interval: optionalInt(body, 'interval'),
+            unit: unit,
+            enabled: optionalBool(body, 'enabled'),
+          ));
+      return jsonOk({
+        ...r.original.toJson(),
+        'original': r.original.toJson(),
+        'created': r.created?.toJson(),
       });
     } on FormatException catch (e) {
       return jsonError(400, e.message);

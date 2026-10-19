@@ -818,7 +818,8 @@ class _ReminderList extends StatelessWidget {
       if (showAccount && acc != null) acc.name,
       if (tx.transfer != null)
         '${i.isGain ? 'from' : 'to'} ${tx.transfer!.peerReadable ? (tx.transfer!.peerAccountName ?? 'another account') : 'another account'}',
-      if (tx.recurrenceMode == RecurrenceMode.every) 'Recurring',
+      if (tx.recurrenceMode == RecurrenceMode.every)
+        i.override != null ? 'Recurring · once-off amount' : 'Recurring',
     ].join(' · ');
     return InkWell(
       key: ValueKey('reminders-row-${tx.id}-${i.date.toIso8601String()}'),

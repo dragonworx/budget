@@ -164,6 +164,30 @@ class AccountRepo {
         parameters: {'t': row[0], 'date': row[1], 'd': days},
       );
     }
+    // Once-off overrides move with their occurrences, the same way.
+    final overrides = await _conn.execute(
+      Sql.named('''
+        DELETE FROM occurrence_overrides
+        WHERE transaction_id IN (SELECT id FROM transactions WHERE $scope)
+        RETURNING transaction_id::text, date, amount::text, direction
+      '''),
+      parameters: {'id': accountId},
+    );
+    for (final row in overrides) {
+      await _conn.execute(
+        Sql.named('''
+          INSERT INTO occurrence_overrides (transaction_id, date, amount, direction)
+          VALUES (@t::uuid, @date::date + @d::int, @amount::numeric, @dir)
+        '''),
+        parameters: {
+          't': row[0],
+          'date': row[1],
+          'd': days,
+          'amount': row[2],
+          'dir': row[3],
+        },
+      );
+    }
     return moved.where((r) => r[0] == true).length;
   }
 
