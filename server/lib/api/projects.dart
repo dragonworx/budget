@@ -85,10 +85,9 @@ Router buildProjectsApi(Session conn) {
         seedDate: seedDate,
         lossThreshold: lossThreshold,
         displayOrder: displayOrder,
-        // No explicit choice: pick from the seed balance (no transactions
-        // exist yet), like the dialog's preselected value.
-        currencyScale: parseCurrencyScale(body) ??
-            autoCurrencyScale(seedBalance.toDouble()),
+        // No explicit choice: Hundreds, like the dialog's preselected
+        // value (existing accounts keep theirs).
+        currencyScale: parseCurrencyScale(body) ?? Account.defaultCurrencyScale,
       );
       return jsonOk(account.toJson(), status: 201);
     } on FormatException catch (e) {

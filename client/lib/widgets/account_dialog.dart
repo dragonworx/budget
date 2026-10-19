@@ -70,10 +70,9 @@ class _AccountDialogState extends State<AccountDialog> {
   late final TextEditingController _seedBalance;
   late final TextEditingController _lossThreshold;
   late DateTime _seedDate;
-  late int _currencyScale;
 
-  /// New accounts follow the seed balance until a scale is picked.
-  late bool _scaleAuto;
+  /// New accounts start at Hundreds ([Account.defaultCurrencyScale]).
+  late int _currencyScale;
   String? _nameError;
   String? _currencyError;
   String? _balanceError;
@@ -102,8 +101,7 @@ class _AccountDialogState extends State<AccountDialog> {
       text: existing?.lossThreshold.toString() ?? '0',
     );
     _seedDate = existing?.seedDate ?? DateTime.now();
-    _scaleAuto = existing == null;
-    _currencyScale = existing?.currencyScale ?? _autoScale();
+    _currencyScale = existing?.currencyScale ?? Account.defaultCurrencyScale;
   }
 
   @override
@@ -188,16 +186,12 @@ class _AccountDialogState extends State<AccountDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              // Rebuilt with the auto value while it tracks the seed.
               key: ValueKey('account-currency-scale-$_currencyScale'),
               initialValue: _currencyScale,
               isExpanded: true,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Currency Scale',
-                helperText: _scaleAuto
-                    ? '✦ Picked from the seed balance; sets the default '
-                          'vertical view'
-                    : 'Sets the timeline\'s default vertical view',
+                helperText: 'Sets the timeline\'s default vertical view',
               ),
               items: [
                 for (final e in Account.currencyScales.entries)
@@ -209,10 +203,7 @@ class _AccountDialogState extends State<AccountDialog> {
               ],
               onChanged: (v) {
                 if (v != null) {
-                  setState(() {
-                    _currencyScale = v;
-                    _scaleAuto = false;
-                  });
+                  setState(() => _currencyScale = v);
                 }
               },
             ),
@@ -312,12 +303,7 @@ class _AccountDialogState extends State<AccountDialog> {
         _lossError == null;
   }
 
-  int _autoScale() => Account.autoCurrencyScale(
-    parseMoneyInput(_seedBalance.text)?.toDouble() ?? 0,
-  );
-
   void _revalidate(String _) {
-    if (_scaleAuto) _currencyScale = _autoScale();
     if (_submitted) {
       _validate();
     } else {

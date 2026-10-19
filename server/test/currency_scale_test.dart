@@ -87,8 +87,9 @@ void main() {
     }
   });
 
-  test('backfill picks scale from projected balances; create auto-picks',
-      () async {
+  test(
+      'backfill picks scale from projected balances; create defaults to '
+      'Hundreds', () async {
     final c = conn;
     if (c == null) {
       markTestSkipped('no test database');
@@ -138,10 +139,13 @@ void main() {
         return jsonDecode(await res.readAsString()) as Map<String, dynamic>;
       }
 
+      // No explicit scale: Hundreds, whatever the seed balance.
+      expect(Account.defaultCurrencyScale, 100);
       expect(
           (await create(
               {'name': 'C', 'seedBalance': '25000'}))['currencyScale'],
-          10000);
+          100);
+      expect((await create({'name': 'Z'}))['currencyScale'], 100);
       expect(
           (await create({
             'name': 'D',
