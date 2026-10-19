@@ -62,6 +62,12 @@ void main() {
       (seen[name] ??= []).add(labelled);
     };
     addTearDown(() => debugVertexLabel = null);
+    // While sliding, every label stays flush left with its dot.
+    var misaligned = 0;
+    debugVertexLabelRect = (name, c, r, rect) {
+      if ((rect.left - (c.dx - r)).abs() > 0.5) misaligned++;
+    };
+    addTearDown(() => debugVertexLabelRect = null);
     await tester.pumpWidget(build());
     await tester.pump(const Duration(seconds: 1));
     seen.clear();
@@ -71,6 +77,7 @@ void main() {
       await tester.pumpWidget(build());
     }
     expect(seen.length, greaterThan(10));
+    expect(misaligned, 0, reason: 'labels not flush left while panning');
     final flicker = <String>[
       for (final MapEntry(:key, :value) in seen.entries)
         if (value.toSet().length > 1) key,

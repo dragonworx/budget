@@ -331,26 +331,49 @@ List<double> niceGridlines(double min, double max, {int target = 4}) {
   return out;
 }
 
-/// Where a transaction name sits relative to its occurrence dot.
+/// Where a transaction label sits relative to its occurrence dot: directly
+/// above or directly below it, its left edge flush with the dot's left edge.
 ///
-/// Tried in this order. Above the dot keeps the balance line visible;
-/// the other sides are used when that spot is off the plot or taken.
-enum VertexLabelSide {
-  aboveRight,
-  besideRight,
-  belowRight,
-  aboveLeft,
-  besideLeft,
+/// Tried in this order: above keeps the balance line under the dot visible;
+/// below is used when above runs off the plot or collides.
+enum VertexLabelSide { above, below }
+
+/// Vertical gap between a dot's edge and its label box.
+const double vertexLabelGap = 3;
+
+/// Box for a label of [width] by [height] on [side] of the dot at [center]:
+/// left edge at the dot's left edge (`center.dx - radius`).
+Rect vertexLabelRect({
+  required Offset center,
+  required double radius,
+  required VertexLabelSide side,
+  required double width,
+  required double height,
+}) {
+  final left = center.dx - radius;
+  return switch (side) {
+    VertexLabelSide.above => Rect.fromLTWH(
+      left,
+      center.dy - radius - vertexLabelGap - height,
+      width,
+      height,
+    ),
+    VertexLabelSide.below => Rect.fromLTWH(
+      left,
+      center.dy + radius + vertexLabelGap,
+      width,
+      height,
+    ),
+  };
 }
 
-/// Horizontal room, in pixels, for the text of a vertex label.
+/// Horizontal room, in pixels, for the text of a label on [side] of the dot
+/// at [center] (flush left with the dot, see [vertexLabelRect]).
 ///
-/// [anchors] must be sorted by x. The budget stops before the next anchor
-/// that shares this label's vertical band and still has [minText] pixels
-/// free, so neighboring names stay apart. Anchors closer than that are one
-/// cluster: a single name may span them instead of every name being dropped.
-/// [pad] is the background inset around the text. Returns 0 when nothing
-/// readable fits.
+/// The label runs right from the dot's left edge until the first thing in
+/// its row: a label already [occupied], another dot in [anchors], or the
+/// [plot]'s right edge. [pad] is the background inset around the text.
+/// Returns 0 when nothing readable ([minText]) fits.
 double vertexLabelTextBudget({
   required Rect plot,
   required Offset center,
@@ -364,117 +387,32 @@ double vertexLabelTextBudget({
   required List<Offset> anchors,
 }) {
   if (maxText < minText || labelHeight <= 0 || pad < 0) return 0;
-  final toRight =
-      side == VertexLabelSide.aboveRight ||
-      side == VertexLabelSide.besideRight ||
-      side == VertexLabelSide.belowRight;
-  final gap = radius + 3;
-  final band = _vertexLabelBand(side, center, radius, labelHeight, plot);
-  final bandProbe = band.inflate(2);
-
-  if (toRight) {
-    final left = center.dx + gap;
-    var limit = plot.right - 1;
-    for (final other in occupied) {
-      if (other.left <= left + 1 || !other.overlaps(bandProbe)) continue;
-      if (other.left - 3 < limit) limit = other.left - 3;
-    }
-    final reach = left + maxText + pad;
-    final start = _firstAnchorAtOrAfter(anchors, center.dx + radius + 0.01);
-    for (var i = start; i < anchors.length; i++) {
-      final point = anchors[i];
-      if (point.dx > reach + radius + 8 && point.dx >= limit) break;
-      if (!bandProbe.overlaps(
-        _vertexLabelBand(side, point, radius, labelHeight, plot),
-      )) {
-        continue;
-      }
-      final room = point.dx - radius - 4 - left - pad;
-      if (room >= minText) {
-        final stop = point.dx - radius - 4;
-        if (stop < limit) limit = stop;
-        break;
-      }
-    }
-    final budget = limit - left - pad;
-    if (budget < minText) return 0;
-    return math.min(maxText, budget);
-  }
-
-  final right = center.dx - gap;
-  var limit = plot.left + 1;
+  final box = vertexLabelRect(
+    center: center,
+    radius: radius,
+    side: side,
+    width: 0,
+    height: labelHeight,
+  );
+  final left = box.left;
+  if (box.top < plot.top + 1 || box.bottom > plot.bottom - 1) return 0;
+  final row = Rect.fromLTRB(left, box.top, plot.right, box.bottom).inflate(2);
+  var limit = plot.right - 1;
   for (final other in occupied) {
-    if (other.right >= right - 1 || !other.overlaps(bandProbe)) continue;
-    if (other.right + 3 > limit) limit = other.right + 3;
+    if (!other.overlaps(row)) continue;
+    // Something already sits where the label starts.
+    if (other.left <= left + 1) return 0;
+    if (other.left - 3 < limit) limit = other.left - 3;
   }
-  final end = _firstAnchorAtOrAfter(anchors, center.dx - radius);
-  final reach = right - maxText - pad;
-  for (var i = end - 1; i >= 0; i--) {
-    final point = anchors[i];
-    if (point.dx < reach - radius - 8 && point.dx <= limit) break;
-    if (!bandProbe.overlaps(
-      _vertexLabelBand(side, point, radius, labelHeight, plot),
-    )) {
-      continue;
-    }
-    final room = right - (point.dx + radius + 4) - pad;
-    if (room >= minText) {
-      final stop = point.dx + radius + 4;
-      if (stop > limit) limit = stop;
-      break;
-    }
+  for (final point in anchors) {
+    if (point == center || !row.contains(point)) continue;
+    // Keep the padded box (see [vertexLabelFits]) clear of other dots.
+    final stop = point.dx - 3;
+    if (stop < limit) limit = stop;
   }
-  final budget = right - limit - pad;
+  final budget = limit - left - pad;
   if (budget < minText) return 0;
   return math.min(maxText, budget);
-}
-
-/// Box for a label of [width] by [height] on [side] of [center].
-Rect vertexLabelRect({
-  required Offset center,
-  required double radius,
-  required VertexLabelSide side,
-  required double width,
-  required double height,
-}) {
-  final gap = radius + 3;
-  switch (side) {
-    case VertexLabelSide.aboveRight:
-      return Rect.fromLTWH(
-        center.dx + gap,
-        center.dy - gap - height,
-        width,
-        height,
-      );
-    case VertexLabelSide.besideRight:
-      return Rect.fromLTWH(
-        center.dx + gap,
-        center.dy - height / 2,
-        width,
-        height,
-      );
-    case VertexLabelSide.belowRight:
-      return Rect.fromLTWH(
-        center.dx + gap,
-        center.dy + radius + 2,
-        width,
-        height,
-      );
-    case VertexLabelSide.aboveLeft:
-      return Rect.fromLTWH(
-        center.dx - gap - width,
-        center.dy - gap - height,
-        width,
-        height,
-      );
-    case VertexLabelSide.besideLeft:
-      return Rect.fromLTWH(
-        center.dx - gap - width,
-        center.dy - height / 2,
-        width,
-        height,
-      );
-  }
 }
 
 /// Whether [rect] can be drawn: inside [plot], clear of [occupied] labels
@@ -505,90 +443,6 @@ bool vertexLabelFits({
   final near = Rect.fromCircle(center: anchor, radius: radius + attachReach);
   if (!rect.inflate(2).overlaps(near)) return false;
   return true;
-}
-
-/// Slides [rect] just past an occupied box that covers its start, keeping it
-/// on the same row as the vertex. Returns null when the slide would leave
-/// the vertex or shrink the name below [minWidth].
-Rect? nudgeVertexLabel({
-  required Rect rect,
-  required Rect plot,
-  required Offset anchor,
-  required double radius,
-  required List<Rect> occupied,
-  required List<Offset> anchors,
-  double maxSlide = 96,
-  double minWidth = 28,
-}) {
-  var left = rect.left;
-  var width = rect.width;
-  final top = rect.top;
-  final height = rect.height;
-  for (var pass = 0; pass < occupied.length + 1; pass++) {
-    final current = Rect.fromLTWH(left, top, width, height);
-    Rect? blocker;
-    for (final other in occupied) {
-      if (current.inflate(2).overlaps(other)) {
-        blocker = other;
-        break;
-      }
-    }
-    if (blocker == null) {
-      if (left - anchor.dx > maxSlide) return null;
-      if (anchor.dx - (left + width) > maxSlide) return null;
-      return current;
-    }
-    final nextLeft = blocker.right + 3;
-    if (nextLeft - anchor.dx > maxSlide) return null;
-    var nextWidth = width;
-    final plotRight = plot.right - 1;
-    if (nextLeft + nextWidth > plotRight) {
-      nextWidth = plotRight - nextLeft;
-    }
-    for (final point in anchors) {
-      if (point.dx <= anchor.dx + radius) continue;
-      if ((point.dy - (top + height / 2)).abs() > height + 4) continue;
-      final stop = point.dx - radius - 4;
-      if (nextLeft + nextWidth > stop) nextWidth = stop - nextLeft;
-    }
-    if (nextWidth < minWidth || nextLeft < plot.left + 1) return null;
-    if (top < plot.top + 1 || top + height > plot.bottom - 1) return null;
-    left = nextLeft;
-    width = nextWidth;
-  }
-  return null;
-}
-
-Rect _vertexLabelBand(
-  VertexLabelSide side,
-  Offset center,
-  double radius,
-  double labelHeight,
-  Rect plot,
-) {
-  final gap = radius + 3;
-  final top = switch (side) {
-    VertexLabelSide.aboveRight ||
-    VertexLabelSide.aboveLeft => center.dy - gap - labelHeight,
-    VertexLabelSide.belowRight => center.dy + radius + 2,
-    VertexLabelSide.besideRight ||
-    VertexLabelSide.besideLeft => center.dy - labelHeight / 2,
-  };
-  return Rect.fromLTWH(plot.left, top, plot.width, labelHeight);
-}
-
-int _firstAnchorAtOrAfter(List<Offset> anchors, double x) {
-  var lo = 0;
-  var hi = anchors.length;
-  while (lo < hi) {
-    final mid = (lo + hi) >> 1;
-    if (anchors[mid].dx < x) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
-  }
-  return lo;
 }
 
 /// Zoom factor per In/Out button press or +/− key (smooth, small steps).

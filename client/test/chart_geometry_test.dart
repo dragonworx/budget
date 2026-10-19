@@ -120,113 +120,113 @@ void main() {
     expect(days.map((segment) => segment.colorIndex), [1, 2, 3]);
   });
 
-  test('vertex labels keep a readable gap before the next name', () {
-    final budget = vertexLabelTextBudget(
-      plot: const Rect.fromLTWH(0, 0, 400, 200),
-      center: const Offset(40, 100),
-      radius: 4,
-      side: VertexLabelSide.aboveRight,
-      labelHeight: 16,
-      maxText: 160,
-      minText: 18,
-      pad: 10,
-      occupied: const [],
-      anchors: const [Offset(40, 100), Offset(180, 100)],
-    );
+  const labelPlot = Rect.fromLTWH(0, 0, 400, 200);
+  double budget(
+    Offset center,
+    VertexLabelSide side, {
+    Rect plot = labelPlot,
+    List<Rect> occupied = const [],
+    List<Offset> anchors = const [],
+    double radius = 4,
+  }) => vertexLabelTextBudget(
+    plot: plot,
+    center: center,
+    radius: radius,
+    side: side,
+    labelHeight: 16,
+    maxText: 160,
+    minText: 18,
+    pad: 10,
+    occupied: occupied,
+    anchors: [center, ...anchors],
+  );
 
-    expect(budget, 115);
+  test('labels sit flush left with the dot, directly above or below', () {
+    const c = Offset(40, 100);
+    final above = vertexLabelRect(
+      center: c,
+      radius: 4,
+      side: VertexLabelSide.above,
+      width: 60,
+      height: 16,
+    );
+    final below = vertexLabelRect(
+      center: c,
+      radius: 4,
+      side: VertexLabelSide.below,
+      width: 60,
+      height: 16,
+    );
+    expect(above.left, 36);
+    expect(below.left, 36);
+    expect(above.bottom, 100 - 4 - vertexLabelGap);
+    expect(below.top, 100 + 4 + vertexLabelGap);
+    expect(VertexLabelSide.values, [
+      VertexLabelSide.above,
+      VertexLabelSide.below,
+    ]);
   });
 
-  test('vertices too close to label separately share one name width', () {
-    final budget = vertexLabelTextBudget(
-      plot: const Rect.fromLTWH(0, 0, 400, 200),
-      center: const Offset(40, 100),
-      radius: 4,
-      side: VertexLabelSide.aboveRight,
-      labelHeight: 16,
-      maxText: 80,
-      minText: 18,
-      pad: 10,
-      occupied: const [],
-      anchors: const [Offset(40, 100), Offset(52, 100)],
-    );
-
-    expect(budget, 80);
-  });
-
-  test('labels on different steps do not shorten each other', () {
-    final budget = vertexLabelTextBudget(
-      plot: const Rect.fromLTWH(0, 0, 400, 200),
-      center: const Offset(40, 100),
-      radius: 4,
-      side: VertexLabelSide.aboveRight,
-      labelHeight: 16,
-      maxText: 160,
-      minText: 18,
-      pad: 10,
-      occupied: const [],
-      anchors: const [Offset(40, 100), Offset(80, 40)],
-    );
-
-    expect(budget, 160);
-  });
-
-  test('narrow plots cap the transaction name width', () {
-    final budget = vertexLabelTextBudget(
-      plot: const Rect.fromLTWH(0, 0, 80, 120),
-      center: const Offset(10, 60),
-      radius: 3,
-      side: VertexLabelSide.aboveRight,
-      labelHeight: 14,
-      maxText: 160,
-      minText: 18,
-      pad: 10,
-      occupied: const [],
-      anchors: const [Offset(10, 60)],
-    );
-
-    expect(budget, 53);
-  });
-
-  test('a label stops before one already placed on its band', () {
-    final budget = vertexLabelTextBudget(
-      plot: const Rect.fromLTWH(0, 0, 400, 200),
-      center: const Offset(40, 100),
-      radius: 4,
-      side: VertexLabelSide.aboveRight,
-      labelHeight: 16,
-      maxText: 160,
-      minText: 18,
-      pad: 10,
-      occupied: const [Rect.fromLTWH(100, 70, 40, 20)],
-      anchors: const [Offset(40, 100)],
-    );
-
-    expect(budget, 40);
-  });
-
-  test('a label blocked by a marker slides along the vertex row', () {
-    final nudged = nudgeVertexLabel(
-      rect: const Rect.fromLTWH(40, 20, 50, 16),
-      plot: const Rect.fromLTWH(0, 0, 400, 200),
-      anchor: const Offset(30, 40),
-      radius: 4,
-      occupied: const [Rect.fromLTWH(20, 8, 40, 20)],
-      anchors: const [Offset(30, 40)],
-    );
-
-    expect(nudged, const Rect.fromLTWH(63, 20, 50, 16));
+  test('a label runs right until the next dot in its row', () {
+    // Row above the dot spans y 77..97; the dot at (120, 90) is in it.
     expect(
-      vertexLabelFits(
-        rect: nudged!,
-        plot: const Rect.fromLTWH(0, 0, 400, 200),
-        anchor: const Offset(30, 40),
-        radius: 4,
-        occupied: const [Rect.fromLTWH(20, 8, 40, 20)],
-        anchors: const [Offset(30, 40)],
-        attachReach: 96,
+      budget(
+        const Offset(40, 100),
+        VertexLabelSide.above,
+        anchors: const [Offset(120, 90)],
       ),
-      isTrue,
+      117 - 36 - 10,
+    );
+  });
+
+  test('dots outside the label row do not shorten it', () {
+    expect(
+      budget(
+        const Offset(40, 100),
+        VertexLabelSide.above,
+        anchors: const [Offset(120, 100), Offset(80, 40)],
+      ),
+      160,
+    );
+  });
+
+  test('a label stops before one already placed in its row', () {
+    expect(
+      budget(
+        const Offset(40, 100),
+        VertexLabelSide.above,
+        occupied: const [Rect.fromLTWH(100, 70, 40, 20)],
+      ),
+      97 - 36 - 10,
+    );
+    // A label already covering the start leaves no room on that side.
+    expect(
+      budget(
+        const Offset(40, 100),
+        VertexLabelSide.above,
+        occupied: const [Rect.fromLTWH(20, 80, 40, 10)],
+      ),
+      0,
+    );
+  });
+
+  test('near the top a label has room only below; near the bottom only '
+      'above', () {
+    expect(budget(const Offset(40, 12), VertexLabelSide.above), 0);
+    expect(budget(const Offset(40, 12), VertexLabelSide.below), 160);
+    expect(budget(const Offset(40, 190), VertexLabelSide.below), 0);
+    expect(budget(const Offset(40, 190), VertexLabelSide.above), 160);
+  });
+
+  test('narrow plots cap the label at the right edge', () {
+    expect(
+      budget(
+        const Offset(10, 60),
+        VertexLabelSide.above,
+        plot: const Rect.fromLTWH(0, 0, 80, 120),
+        radius: 3,
+      ),
+      79 - 7 - 10,
     );
   });
 
@@ -234,58 +234,25 @@ void main() {
     final rect = vertexLabelRect(
       center: const Offset(40, 100),
       radius: 4,
-      side: VertexLabelSide.besideRight,
+      side: VertexLabelSide.above,
       width: 80,
       height: 16,
     );
-
     expect(
       vertexLabelFits(
         rect: rect,
-        plot: const Rect.fromLTWH(0, 0, 400, 200),
+        plot: labelPlot,
         anchor: const Offset(40, 100),
         radius: 4,
         occupied: const [],
-        anchors: const [Offset(40, 100), Offset(70, 100)],
+        anchors: const [Offset(40, 100), Offset(70, 88)],
       ),
       isFalse,
     );
-  });
-
-  test('vertex labels stay inside the plot and next to their dot', () {
-    const plot = Rect.fromLTWH(0, 0, 400, 200);
-    final outside = vertexLabelRect(
-      center: const Offset(390, 10),
-      radius: 4,
-      side: VertexLabelSide.aboveRight,
-      width: 40,
-      height: 16,
-    );
     expect(
       vertexLabelFits(
-        rect: outside,
-        plot: plot,
-        anchor: const Offset(390, 10),
-        radius: 4,
-        occupied: const [],
-        anchors: const [Offset(390, 10)],
-      ),
-      isFalse,
-    );
-
-    final beside = vertexLabelRect(
-      center: const Offset(40, 100),
-      radius: 4,
-      side: VertexLabelSide.aboveRight,
-      width: 60,
-      height: 16,
-    );
-    expect(beside.left, greaterThan(40));
-    expect(beside.bottom, lessThan(100));
-    expect(
-      vertexLabelFits(
-        rect: beside,
-        plot: plot,
+        rect: rect,
+        plot: labelPlot,
         anchor: const Offset(40, 100),
         radius: 4,
         occupied: const [],

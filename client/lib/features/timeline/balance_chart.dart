@@ -63,6 +63,12 @@ typedef TrimOnDay = void Function(
 @visibleForTesting
 void Function(String name, double x, bool labelled)? debugVertexLabel;
 
+/// Test hook: after each paint, every label drawn for an in-view vertex as
+/// (name, dot centre, dot radius, label box).
+@visibleForTesting
+void Function(String name, Offset center, double radius, Rect rect)?
+debugVertexLabelRect;
+
 /// Test hook: every date-axis label as painted, with its row name
 /// ("Year", "Month", "Week", "Day") and the rect its text occupies.
 @visibleForTesting
@@ -4356,8 +4362,10 @@ class _BalanceChartPainter extends CustomPainter {
     );
   }
 
-  /// Transaction names beside each occurrence dot. Width follows the free gap and
-  /// the zoom, and a name is omitted when another readable label owns the spot.
+  /// Transaction labels for each occurrence dot, flush left with the dot and
+  /// directly above it (or below, when above runs off the plot or collides).
+  /// Width follows the free room and the zoom, and a label is omitted when
+  /// neither spot is free.
   void _paintVertexLabels(
     Canvas canvas,
     ChartLayout layout,
@@ -4554,9 +4562,12 @@ class _BalanceChartPainter extends CustomPainter {
             anchors: anchors,
           );
           if (budget <= 0 || budget - pillW < amount.width) continue;
-          var name = withName ? layoutName(budget - pillW) : null;
+          final name = withName ? layoutName(budget - pillW) : null;
           if (withName && name == null) continue;
-          var rect = vertexLabelRect(
+          // Flush left with the dot, directly above or below it. No sideways
+          // nudging: a label that doesn't fit here tries the other side, then
+          // the amount alone, else it is omitted.
+          final rect = vertexLabelRect(
             center: vertex.center,
             radius: vertex.radius,
             side: side,
@@ -4571,41 +4582,8 @@ class _BalanceChartPainter extends CustomPainter {
             occupied: placed,
             anchors: anchors,
           )) {
-            final nudged = nudgeVertexLabel(
-              rect: rect,
-              plot: plot,
-              anchor: vertex.center,
-              radius: vertex.radius,
-              occupied: placed,
-              anchors: anchors,
-            );
-            if (nudged == null) {
-              name?.dispose();
-              continue;
-            }
             name?.dispose();
-            name = withName
-                ? layoutName(math.max(amount.width, nudged.width - pad - pillW))
-                : null;
-            if (withName && name == null) continue;
-            rect = Rect.fromLTWH(
-              nudged.left,
-              nudged.top,
-              widthFor(name),
-              heightFor(name),
-            );
-            if (!vertexLabelFits(
-              rect: rect,
-              plot: plot,
-              anchor: vertex.center,
-              radius: vertex.radius,
-              occupied: placed,
-              anchors: anchors,
-              attachReach: 96,
-            )) {
-              name?.dispose();
-              continue;
-            }
+            continue;
           }
           _drawVertexLabel(canvas, amount, name, rect, vertex, count);
           name?.dispose();
@@ -4624,6 +4602,14 @@ class _BalanceChartPainter extends CustomPainter {
     labelMemory
       ..clear()
       ..addAll(shown);
+    final rectHook = debugVertexLabelRect;
+    if (rectHook != null) {
+      for (final v in vertices) {
+        final rel = shown[v.key];
+        if (rel == null || !view.contains(v.center)) continue;
+        rectHook(v.name, v.center, v.radius, rel.shift(v.center));
+      }
+    }
     final hook = debugVertexLabel;
     if (hook != null) {
       for (final v in vertices) {
@@ -4690,8 +4676,7 @@ class _BalanceChartPainter extends CustomPainter {
         leader.$2,
         Paint()
           ..color = color.withValues(alpha: 0.7)
-          ..strokeWidth =
-              2.5 // matches the label's accent bar width
+          ..strokeWidth = 2.5
           ..strokeCap = StrokeCap.round
           ..isAntiAlias = true,
       );
@@ -4708,19 +4693,14 @@ class _BalanceChartPainter extends CustomPainter {
         ..strokeWidth = 1
         ..color = AppTheme.border,
     );
+    // No accent bar: the box's left edge is the dot's left edge, so the
+    // text inset is symmetric (half the horizontal pad each side).
     final accent = vertex.skipped
         ? AppTheme.textFaint
         : vertex.debit
         ? AppTheme.debitColor
         : AppTheme.creditColor;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(rect.left + 1.5, rect.top + 2, 2.5, rect.height - 4),
-        const Radius.circular(1),
-      ),
-      Paint()..color = accent,
-    );
-    var textLeft = rect.left + 6;
+    var textLeft = rect.left + 5;
     if (count != null) {
       final w = countPillWidth(count.width);
       final h = count.height + 2;
