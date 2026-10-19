@@ -27,7 +27,7 @@
 			}
 			lb_policy round_robin
 			lb_retries 2
-			health_uri /health
+			health_uri /ready
 			health_interval 10s
 			# Stream SSE (/api/events) immediately.
 			flush_interval -1
