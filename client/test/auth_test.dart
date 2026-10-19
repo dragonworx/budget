@@ -5,6 +5,7 @@ import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/auth_repository.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
+import 'package:budget_client/features/auth/google_button.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:flutter/material.dart';
@@ -147,6 +148,58 @@ void main() {
     await c.read(authProvider.notifier).devLogin();
     await tester.pump();
     expect(_path(c), '/projects/p1');
+  });
+
+  testWidgets('a failed full-page sign-in shows its error, not a blank page', (
+    tester,
+  ) async {
+    final (c, _, _) = await _pump(
+      tester,
+      FakeAuthRepository(googleClientId: 'cid.apps.googleusercontent.com'),
+    );
+    // What /api/auth/google/redirect sends back on failure.
+    c
+        .read(routerProvider)
+        .go(
+          '/sign-in?${Uri(queryParameters: {'error': 'wife@gmail.com is not on the allowlist.'}).query}',
+        );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('sign-in-error')), findsOneWidget);
+    expect(
+      find.text('wife@gmail.com is not on the allowlist.'),
+      findsOneWidget,
+    );
+    expect(find.text('Sign in to see your projects'), findsOneWidget);
+  });
+
+  testWidgets('stuck popup: full-page sign-in fallback is offered', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      FakeAuthRepository(googleClientId: 'cid.apps.googleusercontent.com'),
+    );
+    final use = find.byKey(const ValueKey('use-redirect-sign-in'));
+    expect(use, findsOneWidget);
+    await tester.tap(use);
+    await tester.pumpAndSettle();
+    expect(use, findsNothing);
+    expect(find.byKey(const ValueKey('google-sign-in-r')), findsOneWidget);
+  });
+
+  test('auto UX uses a redirect only where popups cannot report back', () {
+    expect(effectiveGoogleUxMode('auto', popupUnreliable: false), 'popup');
+    expect(effectiveGoogleUxMode('auto', popupUnreliable: true), 'redirect');
+    expect(effectiveGoogleUxMode('popup', popupUnreliable: true), 'popup');
+    expect(
+      effectiveGoogleUxMode('redirect', popupUnreliable: false),
+      'redirect',
+    );
+    expect(
+      AuthConfig.fromJson({'googleUxMode': 'redirect'}).googleUxMode,
+      'redirect',
+    );
+    expect(AuthConfig.fromJson({}).googleUxMode, 'auto');
   });
 
   testWidgets('config failure shows retry on sign-in', (tester) async {

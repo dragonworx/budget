@@ -148,9 +148,18 @@
         s.src='https://accounts.google.com/gsi/client';s.async=true;s.dataset.optional='1';
         s.onload=function(){res()};s.onerror=function(){loading=null;rej(new Error('Google sign-in failed to load'))};
         document.head.appendChild(s)});return loading}
+    var ua=navigator.userAgent||'';
+    /* Embedded browsers of other apps: their window.open has no real opener. */
+    function inApp(){return /FBAN|FBAV|FB_IAB|Instagram|Line\/|WhatsApp|Snapchat|LinkedInApp|Twitter|MicroMessenger|GSA\/|\bwv\)|; wv\)|GoogleApp/i.test(ua)||(/iPhone|iPad|iPod/.test(ua)&&!/Safari\//.test(ua))}
+    function standalone(){try{return window.navigator.standalone===true||window.matchMedia('(display-mode: standalone)').matches}catch(e){return false}}
     window.budgetGis={
-      render:function(el,clientId,cb,width){load().then(function(){
-        if(inited!==clientId){google.accounts.id.initialize({client_id:clientId,callback:function(r){window.__gisCb&&window.__gisCb(r.credential)},ux_mode:'popup',use_fedcm_for_prompt:true});inited=clientId}
+      inAppBrowser:function(){return inApp()},
+      popupUnreliable:function(){return inApp()||standalone()},
+      render:function(el,clientId,cb,width,mode){mode=mode==='redirect'?'redirect':'popup';load().then(function(){
+        var key=clientId+'|'+mode;
+        if(inited!==key){google.accounts.id.initialize(mode==='redirect'
+          ?{client_id:clientId,ux_mode:'redirect',login_uri:location.origin+'/api/auth/google/redirect'}
+          :{client_id:clientId,callback:function(r){window.__gisCb&&window.__gisCb(r.credential)},ux_mode:'popup',use_fedcm_for_prompt:true});inited=key}
         window.__gisCb=cb;
         google.accounts.id.renderButton(el,{type:'standard',theme:'filled_black',size:'large',shape:'pill',text:'signin_with',width:Math.min(400,Math.round(width||280))});
       }).catch(function(e){el.textContent=String(e.message||e);el.style.color='#f88';el.style.font='13px sans-serif'})},

@@ -18,6 +18,9 @@ class _SignInPageState extends ConsumerState<SignInPage> {
   bool _busy = false;
   String? _error;
 
+  /// Set by "Use full-page sign-in": skip the popup entirely.
+  bool _forceRedirect = false;
+
   Future<void> _run(Future<void> Function() action) async {
     setState(() {
       _busy = true;
@@ -39,6 +42,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     final theme = Theme.of(context);
     final config = auth.valueOrNull;
     final clientId = config?.googleClientId;
+    // A failed full-page (redirect) sign-in comes back as ?error=...
+    final returnedError = GoRouterState.of(context)
+        .uri
+        .queryParameters['error'];
+    final shownError = _error ?? returnedError;
 
     final children = <Widget>[
       const Icon(Icons.timeline_rounded, color: AppTheme.accent, size: 44),
@@ -75,14 +83,41 @@ class _SignInPageState extends ConsumerState<SignInPage> {
       children.add(const CircularProgressIndicator());
     } else {
       if (clientId != null) {
+        if (inAppBrowser()) {
+          children.addAll([
+            Text(
+              'This page is open inside another app. If Google sign-in '
+              'gets stuck on a blank page, open this link in Safari or '
+              'Chrome instead.',
+              key: const ValueKey('in-app-browser-warning'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+            const SizedBox(height: 16),
+          ]);
+        }
         children.add(
           GoogleSignInButton(
-            key: const ValueKey('google-sign-in'),
+            key: ValueKey('google-sign-in-${_forceRedirect ? 'r' : 'a'}'),
             clientId: clientId,
+            uxMode: _forceRedirect ? 'redirect' : config.googleUxMode,
             onCredential: (token) =>
                 _run(() => notifier.signInWithGoogle(token)),
           ),
         );
+        if (!_forceRedirect && config.googleUxMode != 'redirect') {
+          children.addAll([
+            const SizedBox(height: 10),
+            TextButton(
+              key: const ValueKey('use-redirect-sign-in'),
+              onPressed: () => setState(() => _forceRedirect = true),
+              child: const Text(
+                'Google window stuck or blank? Use full-page sign-in',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ]);
+        }
       } else {
         children.add(
           Text(
@@ -111,11 +146,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
         const LinearProgressIndicator(),
       ]);
     }
-    if (_error != null) {
+    if (shownError != null && shownError.isNotEmpty) {
       children.addAll([
         const SizedBox(height: 16),
         Text(
-          _error!,
+          shownError,
           key: const ValueKey('sign-in-error'),
           textAlign: TextAlign.center,
           style: TextStyle(color: theme.colorScheme.error),

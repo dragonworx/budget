@@ -95,8 +95,12 @@ void main() {
     expect((await call(h, 'GET', '/api/projects')).status, 401);
     expect((await call(h, 'GET', '/health')).status, 200);
     final cfg = await call(h, 'GET', '/api/auth/config');
-    expect(cfg.json,
-        {'googleClientId': clientId, 'devBypass': false, 'user': null});
+    expect(cfg.json, {
+      'googleClientId': clientId,
+      'googleUxMode': 'auto',
+      'devBypass': false,
+      'user': null,
+    });
     expect((await call(h, 'GET', '/api/auth/me')).status, 401);
   });
 
@@ -157,6 +161,90 @@ void main() {
                 headers: {'authorization': 'Bearer $tok'}))
             .status,
         200);
+  });
+
+  test('Admin-UI allowlist lets a brand-new user in (first login works)',
+      () async {
+    if (conn == null) return markTestSkipped('no test DB');
+    await conn!.execute(
+        "DELETE FROM allowed_emails WHERE pattern LIKE '%authtest.example'");
+    final h = handler();
+    final admin = await googleLogin(h, 'admin@authtest.example');
+    Future<int> signIn(String email) async =>
+        (await call(h, 'POST', '/api/auth/google', headers: {
+          'origin': origin
+        }, body: {
+          'credential':
+              key.sign(goodClaims(clientId, DateTime.now(), email: email))
+        }))
+            .status;
+    expect(await signIn('wife@authtest.example'), 403);
+    final add = await call(h, 'POST', '/api/admin/allowlist',
+        cookie: admin,
+        headers: {'origin': origin},
+        body: {'pattern': '  Wife@AuthTest.example '});
+    expect(add.status, 201, reason: '${add.json}');
+    final r = await call(h, 'POST', '/api/auth/google', headers: {
+      'origin': origin
+    }, body: {
+      'credential': key.sign(
+          goodClaims(clientId, DateTime.now(), email: 'wife@authtest.example'))
+    });
+    expect(r.status, 200, reason: '${r.json}');
+    expect(r.json['user']['isAdmin'], false);
+    final c = cookieOf(r.headers);
+    final projects = await call(h, 'GET', '/api/projects', cookie: c);
+    expect(projects.status, 200);
+    expect((await call(h, 'GET', '/api/auth/me', cookie: c)).status, 200);
+    expect((await call(h, 'GET', '/api/invites/mine', cookie: c)).status,
+        anyOf(200, 404));
+    await conn!.execute(
+        "DELETE FROM allowed_emails WHERE pattern LIKE '%authtest.example'");
+  });
+
+  test('GIS redirect login_uri: session + 303 into the app; errors visible',
+      () async {
+    if (conn == null) return markTestSkipped('no test DB');
+    final h = handler(allow: ['@ok.authtest.example']);
+    Future<({int status, dynamic json, Map<String, String> headers})> post(
+        String email,
+        {String csrf = 'tok123',
+        String? cookieCsrf = 'tok123',
+        String? origin = 'https://accounts.google.com'}) async {
+      final cred = key.sign(goodClaims(clientId, DateTime.now(), email: email));
+      final res = await h(Request(
+          'POST', Uri.parse('http://x/api/auth/google/redirect'),
+          body: 'credential=$cred&g_csrf_token=$csrf',
+          headers: {
+            'content-type': 'application/x-www-form-urlencoded',
+            if (origin != null) 'origin': origin,
+            if (cookieCsrf != null) 'cookie': 'g_csrf_token=$cookieCsrf',
+          }));
+      return (status: res.statusCode, json: null, headers: res.headers);
+    }
+
+    final ok = await post('r@ok.authtest.example');
+    expect(ok.status, 303);
+    expect(ok.headers['location'], '/#/');
+    final c = cookieOf(ok.headers);
+    expect((await call(h, 'GET', '/api/auth/me', cookie: c)).status, 200);
+
+    final denied = await post('nope@authtest.example');
+    expect(denied.status, 303);
+    final loc = Uri.parse(denied.headers['location']!.replaceFirst('/#', ''));
+    expect(loc.path, '/sign-in');
+    expect(loc.queryParameters['error'], contains('nope@authtest.example'));
+    expect(denied.headers['set-cookie'], isNull);
+
+    final mismatch = await post('r@ok.authtest.example', cookieCsrf: 'other');
+    expect(mismatch.headers['location'], contains('error='));
+    expect(mismatch.headers['set-cookie'], isNull);
+    // No cookie: only accepted straight from Google.
+    final forged = await post('r@ok.authtest.example',
+        cookieCsrf: null, origin: 'https://evil.example');
+    expect(forged.headers['location'], contains('error='));
+    final noCookie = await post('r@ok.authtest.example', cookieCsrf: null);
+    expect(noCookie.headers['location'], '/#/');
   });
 
   test('every resource is scoped to its owner (404 for others)', () async {

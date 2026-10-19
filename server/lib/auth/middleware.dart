@@ -29,17 +29,26 @@ String? sessionTokenFrom(Request request) {
   if (authz != null && authz.toLowerCase().startsWith('bearer ')) {
     return authz.substring(7).trim();
   }
+  return cookieValue(request, sessionCookie);
+}
+
+/// Value of cookie [name] on [request], or null.
+String? cookieValue(Request request, String name) {
   final cookie = request.headers['cookie'];
   if (cookie == null) return null;
   for (final part in cookie.split(';')) {
     final i = part.indexOf('=');
     if (i < 0) continue;
-    if (part.substring(0, i).trim() == sessionCookie) {
+    if (part.substring(0, i).trim() == name) {
       return part.substring(i + 1).trim();
     }
   }
   return null;
 }
+
+/// GIS redirect-mode `login_uri`: a cross-site form POST from Google,
+/// protected by its own double-submit token instead of the Origin check.
+const googleRedirectPath = '/api/auth/google/redirect';
 
 String sessionCookieHeader(Config config, String token, {bool clear = false}) {
   final parts = [
@@ -91,7 +100,9 @@ Middleware csrfMiddleware(Config config) {
   const safe = {'GET', 'HEAD', 'OPTIONS'};
   return (inner) => (request) async {
         final path = '/${request.url.path}';
-        if (safe.contains(request.method) || !_isApi(path)) {
+        if (safe.contains(request.method) ||
+            !_isApi(path) ||
+            (path == googleRedirectPath && request.method == 'POST')) {
           return inner(request);
         }
         final origin = request.headers['origin'];

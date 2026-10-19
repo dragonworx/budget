@@ -53,9 +53,17 @@ class AuthUser {
 
 /// `GET /api/auth/config`: what the sign-in page needs, plus the current user.
 class AuthConfig {
-  const AuthConfig({this.googleClientId, this.devBypass = false, this.user});
+  const AuthConfig({
+    this.googleClientId,
+    this.googleUxMode = 'auto',
+    this.devBypass = false,
+    this.user,
+  });
 
   final String? googleClientId;
+
+  /// `popup`, `redirect` or `auto` (see the server's GOOGLE_UX_MODE).
+  final String googleUxMode;
   final bool devBypass;
   final AuthUser? user;
 
@@ -66,6 +74,11 @@ class AuthConfig {
       googleClientId: (id == null || id.toString().isEmpty)
           ? null
           : id.toString(),
+      googleUxMode: switch (json['googleUxMode']) {
+        'popup' => 'popup',
+        'redirect' => 'redirect',
+        _ => 'auto',
+      },
       devBypass: dev == true,
       user: AuthUser.fromResponse(json),
     );

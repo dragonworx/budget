@@ -10,6 +10,7 @@ class Config {
     this.publicOrigin = 'http://localhost:8000',
     this.extraOrigins = const [],
     this.googleClientId = '',
+    this.googleUxMode = 'auto',
     this.adminEmails = const [defaultAdminEmail],
     this.allowlist = const [],
     this.openSignup = false,
@@ -52,6 +53,11 @@ class Config {
           .replaceAll(RegExp(r'/+$'), ''),
       extraOrigins: csv(v('CORS_ORIGINS', '')),
       googleClientId: v('GOOGLE_CLIENT_ID', ''),
+      googleUxMode: switch (v('GOOGLE_UX_MODE', 'auto').toLowerCase()) {
+        'popup' => 'popup',
+        'redirect' => 'redirect',
+        _ => 'auto',
+      },
       adminEmails: csv(v('ADMIN_EMAILS', defaultAdminEmail), lower: true),
       allowlist: csv(v('AUTH_ALLOWLIST', ''), lower: true),
       openSignup: b('AUTH_OPEN_SIGNUP', false),
@@ -79,6 +85,11 @@ class Config {
   final String publicOrigin;
   final List<String> extraOrigins;
   final String googleClientId;
+
+  /// Google sign-in UX: `popup`, `redirect` (full-page, via
+  /// /api/auth/google/redirect) or `auto` (redirect where popups can't
+  /// report back: home-screen apps and in-app browsers; popup elsewhere).
+  final String googleUxMode;
   final List<String> adminEmails;
   final List<String> allowlist;
   final bool openSignup;

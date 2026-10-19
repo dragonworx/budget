@@ -13,10 +13,16 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 
 /// Snapshot of auth: the user (null = signed out) and sign-in options.
 class AuthState {
-  const AuthState({this.user, this.googleClientId, this.devBypass = false});
+  const AuthState({
+    this.user,
+    this.googleClientId,
+    this.googleUxMode = 'auto',
+    this.devBypass = false,
+  });
 
   final AuthUser? user;
   final String? googleClientId;
+  final String googleUxMode;
   final bool devBypass;
 
   bool get signedIn => user != null;
@@ -24,6 +30,7 @@ class AuthState {
   AuthState copyWith({AuthUser? user, bool clearUser = false}) => AuthState(
     user: clearUser ? null : (user ?? this.user),
     googleClientId: googleClientId,
+    googleUxMode: googleUxMode,
     devBypass: devBypass,
   );
 }
@@ -49,6 +56,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     return AuthState(
       user: config.user,
       googleClientId: clientId,
+      googleUxMode: config.googleUxMode,
       devBypass: config.devBypass,
     );
   }
