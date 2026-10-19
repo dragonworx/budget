@@ -11,7 +11,7 @@ import 'goal_models.dart';
 Color scenarioColor(int i) =>
     AppTheme.scenarioColors[i % AppTheme.scenarioColors.length];
 
-/// Human summary of [scenarioDelta]: e.g. "+A$420 by 1 Mar 27 · alert +3 wks".
+/// Human summary of [scenarioDelta]: e.g. "+$420 by 1 Mar 27 · alert +3 wks".
 String scenarioDeltaText(
   GoalResult r,
   DateTime? baselineAlert,

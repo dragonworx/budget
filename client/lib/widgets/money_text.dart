@@ -42,75 +42,50 @@ class MoneyText extends StatelessWidget {
     );
   }
 
-  /// Symbol for [currency]. [narrow]: the bare local symbol with no
-  /// country prefix ("\$" for AUD, CAD, NZD and USD; "€", "£", "¥" ...), as
-  /// on the timeline chart where the account's currency is already known.
-  static String symbolFor(String currency, {bool narrow = false}) {
-    if (narrow) {
-      try {
-        return NumberFormat.simpleCurrency(name: currency.toUpperCase())
-            .currencySymbol;
-      } catch (_) {
-        return '$currency ';
-      }
+  /// Symbol for [currency]: the bare local symbol with no country prefix
+  /// ("\$" for AUD, CAD, NZD and USD; "€", "£", "¥", "₹" ...). The account's
+  /// currency is shown alongside where it matters, so "A\$" is redundant.
+  /// Codes without a known symbol fall back to the code ("CHF ").
+  static String symbolFor(String currency) {
+    final code = currency.trim().toUpperCase();
+    String symbol;
+    try {
+      symbol = NumberFormat.simpleCurrency(name: code).currencySymbol;
+    } catch (_) {
+      symbol = code;
     }
-    switch (currency.toUpperCase()) {
-      case 'USD':
-        return '\$';
-      case 'EUR':
-        return '€';
-      case 'GBP':
-        return '£';
-      case 'AUD':
-        return 'A\$';
-      case 'CAD':
-        return 'C\$';
-      case 'JPY':
-        return '¥';
-      default:
-        return '$currency ';
-    }
+    return symbol == code ? '$code ' : symbol;
   }
 }
 
-/// Axis and chart labels. [decimalDigits] overrides the size-based default;
-/// [narrow] drops the country prefix ("\$250" rather than "A\$250").
-String formatMoneyAmount(
-  num amount,
-  String currency, {
-  int? decimalDigits,
-  bool narrow = false,
-}) {
+/// Axis and chart labels. [decimalDigits] overrides the size-based default.
+String formatMoneyAmount(num amount, String currency, {int? decimalDigits}) {
   final digits = decimalDigits ?? (amount.abs() >= 100 ? 0 : 2);
   return NumberFormat.currency(
     name: currency,
-    symbol: MoneyText.symbolFor(currency, narrow: narrow),
+    symbol: MoneyText.symbolFor(currency),
     decimalDigits: digits,
   ).format(amount);
 }
 
-/// A single transaction's amount, signed by direction: "+A$1,830" for a
-/// credit, "−A$22.99" for a debit. Compact ("+A$1.36M") from a million up.
-/// [narrow] drops the country prefix ("+\$1,830").
-String formatSignedAmount(
-  num signedAmount,
-  String currency, {
-  bool narrow = false,
-}) {
+/// A single transaction's amount, signed by direction: "+$1,830" for a
+/// credit, "−$22.99" for a debit. Compact ("+$1.36M") from a million up.
+String formatSignedAmount(num signedAmount, String currency) {
   final abs = signedAmount.abs();
   final text = abs >= 1e6
       ? NumberFormat.compactCurrency(
           name: currency,
-          symbol: MoneyText.symbolFor(currency, narrow: narrow),
+          symbol: MoneyText.symbolFor(currency),
           decimalDigits: 2,
         ).format(abs)
-      : formatMoneyAmount(abs, currency, narrow: narrow);
+      : formatMoneyAmount(abs, currency);
   if (abs == 0) return text;
   return '${signedAmount < 0 ? '−' : '+'}$text';
 }
 
 /// Parses a typed amount, tolerating thousands separators, spaces and a
-/// leading currency symbol ("A$1,250.50", "-1 200"). Null when invalid.
+/// leading currency symbol or prefix ("$1,250.50", "A$1,250.50",
+/// "-1 200"). Null when invalid.
 Decimal? parseMoneyInput(String input) {
   var t = input.trim().replaceAll(RegExp(r'[\s,_]'), '');
   var negative = false;

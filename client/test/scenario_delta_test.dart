@@ -35,7 +35,7 @@ void main() {
     expect(d.balance, closeTo(420, 1e-9));
     expect(d.alertShiftDays, 21);
     expect(scenarioDeltaText(r, DateTime(2027, 2, 19), 'AUD'),
-        allOf(contains('+A\$420'), contains('alert +3 wks')));
+        allOf(contains('+\$420'), contains('alert +3 wks')));
   });
 
   test('delta: alert cleared only when the window covers it', () {

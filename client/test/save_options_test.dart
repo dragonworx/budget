@@ -322,9 +322,9 @@ void main() {
       tester
           .widget<Text>(find.byKey(const ValueKey('focus-banner-detail')))
           .data,
-      'Once-off −A\$250 on this date · series −A\$100',
+      'Once-off −\$250 on this date · series −\$100',
     );
-    expect(find.text('Reset to series −A\$100'), findsOneWidget);
+    expect(find.text('Reset to series −\$100'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('chip-override-2026-10-19')),
       findsOneWidget,
@@ -396,7 +396,7 @@ void main() {
       focus: _focus,
       readOnly: true,
     );
-    expect(find.textContaining('Once-off −A\$250'), findsWidgets);
+    expect(find.textContaining('Once-off −\$250'), findsWidgets);
     expect(find.byKey(const ValueKey('editor-clear-override')), findsNothing);
     expect(find.byKey(const ValueKey('editor-clear-overrides')), findsNothing);
     expect(find.text('1 once-off override on single dates'), findsOneWidget);

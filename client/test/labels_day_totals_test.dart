@@ -108,17 +108,24 @@ void _expectNoOverlap(List<(Rect, List<String>)> labels) {
 void main() {
   tearDown(() => debugVertexLabelLines = null);
 
-  test('timeline money has no country prefix; other formats unchanged', () {
-    expect(MoneyText.symbolFor('AUD', narrow: true), r'$');
-    expect(MoneyText.symbolFor('USD', narrow: true), r'$');
-    expect(MoneyText.symbolFor('NZD', narrow: true), r'$');
-    expect(MoneyText.symbolFor('EUR', narrow: true), '€');
-    expect(MoneyText.symbolFor('GBP', narrow: true), '£');
-    expect(MoneyText.symbolFor('JPY', narrow: true), '¥');
-    expect(MoneyText.symbolFor('AUD'), r'A$');
-    expect(formatSignedAmount(-180, 'AUD', narrow: true), r'−$180');
-    expect(formatSignedAmount(2400, 'AUD', narrow: true), r'+$2,400');
-    expect(formatMoneyAmount(250, 'AUD'), r'A$250');
+  test('money everywhere has no country prefix; input still accepts it', () {
+    expect(MoneyText.symbolFor('AUD'), r'$');
+    expect(MoneyText.symbolFor('aud'), r'$');
+    expect(MoneyText.symbolFor('USD'), r'$');
+    expect(MoneyText.symbolFor('CAD'), r'$');
+    expect(MoneyText.symbolFor('NZD'), r'$');
+    expect(MoneyText.symbolFor('EUR'), '€');
+    expect(MoneyText.symbolFor('GBP'), '£');
+    expect(MoneyText.symbolFor('JPY'), '¥');
+    expect(MoneyText.symbolFor('CHF'), 'CHF ');
+    expect(formatSignedAmount(-180, 'AUD'), r'−$180');
+    expect(formatSignedAmount(2400, 'AUD'), r'+$2,400');
+    expect(formatMoneyAmount(250, 'AUD'), r'$250');
+    expect(formatMoneyAmount(12.5, 'EUR'), '€12.50');
+    expect(formatSignedAmount(1.36e6, 'AUD'), r'+$1.36M');
+    expect(parseMoneyInput(r'A$1,250.50'), Decimal.parse('1250.50'));
+    expect(parseMoneyInput(r'$1,250.50'), Decimal.parse('1250.50'));
+    expect(parseMoneyInput(r'-A$20'), Decimal.parse('-20'));
   });
 
   testWidgets('a multi-transaction day shows its net total, then each name '

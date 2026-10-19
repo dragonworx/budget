@@ -374,7 +374,7 @@ String shiftText(int days) {
 /// Delta of a solved scenario against the account as it is: the balance
 /// change at the plan's end and how far the first alert date moves.
 /// [baselineAlert] is the account's current first alert date (null: none
-/// within the horizon). Returns parts like ['+A$420 by 1 Mar', 'alert +3 wks'].
+/// within the horizon). Returns parts like ['+$420 by 1 Mar', 'alert +3 wks'].
 ({double? balance, int? alertShiftDays, bool alertCleared, bool alertNew})
 scenarioDelta(GoalResult r, DateTime? baselineAlert) {
   final end = r.endBalance, base = r.baselineEndBalance;
