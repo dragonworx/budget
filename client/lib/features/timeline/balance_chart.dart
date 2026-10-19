@@ -1779,10 +1779,11 @@ class _BalanceChartState extends State<BalanceChart>
         ? AppTheme.debitColor
         : AppTheme.accent;
     final pinned = _pickPinned;
+    final stats = pinned ? pickDayStats(day) : null;
     final bubbleW = pinned
-        ? (trim != null ? 300.0 : 236.0)
+        ? (trim != null ? 300.0 : 256.0)
         : (trim != null ? 220.0 : 168.0);
-    final bubbleH = pinned ? 60.0 : 52.0;
+    final bubbleH = pinned ? (stats!.balance == null ? 80.0 : 100.0) : 52.0;
     final range = _ensureYRange();
     // Above the finger on touch so it stays visible; just above the cursor
     // otherwise. Clamped inside the chart.
@@ -1851,7 +1852,14 @@ class _BalanceChartState extends State<BalanceChart>
         child: pinned
             ? KeyedSubtree(
                 key: _pinKey,
-                child: _pinnedBubble(theme, day, trim, trimName, cancelled),
+                child: _pinnedBubble(
+                  theme,
+                  day,
+                  trim,
+                  trimName,
+                  cancelled,
+                  stats!,
+                ),
               )
             : IgnorePointer(
                 child: Material(
@@ -1912,6 +1920,40 @@ class _BalanceChartState extends State<BalanceChart>
     ];
   }
 
+  /// Money in / out on [day] (non-skipped occurrences of enabled series,
+  /// once-off overrides included) and that day's closing balance (null
+  /// before the seed date / outside the loaded series).
+  @visibleForTesting
+  PickDayStats pickDayStats(DateTime day) {
+    final d = DateTime(day.year, day.month, day.day);
+    var gains = 0.0, losses = 0.0;
+    for (final o in widget.series.occurrences) {
+      if (o.skipped) continue;
+      if (o.date.year != d.year ||
+          o.date.month != d.month ||
+          o.date.day != d.day) {
+        continue;
+      }
+      if (widget.transactions[o.transactionId]?.enabled == false) continue;
+      final v = o.signedDelta.toDouble();
+      if (v >= 0) {
+        gains += v;
+      } else {
+        losses -= v;
+      }
+    }
+    double? balance;
+    for (final p in widget.series.points) {
+      if (p.date.year == d.year &&
+          p.date.month == d.month &&
+          p.date.day == d.day) {
+        balance = p.closingBalance.toDouble();
+        break;
+      }
+    }
+    return PickDayStats(gains: gains, losses: losses, balance: balance);
+  }
+
   /// The released pick's bubble: date (or "`name` ends `date`"), the "+"
   /// add button, scissors for Trim in the Trim zone, and close.
   Widget _pinnedBubble(
@@ -1920,21 +1962,31 @@ class _BalanceChartState extends State<BalanceChart>
     TrimTarget? trim,
     String trimName,
     bool cancelled,
+    PickDayStats stats,
   ) {
-    final bg = trim != null ? AppTheme.debitColor : AppTheme.accent;
-    final fg = trim != null ? Colors.white : AppTheme.onAccent;
+    // A dark card like the dot popup, edged in the action colour, so the
+    // day's green / red totals read clearly.
+    final fg = trim != null ? AppTheme.debitColor : AppTheme.accent;
     final btn = IconButton.styleFrom(
       backgroundColor: fg.withValues(alpha: 0.18),
       foregroundColor: fg,
       visualDensity: VisualDensity.compact,
     );
+    final small = theme.textTheme.labelSmall ?? const TextStyle();
+    String money(double v) =>
+        formatMoneyAmount(v, widget.currency, decimalDigits: v == 0 ? 0 : null);
+    final balance = stats.balance;
+    final low = balance != null && belowAlert(balance, widget.lossThreshold);
     return Listener(
       onPointerSignal: _onPointerSignal,
       child: Material(
         key: const ValueKey('pick-bubble'),
         elevation: 10,
-        color: bg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        color: AppTheme.overlay,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: fg, width: 1.5),
+        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
           child: Row(
@@ -1961,11 +2013,65 @@ class _BalanceChartState extends State<BalanceChart>
                       key: trim != null ? const ValueKey('pick-date') : null,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: fg.withValues(alpha: 0.85),
+                      style: small.copyWith(
+                        color: AppTheme.textMuted,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(height: 3),
+                    // The day's money in (green) and out (red), overrides
+                    // included (they come from the projected occurrences).
+                    Text.rich(
+                      key: const ValueKey('pick-day-totals'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      TextSpan(
+                        style: small.copyWith(fontWeight: FontWeight.w700),
+                        children: [
+                          TextSpan(
+                            text: '+${money(stats.gains)}',
+                            style: TextStyle(
+                              color: stats.gains > 0
+                                  ? AppTheme.creditColor
+                                  : AppTheme.textFaint,
+                            ),
+                          ),
+                          const TextSpan(
+                            text: '  ·  ',
+                            style: TextStyle(color: AppTheme.textFaint),
+                          ),
+                          TextSpan(
+                            text: '−${money(stats.losses)}',
+                            style: TextStyle(
+                              color: stats.losses > 0
+                                  ? AppTheme.debitColor
+                                  : AppTheme.textFaint,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (balance != null)
+                      Text.rich(
+                        key: const ValueKey('pick-day-balance'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        TextSpan(
+                          text: 'Balance end of day: ',
+                          style: small.copyWith(color: AppTheme.textFaint),
+                          children: [
+                            TextSpan(
+                              text: money(balance),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: low
+                                    ? AppTheme.debitColor
+                                    : AppTheme.creditColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1989,7 +2095,7 @@ class _BalanceChartState extends State<BalanceChart>
               IconButton(
                 key: const ValueKey('pick-close'),
                 tooltip: 'Close',
-                color: fg,
+                color: AppTheme.textMuted,
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.close_rounded, size: 18),
                 onPressed: _clearPin,
@@ -4853,4 +4959,13 @@ class _GuideLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _GuideLinePainter old) =>
       old.from != from || old.to != to || old.color != color;
+}
+
+/// A footer day's totals: [gains] and [losses] are positive magnitudes.
+class PickDayStats {
+  const PickDayStats({required this.gains, required this.losses, this.balance});
+
+  final double gains;
+  final double losses;
+  final double? balance;
 }
