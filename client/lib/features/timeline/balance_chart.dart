@@ -2272,10 +2272,25 @@ class _BalanceChartState extends State<BalanceChart>
         );
       }
       extra += 22;
+      // Balance after the day's transactions: bold, green at or above the
+      // alert threshold (0 when the account has none), red below it.
+      final low = day.balanceAfter < widget.lossThreshold;
       children.add(
-        Text(
-          'Balance end of day: ${formatMoneyAmount(day.balanceAfter, widget.currency)}',
-          style: small.copyWith(color: AppTheme.textFaint),
+        Text.rich(
+          key: const ValueKey('tip-balance'),
+          TextSpan(
+            text: 'Balance end of day: ',
+            style: small.copyWith(color: AppTheme.textFaint),
+            children: [
+              TextSpan(
+                text: formatMoneyAmount(day.balanceAfter, widget.currency),
+                style: small.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: low ? AppTheme.debitColor : AppTheme.creditColor,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
