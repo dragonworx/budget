@@ -1,0 +1,10 @@
+# Add to the VPS Caddyfile, replacing budget.example.com with your domain.
+# Host Caddy (systemd):        reverse_proxy 127.0.0.1:8081
+# Containerised Caddy (on the "caddy" docker network): reverse_proxy budget-web:80
+budget.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8081 {
+		flush_interval -1   # keep SSE (/api/events) streaming
+		header_up X-Forwarded-Proto {scheme}
+	}
+}
