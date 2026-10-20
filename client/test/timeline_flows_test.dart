@@ -518,7 +518,7 @@ void main() {
     });
   }
 
-  testWidgets('unit dropdown, − / + and ◀ ▶ ease the view', (tester) async {
+  testWidgets('unit dropdown, − / + and [ ] ease the view', (tester) async {
     await _pump(tester);
     BalanceChart chart() =>
         tester.widget<BalanceChart>(find.byType(BalanceChart));
@@ -527,22 +527,22 @@ void main() {
     final open = chart().viewStart;
     final mid = dayCoord(open) + chart().visibleDays / 2;
     expect(mid, inInclusiveRange(dayCoord(_day), dayCoord(_day) + 1));
-    await tester.tap(find.byKey(const ValueKey('shift-right')));
+    tester.widget<BalanceChart>(find.byType(BalanceChart)).onShift!(1);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
     expect(chart().viewStart, isNot(open), reason: 'mid-ease');
     await tester.pumpAndSettle();
     final start = chart().viewStart;
     expect(start.day, 1);
-    await tester.tap(find.byKey(const ValueKey('shift-right')));
+    tester.widget<BalanceChart>(find.byType(BalanceChart)).onShift!(1);
     await tester.pumpAndSettle();
     expect(chart().viewStart, DateTime(start.year, start.month + 1));
     // Rapid taps accumulate from the pending target (no drift).
-    await tester.tap(find.byKey(const ValueKey('shift-left')));
+    tester.widget<BalanceChart>(find.byType(BalanceChart)).onShift!(-1);
     await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const ValueKey('shift-left')));
+    tester.widget<BalanceChart>(find.byType(BalanceChart)).onShift!(-1);
     await tester.pump(const Duration(milliseconds: 40));
-    await tester.tap(find.byKey(const ValueKey('shift-left')));
+    tester.widget<BalanceChart>(find.byType(BalanceChart)).onShift!(-1);
     await tester.pumpAndSettle();
     expect(chart().viewStart, DateTime(start.year, start.month - 2));
     double center() => dayCoord(chart().viewStart) + chart().visibleDays / 2;
@@ -567,7 +567,7 @@ void main() {
     expect(chart().visibleDays, anyOf(365, 366));
     expect(center(), closeTo(c0, 1e-6));
     // ◀ ▶ ease to unit-snapped starts.
-    await tester.tap(find.byKey(const ValueKey('shift-left')));
+    tester.widget<BalanceChart>(find.byType(BalanceChart)).onShift!(-1);
     await tester.pumpAndSettle();
     expect(chart().viewStart.month, 1);
     expect(chart().viewStart.day, 1);
@@ -706,7 +706,7 @@ void main() {
     // ◀ ▶ shift clears it.
     await reveal();
     expect(pill, findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('shift-right')));
+    tester.widget<BalanceChart>(find.byType(BalanceChart)).onShift!(1);
     await tester.pumpAndSettle(); // eased pan (no refit)
     expect(pill, findsNothing);
     expect(tip, findsNothing);
@@ -778,7 +778,7 @@ void main() {
       final c = tester.getRect(col);
       expect(c.center.dx, closeTo(tester.getRect(pill).center.dx, c.width + 2));
       // Navigation clears both guides together.
-      await tester.tap(find.byKey(const ValueKey('shift-right')));
+      tester.widget<BalanceChart>(find.byType(BalanceChart)).onShift!(1);
       await tester.pumpAndSettle();
       expect(pill, findsNothing);
       expect(yPill, findsNothing);
@@ -1007,11 +1007,12 @@ void main() {
     final plot = tester.getRect(find.byType(BalanceChart));
     final tip = find.byKey(const ValueKey('seed-tooltip'));
     var found = false;
+    // Seed now sits at the left edge (just clear of the lane names).
     for (var fx = 0.0; fx < 0.9 && !found; fx += 0.01) {
       for (var fy = 0.05; fy < 0.85 && !found; fy += 0.04) {
         await tester.tapAt(
           Offset(
-            plot.left + 112 + (plot.width - 140) * fx,
+            plot.left + 40 + (plot.width - 140) * fx,
             plot.top + plot.height * fy,
           ),
           kind: PointerDeviceKind.touch,
@@ -1131,10 +1132,14 @@ void main() {
       await _pump(tester, size: Size(w, 900));
       expect(tester.takeException(), isNull);
       // The header keeps the name visible next to its actions.
-      final name = tester.getRect(find.byKey(const ValueKey('header-pool-picker')));
+      final name = tester.getRect(
+        find.byKey(const ValueKey('header-pool-picker')),
+      );
       expect(name.width, greaterThan(60));
+      // No ◀ ▶ step buttons any more ([ / ] keys still step).
+      expect(find.byKey(const ValueKey('shift-left')), findsNothing);
+      expect(find.byKey(const ValueKey('shift-right')), findsNothing);
       for (final k in [
-        'shift-left',
         'fit-menu',
         'jump-to-date',
         'open-plan',
@@ -1160,4 +1165,143 @@ void main() {
       }
     });
   }
+
+  // ── Step buttons removed · left-aligned jumps · header logo · More menu ──
+
+  // The seed's calendar day (seedDate is 30×24h back, so across DST it
+  // can sit at 23:00 the day before).
+  final seed = _pool().seedDate;
+  final seedDay = DateTime(seed.year, seed.month, seed.day);
+
+  double xOfDay(WidgetTester tester, DateTime day) {
+    final c = tester.widget<BalanceChart>(find.byType(BalanceChart));
+    final w = tester.getSize(find.byType(BalanceChart)).width;
+    return (dayCoord(day) - dayCoord(c.viewStart)) * w / c.visibleDays;
+  }
+
+  void expectAtLeft(WidgetTester tester, DateTime day, String why) {
+    final w = tester.getSize(find.byType(BalanceChart)).width;
+    // The day's left edge sits just clear of the lane names / y labels.
+    expect(
+      xOfDay(tester, day),
+      closeTo(ChartLayout.laneNameWidth(w), 0.5),
+      reason: why,
+    );
+  }
+
+  for (final size in const [
+    Size(320, 640),
+    Size(390, 844),
+    Size(800, 900),
+    Size(1440, 900),
+  ]) {
+    testWidgets('toolbar at ${size.width.toInt()}px: no step buttons, date '
+        'range kept, fits; logo left of the pool name', (tester) async {
+      await _pump(tester, size: size);
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey('shift-left')), findsNothing);
+      expect(find.byKey(const ValueKey('shift-right')), findsNothing);
+      final range = tester.getRect(find.byKey(const ValueKey('jump-to-date')));
+      expect(range.left, greaterThanOrEqualTo(0));
+      expect(range.right, lessThanOrEqualTo(size.width));
+      expect(range.width, greaterThan(90));
+      // Budgie icon: left side of the header, after back, before the name.
+      final logo = tester.getRect(find.byKey(const ValueKey('timeline-brand')));
+      final back = tester.getRect(find.byKey(const ValueKey('timeline-back')));
+      final name = tester.getRect(
+        find.byKey(const ValueKey('header-pool-picker')),
+      );
+      expect(logo.left, greaterThanOrEqualTo(back.right - 1));
+      expect(logo.right, lessThanOrEqualTo(name.left));
+      expect(logo.left, lessThan(size.width / 3));
+      expect(logo.width, size.width < 600 ? 26 : 32);
+      final bar = tester.getRect(find.byType(AppBar));
+      expect(logo.center.dy, closeTo(bar.center.dy, 2));
+      expect(name.width, greaterThan(40));
+    });
+  }
+
+  testWidgets('desktop: Today, Seed and the date picker put the day at the '
+      'left edge', (tester) async {
+    await _pump(tester);
+    await tester.tap(find.byKey(const ValueKey('go-seed')));
+    await tester.pumpAndSettle();
+    expectAtLeft(tester, seedDay, 'seed');
+    await tester.tap(find.byKey(const ValueKey('go-today')));
+    await tester.pumpAndSettle();
+    expectAtLeft(tester, _day, 'today');
+    // Date picker: opens on the first visible day; pick the 15th.
+    // The range label now starts on today (the first day clear of the
+    // left strip); the picker opens there.
+    expect(
+      find.textContaining(DateFormat('d MMM y').format(_day)),
+      findsWidgets,
+    );
+    final initial = _day;
+    await tester.tap(find.byKey(const ValueKey('jump-to-date')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('15'));
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expectAtLeft(tester, DateTime(initial.year, initial.month, 15), 'picked');
+    // …and the range label starts on it.
+    final label = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('jump-to-date')),
+        matching: find.byType(Text),
+      ),
+    );
+    expect(
+      label.data,
+      startsWith(
+        DateFormat('d MMM y').format(DateTime(initial.year, initial.month, 15)),
+      ),
+    );
+  });
+
+  testWidgets('phone: View menu Go to seed / today left-align too', (
+    tester,
+  ) async {
+    await _pump(tester, size: const Size(390, 844));
+    for (final (label, day) in [
+      ('Go to seed date', seedDay),
+      ('Go to today', _day),
+    ]) {
+      await tester.tap(find.byKey(const ValueKey('fit-menu')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+      expectAtLeft(tester, day, label);
+      final range = tester.widget<Text>(
+        find.descendant(
+          of: find.byKey(const ValueKey('jump-to-date')),
+          matching: find.byType(Text),
+        ),
+      );
+      expect(range.data, startsWith(DateFormat('d MMM yy').format(day)));
+    }
+  });
+
+  testWidgets('More menu (below 960px): Pool settings is the first item', (
+    tester,
+  ) async {
+    await _pump(tester, size: const Size(390, 844));
+    await tester.tap(find.byKey(const ValueKey('timeline-more')));
+    await tester.pumpAndSettle();
+    final items = find.byWidgetPredicate((w) => w is PopupMenuItem<String>);
+    final first = tester.widgetList<PopupMenuItem<String>>(items).toList()
+      ..sort(
+        (a, b) => tester
+            .getTopLeft(find.byWidget(a))
+            .dy
+            .compareTo(tester.getTopLeft(find.byWidget(b)).dy),
+      );
+    expect(first.first.value, 'settings');
+    double y(String t) => tester.getTopLeft(find.text(t)).dy;
+    expect(y('Pool settings'), lessThan(y('Share pool')));
+    expect(y('Share pool'), lessThan(y('Import transactions')));
+    await tester.tap(find.text('Pool settings'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsOneWidget);
+  });
 }

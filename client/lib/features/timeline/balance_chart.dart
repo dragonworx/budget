@@ -3261,6 +3261,10 @@ class ChartLayout {
   /// The chart's full size (the plot spans its width).
   final Size size;
 
+  /// Width of the lane-name chips (Year / Month / Week / Day) floating over
+  /// the plot's left edge; the y labels float over the same strip.
+  static double laneNameWidth(double chartWidth) => chartWidth < 600 ? 38 : 44;
+
   static ChartLayout of(Size size, double visibleDays) {
     final plotWidth = math.max(1.0, size.width - gutter - right);
     final dayPx = plotWidth / math.max(visibleDays, 0.001);
@@ -3835,7 +3839,7 @@ class _BalanceChartPainter extends CustomPainter {
   }
 
   double _laneNameWidth(ChartLayout layout) =>
-      layout.size.width < 600 ? 38 : 44;
+      ChartLayout.laneNameWidth(layout.size.width);
 
   void _fillSegment(
     Canvas canvas,

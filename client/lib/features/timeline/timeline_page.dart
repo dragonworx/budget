@@ -568,10 +568,43 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     ref.invalidate(insightsProvider(widget.poolId));
   }
 
-  /// Puts [day] a third of the way in and refits the balance to the view
-  /// (the balance scale is otherwise fixed while panning).
-  void _centerOn(DateTime day) {
-    _onViewport(addDays(dateOnly(day), -_visibleDays / 3), _visibleDays);
+  final _chartAreaKey = GlobalKey();
+
+  /// Start of a view that shows [day] at the left edge: its left edge just
+  /// clear of the lane names / y labels floating over the plot's left strip,
+  /// so the whole day is visible. Same span; the balance range is refitted.
+  @visibleForTesting
+  static DateTime leftAlignedStart(
+    DateTime day,
+    double visibleDays,
+    double chartWidth,
+  ) {
+    final dayPx = chartWidth / math.max(visibleDays, 0.001);
+    final inset = ChartLayout.laneNameWidth(chartWidth) / dayPx;
+    return addDays(dateOnly(day), -inset);
+  }
+
+  double get _chartWidth {
+    final box = _chartAreaKey.currentContext?.findRenderObject();
+    return box is RenderBox && box.hasSize
+        ? box.size.width
+        : MediaQuery.sizeOf(context).width - 32;
+  }
+
+  /// First day fully clear of the left strip: what the date range label
+  /// starts on (so a jumped-to day reads as the range start).
+  DateTime get _firstClearDay {
+    final w = _chartWidth;
+    final inset = ChartLayout.laneNameWidth(w) * _visibleDays / w;
+    return dateFromDayCoord(
+      (dayCoord(_viewStart) + inset - 1e-6).ceilToDouble(),
+    );
+  }
+
+  /// Every "go to a date" action (date picker, Today, Seed, locate from the
+  /// transactions list): [day] at the left edge, then refit the balance.
+  void _showFrom(DateTime day) {
+    _onViewport(leftAlignedStart(day, _visibleDays, _chartWidth), _visibleDays);
     setState(() => _fitToken++);
   }
 
@@ -595,8 +628,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _animateViewport(center, days);
   }
 
-  /// ◀ (-1) / ▶ (1): one unit back / forward, snapped to unit starts and
-  /// eased. Mid-animation it steps from the pending target, so rapid taps
+  /// [ (-1) / ] (1) keys: one unit back / forward, snapped to unit starts
+  /// and eased. Mid-animation it steps from the pending target, so rapid taps
   /// accumulate without drift.
   void _shift(int n) {
     final from = _viewAnim.isAnimating
@@ -647,12 +680,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     } else {
       setState(() => _zeroToken++); // keep the zero line in view
     }
-  }
-
-  /// Centres [day] and refits the balance to what is then in view.
-  void _jumpTo(DateTime day) {
-    _onViewport(addDays(dateOnly(day), 0.5 - _visibleDays / 2), _visibleDays);
-    setState(() => _fitToken++);
   }
 
   /// Instant view change (pan, pinch, wheel, fits); cancels any easing.
@@ -767,15 +794,22 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 onPressed: () => _goBack(context),
               ),
               titleSpacing: compact ? 0 : 4,
-              title: _PoolHeader(
-                pool: pool,
-                todayPoint: todayPoint,
-                insights: ref
-                    .watch(insightsProvider(widget.poolId))
-                    .valueOrNull,
-                compact: compact,
-                showToday: !compactActions,
-                showInsights: width >= 1240,
+              title: Row(
+                children: [
+                  _HeaderBrand(compact: compact),
+                  Expanded(
+                    child: _PoolHeader(
+                      pool: pool,
+                      todayPoint: todayPoint,
+                      insights: ref
+                          .watch(insightsProvider(widget.poolId))
+                          .valueOrNull,
+                      compact: compact,
+                      showToday: !compactActions,
+                      showInsights: width >= 1240,
+                    ),
+                  ),
+                ],
               ),
               actions: compactActions
                   ? [
@@ -815,7 +849,17 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               _share(context, pool);
                           }
                         },
+                        // Pool settings first (editors), then sharing.
                         itemBuilder: (context) => [
+                          if (pool.role.canEdit)
+                            const PopupMenuItem(
+                              key: ValueKey('more-settings'),
+                              value: 'settings',
+                              child: ListTile(
+                                leading: Icon(Icons.tune_rounded),
+                                title: Text('Pool settings'),
+                              ),
+                            ),
                           if (pool.role.isOwner)
                             const PopupMenuItem(
                               value: 'share',
@@ -825,13 +869,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               ),
                             ),
                           if (pool.role.canEdit) ...const [
-                            PopupMenuItem(
-                              value: 'settings',
-                              child: ListTile(
-                                leading: Icon(Icons.tune_rounded),
-                                title: Text('Pool settings'),
-                              ),
-                            ),
                             PopupMenuItem(
                               value: 'import',
                               child: ListTile(
@@ -856,7 +893,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                           ),
                         ],
                       ),
-                      _HeaderBrand(compact: compact),
+                      const SizedBox(width: 4),
                     ]
                   : [
                       const RealtimeDot(),
@@ -903,7 +940,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                         icon: const Icon(Icons.list_alt_rounded, size: 18),
                         label: Text('Transactions · ${transactions.length}'),
                       ),
-                      _HeaderBrand(compact: compact),
+                      const SizedBox(width: 16),
                     ],
             ),
             body: _withPlanPanel(
@@ -937,6 +974,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                           border: Border.all(color: AppTheme.border),
                         ),
                         child: ClipRRect(
+                          key: _chartAreaKey,
                           borderRadius: BorderRadius.circular(15),
                           child: series == null
                               ? balanceAsync.when(
@@ -1219,7 +1257,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final w = box.maxWidth;
         final full = w >= 1060;
         final narrow = w < 760;
-        final theme = Theme.of(context);
         final end = lastVisibleDay(_viewStart, _visibleDays);
         String fmt(DateTime d) =>
             narrow ? DateFormat('d MMM').format(d) : _shortDate(d);
@@ -1237,8 +1274,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         );
         return Row(
           children: [
-            _unitGroup(theme, compact: false),
-            const SizedBox(width: 8),
             _fitMenu(pool, compact: narrow),
             const SizedBox(width: 8),
             Flexible(
@@ -1249,7 +1284,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                   onPressed: () => _jumpToDate(context),
                   icon: const Icon(Icons.calendar_month_rounded, size: 18),
                   label: Text(
-                    '${fmt(dateOnly(_viewStart))}  →  ${fmt(end)}',
+                    '${fmt(_firstClearDay)}  →  ${fmt(end)}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1260,7 +1295,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               const SizedBox(width: 8),
               OutlinedButton.icon(
                 key: const ValueKey('go-today'),
-                onPressed: () => _centerOn(DateTime.now()),
+                onPressed: () => _showFrom(DateTime.now()),
                 icon: const Icon(Icons.today_rounded, size: 18),
                 label: const Text('Today'),
               ),
@@ -1269,7 +1304,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 message: 'Go to the seed date (start of the balance)',
                 child: OutlinedButton.icon(
                   key: const ValueKey('go-seed'),
-                  onPressed: () => _centerOn(pool.seedDate),
+                  onPressed: () => _showFrom(pool.seedDate),
                   icon: const Icon(
                     Icons.flag_rounded,
                     size: 18,
@@ -1284,14 +1319,14 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 'go-today',
                 'Go to today',
                 Icons.today_rounded,
-                () => _centerOn(DateTime.now()),
+                () => _showFrom(DateTime.now()),
               ),
               const SizedBox(width: 4),
               iconBtn(
                 'go-seed',
                 'Go to the seed date (start of the balance)',
                 Icons.flag_rounded,
-                () => _centerOn(pool.seedDate),
+                () => _showFrom(pool.seedDate),
                 color: AppTheme.violet,
               ),
             ],
@@ -1325,33 +1360,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// ◀ ▶ shift buttons; the unit itself is changed by the chart's floating
-  /// horizontal scale pair (which also shows its name).
-  Widget _unitGroup(ThemeData theme, {required bool compact}) {
-    Widget divider() => Container(width: 1, height: 22, color: AppTheme.border);
-    return Container(
-      decoration: AppTheme.panel(color: AppTheme.raised, r: 10),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            key: const ValueKey('shift-left'),
-            tooltip: 'Back one ${_unit.label.toLowerCase()} ([)',
-            onPressed: () => _shift(-1),
-            icon: const Icon(Icons.chevron_left_rounded),
-          ),
-          divider(),
-          IconButton(
-            key: const ValueKey('shift-right'),
-            tooltip: 'Forward one ${_unit.label.toLowerCase()} (])',
-            onPressed: () => _shift(1),
-            icon: const Icon(Icons.chevron_right_rounded),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// View options. The fit modes themselves are keyboard-only (F / A / H,
   /// listed in the shortcuts sheet); this menu keeps the alert-line option
   /// for those fits and, on phones, Go to today / seed date.
@@ -1369,8 +1377,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           'Keep alert line (${formatMoneyAmount(pool.lossThreshold.toDouble())}) in fits',
       pools: others,
       combined: _combine,
-      onToday: () => _centerOn(DateTime.now()),
-      onSeed: () => _centerOn(pool.seedDate),
+      onToday: () => _showFrom(DateTime.now()),
+      onSeed: () => _showFrom(pool.seedDate),
       onToggleThreshold: () => setState(() {
         _fitThreshold = !_fitThreshold;
         _fitToken++;
@@ -1431,16 +1439,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// Phone toolbar: zoom, date range (tap to jump), fit, and a menu with
-  /// Today / Seed. Everything is at least 44px tall.
+  /// Phone toolbar: date range (tap to jump), plan, and the View menu
+  /// (with Today / Seed). Everything is at least 44px tall.
   Widget _compactToolbar(BuildContext context, Pool pool) {
-    final theme = Theme.of(context);
     final end = lastVisibleDay(_viewStart, _visibleDays);
     final fmt = DateFormat('d MMM yy');
     return Row(
       children: [
-        _unitGroup(theme, compact: true),
-        const SizedBox(width: 6),
         Expanded(
           child: OutlinedButton(
             key: const ValueKey('jump-to-date'),
@@ -1452,7 +1457,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             child: FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
-                '${fmt.format(dateOnly(_viewStart))} → ${fmt.format(end)}',
+                '${fmt.format(_firstClearDay)} → ${fmt.format(end)}',
                 maxLines: 1,
               ),
             ),
@@ -1475,16 +1480,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   String _shortDate(DateTime d) => DateFormat('d MMM y').format(d);
 
   Future<void> _jumpToDate(BuildContext context) async {
-    final center = dateOnly(addDays(_viewStart, _visibleDays / 2));
     final picked = await showDatePicker(
       context: context,
-      initialDate: center,
+      initialDate: _firstClearDay,
       firstDate: DateTime(1970),
       lastDate: DateTime(2100),
       helpText: 'Jump to date',
     );
     if (picked == null) return;
-    _jumpTo(picked);
+    _showFrom(picked);
   }
 
   Future<void> _showShortcuts(BuildContext context) {
@@ -1760,7 +1764,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         },
         onLocate: (date) {
           Navigator.of(panelContext).pop();
-          _jumpTo(date);
+          _showFrom(date);
         },
         onChanged: _invalidateBalance,
       ),
@@ -2100,13 +2104,12 @@ class _TipsBar extends StatelessWidget {
         tip(Icons.ads_click_rounded, 'Tap near a dot for details'),
         tip(Icons.add_circle_outline_rounded, 'Tap or drag the dates to add'),
         tip(Icons.touch_app_outlined, 'Drag near dots for details'),
-        tip(Icons.chevron_right_rounded, '◀ ▶ step one unit'),
         tip(Icons.pinch_outlined, 'Pinch to zoom'),
       ] else ...[
         tip(Icons.ads_click_rounded, 'Click or tap a dot for details'),
         tip(Icons.swipe_right_alt_rounded, 'Drag or tap the dates to add'),
         tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
-        tip(Icons.view_week_rounded, 'Pinch or − / + change unit, ◀ ▶ step'),
+        tip(Icons.view_week_rounded, 'Pinch or − / + change unit, [ ] step'),
         tip(Icons.mouse_outlined, 'Scroll or pinch to zoom'),
         tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
       ],
@@ -2227,9 +2230,9 @@ class _CombinedLegend extends StatelessWidget {
   }
 }
 
-/// The Budgie icon (rounded tile, no wordmark) at the top right of the
-/// timeline header: sized to the header row, a little smaller on phones so
-/// the action buttons keep their room at 320px. The landing intro glides
+/// The Budgie icon (rounded tile, no wordmark) at the left of the
+/// timeline header, between the back button and the pool name: sized to
+/// the header row, a little smaller on phones. The landing intro glides
 /// into it.
 class _HeaderBrand extends StatelessWidget {
   const _HeaderBrand({required this.compact});
@@ -2238,10 +2241,7 @@ class _HeaderBrand extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: EdgeInsetsDirectional.only(
-      start: compact ? 2 : 14,
-      end: compact ? 10 : 18,
-    ),
+    padding: EdgeInsetsDirectional.only(end: compact ? 10 : 12),
     child: Semantics(
       label: 'Budgie',
       image: true,

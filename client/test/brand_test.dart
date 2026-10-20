@@ -136,7 +136,7 @@ void main() {
   });
 
   for (final width in [320.0, 390.0, 800.0, 1440.0]) {
-    testWidgets('timeline header: Budgie icon top right at ${width}px', (
+    testWidgets('timeline header: Budgie icon at the left at ${width}px', (
       tester,
     ) async {
       await _pumpTimeline(tester, Size(width, 800));
@@ -147,25 +147,26 @@ void main() {
       expect(find.byKey(const ValueKey('brand-navbar')), findsNothing);
       final r = tester.getRect(icon);
       expect(r.width, width < 600 ? 26 : 32);
-      // Top right, inside the header row and the screen.
-      expect(r.right, lessThanOrEqualTo(width - 10));
-      expect(r.right, greaterThan(width - 24));
+      // Left side: right after the back button, before the pool name.
+      final back = tester.getRect(find.byKey(const ValueKey('timeline-back')));
+      expect(r.left, greaterThanOrEqualTo(back.right - 1));
+      expect(r.left, lessThan(back.right + 12));
+      final name = tester.getRect(find.text('Everyday spending').first);
+      expect(r.right, lessThanOrEqualTo(name.left));
       final bar = tester.getRect(find.byType(AppBar));
       expect(r.top, greaterThan(bar.top));
       expect(r.bottom, lessThan(bar.bottom));
-      // The last action button stays clear of it.
+      // The actions keep their room and stay clear of the logo.
+      final reminders = tester.getRect(
+        find.byKey(const ValueKey('open-reminders')),
+      );
+      expect(reminders.left - r.right, greaterThan(40));
       final last = tester.getRect(
         find.byKey(
           ValueKey(width < 960 ? 'timeline-more' : 'open-transactions'),
         ),
       );
-      expect(last.right, lessThanOrEqualTo(r.left));
-      // The pool name keeps room next to the buttons.
-      final back = tester.getRect(find.byKey(const ValueKey('timeline-back')));
-      final reminders = tester.getRect(
-        find.byKey(const ValueKey('open-reminders')),
-      );
-      expect(reminders.left - back.right, greaterThan(60));
+      expect(last.right, lessThanOrEqualTo(width));
     });
   }
 
