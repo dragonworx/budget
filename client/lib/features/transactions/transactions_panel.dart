@@ -70,6 +70,7 @@ class TransactionsPanel extends ConsumerStatefulWidget {
     required this.onPanelClosed,
     required this.onLocate,
     required this.onChanged,
+    this.onPlan,
   });
 
   final Pool pool;
@@ -82,12 +83,79 @@ class TransactionsPanel extends ConsumerStatefulWidget {
   final ValueChanged<DateTime> onLocate;
   final VoidCallback onChanged;
 
+  /// "Plan" in the New split button: opens the payment / goal planner.
+  final VoidCallback? onPlan;
+
   @override
   ConsumerState<TransactionsPanel> createState() => _TransactionsPanelState();
 }
 
 class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
   bool get _readOnly => !widget.pool.role.canEdit;
+
+  /// New ▾ split button (like the editor's Save ▾): New is the main action;
+  /// the menu offers New and Plan (the planner).
+  Widget _newSplitButton() {
+    const radius = Radius.circular(20);
+    Widget item(String key, IconData icon, String title, VoidCallback? f) =>
+        MenuItemButton(
+          key: ValueKey(key),
+          leadingIcon: Icon(icon, size: 20),
+          onPressed: f,
+          child: Text(title),
+        );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FilledButton.tonalIcon(
+          key: const ValueKey('panel-new-transaction'),
+          style: FilledButton.styleFrom(
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.horizontal(left: radius),
+            ),
+          ),
+          onPressed: () => _open(null),
+          icon: const Icon(Icons.add_rounded, size: 18),
+          label: const Text('New'),
+        ),
+        const SizedBox(width: 2),
+        MenuAnchor(
+          alignmentOffset: const Offset(-120, 4),
+          menuChildren: [
+            item('new-option-new', Icons.add_rounded, 'New', () => _open(null)),
+            item(
+              'new-option-plan',
+              Icons.calculate_outlined,
+              'Plan',
+              widget.onPlan,
+            ),
+          ],
+          builder: (context, controller, _) => Tooltip(
+            message: 'More new options',
+            excludeFromSemantics: true,
+            child: Semantics(
+              label: 'More new options',
+              button: true,
+              expanded: controller.isOpen,
+              child: FilledButton.tonal(
+                key: const ValueKey('panel-new-menu'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(40, 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.horizontal(right: radius),
+                  ),
+                ),
+                onPressed: () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+                child: const Icon(Icons.arrow_drop_down_rounded, size: 22),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   final _search = TextEditingController();
   TxFilter _filter = TxFilter.all;
@@ -207,8 +275,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
         ? ref.watch(poolProvider(widget.pool.id))
         : ref.read(poolProvider(widget.pool.id));
     final order =
-        pool.valueOrNull?.transactionOrder ??
-        widget.pool.transactionOrder;
+        pool.valueOrNull?.transactionOrder ?? widget.pool.transactionOrder;
     final byId = {
       for (final t in items)
         if (!watch || !_hidden.contains(t.id)) t.id: t,
@@ -286,7 +353,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
                       style: theme.textTheme.headlineSmall,
                     ),
                   ),
-                  if (_readOnly)
+                  if (_readOnly) ...[
                     const Padding(
                       padding: EdgeInsets.only(right: 4),
                       child: Chip(
@@ -295,14 +362,17 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
                         label: Text('View only'),
                         visualDensity: VisualDensity.compact,
                       ),
-                    )
-                  else
-                  FilledButton.tonalIcon(
-                    key: const ValueKey('panel-new-transaction'),
-                    onPressed: () => _open(null),
-                    icon: const Icon(Icons.add_rounded, size: 18),
-                    label: const Text('New'),
-                  ),
+                    ),
+                    // Viewers can't add, but can still plan (no New ▾).
+                    if (widget.onPlan != null)
+                      FilledButton.tonalIcon(
+                        key: const ValueKey('panel-plan'),
+                        onPressed: widget.onPlan,
+                        icon: const Icon(Icons.calculate_outlined, size: 18),
+                        label: const Text('Plan'),
+                      ),
+                  ] else
+                    _newSplitButton(),
                   IconButton(
                     tooltip: 'Close (Esc)',
                     onPressed: () => Navigator.of(context).pop(),
@@ -371,14 +441,14 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
       return EmptyState(
         icon: Icons.receipt_long_rounded,
         title: 'No transactions yet',
-        message: _readOnly
-            ? 'Nothing has been added to this pool yet.'
-            : 'Add income, bills and one-offs here, or hover a day on the timeline and click +.',
-        action: _readOnly ? null : FilledButton.icon(
-          onPressed: () => _open(null),
-          icon: const Icon(Icons.add_rounded, size: 20),
-          label: const Text('New transaction'),
-        ),
+        message: _readOnly ? 'Nothing has been added to this pool yet.' : 'Add income, bills and one-offs here, or hover a day on the timeline and click +.',
+        action: _readOnly
+            ? null
+            : FilledButton.icon(
+                onPressed: () => _open(null),
+                icon: const Icon(Icons.add_rounded, size: 20),
+                label: const Text('New transaction'),
+              ),
       );
     }
     final ordered = _ordered(items);
@@ -495,9 +565,7 @@ class _TxRow extends StatelessWidget {
     // long, deliberate swipe so a scroll or tap never deletes.
     return Dismissible(
       key: ValueKey('dismiss-${t.id}'),
-      direction: readOnly
-          ? DismissDirection.none
-          : DismissDirection.endToStart,
+      direction: readOnly ? DismissDirection.none : DismissDirection.endToStart,
       dismissThresholds: const {DismissDirection.endToStart: 0.5},
       background: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
@@ -632,16 +700,16 @@ class _TxRow extends StatelessWidget {
                             ),
                           ),
                           if (!readOnly)
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: ListTile(
-                              leading: Icon(
-                                Icons.delete_outline_rounded,
-                                color: AppTheme.debitColor,
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: ListTile(
+                                leading: Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: AppTheme.debitColor,
+                                ),
+                                title: const Text('Delete'),
                               ),
-                              title: const Text('Delete'),
                             ),
-                          ),
                         ],
                       ),
                     )
@@ -653,13 +721,16 @@ class _TxRow extends StatelessWidget {
                       icon: const Icon(Icons.my_location_rounded, size: 18),
                     ),
                     if (!readOnly)
-                    IconButton(
-                      key: ValueKey('row-delete-${t.id}'),
-                      tooltip: 'Delete $name',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: onDelete,
-                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                    ),
+                      IconButton(
+                        key: ValueKey('row-delete-${t.id}'),
+                        tooltip: 'Delete $name',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onDelete,
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                        ),
+                      ),
                   ],
                   Tooltip(
                     message: t.enabled
@@ -675,11 +746,11 @@ class _TxRow extends StatelessWidget {
                         child: Opacity(
                           opacity: readOnly ? 0.4 : 1,
                           child: Transform.scale(
-                          scale: touch ? 0.9 : 0.8,
-                          child: Switch(
-                            value: t.enabled,
-                            onChanged: readOnly ? null : onToggle,
-                          ),
+                            scale: touch ? 0.9 : 0.8,
+                            child: Switch(
+                              value: t.enabled,
+                              onChanged: readOnly ? null : onToggle,
+                            ),
                           ),
                         ),
                       ),

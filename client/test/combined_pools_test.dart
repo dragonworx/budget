@@ -449,7 +449,10 @@ void main() {
             Offset(plot.left + plot.width * fx, plot.top + plot.height * fy),
             kind: PointerDeviceKind.touch,
           );
-          await tester.pump();
+          // Apart in time, so two probes never count as a double-tap zoom.
+          await tester.pump(
+            kDoubleTapTimeout + const Duration(milliseconds: 20),
+          );
           if (find.byKey(key).evaluate().isNotEmpty) return true;
         }
       }

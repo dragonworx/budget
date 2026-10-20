@@ -157,10 +157,10 @@ void main() {
       expect(r.top, greaterThan(bar.top));
       expect(r.bottom, lessThan(bar.bottom));
       // The actions keep their room and stay clear of the logo.
-      final reminders = tester.getRect(
-        find.byKey(const ValueKey('open-reminders')),
+      final first = tester.getRect(
+        find.byKey(const ValueKey('open-transactions')),
       );
-      expect(reminders.left - r.right, greaterThan(40));
+      expect(first.left - r.right, greaterThan(40));
       final last = tester.getRect(
         find.byKey(
           ValueKey(width < 960 ? 'timeline-more' : 'open-transactions'),

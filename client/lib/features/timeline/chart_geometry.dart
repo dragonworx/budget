@@ -834,6 +834,9 @@ const double markerGap = 3;
 /// Duration of the eased zoom-button transitions (time and balance axes).
 const Duration zoomEaseDuration = Duration(milliseconds: 280);
 
+/// Double-tap zoom ease (time and balance together, easeInOutCubic).
+const Duration doubleTapZoomDuration = Duration(milliseconds: 400);
+
 /// Visible span at [t] between [fromDays] and [toDays], geometric.
 double lerpVisibleDays(double fromDays, double toDays, double t) =>
     math.exp(math.log(fromDays) + (math.log(toDays) - math.log(fromDays)) * t);
@@ -900,3 +903,24 @@ int isoWeekNumber(DateTime date) {
 /// (line-mode wheels already arrive scaled to pixels by the engine).
 /// Clamped per event so a single huge notch can't jump; up (< 0) zooms in.
 double wheelZoomFactor(double dy) => math.exp(dy.clamp(-240.0, 240.0) * 0.0018);
+
+/// Where a double-tap at ([fx], [fy]) of the plot (0..1 from the left /
+/// top) takes the view: time zoomed in 2x with the tapped instant at the
+/// centre, and the balance range (same span) centred on the tapped balance.
+({double startCoord, double days, BalanceExtents y}) doubleTapZoomTarget({
+  required double startCoord,
+  required double days,
+  required BalanceExtents y,
+  required double fx,
+  required double fy,
+}) {
+  final at = startCoord + fx.clamp(0.0, 1.0) * days;
+  final next = (days / 2).clamp(minVisibleDays, maxVisibleDays).toDouble();
+  final span = y.max - y.min;
+  final balance = y.max - fy.clamp(0.0, 1.0) * span;
+  return (
+    startCoord: at - next / 2,
+    days: next,
+    y: BalanceExtents(balance - span / 2, balance + span / 2),
+  );
+}

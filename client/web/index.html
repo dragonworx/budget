@@ -81,7 +81,8 @@
     DEF.forEach(function(d){S[d[0]]={k:d[0],label:d[1],w:d[2],f:0,st:'wait',t0:0,t1:0,ind:false};order.push(d[0]);});
     function now(){return performance.now()}
     function li(s){if(!s.el){s.el=document.createElement('li');s.el.innerHTML='<span class="ic"></span><span class="nm"></span><span class="t"></span>';$('bl-list').appendChild(s.el);}return s.el}
-    function render(){
+    function render(){if(!$("bl-fill"))return;// gone after boot (late font loads still report)
+      
       var tot=0,sum=0,cur=null,ind=false;
       order.forEach(function(k){var s=S[k];tot+=s.w;sum+=s.w*(s.st==='ok'?1:s.f);
         if(s.st==='on'){cur=cur||s;ind=ind||s.ind}

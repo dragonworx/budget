@@ -794,12 +794,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                   ? [
                       const RealtimeDot(),
                       IconButton(
-                        key: const ValueKey('open-reminders'),
-                        tooltip: 'Reminders calendar',
-                        onPressed: () => showReminders(context, pool),
-                        icon: const Icon(Icons.calendar_month_rounded),
-                      ),
-                      IconButton(
                         key: const ValueKey('open-transactions'),
                         tooltip: 'Transactions (${transactions.length})',
                         onPressed: () => _openTransactionsPanel(context, pool),
@@ -820,8 +814,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               _openImport(context, pool);
                             case 'settings':
                               _editPool(context, pool);
-                            case 'plan':
-                              _openPlan();
                             case 'shortcuts':
                               _showShortcuts(context);
                             case 'share':
@@ -856,13 +848,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               ),
                             ),
                           ],
-                          const PopupMenuItem(
-                            value: 'plan',
-                            child: ListTile(
-                              leading: Icon(Icons.calculate_outlined),
-                              title: Text('Plan a payment'),
-                            ),
-                          ),
                           const PopupMenuItem(
                             value: 'shortcuts',
                             child: ListTile(
@@ -906,12 +891,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                           icon: const Icon(Icons.tune_rounded),
                         ),
                       ],
-                      IconButton(
-                        key: const ValueKey('open-reminders'),
-                        tooltip: 'Reminders calendar',
-                        onPressed: () => showReminders(context, pool),
-                        icon: const Icon(Icons.calendar_month_rounded),
-                      ),
                       const SizedBox(width: 6),
                       OutlinedButton.icon(
                         key: const ValueKey('open-transactions'),
@@ -1229,10 +1208,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   // ---------------------------------------------------------------- toolbar
 
-  /// Desktop toolbar. Condenses as the window narrows so nothing overflows
-  /// (≥1060px: labelled buttons; narrower: Today / Seed / Plan become icon
-  /// buttons; <760px: Today / Seed move into the View menu and the date
-  /// range drops the year). The date range ellipsises as a last resort.
+  /// Desktop toolbar: reminders, View, the compact date range, Today / Seed.
+  /// Condenses as the window narrows so nothing overflows (≥1060px:
+  /// labelled Today / Seed; narrower: icon buttons; <760px: they move into
+  /// the View menu). The date range ellipsises as a last resort.
   Widget _toolbar(BuildContext context, Pool pool) {
     return LayoutBuilder(
       builder: (context, box) {
@@ -1240,8 +1219,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final full = w >= 1060;
         final narrow = w < 760;
         final end = lastVisibleDay(_viewStart, _visibleDays);
-        String fmt(DateTime d) =>
-            narrow ? DateFormat('d MMM').format(d) : _shortDate(d);
         Widget iconBtn(
           String key,
           String tip,
@@ -1254,82 +1231,80 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           onPressed: f,
           icon: Icon(icon, size: 18, color: color),
         );
+        // Left group (shrinks: the range ellipsises last) and shortcuts at
+        // the far right.
         return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _fitMenu(pool, compact: narrow),
-            const SizedBox(width: 8),
             Flexible(
-              child: Tooltip(
-                message: 'Jump to a date',
-                child: OutlinedButton.icon(
-                  key: const ValueKey('jump-to-date'),
-                  onPressed: () => _jumpToDate(context),
-                  icon: const Icon(Icons.calendar_month_rounded, size: 18),
-                  label: Text(
-                    '${fmt(_firstClearDay)}  →  ${fmt(end)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _remindersButton(context, pool, outlined: true),
+                  const SizedBox(width: 6),
+                  _fitMenu(pool, compact: narrow),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Tooltip(
+                      message: 'Jump to a date',
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('jump-to-date'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: () => _jumpToDate(context),
+                        icon: const Icon(Icons.date_range_rounded, size: 16),
+                        label: Text(
+                          compactRangeLabel(_firstClearDay, end),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  if (full) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      key: const ValueKey('go-today'),
+                      onPressed: () => _showFrom(DateTime.now()),
+                      icon: const Icon(Icons.today_rounded, size: 18),
+                      label: const Text('Today'),
+                    ),
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: 'Go to the seed date (start of the balance)',
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('go-seed'),
+                        onPressed: () => _showFrom(pool.seedDate),
+                        icon: const Icon(
+                          Icons.flag_rounded,
+                          size: 18,
+                          color: AppTheme.violet,
+                        ),
+                        label: const Text('Seed'),
+                      ),
+                    ),
+                  ] else if (!narrow) ...[
+                    const SizedBox(width: 6),
+                    iconBtn(
+                      'go-today',
+                      'Go to today',
+                      Icons.today_rounded,
+                      () => _showFrom(DateTime.now()),
+                    ),
+                    const SizedBox(width: 4),
+                    iconBtn(
+                      'go-seed',
+                      'Go to the seed date (start of the balance)',
+                      Icons.flag_rounded,
+                      () => _showFrom(pool.seedDate),
+                      color: AppTheme.violet,
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (full) ...[
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                key: const ValueKey('go-today'),
-                onPressed: () => _showFrom(DateTime.now()),
-                icon: const Icon(Icons.today_rounded, size: 18),
-                label: const Text('Today'),
-              ),
-              const SizedBox(width: 8),
-              Tooltip(
-                message: 'Go to the seed date (start of the balance)',
-                child: OutlinedButton.icon(
-                  key: const ValueKey('go-seed'),
-                  onPressed: () => _showFrom(pool.seedDate),
-                  icon: const Icon(
-                    Icons.flag_rounded,
-                    size: 18,
-                    color: AppTheme.violet,
-                  ),
-                  label: const Text('Seed'),
-                ),
-              ),
-            ] else if (!narrow) ...[
-              const SizedBox(width: 6),
-              iconBtn(
-                'go-today',
-                'Go to today',
-                Icons.today_rounded,
-                () => _showFrom(DateTime.now()),
-              ),
-              const SizedBox(width: 4),
-              iconBtn(
-                'go-seed',
-                'Go to the seed date (start of the balance)',
-                Icons.flag_rounded,
-                () => _showFrom(pool.seedDate),
-                color: AppTheme.violet,
-              ),
-            ],
-            const Spacer(),
-            if (full)
-              Tooltip(
-                message: 'Plan a payment or a balance goal',
-                child: TextButton.icon(
-                  key: const ValueKey('open-plan'),
-                  onPressed: _openPlan,
-                  icon: const Icon(Icons.calculate_outlined, size: 18),
-                  label: const Text('Plan'),
-                ),
-              )
-            else
-              IconButton(
-                key: const ValueKey('open-plan'),
-                tooltip: 'Plan a payment or a balance goal',
-                onPressed: _openPlan,
-                icon: const Icon(Icons.calculate_outlined),
-              ),
             IconButton(
               key: const ValueKey('shortcuts-help'),
               tooltip: 'Keyboard and mouse shortcuts',
@@ -1414,45 +1389,61 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// Phone toolbar: date range (tap to jump), plan, and the View menu
+  /// Phone toolbar: date range (tap to jump), reminders and the View menu
   /// (with Today / Seed). Everything is at least 44px tall.
   Widget _compactToolbar(BuildContext context, Pool pool) {
     final end = lastVisibleDay(_viewStart, _visibleDays);
-    final fmt = DateFormat('d MMM yy');
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Expanded(
+        Flexible(
           child: OutlinedButton(
             key: const ValueKey('jump-to-date'),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(0, 44),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
             ),
             onPressed: () => _jumpToDate(context),
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(
-                '${fmt.format(_firstClearDay)} → ${fmt.format(end)}',
-                maxLines: 1,
-              ),
+              child: Text(compactRangeLabel(_firstClearDay, end), maxLines: 1),
             ),
           ),
         ),
-        IconButton(
-          key: const ValueKey('open-plan-compact'),
-          tooltip: 'Plan',
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          onPressed: _planOpen ? _closePlan : _openPlan,
-          isSelected: _planOpen,
-          icon: const Icon(Icons.calculate_outlined),
-          selectedIcon: const Icon(Icons.calculate, color: AppTheme.accent),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _remindersButton(context, pool),
+            _fitMenu(pool, compact: true),
+          ],
         ),
-        _fitMenu(pool, compact: true),
       ],
     );
   }
 
-  String _shortDate(DateTime d) => DateFormat('d MMM y').format(d);
+  /// The reminders calendar ("schedule"): sits just left of the View menu.
+  Widget _remindersButton(
+    BuildContext context,
+    Pool pool, {
+    bool outlined = false,
+  }) {
+    const icon = Icon(Icons.calendar_month_rounded);
+    void open() => showReminders(context, pool);
+    return outlined
+        ? IconButton.outlined(
+            key: const ValueKey('open-reminders'),
+            tooltip: 'Reminders calendar',
+            onPressed: open,
+            icon: const Icon(Icons.calendar_month_rounded, size: 18),
+          )
+        : IconButton(
+            key: const ValueKey('open-reminders'),
+            tooltip: 'Reminders calendar',
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            onPressed: open,
+            icon: icon,
+          );
+  }
 
   Future<void> _jumpToDate(BuildContext context) async {
     final picked = await showDatePicker(
@@ -1507,6 +1498,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 head('Navigate'),
                 row(['Drag'], 'Pan time and balance (on the chart)'),
                 row(['Pinch'], 'Zoom time (touch)'),
+                row(['Double-tap'], 'Zoom in there and centre its balance'),
                 row(['←', '→'], 'Pan time'),
                 row(['↑', '↓'], 'Pan balance'),
                 row(['Scroll'], 'Zoom time at the cursor'),
@@ -1742,6 +1734,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           _showFrom(date);
         },
         onChanged: _invalidateBalance,
+        // New ▾ Plan: the only way into the planner.
+        onPlan: () {
+          Navigator.of(panelContext).pop();
+          _openPlan();
+          // "Plan a payment" (the planner's other tabs are one tap away).
+          setState(() => _planTab = PlanTab.payment);
+        },
       ),
     );
   }
@@ -2226,4 +2225,15 @@ class _HeaderBrand extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Toolbar date range, kept short: "12 Oct – 9 Nov ’26" (one year), or
+/// "28 Dec ’26 – 9 Jan ’27" across a year end.
+@visibleForTesting
+String compactRangeLabel(DateTime from, DateTime to) {
+  final day = DateFormat('d MMM');
+  String yy(DateTime d) => '’${DateFormat('yy').format(d)}';
+  return from.year == to.year
+      ? '${day.format(from)} – ${day.format(to)} ${yy(to)}'
+      : '${day.format(from)} ${yy(from)} – ${day.format(to)} ${yy(to)}';
 }

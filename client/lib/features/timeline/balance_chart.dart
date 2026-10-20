@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -243,6 +244,71 @@ class _BalanceChartState extends State<BalanceChart>
 
   bool get _wheelActive => _wheelTicker.isActive;
 
+  /// Double-tap zoom: time 2x in about the tapped point and the balance
+  /// range centred on it, eased together over [doubleTapZoomDuration].
+  late final AnimationController _dtAnim = AnimationController(
+    vsync: this,
+    duration: doubleTapZoomDuration,
+  )..addListener(_tickDoubleTap);
+  ({double startCoord, double days, BalanceExtents y})? _dtFrom, _dtTo;
+  DateTime? _dtBase;
+
+  /// The last plain tap on the plot (to recognise a second one).
+  DateTime? _lastTapAt;
+  Offset? _lastTapPos;
+
+  void _tickDoubleTap() {
+    final from = _dtFrom, to = _dtTo, base = _dtBase;
+    if (from == null || to == null || base == null || !mounted) return;
+    final k = Curves.easeInOutCubic.transform(_dtAnim.value);
+    double lerp(double a, double b) => a + (b - a) * k;
+    final start = lerp(from.startCoord, to.startCoord);
+    setState(
+      () => _yRange = BalanceExtents(
+        lerp(from.y.min, to.y.min),
+        lerp(from.y.max, to.y.max),
+      ),
+    );
+    widget.onViewportChanged(
+      addDays(base, start - from.startCoord),
+      lerp(from.days, to.days),
+    );
+  }
+
+  void _stopDoubleTap() {
+    if (_dtAnim.isAnimating) _dtAnim.stop();
+    _dtFrom = _dtTo = _dtBase = null;
+  }
+
+  /// Second tap of a double-tap at [pos]: zoom (never creates or edits).
+  void _doubleTapZoom(Offset pos) {
+    final layout = _layout;
+    final plot = layout.plot;
+    final y = _ensureYRange();
+    if (y == null || plot.width <= 0 || plot.height <= 0) return;
+    _stopWheel();
+    _stopDoubleTap();
+    _clearTip();
+    _tapTip = false;
+    _tapTipTimer?.cancel();
+    _hoverDots.value = null;
+    final from = (
+      startCoord: dayCoord(widget.viewStart),
+      days: widget.visibleDays,
+      y: y,
+    );
+    _dtFrom = from;
+    _dtTo = doubleTapZoomTarget(
+      startCoord: from.startCoord,
+      days: from.days,
+      y: y,
+      fx: (pos.dx - plot.left) / plot.width,
+      fy: (pos.dy - plot.top) / plot.height,
+    );
+    _dtBase = widget.viewStart;
+    _dtAnim.forward(from: 0);
+  }
+
   /// Tests: the balance range currently shown.
   @visibleForTesting
   BalanceExtents? get debugYRange => _yRange;
@@ -254,6 +320,7 @@ class _BalanceChartState extends State<BalanceChart>
 
   /// Wheel up (dy < 0) zooms in, down zooms out, about the view centre.
   void _wheelZoom(double dy) {
+    _stopDoubleTap();
     final center = _wheelActive && _wheelCenter != null
         ? _wheelCenter!
         : addDays(widget.viewStart, widget.visibleDays / 2);
@@ -420,6 +487,11 @@ class _BalanceChartState extends State<BalanceChart>
       _clearTip();
       if (_mode != _Gesture.pick) _clearPin();
     }
+    if (oldWidget.fitToken != widget.fitToken ||
+        oldWidget.zeroToken != widget.zeroToken ||
+        oldWidget.currencyScale != widget.currencyScale) {
+      _stopDoubleTap();
+    }
     final y = _yRange;
     if (oldWidget.zeroToken != widget.zeroToken && y != null) {
       _yRange = includeZero(y);
@@ -505,11 +577,13 @@ class _BalanceChartState extends State<BalanceChart>
 
   void _setYRange(BalanceExtents range) {
     if (!range.min.isFinite || !range.max.isFinite) return;
+    _stopDoubleTap();
     _clearTip();
     setState(() => _yRange = range);
   }
 
   void _fitY() {
+    _stopDoubleTap();
     _clearTip();
     setState(() => _yRange = null);
   }
@@ -520,6 +594,7 @@ class _BalanceChartState extends State<BalanceChart>
     _holdTimer?.cancel();
     _autoScroll?.cancel();
     _tapTipTimer?.cancel();
+    _dtAnim.dispose();
     _hoverDay.dispose();
     _hoverDots.dispose();
     _focus.dispose();
@@ -535,6 +610,7 @@ class _BalanceChartState extends State<BalanceChart>
   void _onPointerDown(PointerDownEvent event) {
     final touch = event.kind != PointerDeviceKind.mouse;
     if (!touch && (event.buttons & kPrimaryButton) == 0) return;
+    _stopDoubleTap();
     _down[event.pointer] = event.localPosition;
     // Any press on the chart (its bubble sits above and keeps its own)
     // dismisses a pinned pick.
@@ -1087,6 +1163,24 @@ class _BalanceChartState extends State<BalanceChart>
     if (dismiss && !dragged) return;
     if (longPress || dismiss) return;
 
+    // A second quick tap near the first: zoom in there (time 2x, balance
+    // centred), never the second tap's info / create.
+    if (!dragged) {
+      final now = clock.now(), last = _lastTapAt, lastPos = _lastTapPos;
+      if (last != null &&
+          lastPos != null &&
+          now.difference(last) <= kDoubleTapTimeout &&
+          (localPosition - lastPos).distance <= kDoubleTapSlop &&
+          _layout.plot.contains(localPosition)) {
+        _lastTapAt = _lastTapPos = null;
+        _doubleTapZoom(localPosition);
+        return;
+      }
+      _lastTapAt = now;
+      _lastTapPos = localPosition;
+    } else {
+      _lastTapAt = _lastTapPos = null;
+    }
     final addDay = _downOnAdd;
     if (!dragged && addDay != null) {
       widget.onCreateOnDay(addDay);

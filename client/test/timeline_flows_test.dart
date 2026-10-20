@@ -1,6 +1,7 @@
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
+import 'package:budget_client/features/planning/plan_panel.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/occurrence_dates.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
@@ -9,6 +10,7 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
@@ -1172,19 +1174,184 @@ void main() {
     }
   });
 
-  testWidgets('desktop toolbar: View sits before the date-range (calendar) '
-      'button; phone toolbar order unchanged', (tester) async {
+  testWidgets('toolbar order: reminders ("schedule") sits immediately left '
+      'of View; no Plan button anywhere in the toolbar', (tester) async {
     double x(String key) => tester.getCenter(find.byKey(ValueKey(key))).dx;
-    await _pump(tester);
-    expect(x('fit-menu'), lessThan(x('jump-to-date')));
-    expect(
-      x('jump-to-date'),
-      lessThan(tester.getCenter(find.text('Today')).dx),
-    );
+    Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
+    for (final size in const [Size(1440, 900), Size(800, 900)]) {
+      await _pump(tester, size: size);
+      expect(x('open-reminders'), lessThan(x('fit-menu')));
+      expect(r('fit-menu').left - r('open-reminders').right, lessThan(10));
+      expect(x('fit-menu'), lessThan(x('jump-to-date')));
+      // Moved down from the app bar.
+      expect(
+        r('open-reminders').top,
+        greaterThan(tester.getRect(find.byType(AppBar)).bottom - 1),
+      );
+      expect(find.byKey(const ValueKey('open-plan')), findsNothing);
+      // Shortcuts stay at the far right.
+      expect(r('shortcuts-help').right, closeTo(size.width - 16, 1));
+    }
     await _pump(tester, size: const Size(390, 844));
-    expect(x('jump-to-date'), lessThan(x('open-plan-compact')));
-    expect(x('open-plan-compact'), lessThan(x('fit-menu')));
+    expect(x('jump-to-date'), lessThan(x('open-reminders')));
+    expect(x('open-reminders'), lessThan(x('fit-menu')));
+    expect(r('fit-menu').left - r('open-reminders').right, lessThan(10));
+    expect(find.byKey(const ValueKey('open-plan-compact')), findsNothing);
+    // Reminders + View sit at the right edge, the range at the left.
+    expect(r('fit-menu').right, closeTo(390 - 8, 1));
+    expect(r('jump-to-date').left, closeTo(8, 1));
+    expect(find.byKey(const ValueKey('open-reminders')), findsOneWidget);
   });
+
+  test('compact date range label', () {
+    expect(
+      compactRangeLabel(DateTime(2026, 10, 12), DateTime(2026, 11, 9)),
+      '12 Oct – 9 Nov ’26',
+    );
+    expect(
+      compactRangeLabel(DateTime(2026, 12, 28), DateTime(2027, 1, 9)),
+      '28 Dec ’26 – 9 Jan ’27',
+    );
+  });
+
+  for (final (size, maxW) in const [
+    // (The test font is wider than the app's: ~140px real on phones.)
+    (Size(320, 640), 210.0),
+    (Size(390, 844), 210.0),
+    (Size(800, 900), 240.0),
+    (Size(1440, 900), 240.0),
+  ]) {
+    testWidgets('date range control is compact and readable at '
+        '${size.width.toInt()}px', (tester) async {
+      await _pump(tester, size: size);
+      final btn = find.byKey(const ValueKey('jump-to-date'));
+      expect(tester.getSize(btn).width, lessThanOrEqualTo(maxW));
+      final label = find.descendant(
+        of: btn,
+        matching: find.textContaining('’'),
+      );
+      expect(label, findsOneWidget);
+      final text = tester.widget<Text>(label).data!;
+      expect(text, contains(' – '));
+      // Not cut off, and not shrunk to unreadable.
+      final para = tester.renderObject<RenderParagraph>(
+        find.descendant(of: label, matching: find.byType(RichText)),
+      );
+      expect(para.didExceedMaxLines, isFalse);
+      final scale =
+          tester.getSize(label).width / para.getMaxIntrinsicWidth(100);
+      expect(scale, greaterThan(0.85));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('More menu has no "Plan a payment"', (tester) async {
+    await _pump(tester, size: const Size(390, 844));
+    await tester.tap(find.byKey(const ValueKey('timeline-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('Pool settings'), findsOneWidget);
+    expect(find.text('Plan a payment'), findsNothing);
+  });
+
+  for (final size in const [Size(1440, 900), Size(390, 844)]) {
+    testWidgets('${size.width.toInt()}px: Transactions New ▾ split button: '
+        'New (default) and Plan', (tester) async {
+      await _pump(tester, size: size);
+      await tester.tap(find.byKey(const ValueKey('open-transactions')));
+      await tester.pumpAndSettle();
+      // Main action: New opens the editor, as before.
+      await tester.tap(find.byKey(const ValueKey('panel-new-transaction')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('editor-back')));
+      await tester.pumpAndSettle();
+      // The menu: New and Plan.
+      final menu = find.byKey(const ValueKey('panel-new-menu'));
+      final main = tester.getRect(
+        find.byKey(const ValueKey('panel-new-transaction')),
+      );
+      expect(tester.getRect(menu).left - main.right, lessThan(4));
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('new-option-new')), findsOneWidget);
+      expect(find.byKey(const ValueKey('new-option-plan')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('new-option-new')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('editor-back')));
+      await tester.pumpAndSettle();
+      expect(find.byType(PlanPanel), findsNothing);
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('new-option-plan')));
+      await tester.pumpAndSettle();
+      // The panel closes and the planner opens.
+      expect(find.byKey(const ValueKey('panel-new-transaction')), findsNothing);
+      expect(find.byType(PlanPanel), findsOneWidget);
+      expect(
+        tester.widget<PlanPanel>(find.byType(PlanPanel)).tab,
+        PlanTab.payment,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final kind in const [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
+    testWidgets('double-tap (${kind.name}) zooms time 2x about the tap and '
+        'centres the balance on it, eased; never edits', (tester) async {
+      final store = await _pump(tester);
+      final chartFinder = find.byType(BalanceChart);
+      BalanceChart chart() => tester.widget<BalanceChart>(chartFinder);
+      final state = tester.state(chartFinder) as dynamic;
+      BalanceExtents y() => state.debugYRange as BalanceExtents;
+      final rect = tester.getRect(chartFinder);
+      final w = rect.width;
+      final layout = ChartLayout.of(rect.size, chart().visibleDays);
+      final plot = layout.plot;
+      final p =
+          rect.topLeft +
+          Offset(plot.left + plot.width * 0.7, plot.top + plot.height * 0.3);
+      final days0 = chart().visibleDays;
+      final start0 = dayCoord(chart().viewStart);
+      final y0 = y();
+      final atDay = start0 + 0.7 * days0;
+      final atBalance = y0.max - 0.3 * (y0.max - y0.min);
+      final calls0 = List.of(store.calls);
+
+      await tester.tapAt(p, kind: kind);
+      await tester.pump(const Duration(milliseconds: 120));
+      await tester.tapAt(p, kind: kind);
+      await tester.pump();
+      // Eased: part-way after ~160ms, not a jump.
+      await tester.pump(const Duration(milliseconds: 160));
+      final midDays = chart().visibleDays;
+      expect(midDays, lessThan(days0 - 0.5));
+      expect(midDays, greaterThan(days0 / 2 + 0.5));
+      await tester.pump(doubleTapZoomDuration);
+      await tester.pumpAndSettle();
+      expect(chart().visibleDays, closeTo(days0 / 2, 1e-6));
+      final start1 = dayCoord(chart().viewStart);
+      expect(start1 + chart().visibleDays / 2, closeTo(atDay, 1e-3));
+      final y1 = y();
+      expect(y1.max - y1.min, closeTo(y0.max - y0.min, 1e-6));
+      expect((y1.min + y1.max) / 2, closeTo(atBalance, 1e-6));
+      // Taps never create or edit (only balance reads for the new window).
+      expect(
+        store.calls.where((c) => c != 'balance'),
+        calls0.where((c) => c != 'balance'),
+      );
+      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(w, greaterThan(0));
+
+      // Two taps further apart in time are just taps (no zoom).
+      await tester.tapAt(p, kind: kind);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tapAt(p, kind: kind);
+      await tester.pumpAndSettle();
+      expect(chart().visibleDays, closeTo(days0 / 2, 1e-6));
+      await tester.pump(const Duration(seconds: 6));
+    });
+  }
 
   for (final w in const [600.0, 800.0, 1000.0, 1100.0, 1440.0]) {
     testWidgets('desktop toolbar fits at ${w.toInt()}px (no overflow; '
@@ -1201,8 +1368,8 @@ void main() {
       expect(find.byKey(const ValueKey('shift-right')), findsNothing);
       for (final k in [
         'fit-menu',
+        'open-reminders',
         'jump-to-date',
-        'open-plan',
         'shortcuts-help',
       ]) {
         final r = tester.getRect(find.byKey(ValueKey(k)));
@@ -1294,7 +1461,7 @@ void main() {
     // The range label now starts on today (the first day clear of the
     // left strip); the picker opens there.
     expect(
-      find.textContaining(DateFormat('d MMM y').format(_day)),
+      find.textContaining('${DateFormat('d MMM').format(_day)} – '),
       findsWidgets,
     );
     final initial = _day;
@@ -1314,7 +1481,7 @@ void main() {
     expect(
       label.data,
       startsWith(
-        DateFormat('d MMM y').format(DateTime(initial.year, initial.month, 15)),
+        '${DateFormat('d MMM').format(DateTime(initial.year, initial.month, 15))} ',
       ),
     );
   });
@@ -1338,7 +1505,7 @@ void main() {
           matching: find.byType(Text),
         ),
       );
-      expect(range.data, startsWith(DateFormat('d MMM yy').format(day)));
+      expect(range.data, startsWith('${DateFormat('d MMM').format(day)} '));
     }
   });
 
