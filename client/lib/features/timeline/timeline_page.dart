@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../app.dart';
-import '../accounts/accounts_page.dart';
+import '../pools/pools_page.dart';
 
 import '../../data/api_client.dart';
 import '../../data/models.dart';
@@ -16,8 +16,8 @@ import '../sharing/share_dialog.dart';
 import '../../state/realtime_providers.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/account_dialog.dart';
-import '../../widgets/account_picker.dart';
+import '../../widgets/pool_dialog.dart';
+import '../../widgets/pool_picker.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
 import '../transactions/editor_outcome.dart';
@@ -41,9 +41,9 @@ import 'zoom_level.dart';
 import '../../data/alert.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
-  const TimelinePage({super.key, required this.accountId});
+  const TimelinePage({super.key, required this.poolId});
 
-  final String accountId;
+  final String poolId;
 
   @override
   ConsumerState<TimelinePage> createState() => _TimelinePageState();
@@ -88,7 +88,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _viewAnim.forward(from: 0);
   }
 
-  /// Selected view unit per account (kept while the app is open).
+  /// Selected view unit per pool (kept while the app is open).
 
   /// Always one selected; − / + step through [ViewUnit.values].
   ViewUnit _unit = ViewUnit.month;
@@ -97,7 +97,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   late DateTime _dataTo;
   late DateTime _viewStart;
   double _visibleDays = ZoomLevel.week.visibleDays.toDouble();
-  String? _windowAccountId;
+  String? _windowPoolId;
   BalanceSeries? _seriesCache;
 
   /// Window [_seriesCache] was fetched for; shown while a wider one loads.
@@ -168,9 +168,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     if (name == null || name.trim().isEmpty) return;
     try {
       await ref
-          .read(accountRepositoryProvider)
-          .createScenario(widget.accountId, name: name.trim(), request: req);
-      ref.invalidate(scenariosProvider(widget.accountId));
+          .read(poolRepositoryProvider)
+          .createScenario(widget.poolId, name: name.trim(), request: req);
+      ref.invalidate(scenariosProvider(widget.poolId));
       if (mounted) setState(() => _planTab = PlanTab.scenarios);
     } catch (e) {
       if (context.mounted) {
@@ -253,7 +253,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   List<GhostLine> get _ghosts => [
     for (final (sc, r)
-        in ref.watch(scenarioResultsProvider(widget.accountId)).valueOrNull ??
+        in ref.watch(scenarioResultsProvider(widget.poolId)).valueOrNull ??
             const <(Scenario, GoalResult?)>[])
       if (sc.included && r != null && r.values != null)
         GhostLine(
@@ -278,9 +278,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     final to = _dataTo.isAfter(horizon) ? _dataTo : horizon;
     try {
       final series = await ref
-          .read(accountRepositoryProvider)
+          .read(poolRepositoryProvider)
           .project(
-            widget.accountId,
+            widget.poolId,
             [t],
             from: addCalendarDays(start, -1),
             to: to,
@@ -308,21 +308,21 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _dataTo = addCalendarDays(today, 120);
   }
 
-  /// Server-side "last opened" (the account may come from cache, so the GET
+  /// Server-side "last opened" (the pool may come from cache, so the GET
   /// alone is not enough). Best effort.
   void _markOpened(String id) {
-    final notifier = ref.read(accountsProvider.notifier);
-    notifier.lastAccountId = id;
+    final notifier = ref.read(poolsProvider.notifier);
+    notifier.lastPoolId = id;
     ref
-        .read(accountRepositoryProvider)
+        .read(poolRepositoryProvider)
         .markOpened(id)
         .catchError((Object _) {});
   }
 
-  void _ensureWindow(Account account) {
-    if (_windowAccountId == account.id) return;
-    _windowAccountId = account.id;
-    _markOpened(account.id);
+  void _ensureWindow(Pool pool) {
+    if (_windowPoolId == pool.id) return;
+    _windowPoolId = pool.id;
+    _markOpened(pool.id);
     _viewAnim.stop();
     _seriesCache = null;
     _seriesCacheQuery = null;
@@ -339,13 +339,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   BalanceQuery get _query =>
-      BalanceQuery(accountId: widget.accountId, from: _dataFrom, to: _dataTo);
+      BalanceQuery(poolId: widget.poolId, from: _dataFrom, to: _dataTo);
 
-  Future<void> _openImport(BuildContext context, Account account) async {
-    final result = await showImportDialog(context, accountId: account.id);
+  Future<void> _openImport(BuildContext context, Pool pool) async {
+    final result = await showImportDialog(context, poolId: pool.id);
     if (result == null || !context.mounted) return;
-    ref.invalidate(transactionsProvider(widget.accountId));
-    ref.invalidate(accountProvider(widget.accountId));
+    ref.invalidate(transactionsProvider(widget.poolId));
+    ref.invalidate(poolProvider(widget.poolId));
     _invalidateBalance();
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(result.message)));
@@ -353,8 +353,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   void _invalidateBalance() {
     ref.invalidate(balanceProvider(_query));
-    ref.invalidate(todayBalanceProvider(widget.accountId));
-    ref.invalidate(insightsProvider(widget.accountId));
+    ref.invalidate(todayBalanceProvider(widget.poolId));
+    ref.invalidate(insightsProvider(widget.poolId));
   }
 
   /// Puts [day] a third of the way in and refits the balance to the view
@@ -410,7 +410,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// Applies a Fit menu choice. Time fits go through [_onViewport], which
   /// widens the fetched window to cover the new view; the chart then refits
   /// the balance range once that data has loaded.
-  void _fit(FitMode mode, Account account) {
+  void _fit(FitMode mode, Pool pool) {
     TimeSpan? span;
     switch (mode) {
       case FitMode.vertical:
@@ -418,10 +418,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       case FitMode.all:
       case FitMode.horizontal:
         final transactions =
-            ref.read(transactionsProvider(widget.accountId)).valueOrNull ??
+            ref.read(transactionsProvider(widget.poolId)).valueOrNull ??
             const <Transaction>[];
-        final range = accountDataRange(
-          seedDate: account.seedDate,
+        final range = poolDataRange(
+          seedDate: pool.seedDate,
           transactions: transactions,
           today: DateTime.now(),
         );
@@ -488,9 +488,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   @override
   Widget build(BuildContext context) {
-    final accountAsync = ref.watch(accountProvider(widget.accountId));
+    final poolAsync = ref.watch(poolProvider(widget.poolId));
 
-    return accountAsync.when(
+    return poolAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (error, _) => Scaffold(
@@ -508,8 +508,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           ),
         ),
       ),
-      data: (account) {
-        _ensureWindow(account);
+      data: (pool) {
+        _ensureWindow(pool);
         final balanceAsync = ref.watch(balanceProvider(_query));
         final liveSeries = balanceAsync.asData?.value;
         if (liveSeries != null) {
@@ -521,7 +521,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final transactionNames = {
           for (final transaction
               in ref
-                      .watch(transactionsProvider(widget.accountId))
+                      .watch(transactionsProvider(widget.poolId))
                       .asData
                       ?.value ??
                   const <Transaction>[])
@@ -529,7 +529,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         };
 
         final transactions =
-            ref.watch(transactionsProvider(widget.accountId)).valueOrNull ??
+            ref.watch(transactionsProvider(widget.poolId)).valueOrNull ??
             const <Transaction>[];
         final todayPoint = series == null
             ? null
@@ -549,16 +549,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               toolbarHeight: compact ? 60 : 68,
               leading: IconButton(
                 key: const ValueKey('timeline-back'),
-                tooltip: 'All accounts',
+                tooltip: 'All pools',
                 icon: const Icon(Icons.arrow_back_rounded),
                 onPressed: () => _goBack(context),
               ),
               titleSpacing: compact ? 0 : 4,
-              title: _AccountHeader(
-                account: account,
+              title: _PoolHeader(
+                pool: pool,
                 todayPoint: todayPoint,
                 insights: ref
-                    .watch(insightsProvider(widget.accountId))
+                    .watch(insightsProvider(widget.poolId))
                     .valueOrNull,
                 compact: compact,
                 showToday: !compactActions,
@@ -570,14 +570,14 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                       IconButton(
                         key: const ValueKey('open-reminders'),
                         tooltip: 'Reminders calendar',
-                        onPressed: () => showReminders(context, account),
+                        onPressed: () => showReminders(context, pool),
                         icon: const Icon(Icons.calendar_month_rounded),
                       ),
                       IconButton(
                         key: const ValueKey('open-transactions'),
                         tooltip: 'Transactions (${transactions.length})',
                         onPressed: () =>
-                            _openTransactionsPanel(context, account),
+                            _openTransactionsPanel(context, pool),
                         icon: Badge.count(
                           count: transactions.length,
                           backgroundColor: AppTheme.accent,
@@ -592,32 +592,32 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                         onSelected: (v) {
                           switch (v) {
                             case 'import':
-                              _openImport(context, account);
+                              _openImport(context, pool);
                             case 'settings':
-                              _editAccount(context, account);
+                              _editPool(context, pool);
                             case 'plan':
                               _openPlan();
                             case 'shortcuts':
                               _showShortcuts(context);
                             case 'share':
-                              _share(context, account);
+                              _share(context, pool);
                           }
                         },
                         itemBuilder: (context) => [
-                          if (account.role.isOwner)
+                          if (pool.role.isOwner)
                             const PopupMenuItem(
                               value: 'share',
                               child: ListTile(
                                 leading: Icon(Icons.person_add_alt_1_outlined),
-                                title: Text('Share account'),
+                                title: Text('Share pool'),
                               ),
                             ),
-                          if (account.role.canEdit) ...const [
+                          if (pool.role.canEdit) ...const [
                             PopupMenuItem(
                               value: 'settings',
                               child: ListTile(
                                 leading: Icon(Icons.tune_rounded),
-                                title: Text('Account settings'),
+                                title: Text('Pool settings'),
                               ),
                             ),
                             PopupMenuItem(
@@ -648,7 +648,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                     ]
                   : [
                       const RealtimeDot(),
-                      if (!account.role.canEdit)
+                      if (!pool.role.canEdit)
                         const Padding(
                           padding: EdgeInsets.only(right: 8),
                           child: Chip(
@@ -657,38 +657,38 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                             label: Text('View only'),
                           ),
                         ),
-                      if (account.role.isOwner)
+                      if (pool.role.isOwner)
                         IconButton(
-                          key: const ValueKey('account-share'),
-                          tooltip: 'Share account',
-                          onPressed: () => _share(context, account),
+                          key: const ValueKey('pool-share'),
+                          tooltip: 'Share pool',
+                          onPressed: () => _share(context, pool),
                           icon: const Icon(Icons.person_add_alt_1_outlined),
                         ),
-                      if (account.role.canEdit) ...[
+                      if (pool.role.canEdit) ...[
                         IconButton(
                           tooltip: 'Import transactions (JSON)',
-                          onPressed: () => _openImport(context, account),
+                          onPressed: () => _openImport(context, pool),
                           icon: const Icon(Icons.file_upload_outlined),
                         ),
                         IconButton(
-                          key: const ValueKey('account-settings'),
+                          key: const ValueKey('pool-settings'),
                           tooltip:
-                              'Account settings: seed balance, date, threshold',
-                          onPressed: () => _editAccount(context, account),
+                              'Pool settings: seed balance, date, threshold',
+                          onPressed: () => _editPool(context, pool),
                           icon: const Icon(Icons.tune_rounded),
                         ),
                       ],
                       IconButton(
                         key: const ValueKey('open-reminders'),
                         tooltip: 'Reminders calendar',
-                        onPressed: () => showReminders(context, account),
+                        onPressed: () => showReminders(context, pool),
                         icon: const Icon(Icons.calendar_month_rounded),
                       ),
                       const SizedBox(width: 6),
                       OutlinedButton.icon(
                         key: const ValueKey('open-transactions'),
                         onPressed: () =>
-                            _openTransactionsPanel(context, account),
+                            _openTransactionsPanel(context, pool),
                         icon: const Icon(Icons.list_alt_rounded, size: 18),
                         label: Text('Transactions · ${transactions.length}'),
                       ),
@@ -708,8 +708,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                       0,
                     ),
                     child: compact
-                        ? _compactToolbar(context, account)
-                        : _toolbar(context, account),
+                        ? _compactToolbar(context, pool)
+                        : _toolbar(context, pool),
                   ),
                   Expanded(
                     child: Padding(
@@ -741,30 +741,30 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               : Stack(
                                   children: [
                                     BalanceChart(
-                                      key: ValueKey(account.id),
+                                      key: ValueKey(pool.id),
                                       fitToken: _fitToken,
                                       zeroToken: _zeroToken,
                                       onFitRequested: (mode) =>
-                                          _fit(mode, account),
+                                          _fit(mode, pool),
                                       onZoomStep: _zoomStep,
                                       onShift: _shift,
                                       series: series,
-                                      seedDate: account.seedDate,
-                                      seedBalance: account.seedBalance
+                                      seedDate: pool.seedDate,
+                                      seedBalance: pool.seedBalance
                                           .toDouble(),
-                                      lossThreshold: account.lossThreshold
+                                      lossThreshold: pool.lossThreshold
                                           .toDouble(),
-                                      currencyScale: account.currencyScale
+                                      currencyScale: pool.currencyScale
                                           .toDouble(),
                                       fitIncludesThreshold: _fitThreshold,
                                       viewStart: _viewStart,
                                       visibleDays: _visibleDays,
                                       onViewportChanged: _onChartViewport,
                                       onCreateOnDay: (day) =>
-                                          account.role.canEdit
+                                          pool.role.canEdit
                                           ? _createOnceOnDay(context, day)
                                           : _viewOnlyToast(context),
-                                      onTrimOnDay: account.role.canEdit
+                                      onTrimOnDay: pool.role.canEdit
                                           ? (t, day, removed) => _confirmTrim(
                                               context,
                                               t,
@@ -772,10 +772,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                               removed,
                                             )
                                           : null,
-                                      onEditTransaction: account.role.canEdit
+                                      onEditTransaction: pool.role.canEdit
                                           ? (t, date) => _openEditor(
                                               context,
-                                              account,
+                                              pool,
                                               existing: t,
                                               focusDate: date,
                                             )
@@ -790,17 +790,17 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                       target: _goalActive ? _goalTarget : null,
                                       targetMode: _goalActive && _targetMode,
                                       onTargetChanged: _onTargetDrag,
-                                      onAddForPeriod: account.role.canEdit
+                                      onAddForPeriod: pool.role.canEdit
                                           ? (start, end) => _openEditor(
                                               context,
-                                              account,
+                                              pool,
                                               initialDate: start,
                                               initialEndDate: end,
                                             )
                                           : null,
                                       onPlanPeriod: (p) => _planPeriod(
                                         p,
-                                        account.lossThreshold.toDouble(),
+                                        pool.lossThreshold.toDouble(),
                                       ),
                                     ),
                                     if (_goalActive)
@@ -855,8 +855,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// viewport survive switching to "Show on chart" and back.
   Widget _withFullPlan(BuildContext context, Widget page) {
     if (!_planFull(context)) return page;
-    final account = ref.read(accountProvider(widget.accountId)).valueOrNull;
-    if (account == null) return page;
+    final pool = ref.read(poolProvider(widget.poolId)).valueOrNull;
+    if (pool == null) return page;
     final goal = _planTab == PlanTab.goal;
     return Stack(
       children: [
@@ -898,7 +898,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               top: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                child: _planPanel(context, account, compact: true, full: true),
+                child: _planPanel(context, pool, compact: true, full: true),
               ),
             ),
           ),
@@ -913,9 +913,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     required Widget child,
   }) {
     if (!_planOpen || _planFull(context)) return child;
-    final account = ref.read(accountProvider(widget.accountId)).valueOrNull;
-    if (account == null) return child;
-    final panel = _planPanel(context, account, compact: compact);
+    final pool = ref.read(poolProvider(widget.poolId)).valueOrNull;
+    if (pool == null) return child;
+    final panel = _planPanel(context, pool, compact: compact);
     if (compact) {
       final h = MediaQuery.sizeOf(context).height;
       return Column(
@@ -942,7 +942,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   Widget _planPanel(
     BuildContext context,
-    Account account, {
+    Pool pool, {
     required bool compact,
     bool full = false,
   }) {
@@ -956,7 +956,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               _targetMode = false;
             })
           : null,
-      account: account,
+      pool: pool,
       tab: _planTab,
       onTab: (t) => setState(() => _planTab = t),
       compact: compact,
@@ -981,7 +981,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// (≥1060px: labelled buttons; narrower: Today / Seed / Plan become icon
   /// buttons; <760px: Today / Seed move into the View menu and the date
   /// range drops the year). The date range ellipsises as a last resort.
-  Widget _toolbar(BuildContext context, Account account) {
+  Widget _toolbar(BuildContext context, Pool pool) {
     return LayoutBuilder(
       builder: (context, box) {
         final w = box.maxWidth;
@@ -1003,7 +1003,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           children: [
             _unitGroup(theme, compact: false),
             const SizedBox(width: 8),
-            _fitMenu(account, compact: narrow),
+            _fitMenu(pool, compact: narrow),
             const SizedBox(width: 8),
             Flexible(
               child: Tooltip(
@@ -1033,7 +1033,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 message: 'Go to the seed date (start of the balance)',
                 child: OutlinedButton.icon(
                   key: const ValueKey('go-seed'),
-                  onPressed: () => _centerOn(account.seedDate),
+                  onPressed: () => _centerOn(pool.seedDate),
                   icon: const Icon(
                     Icons.flag_rounded,
                     size: 18,
@@ -1051,7 +1051,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 'go-seed',
                 'Go to the seed date (start of the balance)',
                 Icons.flag_rounded,
-                () => _centerOn(account.seedDate),
+                () => _centerOn(pool.seedDate),
                 color: AppTheme.violet,
               ),
             ],
@@ -1115,7 +1115,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// View options. The fit modes themselves are keyboard-only (F / A / H,
   /// listed in the shortcuts sheet); this menu keeps the alert-line option
   /// for those fits and, on phones, Go to today / seed date.
-  Widget _fitMenu(Account account, {required bool compact}) {
+  Widget _fitMenu(Pool pool, {required bool compact}) {
     return PopupMenuButton<Object>(
       key: const ValueKey('fit-menu'),
       tooltip: 'View options',
@@ -1123,7 +1123,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         if (choice == 'today') {
           _centerOn(DateTime.now());
         } else if (choice == 'seed') {
-          _centerOn(account.seedDate);
+          _centerOn(pool.seedDate);
         } else {
           setState(() {
             _fitThreshold = !_fitThreshold;
@@ -1171,7 +1171,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               const SizedBox(width: 10),
               Flexible(
                 child: Text(
-                  'Keep alert line (${formatMoneyAmount(account.lossThreshold.toDouble())}) in fits',
+                  'Keep alert line (${formatMoneyAmount(pool.lossThreshold.toDouble())}) in fits',
                 ),
               ),
             ],
@@ -1203,7 +1203,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Phone toolbar: zoom, date range (tap to jump), fit, and a menu with
   /// Today / Seed. Everything is at least 44px tall.
-  Widget _compactToolbar(BuildContext context, Account account) {
+  Widget _compactToolbar(BuildContext context, Pool pool) {
     final theme = Theme.of(context);
     final end = lastVisibleDay(_viewStart, _visibleDays);
     final fmt = DateFormat('d MMM yy');
@@ -1237,7 +1237,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           icon: const Icon(Icons.calculate_outlined),
           selectedIcon: const Icon(Icons.calculate, color: AppTheme.accent),
         ),
-        _fitMenu(account, compact: true),
+        _fitMenu(pool, compact: true),
       ],
     );
   }
@@ -1341,7 +1341,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// always refreshes afterwards (skips can change even on cancel).
   Future<void> _openEditor(
     BuildContext context,
-    Account account, {
+    Pool pool, {
     Transaction? existing,
     DateTime? initialDate,
     DateTime? initialEndDate,
@@ -1350,7 +1350,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }) async {
     final result = await showTransactionEditor(
       context,
-      accountId: widget.accountId,
+      poolId: widget.poolId,
       existing: existing,
       initialDate: initialDate,
       initialEndDate: initialEndDate,
@@ -1367,7 +1367,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     reportEditorOutcome(
       context,
       ref,
-      accountId: widget.accountId,
+      poolId: widget.poolId,
       outcome: outcome,
       onChanged: _invalidateBalance,
     );
@@ -1383,35 +1383,35 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       ),
     );
     _closePlan();
-    ref.invalidate(transactionsProvider(widget.accountId));
+    ref.invalidate(transactionsProvider(widget.poolId));
     _invalidateBalance();
   }
 
-  Future<void> _editAccount(BuildContext context, Account account) async {
-    final edited = await showAccountDialog(
+  Future<void> _editPool(BuildContext context, Pool pool) async {
+    final edited = await showPoolDialog(
       context,
-      existing: account,
+      existing: pool,
       transactionCount: ref
-          .read(transactionsProvider(widget.accountId))
+          .read(transactionsProvider(widget.poolId))
           .valueOrNull
           ?.length,
     );
     if (edited == null || !context.mounted) return;
     try {
-      final n = ref.read(accountsProvider.notifier);
+      final n = ref.read(poolsProvider.notifier);
       final r = await saveWithConflictCheck(
         context,
-        save: (force) => n.updateAccount(edited, force: force),
+        save: (force) => n.updatePool(edited, force: force),
         reload: n.refresh,
       );
       if (r == SaveResult.cancelled) return;
-      ref.invalidate(accountProvider(widget.accountId));
+      ref.invalidate(poolProvider(widget.poolId));
       // A seed move shifts every schedule on the server.
-      ref.invalidate(transactionsProvider(widget.accountId));
+      ref.invalidate(transactionsProvider(widget.poolId));
       _invalidateBalance();
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Account updated')));
+            .showSnackBar(const SnackBar(content: Text('Pool updated')));
       }
     } catch (error) {
       if (context.mounted) {
@@ -1421,20 +1421,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     }
   }
 
-  void _goBack(BuildContext context) => context.go(accountsPath);
+  void _goBack(BuildContext context) => context.go(poolsPath);
 
   void _viewOnlyToast(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('View only: you have viewer access to this account'),
+        content: Text('View only: you have viewer access to this pool'),
       ),
     );
   }
 
-  Future<void> _share(BuildContext context, Account account) async {
+  Future<void> _share(BuildContext context, Pool pool) async {
     final left = await showShareDialog(
       context,
-      ShareTarget.account(account.id, account.name),
+      ShareTarget.pool(pool.id, pool.name),
     );
     if (left && context.mounted) context.go('/');
   }
@@ -1481,13 +1481,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     // Latest copy (and version) of the series.
     final current =
         ref
-            .read(transactionsProvider(widget.accountId))
+            .read(transactionsProvider(widget.poolId))
             .valueOrNull
             ?.where((x) => x.id == t.id)
             .firstOrNull ??
         t;
     try {
-      final n = ref.read(transactionsProvider(widget.accountId).notifier);
+      final n = ref.read(transactionsProvider(widget.poolId).notifier);
       final r = await saveWithConflictCheck(
         context,
         save: (force) =>
@@ -1512,21 +1512,21 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   Future<void> _createOnceOnDay(BuildContext context, DateTime day) async {
-    final account = ref.read(accountProvider(widget.accountId)).valueOrNull;
-    if (account == null) return;
-    await _openEditor(context, account, initialDate: day, onceOnly: true);
+    final pool = ref.read(poolProvider(widget.poolId)).valueOrNull;
+    if (pool == null) return;
+    await _openEditor(context, pool, initialDate: day, onceOnly: true);
   }
 
   Future<void> _openTransactionsPanel(
     BuildContext context,
-    Account account,
+    Pool pool,
   ) async {
     await showSidePanel<void>(
       context,
       width: 520,
       label: 'Transactions',
       builder: (panelContext) => TransactionsPanel(
-        account: account,
+        pool: pool,
         skipsFor: _skipsFor,
         onPanelClosed: (outcome) {
           if (context.mounted) _report(context, outcome);
@@ -1556,9 +1556,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 }
 
-class _AccountHeader extends StatelessWidget {
-  const _AccountHeader({
-    required this.account,
+class _PoolHeader extends StatelessWidget {
+  const _PoolHeader({
+    required this.pool,
     required this.todayPoint,
     this.insights,
     this.compact = false,
@@ -1570,7 +1570,7 @@ class _AccountHeader extends StatelessWidget {
   final bool showToday;
   final bool showInsights;
 
-  final Account account;
+  final Pool pool;
   final BalancePoint? todayPoint;
   final BalanceInsights? insights;
   final bool compact;
@@ -1603,7 +1603,7 @@ class _AccountHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final today = todayPoint?.closingBalance;
-    final loss = today != null && belowAlert(today, account.lossThreshold);
+    final loss = today != null && belowAlert(today, pool.lossThreshold);
     return Row(
       children: [
         Flexible(
@@ -1611,36 +1611,36 @@ class _AccountHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Account jump menu (same picker as transfers), with
-              // New account / Manage accounts at the bottom.
-              AccountPicker(
+              // Pool jump menu (same picker as transfers), with
+              // New pool / Manage pools at the bottom.
+              PoolPicker(
                 keyPrefix: 'nav',
-                title: 'Jump to account',
-                currentAccountId: account.id,
+                title: 'Jump to pool',
+                currentPoolId: pool.id,
                 onSelected: (a) {
-                  if (a.id == account.id) return;
-                  context.pushReplacement('/accounts/${a.id}/timeline');
+                  if (a.id == pool.id) return;
+                  context.pushReplacement('/pools/${a.id}/timeline');
                 },
-                onNewAccount: () async {
-                  final created = await createAccount(context);
+                onNewPool: () async {
+                  final created = await createPool(context);
                   if (created != null && context.mounted) {
-                    context.go('/accounts/${created.id}/timeline');
+                    context.go('/pools/${created.id}/timeline');
                   }
                 },
-                onManageAccounts: () => context.go(accountsPath),
+                onManagePools: () => context.go(poolsPath),
                 builder: (context, open) => InkWell(
-                  key: const ValueKey('header-account-picker'),
+                  key: const ValueKey('header-pool-picker'),
                   borderRadius: BorderRadius.circular(8),
                   onTap: open,
                   child: Tooltip(
-                    message: 'Jump to another account',
+                    message: 'Jump to another pool',
                     waitDuration: const Duration(milliseconds: 500),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Flexible(
                           child: Text(
-                            account.name,
+                            pool.name,
                             style: compact
                                 ? theme.textTheme.titleMedium
                                 : theme.textTheme.titleLarge,
@@ -1673,7 +1673,7 @@ class _AccountHeader extends StatelessWidget {
                 )
               else
                 Text(
-                  'Seed ${formatMoneyAmount(account.seedBalance.toDouble(), decimalDigits: 2)} on ${DateFormat('d MMM y').format(account.seedDate)}',
+                  'Seed ${formatMoneyAmount(pool.seedBalance.toDouble(), decimalDigits: 2)} on ${DateFormat('d MMM y').format(pool.seedDate)}',
                   style: theme.textTheme.bodySmall,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1696,17 +1696,17 @@ class _AccountHeader extends StatelessWidget {
                 insights!.lowestBalance != null &&
                 belowAlert(
                   insights!.lowestBalance!,
-                  account.lossThreshold.toDouble(),
+                  pool.lossThreshold.toDouble(),
                 ),
           ),
           const SizedBox(width: 8),
           _InsightChip(
             key: const ValueKey('header-runway'),
             label: 'RUNWAY',
-            value: runwayText(insights!, account),
+            value: runwayText(insights!, pool),
             detail: insights!.alertDate == null
                 ? null
-                : 'alert < ${formatMoneyAmount(account.lossThreshold.toDouble())}',
+                : 'alert < ${formatMoneyAmount(pool.lossThreshold.toDouble())}',
             warn: insights!.alertDate != null,
           ),
         ],
@@ -1751,7 +1751,7 @@ class _AccountHeader extends StatelessWidget {
 
 /// Runway headline: the first alert date (and the zero date when the
 /// threshold is not zero), or that it holds for the whole horizon.
-String runwayText(BalanceInsights i, Account account) {
+String runwayText(BalanceInsights i, Pool pool) {
   final fmt = DateFormat('d MMM y');
   final alert = i.alertDate;
   if (alert == null) {
@@ -1760,7 +1760,7 @@ String runwayText(BalanceInsights i, Account account) {
   final today = dateOnly(DateTime.now());
   if (!alert.isAfter(today)) return 'Below alert now';
   final zero = i.zeroDate;
-  if (zero != null && zero != alert && account.lossThreshold.toDouble() != 0) {
+  if (zero != null && zero != alert && pool.lossThreshold.toDouble() != 0) {
     return '${fmt.format(alert)} · \$0 ${fmt.format(zero)}';
   }
   return fmt.format(alert);

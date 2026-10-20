@@ -28,14 +28,14 @@ Map<String, Object?> weekly(String name,
       'endMode': endMode,
       if (endDate != null) 'endDate': endDate,
       if (count != null) 'occurrenceCount': count,
-      if (transferTo != null) 'transferToAccountId': transferTo,
+      if (transferTo != null) 'transferToPoolId': transferTo,
     };
 
 void main() {
   test('engine: an override replaces only its occurrence', () {
     final t = Transaction(
       id: 't',
-      accountId: 'a',
+      poolId: 'a',
       name: 'Rent',
       direction: Direction.debit,
       amount: Decimal.parse('100'),
@@ -71,8 +71,8 @@ void main() {
   setUpAll(() => h.open());
   tearDownAll(() => h.close());
 
-  Future<String> account(String who, String name) async {
-    final a = await h.call('POST', '/api/accounts',
+  Future<String> pool(String who, String name) async {
+    final a = await h.call('POST', '/api/pools',
         as: who, body: {'name': name, 'seedDate': '2026-01-01'});
     expect(a.status, 201, reason: '${a.json}');
     return a.json['id'] as String;
@@ -80,7 +80,7 @@ void main() {
 
   Future<Map<String, dynamic>> create(
       String who, String a, Map<String, Object?> body) async {
-    final r = await h.call('POST', '/api/accounts/$a/transactions',
+    final r = await h.call('POST', '/api/pools/$a/transactions',
         as: who, body: body);
     expect(r.status, 201, reason: '${r.json}');
     return r.json as Map<String, dynamic>;
@@ -88,7 +88,7 @@ void main() {
 
   Future<List<String>> deltas(String who, String a, String to) async {
     final b = await h.call(
-        'GET', '/api/accounts/$a/balance?from=2026-01-01&to=$to',
+        'GET', '/api/pools/$a/balance?from=2026-01-01&to=$to',
         as: who);
     expect(b.status, 200, reason: '${b.json}');
     return [
@@ -99,7 +99,7 @@ void main() {
 
   Future<List<Map<String, dynamic>>> list(String who, String a) async => [
         for (final t
-            in (await h.call('GET', '/api/accounts/$a/transactions', as: who))
+            in (await h.call('GET', '/api/pools/$a/transactions', as: who))
                 .json['transactions'] as List)
           t as Map<String, dynamic>
       ];
@@ -353,7 +353,7 @@ void main() {
   test('transfers mirror overrides and split into a new pair', () async {
     if (!h.ok) return markTestSkipped('no test DB');
     final s = await h.seed('o5', 'Transfer');
-    final b = await account('o5', 'Savings');
+    final b = await pool('o5', 'Savings');
     final t = await create('o5', s.a, weekly('Save', transferTo: b));
     final id = t['id'];
     final set = await h.call(
@@ -372,7 +372,7 @@ void main() {
           'amount': '200'
         });
     expect(r.status, 200, reason: '${r.json}');
-    expect(r.json['created']['transfer']['peerAccountId'], b);
+    expect(r.json['created']['transfer']['peerPoolId'], b);
     final peerSide = await list('o5', b);
     expect(peerSide.length, 2);
     expect(await deltas('o5', b, '2026-01-26'), [
@@ -392,7 +392,7 @@ void main() {
     final t = await create('o6', s.a, weekly('S'));
     await h.call('PUT', '/api/transactions/${t['id']}/overrides/2026-01-12',
         as: 'o6', body: {'amount': '1', 'direction': 'debit'});
-    final p = await h.call('PATCH', '/api/accounts/${s.a}',
+    final p = await h.call('PATCH', '/api/pools/${s.a}',
         as: 'o6', body: {'seedDate': '2026-01-03'});
     expect(p.status, 200, reason: '${p.json}');
     final got = await h.call('GET', '/api/transactions/${t['id']}', as: 'o6');
@@ -403,7 +403,7 @@ void main() {
     if (!h.ok) return markTestSkipped('no test DB');
     final s = await h.seed('o7', 'Authz');
     await h.login('v7');
-    await h.call('POST', '/api/accounts/${s.a}/invites',
+    await h.call('POST', '/api/pools/${s.a}/invites',
         as: 'o7', body: {'email': h.email('v7'), 'role': 'viewer'});
     final t = await create('o7', s.a, weekly('R'));
     final id = t['id'];

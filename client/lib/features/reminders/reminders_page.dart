@@ -13,20 +13,20 @@ import '../transactions/editor_outcome.dart';
 import '../transactions/transaction_editor.dart';
 import 'reminders_model.dart';
 
-/// Opens the full-screen Reminders view for [account].
-Future<void> showReminders(BuildContext context, Account account) {
+/// Opens the full-screen Reminders view for [pool].
+Future<void> showReminders(BuildContext context, Pool pool) {
   return Navigator.of(context).push(
     MaterialPageRoute<void>(
       fullscreenDialog: true,
-      builder: (_) => RemindersPage(account: account),
+      builder: (_) => RemindersPage(pool: pool),
     ),
   );
 }
 
 class RemindersPage extends ConsumerStatefulWidget {
-  const RemindersPage({super.key, required this.account, this.today});
+  const RemindersPage({super.key, required this.pool, this.today});
 
-  final Account account;
+  final Pool pool;
 
   /// Override for tests.
   final DateTime? today;
@@ -39,7 +39,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
   late final DateTime _today = dateOnly(widget.today ?? DateTime.now());
   late DateTime _month = DateTime(_today.year, _today.month);
   ReminderRange _range = ReminderRange.week;
-  bool _allAccounts = false;
+  bool _allPools = false;
   DateTime? _selected;
   final _dayKeys = <DateTime, GlobalKey>{};
   final _listScroll = ScrollController();
@@ -50,16 +50,16 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
     super.dispose();
   }
 
-  List<Account> _scope() {
-    if (!_allAccounts) return [widget.account];
-    final list = ref.watch(accountsProvider).valueOrNull;
-    return (list == null || list.isEmpty) ? [widget.account] : list;
+  List<Pool> _scope() {
+    if (!_allPools) return [widget.pool];
+    final list = ref.watch(poolsProvider).valueOrNull;
+    return (list == null || list.isEmpty) ? [widget.pool] : list;
   }
 
   @override
   Widget build(BuildContext context) {
-    final accounts = _scope();
-    final byId = {for (final a in accounts) a.id: a};
+    final pools = _scope();
+    final byId = {for (final a in pools) a.id: a};
     final grid = monthGrid(_month);
     final rangeEnd = _range.endFrom(_today);
     final from = grid.first.isBefore(_today) ? grid.first : _today;
@@ -69,14 +69,14 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
     final txs = <Transaction>[];
     final skipped = <String>{};
     var loading = false;
-    for (final a in accounts) {
+    for (final a in pools) {
       final t = ref.watch(transactionsProvider(a.id));
       if (t.valueOrNull == null) loading = true;
       txs.addAll(t.valueOrNull ?? const []);
       // Server occurrences carry skips; applied when they arrive.
       final series = ref
           .watch(
-            balanceProvider(BalanceQuery(accountId: a.id, from: from, to: to)),
+            balanceProvider(BalanceQuery(poolId: a.id, from: from, to: to)),
           )
           .valueOrNull;
       for (final o in series?.occurrences ?? const <Occurrence>[]) {
@@ -106,8 +106,8 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
       selected: _selected,
       dayKeys: _dayKeys,
       controller: _listScroll,
-      accounts: byId,
-      showAccount: _allAccounts && accounts.length > 1,
+      pools: byId,
+      showPool: _allPools && pools.length > 1,
       loading: loading && items.isEmpty,
       onRange: (r) => setState(() => _range = r),
       onOpen: _open,
@@ -129,7 +129,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
           children: [
             const Text('Reminders'),
             Text(
-              _allAccounts ? 'All accounts' : widget.account.name,
+              _allPools ? 'All pools' : widget.pool.name,
               style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: AppTheme.textMuted),
               overflow: TextOverflow.ellipsis,
@@ -138,10 +138,10 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
         ),
         actions: [
           FilterChip(
-            key: const ValueKey('reminders-all-accounts'),
-            label: const Text('All accounts'),
-            selected: _allAccounts,
-            onSelected: (v) => setState(() => _allAccounts = v),
+            key: const ValueKey('reminders-all-pools'),
+            label: const Text('All pools'),
+            selected: _allPools,
+            onSelected: (v) => setState(() => _allPools = v),
           ),
           const SizedBox(width: 12),
         ],
@@ -193,14 +193,14 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
     });
   }
 
-  Future<void> _open(ReminderItem item, Account? account) async {
-    final a = account ?? widget.account;
+  Future<void> _open(ReminderItem item, Pool? pool) async {
+    final a = pool ?? widget.pool;
     final t = item.transaction;
     final series = ref
         .read(
           balanceProvider(
             BalanceQuery(
-              accountId: t.accountId,
+              poolId: t.poolId,
               from: item.date,
               to: item.date,
             ),
@@ -209,7 +209,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
         .valueOrNull;
     final result = await showTransactionEditor(
       context,
-      accountId: t.accountId,
+      poolId: t.poolId,
       existing: t,
       focusDate: item.date,
       readOnly: !a.role.canEdit,
@@ -223,7 +223,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
     reportEditorOutcome(
       context,
       ref,
-      accountId: t.accountId,
+      poolId: t.poolId,
       outcome: result,
       onChanged: () => ref.invalidate(balanceProvider),
     );
@@ -609,8 +609,8 @@ class _ReminderList extends StatelessWidget {
     required this.selected,
     required this.dayKeys,
     required this.controller,
-    required this.accounts,
-    required this.showAccount,
+    required this.pools,
+    required this.showPool,
     required this.loading,
     required this.onRange,
     required this.onOpen,
@@ -622,11 +622,11 @@ class _ReminderList extends StatelessWidget {
   final DateTime? selected;
   final Map<DateTime, GlobalKey> dayKeys;
   final ScrollController controller;
-  final Map<String, Account> accounts;
-  final bool showAccount;
+  final Map<String, Pool> pools;
+  final bool showPool;
   final bool loading;
   final ValueChanged<ReminderRange> onRange;
-  final void Function(ReminderItem, Account?) onOpen;
+  final void Function(ReminderItem, Pool?) onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -791,11 +791,11 @@ class _ReminderList extends StatelessWidget {
   Widget _row(BuildContext context, ReminderItem i) {
     final t = Theme.of(context).textTheme;
     final tx = i.transaction;
-    final acc = accounts[tx.accountId];
+    final acc = pools[tx.poolId];
     final subtitle = <String>[
-      if (showAccount && acc != null) acc.name,
+      if (showPool && acc != null) acc.name,
       if (tx.transfer != null)
-        '${i.isGain ? 'from' : 'to'} ${tx.transfer!.peerReadable ? (tx.transfer!.peerAccountName ?? 'another account') : 'another account'}',
+        '${i.isGain ? 'from' : 'to'} ${tx.transfer!.peerReadable ? (tx.transfer!.peerPoolName ?? 'another pool') : 'another pool'}',
       if (tx.recurrenceMode == RecurrenceMode.every)
         i.override != null ? 'Recurring · once-off amount' : 'Recurring',
     ].join(' · ');

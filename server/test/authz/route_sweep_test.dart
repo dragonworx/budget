@@ -10,14 +10,14 @@ import 'harness.dart';
 
 /// file -> function name -> mount prefix below /api.
 const _mounts = {
-  'accounts.dart': {'buildAccountsApi': 'accounts'},
-  'balance.dart': {'attachBalanceRoutes': 'accounts'},
-  'goal.dart': {'attachGoalRoutes': 'accounts'},
-  'solve.dart': {'attachSolveRoutes': 'accounts'},
-  'scenarios.dart': {'attachScenarioRoutes': 'accounts'},
+  'pools.dart': {'buildPoolsApi': 'pools'},
+  'balance.dart': {'attachBalanceRoutes': 'pools'},
+  'goal.dart': {'attachGoalRoutes': 'pools'},
+  'solve.dart': {'attachSolveRoutes': 'pools'},
+  'scenarios.dart': {'attachScenarioRoutes': 'pools'},
   'transactions.dart': {'transactionsRouter': 'transactions'},
   'sharing.dart': {
-    'attachAccountSharingRoutes': 'accounts',
+    'attachPoolSharingRoutes': 'pools',
     'buildInvitesApi': 'invites',
   },
   'admin.dart': {'buildAdminApi': 'admin'},
@@ -77,7 +77,7 @@ void main() {
           p.path.endsWith('/solve') ||
           p.path.endsWith('/goal') ||
           p.path.startsWith('invites/preview') ||
-          // A per-user preference (landing account), not shared data.
+          // A per-user preference (landing pool), not shared data.
           p.path.endsWith('/opened');
       if (mutating && !computeOnly) {
         expect(p.event, isNotNull, reason: '${p.method} ${p.path}');
@@ -94,11 +94,11 @@ void main() {
       if (!h.ok) return markTestSkipped('no test DB');
       final s = await h.seed('owner', 'Sweep');
       final sc = await h
-          .call('POST', '/api/accounts/${s.a}/scenarios', as: 'owner', body: {
+          .call('POST', '/api/pools/${s.a}/scenarios', as: 'owner', body: {
         'name': 'S',
         'request': {'solveFor': 'amount'}
       });
-      final inv = await h.call('POST', '/api/accounts/${s.a}/invites',
+      final inv = await h.call('POST', '/api/pools/${s.a}/invites',
           as: 'owner', body: {'email': h.email('pending')});
       final ownerId = await h.userId('owner');
       final ids = {
@@ -132,16 +132,20 @@ void main() {
       // Unknown routes are denied even when signed in.
       expect((await h.call('GET', '/api/secret-debug', as: 'outsider')).status,
           404);
-      expect((await h.call('DELETE', '/api/accounts', as: 'outsider')).status,
+      expect((await h.call('DELETE', '/api/pools', as: 'outsider')).status,
           404);
       // Projects are gone: tabs on an old build get 410 "please reload"
       // (shown as is by old builds), signed in or not.
       for (final r in [
         await h.call('GET', '/api/projects', as: 'outsider'),
-        await h.call('GET', '/api/projects/x/accounts', as: 'outsider'),
+        await h.call('GET', '/api/projects/x/pools', as: 'outsider'),
         await h.call('POST', '/api/projects',
             as: 'outsider', body: {'name': 'x'}),
         await h.call('GET', '/api/projects'),
+        // Accounts were renamed to pools.
+        await h.call('GET', '/api/accounts', as: 'outsider'),
+        await h.call('GET', '/api/accounts/x/transactions', as: 'outsider'),
+        await h.call('GET', '/api/accounts'),
       ]) {
         expect(r.status, 410);
         expect(r.json['error'], contains('reload'));

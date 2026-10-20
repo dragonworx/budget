@@ -1,4 +1,4 @@
-import 'package:postgres/postgres.dart';
+import 'package:postgres/postgres.dart' hide Pool;
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
@@ -8,7 +8,7 @@ import '../engine/balance_engine.dart';
 import '../engine/calendar_math.dart';
 import '../engine/goal_solver.dart';
 import '../engine/solver.dart' show SolverException;
-import '../repo/account_repo.dart';
+import '../repo/pool_repo.dart';
 import '../repo/transaction_repo.dart';
 import 'json_helpers.dart';
 
@@ -44,7 +44,7 @@ GoalRequest parseGoalRequest(Map<String, dynamic> body) {
 
 /// Daily baseline (existing transactions only) for a goal request.
 GoalBaseline goalBaseline({
-  required Account account,
+  required Pool pool,
   required List<Transaction> transactions,
   required Map<String, Set<DateTime>> skipped,
   required GoalRequest request,
@@ -63,10 +63,10 @@ GoalBaseline goalBaseline({
   final end = CalendarMath.compare(to, from) < 0 ? from : to;
   final dayBefore = from.subtract(const Duration(days: 1));
   final series = BalanceEngine.compute(
-    seedBalance: account.seedBalance,
-    seedDate: account.seedDate,
+    seedBalance: pool.seedBalance,
+    seedDate: pool.seedDate,
     transactions: transactions,
-    transactionOrder: account.transactionOrder,
+    transactionOrder: pool.transactionOrder,
     from: dayBefore,
     to: end,
     skipped: skipped,
@@ -74,7 +74,7 @@ GoalBaseline goalBaseline({
   final byDay = {
     for (final p in series.points) p.date: p.closingBalance.toDouble(),
   };
-  final seed = account.seedBalance.toDouble();
+  final seed = pool.seedBalance.toDouble();
   final opening = byDay[dayBefore] ?? seed;
   final n = CalendarMath.daysBetween(from, end) + 1;
   var last = opening;
@@ -86,30 +86,30 @@ GoalBaseline goalBaseline({
   return GoalBaseline(from: from, opening: opening, closes: closes);
 }
 
-/// Registers `POST /<accountId>/goal` on [router].
+/// Registers `POST /<poolId>/goal` on [router].
 void attachGoalRoutes(Router router, Session conn) {
-  final accounts = AccountRepo(conn);
+  final pools = PoolRepo(conn);
   final transactions = TransactionRepo(conn);
 
-  router.post('/<accountId>/goal', (Request request, String accountId) async {
+  router.post('/<poolId>/goal', (Request request, String poolId) async {
     try {
-      final account = await accounts.get(accountId);
-      if (account == null) return jsonError(404, 'account not found');
+      final pool = await pools.get(poolId);
+      if (pool == null) return jsonError(404, 'pool not found');
       final body = await readJsonObject(request);
       final goal = parseGoalRequest(body);
       final today = body['today'] == null
           ? DateTime.now().toUtc()
           : parseDate(body['today'].toString());
       final baseline = goalBaseline(
-        account: account,
-        transactions: await transactions.listByAccount(accountId),
-        skipped: await transactions.skipsForAccount(accountId),
+        pool: pool,
+        transactions: await transactions.listByPool(poolId),
+        skipped: await transactions.skipsForPool(poolId),
         request: goal,
         today: today,
       );
       final result = GoalSolver(
         baseline: baseline,
-        threshold: account.lossThreshold.toDouble(),
+        threshold: pool.lossThreshold.toDouble(),
         today: today,
       ).solve(goal);
       return jsonOk(result.toJson());

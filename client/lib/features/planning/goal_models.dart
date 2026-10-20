@@ -294,13 +294,13 @@ class GoalResult {
 
   /// The plan as transactions to add (explicit button only): the
   /// recurring payment and/or the one-off.
-  List<Transaction> toTransactions(String accountId, {String name = 'Goal'}) {
+  List<Transaction> toTransactions(String poolId, {String name = 'Goal'}) {
     final v = values;
     if (v == null) return const [];
     final out = <Transaction>[];
     Transaction base(double signed, String label) => Transaction(
       id: '',
-      accountId: accountId,
+      poolId: poolId,
       name: label,
       direction: signed >= 0
           ? TransactionDirection.credit
@@ -330,9 +330,9 @@ class GoalResult {
   }
 }
 
-/// A saved what-if: a goal request stored per account. Included scenarios
+/// A saved what-if: a goal request stored per pool. Included scenarios
 /// are overlaid on the chart as coloured ghost lines; they never change the
-/// account's real transactions.
+/// pool's real transactions.
 class Scenario {
   const Scenario({
     required this.id,
@@ -371,9 +371,9 @@ String shiftText(int days) {
   return '$sign$a day${a == 1 ? '' : 's'}';
 }
 
-/// Delta of a solved scenario against the account as it is: the balance
+/// Delta of a solved scenario against the pool as it is: the balance
 /// change at the plan's end and how far the first alert date moves.
-/// [baselineAlert] is the account's current first alert date (null: none
+/// [baselineAlert] is the pool's current first alert date (null: none
 /// within the horizon). Returns parts like ['+$420 by 1 Mar', 'alert +3 wks'].
 ({double? balance, int? alertShiftDays, bool alertCleared, bool alertNew})
 scenarioDelta(GoalResult r, DateTime? baselineAlert) {

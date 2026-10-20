@@ -2,8 +2,8 @@ import 'package:decimal/decimal.dart';
 
 import 'enums.dart';
 
-class Account {
-  Account({
+class Pool {
+  Pool({
     required this.id,
     required this.ownerId,
     required this.name,
@@ -24,7 +24,7 @@ class Account {
 
   final String id;
 
-  /// The user who owns the account (accounts are top level).
+  /// The user who owns the pool (pools are top level).
   final String ownerId;
   final String name;
   final Decimal seedBalance;
@@ -51,7 +51,7 @@ class Account {
 class Transaction {
   Transaction({
     required this.id,
-    required this.accountId,
+    required this.poolId,
     required this.name,
     required this.direction,
     required this.amount,
@@ -82,7 +82,7 @@ class Transaction {
   }
 
   final String id;
-  final String accountId;
+  final String poolId;
   final String name;
   final Direction direction;
   final Decimal amount;
@@ -103,7 +103,7 @@ class Transaction {
 
   Map<String, Object?> toJson() => {
         'id': id,
-        'accountId': accountId,
+        'poolId': poolId,
         'name': name,
         'direction': direction.name,
         'amount': amount.toString(),
@@ -128,7 +128,7 @@ class Transaction {
 
   Transaction copyWith({
     String? id,
-    String? accountId,
+    String? poolId,
     String? name,
     Direction? direction,
     Decimal? amount,
@@ -148,7 +148,7 @@ class Transaction {
   }) {
     return Transaction(
       id: id ?? this.id,
-      accountId: accountId ?? this.accountId,
+      poolId: poolId ?? this.poolId,
       name: name ?? this.name,
       direction: direction ?? this.direction,
       amount: amount ?? this.amount,
@@ -172,7 +172,7 @@ class Transaction {
   Transaction withOverrides(Map<DateTime, AmountOverride> overrides) =>
       Transaction(
         id: id,
-        accountId: accountId,
+        poolId: poolId,
         name: name,
         direction: direction,
         amount: amount,
@@ -211,20 +211,20 @@ class TransferLink {
   TransferLink({
     required this.id,
     this.peerId,
-    this.peerAccountId,
-    this.peerAccountName,
+    this.peerPoolId,
+    this.peerPoolName,
   });
 
   final String id;
   final String? peerId;
-  final String? peerAccountId;
-  final String? peerAccountName;
+  final String? peerPoolId;
+  final String? peerPoolName;
 
   Map<String, Object?> toJson() => {
         'id': id,
         'peerTransactionId': peerId,
-        'peerAccountId': peerAccountId,
-        'peerAccountName': peerAccountName,
+        'peerPoolId': peerPoolId,
+        'peerPoolName': peerPoolName,
       };
 }
 
@@ -288,14 +288,14 @@ Decimal parseDecimal(Object? value) {
 }
 
 /// Reads an optional `currencyScale` from a request body. Null when absent;
-/// throws [FormatException] for values outside [Account.currencyScales].
+/// throws [FormatException] for values outside [Pool.currencyScales].
 int? parseCurrencyScale(Map<String, Object?> body) {
   final raw = body['currencyScale'];
   if (raw == null) return null;
   final v = raw is int ? raw : int.tryParse(raw.toString());
-  if (v == null || !Account.currencyScales.contains(v)) {
+  if (v == null || !Pool.currencyScales.contains(v)) {
     throw FormatException(
-        'currencyScale must be one of ${Account.currencyScales.join(', ')}');
+        'currencyScale must be one of ${Pool.currencyScales.join(', ')}');
   }
   return v;
 }
@@ -305,8 +305,8 @@ int? parseCurrencyScale(Map<String, Object?> body) {
 /// clamped to $1..$1M. E.g. 3500 → 1000, 800 → 100, 0 → 1.
 int autoCurrencyScale(double span) {
   final s = span.abs();
-  for (final unit in Account.currencyScales) {
+  for (final unit in Pool.currencyScales) {
     if (s <= 9 * unit) return unit;
   }
-  return Account.currencyScales.last;
+  return Pool.currencyScales.last;
 }

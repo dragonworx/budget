@@ -114,12 +114,12 @@ class Harness {
     return r.json['user']['id'] as String;
   }
 
-  /// An account with one transaction, owned by [who].
+  /// A pool with one transaction, owned by [who].
   Future<({String a, String t})> seed(String who, String name) async {
-    final a = await call('POST', '/api/accounts',
+    final a = await call('POST', '/api/pools',
         as: who, body: {'name': 'Acc $name', 'seedDate': '2026-01-01'});
     expect(a.status, 201, reason: '${a.json}');
-    final t = await call('POST', '/api/accounts/${a.json['id']}/transactions',
+    final t = await call('POST', '/api/pools/${a.json['id']}/transactions',
         as: who, body: tx('Pay'));
     expect(t.status, 201, reason: '${t.json}');
     return (a: a.json['id'] as String, t: t.json['id'] as String);
@@ -132,6 +132,6 @@ class Harness {
         'startDate': '2026-01-01',
         'recurrenceMode': 'once',
         'endMode': 'never',
-        if (transferTo != null) 'transferToAccountId': transferTo,
+        if (transferTo != null) 'transferToPoolId': transferTo,
       };
 }

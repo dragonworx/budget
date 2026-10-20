@@ -57,7 +57,7 @@ String? describeOutcome(EditorOutcome? o) {
 void reportEditorOutcome(
   BuildContext context,
   WidgetRef ref, {
-  required String accountId,
+  required String poolId,
   required EditorOutcome? outcome,
   required VoidCallback onChanged,
   List<String>? orderBefore,
@@ -65,7 +65,7 @@ void reportEditorOutcome(
   final text = describeOutcome(outcome);
   if (text == null || outcome == null) return;
   final messenger = ScaffoldMessenger.of(context);
-  final notifier = ref.read(transactionsProvider(accountId).notifier);
+  final notifier = ref.read(transactionsProvider(poolId).notifier);
   final o = outcome;
 
   Future<void> undo() async {

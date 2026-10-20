@@ -12,7 +12,7 @@ Transaction tx({
   int? count,
 }) => Transaction(
   id: 't',
-  accountId: 'a',
+  poolId: 'a',
   name: 'n',
   direction: TransactionDirection.debit,
   amount: Decimal.one,

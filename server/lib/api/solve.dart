@@ -7,19 +7,19 @@ import '../domain/enums.dart';
 import '../domain/models.dart';
 import '../engine/balance_projection.dart';
 import '../engine/solver.dart';
-import '../repo/account_repo.dart';
+import '../repo/pool_repo.dart';
 import '../repo/transaction_repo.dart';
 import 'json_helpers.dart';
 
-/// Registers `POST /<accountId>/solve` on [router].
+/// Registers `POST /<poolId>/solve` on [router].
 void attachSolveRoutes(Router router, Session conn) {
-  final accounts = AccountRepo(conn);
+  final pools = PoolRepo(conn);
   final transactionRepo = TransactionRepo(conn);
 
-  router.post('/<accountId>/solve', (Request request, String accountId) async {
+  router.post('/<poolId>/solve', (Request request, String poolId) async {
     try {
-      final account = await accounts.get(accountId);
-      if (account == null) return jsonError(404, 'account not found');
+      final pool = await pools.get(poolId);
+      if (pool == null) return jsonError(404, 'pool not found');
 
       final body = await readJsonObject(request);
       final direction = Direction.parse(requireString(body, 'direction'));
@@ -41,9 +41,9 @@ void attachSolveRoutes(Router router, Session conn) {
         }
         final end = parseDate(endRaw);
         final projected = BalanceProjection.closeOn(
-          account: account,
-          transactions: await transactionRepo.listByAccount(accountId),
-          skipped: await transactionRepo.skipsForAccount(accountId),
+          pool: pool,
+          transactions: await transactionRepo.listByPool(poolId),
+          skipped: await transactionRepo.skipsForPool(poolId),
           date: end,
         );
         final gap = BalanceProjection.gap(target: target, projected: projected);
@@ -94,7 +94,7 @@ void attachSolveRoutes(Router router, Session conn) {
       final transaction = result.transaction;
       if (transaction != null) {
         json['transaction'] =
-            transaction.copyWith(accountId: accountId).toJson();
+            transaction.copyWith(poolId: poolId).toJson();
       }
       return jsonOk(json);
     } on FormatException catch (e) {

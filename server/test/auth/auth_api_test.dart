@@ -92,7 +92,7 @@ void main() {
       () async {
     if (conn == null) return markTestSkipped('no test DB');
     final h = handler();
-    expect((await call(h, 'GET', '/api/accounts')).status, 401);
+    expect((await call(h, 'GET', '/api/pools')).status, 401);
     expect((await call(h, 'GET', '/health')).status, 200);
     final cfg = await call(h, 'GET', '/api/auth/config');
     expect(cfg.json, {
@@ -148,16 +148,16 @@ void main() {
     expect(me.json['user']['isAdmin'], true);
     expect(me.json['user']['name'], 'Test Person');
     final c = await googleLogin(h, 'u@ok.authtest.example');
-    expect((await call(h, 'GET', '/api/accounts', cookie: c)).status, 200);
+    expect((await call(h, 'GET', '/api/pools', cookie: c)).status, 200);
     final out = await call(h, 'POST', '/api/auth/logout',
         cookie: c, headers: {'origin': origin});
     expect(out.headers['set-cookie'], contains('Max-Age=0'));
-    expect((await call(h, 'GET', '/api/accounts', cookie: c)).status, 401);
+    expect((await call(h, 'GET', '/api/pools', cookie: c)).status, 401);
     // Bearer works with the same token.
     final b = await googleLogin(h, 'b@ok.authtest.example');
     final tok = b.split('=').last;
     expect(
-        (await call(h, 'GET', '/api/accounts',
+        (await call(h, 'GET', '/api/pools',
                 headers: {'authorization': 'Bearer $tok'}))
             .status,
         200);
@@ -193,8 +193,8 @@ void main() {
     expect(r.status, 200, reason: '${r.json}');
     expect(r.json['user']['isAdmin'], false);
     final c = cookieOf(r.headers);
-    final accounts = await call(h, 'GET', '/api/accounts', cookie: c);
-    expect(accounts.status, 200);
+    final pools = await call(h, 'GET', '/api/pools', cookie: c);
+    expect(pools.status, 200);
     expect((await call(h, 'GET', '/api/auth/me', cookie: c)).status, 200);
     expect((await call(h, 'GET', '/api/invites/mine', cookie: c)).status,
         anyOf(200, 404));
@@ -252,11 +252,11 @@ void main() {
     final h = handler(allow: ['@authtest.example']);
     final alice = await googleLogin(h, 'alice@authtest.example');
     final bob = await googleLogin(h, 'bob@authtest.example');
-    final a = await call(h, 'POST', '/api/accounts',
+    final a = await call(h, 'POST', '/api/pools',
         cookie: alice, body: {'name': 'Acc', 'seedDate': '2026-01-01'});
     expect(a.status, 201, reason: '${a.json}');
     final aid = a.json['id'];
-    final t = await call(h, 'POST', '/api/accounts/$aid/transactions',
+    final t = await call(h, 'POST', '/api/pools/$aid/transactions',
         cookie: alice,
         body: {
           'name': 'Pay',
@@ -269,35 +269,35 @@ void main() {
     expect(t.status, 201, reason: '${t.json}');
     final tid = t.json['id'];
 
-    final bobList = await call(h, 'GET', '/api/accounts', cookie: bob);
-    expect((bobList.json['accounts'] as List).map((x) => x['id']),
+    final bobList = await call(h, 'GET', '/api/pools', cookie: bob);
+    expect((bobList.json['pools'] as List).map((x) => x['id']),
         isNot(contains(aid)));
     for (final (m, path) in [
-      ('GET', '/api/accounts/$aid'),
-      ('PATCH', '/api/accounts/$aid'),
-      ('GET', '/api/accounts/$aid/transactions'),
-      ('GET', '/api/accounts/$aid/balance'),
-      ('GET', '/api/accounts/$aid/insights'),
-      ('GET', '/api/accounts/$aid/scenarios'),
-      ('DELETE', '/api/accounts/$aid'),
+      ('GET', '/api/pools/$aid'),
+      ('PATCH', '/api/pools/$aid'),
+      ('GET', '/api/pools/$aid/transactions'),
+      ('GET', '/api/pools/$aid/balance'),
+      ('GET', '/api/pools/$aid/insights'),
+      ('GET', '/api/pools/$aid/scenarios'),
+      ('DELETE', '/api/pools/$aid'),
       ('GET', '/api/transactions/$tid'),
       ('DELETE', '/api/transactions/$tid'),
-      ('GET', '/api/accounts/not-a-uuid'),
+      ('GET', '/api/pools/not-a-uuid'),
     ]) {
       final r =
           await call(h, m, path, cookie: bob, headers: {'origin': origin});
       expect(r.status, 404, reason: '$m $path');
     }
     expect(
-        (await call(h, 'GET', '/api/accounts/$aid/insights', cookie: alice))
+        (await call(h, 'GET', '/api/pools/$aid/insights', cookie: alice))
             .status,
         200);
 
-    // Transfers into someone else's account are refused.
-    final ba = await call(h, 'POST', '/api/accounts',
+    // Transfers into someone else's pool are refused.
+    final ba = await call(h, 'POST', '/api/pools',
         cookie: bob, body: {'name': 'B', 'seedDate': '2026-01-01'});
     final xfer = await call(
-        h, 'POST', '/api/accounts/${ba.json['id']}/transactions',
+        h, 'POST', '/api/pools/${ba.json['id']}/transactions',
         cookie: bob,
         body: {
           'name': 'Steal',
@@ -306,7 +306,7 @@ void main() {
           'startDate': '2026-01-01',
           'recurrenceMode': 'once',
           'endMode': 'never',
-          'transferToAccountId': aid
+          'transferToPoolId': aid
         });
     expect(xfer.status, 404);
   });
@@ -316,10 +316,10 @@ void main() {
     if (conn == null) return markTestSkipped('no test DB');
     final h = handler(devBypass: true);
     final ok =
-        await call(h, 'OPTIONS', '/api/accounts', headers: {'origin': origin});
+        await call(h, 'OPTIONS', '/api/pools', headers: {'origin': origin});
     expect(ok.headers['access-control-allow-origin'], origin);
     expect(ok.headers['access-control-allow-credentials'], 'true');
-    final no = await call(h, 'OPTIONS', '/api/accounts',
+    final no = await call(h, 'OPTIONS', '/api/pools',
         headers: {'origin': 'https://evil.example'});
     expect(no.headers['access-control-allow-origin'], isNull);
     final evil = await call(h, 'POST', '/api/auth/dev-login',

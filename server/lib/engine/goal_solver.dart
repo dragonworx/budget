@@ -292,7 +292,7 @@ class GoalSolver {
     if (p.amount == 0 || p.count == 0) return const [];
     final probe = Transaction(
       id: 'goal',
-      accountId: '',
+      poolId: '',
       name: '',
       direction: Direction.credit,
       amount: Decimal.one,

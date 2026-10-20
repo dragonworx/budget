@@ -16,7 +16,7 @@ import '../hardening/lifecycle.dart';
 import '../hardening/logging.dart';
 import '../hardening/rate_limit.dart';
 import '../hardening/security_headers.dart';
-import 'accounts.dart';
+import 'pools.dart';
 import 'admin.dart';
 import 'sharing.dart';
 import 'auth.dart';
@@ -80,9 +80,9 @@ Handler buildHandler(Session base, Config config,
               jwks: JwksCache(httpJwksFetcher()),
             ),
       ).call);
-  final accountsApi = buildAccountsApi(conn);
-  attachAccountSharingRoutes(accountsApi, conn, config);
-  root.mount('/api/accounts', accountsApi.call);
+  final poolsApi = buildPoolsApi(conn);
+  attachPoolSharingRoutes(poolsApi, conn, config);
+  root.mount('/api/pools', poolsApi.call);
   root.mount('/api/invites', buildInvitesApi(conn, config).call);
   root.mount('/api/admin', buildAdminApi(conn, config, sessions).call);
   root.mount('/api/transactions', transactionsRouter(conn).call);
@@ -134,7 +134,7 @@ Middleware _errorMiddleware(Log log) {
 /// API route families that no longer exist. A browser tab still running an
 /// older client build calls them; it gets 410 with a "please reload" message
 /// (which old builds show as is) instead of a bare 404.
-const removedApiPrefixes = ['/api/projects'];
+const removedApiPrefixes = ['/api/projects', '/api/accounts'];
 
 Middleware removedApi(List<String> prefixes) {
   return (Handler inner) {

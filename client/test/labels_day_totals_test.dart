@@ -14,7 +14,7 @@ typedef _Txn = (int day, int delta, String name, {bool skipped});
 
 Transaction _t(String id, String name) => Transaction(
   id: id,
-  accountId: 'a',
+  poolId: 'a',
   name: name,
   direction: TransactionDirection.debit,
   amount: Decimal.fromInt(10),

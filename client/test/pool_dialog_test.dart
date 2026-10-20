@@ -1,20 +1,20 @@
 import 'package:decimal/decimal.dart';
 import 'package:budget_client/data/models.dart';
-import 'package:budget_client/widgets/account_dialog.dart';
+import 'package:budget_client/widgets/pool_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Future<Future<Account?>> _open(
+Future<Future<Pool?>> _open(
   WidgetTester tester, {
-  Account? existing,
-  Future<Account> Function(Account)? onSave,
+  Pool? existing,
+  Future<Pool> Function(Pool)? onSave,
 }) async {
-  late Future<Account?> result;
+  late Future<Pool?> result;
   await tester.pumpWidget(
     MaterialApp(
       home: Builder(
         builder: (context) => TextButton(
-          onPressed: () => result = showAccountDialog(
+          onPressed: () => result = showPoolDialog(
             context,
             existing: existing,
             onSave: onSave,
@@ -31,9 +31,9 @@ Future<Future<Account?>> _open(
 
 void main() {
   testWidgets(
-    'create runs onSave in the dialog and returns the saved account',
+    'create runs onSave in the dialog and returns the saved pool',
     (tester) async {
-      Account? draft;
+      Pool? draft;
       final result = await _open(
         tester,
         onSave: (a) async {
@@ -42,10 +42,10 @@ void main() {
         },
       );
       await tester.enterText(find.byType(TextField).first, 'Holiday');
-      await tester.tap(find.byKey(const ValueKey('account-save')));
+      await tester.tap(find.byKey(const ValueKey('pool-save')));
       await tester.pumpAndSettle();
       expect(draft?.name, 'Holiday');
-      expect(find.byType(AccountDialog), findsNothing);
+      expect(find.byType(PoolDialog), findsNothing);
       expect((await result)?.id, 'new-id');
     },
   );
@@ -55,10 +55,10 @@ void main() {
   ) async {
     await _open(tester, onSave: (_) async => throw Exception('offline'));
     await tester.enterText(find.byType(TextField).first, 'Holiday');
-    await tester.tap(find.byKey(const ValueKey('account-save')));
+    await tester.tap(find.byKey(const ValueKey('pool-save')));
     await tester.pumpAndSettle();
-    expect(find.byType(AccountDialog), findsOneWidget);
-    expect(find.byKey(const ValueKey('account-save-error')), findsOneWidget);
+    expect(find.byType(PoolDialog), findsOneWidget);
+    expect(find.byKey(const ValueKey('pool-save-error')), findsOneWidget);
     expect(find.textContaining('offline'), findsOneWidget);
   });
 
@@ -66,11 +66,11 @@ void main() {
     tester,
   ) async {
     await _open(tester, onSave: (a) async => a);
-    expect(find.byKey(const ValueKey('account-currency')), findsNothing);
+    expect(find.byKey(const ValueKey('pool-currency')), findsNothing);
     expect(find.text('Currency'), findsNothing);
     expect(find.textContaining('3-letter code'), findsNothing);
     final seed = tester.widget<TextField>(
-      find.byKey(const ValueKey('account-seed')),
+      find.byKey(const ValueKey('pool-seed')),
     );
     expect(seed.decoration?.prefixText, r'$ ');
     // Currency Scale is a separate setting and stays.
@@ -83,7 +83,7 @@ void main() {
   });
 
   testWidgets('changing the seed date shows the move note', (tester) async {
-    final existing = Account(
+    final existing = Pool(
       id: 'a1',
       name: 'Main',
       seedBalance: Decimal.zero,

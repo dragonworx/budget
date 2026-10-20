@@ -11,7 +11,7 @@ import 'state/realtime_providers.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Pushed routes (e.g. a new account's timeline) update the browser URL,
+  // Pushed routes (e.g. a new pool's timeline) update the browser URL,
   // so reload and browser back behave.
   GoRouter.optionURLReflectsImperativeAPIs = true;
   _watchForUpdates();

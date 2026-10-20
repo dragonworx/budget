@@ -20,7 +20,7 @@ Transaction tx(
   bool enabled = true,
 }) => Transaction(
   id: id,
-  accountId: 'a',
+  poolId: 'a',
   name: id,
   direction: dir,
   amount: Decimal.parse(amount),
@@ -33,7 +33,7 @@ Transaction tx(
   enabled: enabled,
 );
 
-final account = Account(
+final pool = Pool(
   id: 'a',
   ownerId: 'u',
   name: 'Everyday',
@@ -140,7 +140,7 @@ void main() {
           ),
         ],
         child: MaterialApp(
-          home: RemindersPage(account: account, today: today),
+          home: RemindersPage(pool: pool, today: today),
         ),
       ),
     );

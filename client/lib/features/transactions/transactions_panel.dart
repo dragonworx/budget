@@ -60,19 +60,19 @@ String? scheduleHint(Transaction t, DateTime today) {
   return d.isBefore(dateOnly(today)) ? 'ended $when' : 'next $when';
 }
 
-/// Side panel listing an account's transactions: search, filter, toggle,
+/// Side panel listing a pool's transactions: search, filter, toggle,
 /// edit and locate on the timeline.
 class TransactionsPanel extends ConsumerStatefulWidget {
   const TransactionsPanel({
     super.key,
-    required this.account,
+    required this.pool,
     required this.skipsFor,
     required this.onPanelClosed,
     required this.onLocate,
     required this.onChanged,
   });
 
-  final Account account;
+  final Pool pool;
 
   /// Currently skipped occurrence dates of a series.
   final Set<DateTime> Function(String transactionId) skipsFor;
@@ -87,7 +87,7 @@ class TransactionsPanel extends ConsumerStatefulWidget {
 }
 
 class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
-  bool get _readOnly => !widget.account.role.canEdit;
+  bool get _readOnly => !widget.pool.role.canEdit;
 
   final _search = TextEditingController();
   TxFilter _filter = TxFilter.all;
@@ -113,7 +113,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
     final offset = _listScroll.hasClients ? _listScroll.offset : 0.0;
     final old = _listScroll;
     _orderAtOpen = _ordered(
-      ref.read(transactionsProvider(widget.account.id)).valueOrNull ?? const [],
+      ref.read(transactionsProvider(widget.pool.id)).valueOrNull ?? const [],
       watch: false,
     ).map((x) => x.id).toList();
     setState(() {
@@ -126,9 +126,9 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
   /// Deletes [t] straight from the list (swipe or row menu); the snackbar's
   /// Undo recreates it at the same position with its skips.
   Future<void> _deleteFromList(BuildContext context, Transaction t) async {
-    final notifier = ref.read(transactionsProvider(widget.account.id).notifier);
+    final notifier = ref.read(transactionsProvider(widget.pool.id).notifier);
     final order = _ordered(
-      ref.read(transactionsProvider(widget.account.id)).valueOrNull ?? const [],
+      ref.read(transactionsProvider(widget.pool.id)).valueOrNull ?? const [],
       watch: false,
     ).map((x) => x.id).toList();
     final skips = widget.skipsFor(t.id);
@@ -146,7 +146,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
     reportEditorOutcome(
       context,
       ref,
-      accountId: widget.account.id,
+      poolId: widget.pool.id,
       outcome: EditorOutcome(
         action: EditorAction.deleted,
         transaction: t,
@@ -187,7 +187,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
     reportEditorOutcome(
       context,
       ref,
-      accountId: widget.account.id,
+      poolId: widget.pool.id,
       outcome: outcome,
       onChanged: widget.onChanged,
       orderBefore: _orderAtOpen,
@@ -203,12 +203,12 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
   }
 
   List<Transaction> _ordered(List<Transaction> items, {bool watch = true}) {
-    final account = watch
-        ? ref.watch(accountProvider(widget.account.id))
-        : ref.read(accountProvider(widget.account.id));
+    final pool = watch
+        ? ref.watch(poolProvider(widget.pool.id))
+        : ref.read(poolProvider(widget.pool.id));
     final order =
-        account.valueOrNull?.transactionOrder ??
-        widget.account.transactionOrder;
+        pool.valueOrNull?.transactionOrder ??
+        widget.pool.transactionOrder;
     final byId = {
       for (final t in items)
         if (!watch || !_hidden.contains(t.id)) t.id: t,
@@ -248,7 +248,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
                   )
                 : TransactionEditor(
                     key: ValueKey('editor-${_editing!.transaction?.id}'),
-                    accountId: widget.account.id,
+                    poolId: widget.pool.id,
                     readOnly: _readOnly,
                     existing: _editing!.transaction,
                     skippedDates: _editing!.transaction == null
@@ -269,7 +269,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
 
   Widget _listView(BuildContext context) {
     final theme = Theme.of(context);
-    final async = ref.watch(transactionsProvider(widget.account.id));
+    final async = ref.watch(transactionsProvider(widget.pool.id));
     return Material(
       color: AppTheme.surface,
       child: SafeArea(
@@ -372,7 +372,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
         icon: Icons.receipt_long_rounded,
         title: 'No transactions yet',
         message: _readOnly
-            ? 'Nothing has been added to this account yet.'
+            ? 'Nothing has been added to this pool yet.'
             : 'Add income, bills and one-offs here, or hover a day on the timeline and click +.',
         action: _readOnly ? null : FilledButton.icon(
           onPressed: () => _open(null),
@@ -414,7 +414,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
       },
       onToggle: (v) async {
         try {
-          final n = ref.read(transactionsProvider(widget.account.id).notifier);
+          final n = ref.read(transactionsProvider(widget.pool.id).notifier);
           final r = await saveWithConflictCheck(
             context,
             save: (force) =>
@@ -445,7 +445,7 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
         ids.insert(newIndex, ids.removeAt(oldIndex));
         try {
           await ref
-              .read(transactionsProvider(widget.account.id).notifier)
+              .read(transactionsProvider(widget.pool.id).notifier)
               .reorder(ids);
           widget.onChanged();
         } catch (e) {

@@ -1,8 +1,8 @@
 import 'package:decimal/decimal.dart';
 import 'package:intl/intl.dart';
 
-/// The one money symbol. Accounts have no currency: every amount shows a
-/// plain "\$" (the account's currency *scale* is a separate setting).
+/// The one money symbol. Pools have no currency: every amount shows a
+/// plain "\$" (the pool's currency *scale* is a separate setting).
 const String moneySymbol = '\$';
 
 /// Axis and chart labels: "\$2,400", "\$12.50". [decimalDigits] overrides

@@ -14,7 +14,7 @@ Transaction tx(
   bool enabled = true,
 }) => Transaction(
   id: 'x',
-  accountId: 'a',
+  poolId: 'a',
   name: 'n',
   direction: TransactionDirection.values.first,
   amount: Decimal.one,
@@ -84,12 +84,12 @@ void main() {
     }
   });
 
-  test('account data range uses seed, finite ends and open-ended horizon', () {
+  test('pool data range uses seed, finite ends and open-ended horizon', () {
     final today = DateTime(2026, 10, 15);
     final seed = DateTime(2026, 3, 1);
-    var r = accountDataRange(seedDate: seed, transactions: [], today: today);
+    var r = poolDataRange(seedDate: seed, transactions: [], today: today);
     expect((r.first, r.last), (seed, seed));
-    r = accountDataRange(
+    r = poolDataRange(
       seedDate: seed,
       today: today,
       transactions: [
@@ -105,7 +105,7 @@ void main() {
     );
     expect(r.first, DateTime(2026, 1, 31));
     expect(r.last, DateTime(2027, 6, 30));
-    r = accountDataRange(
+    r = poolDataRange(
       seedDate: seed,
       today: today,
       transactions: [tx(DateTime(2026, 4, 1))],

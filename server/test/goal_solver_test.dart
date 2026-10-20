@@ -56,7 +56,7 @@ void main() {
       expect(r.endBalance, closeTo(2000, 1e-6));
     });
 
-    test('amount accounts for existing bills', () {
+    test('amount pools for existing bills', () {
       final r = _solver(bills: true).solve(GoalRequest(
         solveFor: GoalVar.amount,
         startDate: _start,

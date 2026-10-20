@@ -13,7 +13,7 @@ Transaction tx(
   RecurrenceMode mode = RecurrenceMode.every,
 }) => Transaction(
   id: name,
-  accountId: 'a',
+  poolId: 'a',
   name: name,
   direction: dir,
   amount: Decimal.parse(amount),

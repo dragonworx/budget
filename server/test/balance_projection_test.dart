@@ -4,7 +4,7 @@ import 'package:budget_server/engine/balance_projection.dart';
 import 'package:decimal/decimal.dart';
 import 'package:test/test.dart';
 
-Account _account() => Account(
+Pool _pool() => Pool(
       id: 'a',
       ownerId: 'p',
       name: 'A',
@@ -17,7 +17,7 @@ Account _account() => Account(
 
 Transaction _weekly(String amount, Direction d) => Transaction(
       id: 't$amount',
-      accountId: 'a',
+      poolId: 'a',
       name: 'w',
       direction: d,
       amount: Decimal.parse(amount),
@@ -33,7 +33,7 @@ Transaction _weekly(String amount, Direction d) => Transaction(
 void main() {
   test('closeOn includes existing transactions up to the date', () {
     final close = BalanceProjection.closeOn(
-      account: _account(),
+      pool: _pool(),
       transactions: [_weekly('100', Direction.credit)],
       date: DateTime.utc(2026, 1, 26), // 4 Mondays: 5, 12, 19, 26
     );
@@ -42,7 +42,7 @@ void main() {
 
   test('before the seed date the seed balance is used', () {
     final close = BalanceProjection.closeOn(
-      account: _account(),
+      pool: _pool(),
       transactions: [_weekly('100', Direction.debit)],
       date: DateTime.utc(2025, 6, 1),
     );

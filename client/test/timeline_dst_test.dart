@@ -58,7 +58,7 @@ void main() {
   test('daily and weekly previews stay on the right date across DST', () {
     final weekly = Transaction(
       id: 't',
-      accountId: 'a',
+      poolId: 'a',
       name: 'Groceries',
       direction: TransactionDirection.debit,
       amount: Decimal.one,

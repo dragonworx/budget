@@ -5,20 +5,20 @@ import 'package:shelf_router/shelf_router.dart';
 import '../domain/models.dart';
 import '../engine/balance_engine.dart';
 import '../engine/balance_insights.dart';
-import '../repo/account_repo.dart';
+import '../repo/pool_repo.dart';
 import '../repo/transaction_repo.dart';
 import 'json_helpers.dart';
 import 'transactions.dart' show parseTransactionBody;
 
 /// Registers `GET /<id>/balance` on [router].
 void attachBalanceRoutes(Router router, Session conn) {
-  final accounts = AccountRepo(conn);
+  final pools = PoolRepo(conn);
   final transactions = TransactionRepo(conn);
 
   router.get('/<id>/balance', (Request request, String id) async {
     try {
-      final account = await accounts.get(id);
-      if (account == null) return jsonError(404, 'account not found');
+      final pool = await pools.get(id);
+      if (pool == null) return jsonError(404, 'pool not found');
 
       final params = request.url.queryParameters;
       final fromRaw = params['from'];
@@ -30,14 +30,14 @@ void attachBalanceRoutes(Router router, Session conn) {
       final from = parseDate(fromRaw);
       final to = parseDate(toRaw);
 
-      final transactionList = await transactions.listByAccount(id);
-      final skipped = await transactions.skipsForAccount(id);
+      final transactionList = await transactions.listByPool(id);
+      final skipped = await transactions.skipsForPool(id);
 
       final series = BalanceEngine.compute(
-        seedBalance: account.seedBalance,
-        seedDate: account.seedDate,
+        seedBalance: pool.seedBalance,
+        seedDate: pool.seedDate,
         transactions: transactionList,
-        transactionOrder: account.transactionOrder,
+        transactionOrder: pool.transactionOrder,
         from: from,
         to: to,
         skipped: skipped,
@@ -58,8 +58,8 @@ void attachBalanceRoutes(Router router, Session conn) {
   /// shape as a create body) were added. Nothing is stored.
   router.post('/<id>/project', (Request request, String id) async {
     try {
-      final account = await accounts.get(id);
-      if (account == null) return jsonError(404, 'account not found');
+      final pool = await pools.get(id);
+      if (pool == null) return jsonError(404, 'pool not found');
       final body = await readJsonObject(request);
       final from = parseDate(requireString(body, 'from'));
       final to = parseDate(requireString(body, 'to'));
@@ -76,7 +76,7 @@ void attachBalanceRoutes(Router router, Session conn) {
         final p = parseTransactionBody(item);
         extra.add(Transaction(
           id: 'preview-$i',
-          accountId: id,
+          poolId: id,
           name: p.name,
           direction: p.direction,
           amount: p.amount,
@@ -91,15 +91,15 @@ void attachBalanceRoutes(Router router, Session conn) {
           createdAt: DateTime.now().toUtc(),
         ));
       }
-      final existing = await transactions.listByAccount(id);
+      final existing = await transactions.listByPool(id);
       final series = BalanceEngine.compute(
-        seedBalance: account.seedBalance,
-        seedDate: account.seedDate,
+        seedBalance: pool.seedBalance,
+        seedDate: pool.seedDate,
         transactions: [...existing, ...extra],
-        transactionOrder: account.transactionOrder,
+        transactionOrder: pool.transactionOrder,
         from: from,
         to: to,
-        skipped: await transactions.skipsForAccount(id),
+        skipped: await transactions.skipsForPool(id),
       );
       return jsonOk({
         'points': series.points.map((p) => p.toJson()).toList(),
@@ -116,8 +116,8 @@ void attachBalanceRoutes(Router router, Session conn) {
   /// below the alert threshold and below zero within `horizonDays`.
   router.get('/<id>/insights', (Request request, String id) async {
     try {
-      final account = await accounts.get(id);
-      if (account == null) return jsonError(404, 'account not found');
+      final pool = await pools.get(id);
+      if (pool == null) return jsonError(404, 'pool not found');
       final q = request.url.queryParameters;
       final from =
           q['from'] == null ? DateTime.now().toUtc() : parseDate(q['from']!);
@@ -129,24 +129,24 @@ void attachBalanceRoutes(Router router, Session conn) {
       final start = DateTime.utc(from.year, from.month, from.day);
       final end = start.add(Duration(days: horizon > days ? horizon : days));
       final series = BalanceEngine.compute(
-        seedBalance: account.seedBalance,
-        seedDate: account.seedDate,
-        transactions: await transactions.listByAccount(id),
-        transactionOrder: account.transactionOrder,
+        seedBalance: pool.seedBalance,
+        seedDate: pool.seedDate,
+        transactions: await transactions.listByPool(id),
+        transactionOrder: pool.transactionOrder,
         from: start,
         to: end,
-        skipped: await transactions.skipsForAccount(id),
+        skipped: await transactions.skipsForPool(id),
       );
       final insights = BalanceInsights.of(
         series.points,
-        threshold: account.lossThreshold.toDouble(),
+        threshold: pool.lossThreshold.toDouble(),
         lowestThrough: start.add(Duration(days: days - 1)),
       );
       return jsonOk({
         'from': formatDate(start),
         'days': days,
         'horizonDays': horizon,
-        'threshold': account.lossThreshold.toString(),
+        'threshold': pool.lossThreshold.toString(),
         ...insights.toJson(),
       });
     } on FormatException catch (e) {

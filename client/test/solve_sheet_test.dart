@@ -8,13 +8,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeRepo extends AccountRepository {
+class _FakeRepo extends PoolRepository {
   _FakeRepo() : super(ApiClient());
 
   final requests = <SolveRequest>[];
 
   @override
-  Future<SolveResult> solve(String accountId, SolveRequest request) async {
+  Future<SolveResult> solve(String poolId, SolveRequest request) async {
     requests.add(request);
     if (request.amount == null) {
       return SolveResult.fromJson({
@@ -41,7 +41,7 @@ class _FakeRepo extends AccountRepository {
       },
       'transaction': {
         'id': 's1',
-        'accountId': 'acc',
+        'poolId': 'acc',
         'name': 'Planned transaction',
         'direction': 'debit',
         'amount': '75',
@@ -68,11 +68,11 @@ void main() {
     final repo = _FakeRepo();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [accountRepositoryProvider.overrideWithValue(repo)],
+        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: SolveSheet(
-              accountId: 'acc',
+              poolId: 'acc',
               initial: SolveRequest(
                 name: 'Planned transaction',
                 direction: TransactionDirection.debit,
@@ -119,11 +119,11 @@ void main() {
     final repo = _FakeRepo();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [accountRepositoryProvider.overrideWithValue(repo)],
+        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: SolveSheet(
-              accountId: 'acc',
+              poolId: 'acc',
               creditOnly: true,
               initial: SolveRequest(
                 name: 'Planned income',

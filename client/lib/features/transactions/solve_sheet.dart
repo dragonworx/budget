@@ -16,7 +16,7 @@ import '../../widgets/recurrence_interval_field.dart';
 /// the unsaved solved transaction is returned for the caller to apply.
 Future<SolveResult?> showSolveSheet(
   BuildContext context, {
-  required String accountId,
+  required String poolId,
   DateTime? startDate,
   DateTime? endDate,
   SolveRequest? initial,
@@ -32,7 +32,7 @@ Future<SolveResult?> showSolveSheet(
           bottom: MediaQuery.viewInsetsOf(context).bottom,
         ),
         child: SolveSheet(
-          accountId: accountId,
+          poolId: poolId,
           initial:
               initial ??
               defaultPlanRequest(startDate: startDate, endDate: endDate),
@@ -57,7 +57,7 @@ SolveRequest defaultPlanRequest({DateTime? startDate, DateTime? endDate}) =>
 class SolveSheet extends ConsumerStatefulWidget {
   const SolveSheet({
     super.key,
-    required this.accountId,
+    required this.poolId,
     required this.initial,
     this.saveOnCommit = true,
     this.creditOnly = false,
@@ -75,7 +75,7 @@ class SolveSheet extends ConsumerStatefulWidget {
 
   /// Viewer access: solve only, no "Create transaction".
   final bool readOnly;
-  final String accountId;
+  final String poolId;
   final SolveRequest initial;
   final bool saveOnCommit;
 
@@ -225,10 +225,10 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     }
     setState(() => _solving = true);
     try {
-      final repo = ref.read(accountRepositoryProvider);
+      final repo = ref.read(poolRepositoryProvider);
       final (result, defaulted) = await solveWithDefaults(
         _request(),
-        (r) => repo.solve(widget.accountId, r),
+        (r) => repo.solve(widget.poolId, r),
         today: DateTime.now(),
       );
       if (!mounted || seq != _requestSeq) return;
@@ -254,7 +254,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     final cb = widget.onPreview;
     if (cb == null) return;
     final t = _result?.transaction;
-    cb(t?.copyWith(accountId: widget.accountId, direction: _direction));
+    cb(t?.copyWith(poolId: widget.poolId, direction: _direction));
   }
 
   /// Every [− N +] [unit ▾] (shared with the transaction editor). A blank
@@ -510,7 +510,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     final transaction = result?.transaction;
     if (result == null || transaction == null) return;
     final named = transaction.copyWith(
-      accountId: widget.accountId,
+      poolId: widget.poolId,
       name: _name.text.trim().isEmpty ? widget.initial.name : _name.text.trim(),
       direction: _direction,
     );
@@ -528,7 +528,7 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     setState(() => _saving = true);
     try {
       final created = await ref
-          .read(transactionsProvider(widget.accountId).notifier)
+          .read(transactionsProvider(widget.poolId).notifier)
           .create(named);
       if (mounted) {
         final done = _withTransaction(

@@ -11,7 +11,7 @@ import '../../data/alert.dart';
 /// - [endBalance]: closing balance of the end day.
 /// - [gains] / [losses]: sums of the counted (not skipped) credits / debits
 ///   dated within the range; [losses] is negative. Transfers count on the
-///   side they hit this account.
+///   side they hit this pool.
 /// - [occurrences]: counted occurrences in the range, in date order.
 class PeriodSummary {
   const PeriodSummary({

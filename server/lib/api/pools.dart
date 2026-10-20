@@ -1,5 +1,5 @@
 import 'package:decimal/decimal.dart';
-import 'package:postgres/postgres.dart';
+import 'package:postgres/postgres.dart' hide Pool;
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
@@ -8,7 +8,7 @@ import '../auth/middleware.dart';
 import '../domain/models.dart';
 import '../domain/transaction_import.dart';
 import '../engine/calendar_math.dart';
-import '../repo/account_repo.dart';
+import '../repo/pool_repo.dart';
 import '../repo/transaction_repo.dart';
 import 'balance.dart';
 import 'json_helpers.dart';
@@ -17,21 +17,21 @@ import 'scenarios.dart';
 import 'solve.dart';
 import 'transactions.dart' show parseTransactionBody;
 
-/// All `/api/accounts...` routes on one router (specific paths before `/<id>`).
-Router buildAccountsApi(Session conn) {
-  final accounts = AccountRepo(conn);
+/// All `/api/pools...` routes on one router (specific paths before `/<id>`).
+Router buildPoolsApi(Session conn) {
+  final pools = PoolRepo(conn);
   final transactions = TransactionRepo(conn);
   final router = Router();
 
-  // Accounts are top level: mine (owner) plus those shared with me.
+  // Pools are top level: mine (owner) plus those shared with me.
   router.get('/', (Request request) async {
     final me = requireAuth(request).user.id;
-    final items = await accounts.listAccessible(me);
-    final last = await accounts.lastOpened(me);
+    final items = await pools.listAccessible(me);
+    final last = await pools.lastOpened(me);
     return jsonOk({
-      'accounts': items,
+      'pools': items,
       // Only when still accessible (a share may have been revoked).
-      'lastAccountId': items.any((a) => a['id'] == last) ? last : null,
+      'lastPoolId': items.any((a) => a['id'] == last) ? last : null,
     });
   });
 
@@ -42,13 +42,13 @@ Router buildAccountsApi(Session conn) {
       final name = requireString(body, 'name').trim();
       if (name.isEmpty) return jsonError(400, 'name is required');
       // A 'currency' or 'projectId' field (older clients / exports) is
-      // ignored: accounts no longer have either.
+      // ignored: pools no longer have either.
       final seedBalance = parseDecimal(body['seedBalance'] ?? '0');
       final seedDate = parseDate(requireString(body, 'seedDate'));
       final lossThreshold = body.containsKey('lossThreshold')
           ? parseDecimal(body['lossThreshold'])
           : Decimal.zero;
-      final account = await accounts.create(
+      final pool = await pools.create(
         ownerId: me,
         name: name,
         seedBalance: seedBalance,
@@ -56,37 +56,37 @@ Router buildAccountsApi(Session conn) {
         lossThreshold: lossThreshold,
         displayOrder: optionalInt(body, 'displayOrder') ?? 0,
         // No explicit choice: Hundreds, like the dialog's preselected value.
-        currencyScale: parseCurrencyScale(body) ?? Account.defaultCurrencyScale,
+        currencyScale: parseCurrencyScale(body) ?? Pool.defaultCurrencyScale,
       );
-      return jsonOk({...account.toJson(), 'role': 'owner', 'shared': false},
+      return jsonOk({...pool.toJson(), 'role': 'owner', 'shared': false},
           status: 201);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     } on ServerException catch (e) {
       if (e.code == '23505') {
-        return jsonError(409, 'you already have an account with this name');
+        return jsonError(409, 'you already have a pool with this name');
       }
       rethrow;
     }
   });
 
-  router.get('/<accountId>/transactions',
-      (Request request, String accountId) async {
-    final account = await accounts.get(accountId);
-    if (account == null) return jsonError(404, 'account not found');
-    final items = await transactions.listByAccount(accountId);
+  router.get('/<poolId>/transactions',
+      (Request request, String poolId) async {
+    final pool = await pools.get(poolId);
+    if (pool == null) return jsonError(404, 'pool not found');
+    final items = await transactions.listByPool(poolId);
     return jsonOk({'transactions': items.map((s) => s.toJson()).toList()});
   });
 
-  router.post('/<accountId>/transactions',
-      (Request request, String accountId) async {
+  router.post('/<poolId>/transactions',
+      (Request request, String poolId) async {
     try {
-      final account = await accounts.get(accountId);
-      if (account == null) return jsonError(404, 'account not found');
+      final pool = await pools.get(poolId);
+      if (pool == null) return jsonError(404, 'pool not found');
 
       final body = await readJsonObject(request);
       final parsed = parseTransactionBody(body);
-      final transferTo = optionalString(body, 'transferToAccountId');
+      final transferTo = optionalString(body, 'transferToPoolId');
       final skips = (body['skippedDates'] as List?)
               ?.map((e) => parseDate(e.toString()))
               .toList() ??
@@ -95,7 +95,7 @@ Router buildAccountsApi(Session conn) {
       final transaction = await txOf(conn).runTx((tx) async {
         final transactions = TransactionRepo(tx);
         var created = await transactions.create(
-          accountId: accountId,
+          poolId: poolId,
           name: parsed.name,
           direction: parsed.direction,
           amount: parsed.amount,
@@ -128,17 +128,17 @@ Router buildAccountsApi(Session conn) {
   // a JSON array of TransactionImport, a single object, or either wrapped in
   // a ```json fence. `?dryRun=true` validates and returns the preview only.
   // All-or-nothing: any invalid item -> 400 with per-item `issues`, nothing
-  // written. Items whose `id` already exists in this account are skipped.
-  router.post('/<accountId>/transactions/import',
-      (Request request, String accountId) async {
-    final account = await accounts.get(accountId);
-    if (account == null) return jsonError(404, 'account not found');
+  // written. Items whose `id` already exists in this pool are skipped.
+  router.post('/<poolId>/transactions/import',
+      (Request request, String poolId) async {
+    final pool = await pools.get(poolId);
+    if (pool == null) return jsonError(404, 'pool not found');
     final dryRun = request.url.queryParameters['dryRun'] == 'true';
     final raw = await request.readAsString();
     try {
       final items = parseImport(raw);
       if (dryRun) {
-        final existing = (await transactions.listByAccount(accountId))
+        final existing = (await transactions.listByPool(poolId))
             .map((t) => t.id)
             .toSet();
         final dupes = [
@@ -155,7 +155,7 @@ Router buildAccountsApi(Session conn) {
         });
       }
       final result = await txOf(conn)
-          .runTx((tx) => TransactionRepo(tx).importItems(accountId, items));
+          .runTx((tx) => TransactionRepo(tx).importItems(poolId, items));
       return jsonOk({
         'created': result.created.length,
         'skipped': result.skipped.length,
@@ -185,9 +185,9 @@ Router buildAccountsApi(Session conn) {
         return jsonError(400, 'transactionIds must be an array');
       }
       final transactionIds = raw.map((e) => e.toString()).toList();
-      final account = await accounts.reorderTransactions(id, transactionIds);
-      if (account == null) return jsonError(404, 'account not found');
-      return jsonOk(account.toJson());
+      final pool = await pools.reorderTransactions(id, transactionIds);
+      if (pool == null) return jsonError(404, 'pool not found');
+      return jsonOk(pool.toJson());
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }
@@ -197,19 +197,19 @@ Router buildAccountsApi(Session conn) {
   /// sign-in lands here.
   router.post('/<id>/opened', (Request request, String id) async {
     final auth = authOf(request);
-    if (auth != null) await accounts.markOpened(auth.user.id, id);
-    return jsonOk({'lastAccountId': id});
+    if (auth != null) await pools.markOpened(auth.user.id, id);
+    return jsonOk({'lastPoolId': id});
   });
 
   router.get('/<id>', (Request request, String id) async {
-    final account = await accounts.get(id);
-    if (account == null) return jsonError(404, 'account not found');
+    final pool = await pools.get(id);
+    if (pool == null) return jsonError(404, 'pool not found');
     final access = accessOf(request);
-    // Remember it: sign-in lands on the account opened last.
+    // Remember it: sign-in lands on the pool opened last.
     final auth = authOf(request);
-    if (auth != null) await accounts.markOpened(auth.user.id, id);
+    if (auth != null) await pools.markOpened(auth.user.id, id);
     return jsonOk({
-      ...account.toJson(),
+      ...pool.toJson(),
       if (access?.role != null) 'role': access!.role!.name,
       'shared': access?.isOwner == false,
     });
@@ -222,9 +222,9 @@ Router buildAccountsApi(Session conn) {
           ? parseDate(requireString(body, 'seedDate'))
           : null;
       // Seed date change moves every schedule by the same calendar-day
-      // delta, atomically with the account update.
-      final account = await txOf(conn).runTx((tx) async {
-        final repo = AccountRepo(tx);
+      // delta, atomically with the pool update.
+      final pool = await txOf(conn).runTx((tx) async {
+        final repo = PoolRepo(tx);
         final before = await repo.get(id);
         if (before == null) return null;
         final updated = await repo.update(
@@ -248,21 +248,21 @@ Router buildAccountsApi(Session conn) {
         }
         return updated;
       });
-      if (account == null) return jsonError(404, 'account not found');
-      return jsonOk(account.toJson());
+      if (pool == null) return jsonError(404, 'pool not found');
+      return jsonOk(pool.toJson());
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     } on ServerException catch (e) {
       if (e.code == '23505') {
-        return jsonError(409, 'you already have an account with this name');
+        return jsonError(409, 'you already have a pool with this name');
       }
       rethrow;
     }
   });
 
   router.delete('/<id>', (Request request, String id) async {
-    final ok = await accounts.delete(id);
-    if (!ok) return jsonError(404, 'account not found');
+    final ok = await pools.delete(id);
+    if (!ok) return jsonError(404, 'pool not found');
     return Response(204);
   });
 

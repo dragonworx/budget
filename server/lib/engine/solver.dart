@@ -422,7 +422,7 @@ class TransactionSolver {
           DateTime start, int interval, RecurrenceUnit unit) =>
       Transaction(
         id: 'probe',
-        accountId: 'probe',
+        poolId: 'probe',
         name: '',
         direction: Direction.credit,
         amount: Decimal.one,
@@ -545,7 +545,7 @@ class TransactionSolver {
   }) {
     final base = Transaction(
       id: _uuid.v4(),
-      accountId: '', // filled by API layer
+      poolId: '', // filled by API layer
       name: req.name,
       direction: req.direction,
       amount: v.amount!,

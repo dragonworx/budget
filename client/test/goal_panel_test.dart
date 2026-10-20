@@ -36,13 +36,13 @@ Map<String, dynamic> _solved(String solveFor, {String amount = '280.00'}) => {
   ],
 };
 
-class _Repo extends AccountRepository {
+class _Repo extends PoolRepository {
   _Repo({this.result}) : super(ApiClient());
   final requests = <GoalRequest>[];
   final Map<String, dynamic>? result;
 
   @override
-  Future<GoalResult> goal(String accountId, GoalRequest request) async {
+  Future<GoalResult> goal(String poolId, GoalRequest request) async {
     requests.add(request);
     if (request.targetBalance == null || request.endDate == null) {
       return GoalResult.fromJson({
@@ -58,7 +58,7 @@ class _Repo extends AccountRepository {
   }
 }
 
-final _account = Account(
+final _pool = Pool(
   id: 'acc',
   ownerId: 'u',
   name: 'A',
@@ -113,12 +113,12 @@ void main() {
     final key = GlobalKey<GoalPanelState>();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [accountRepositoryProvider.overrideWithValue(repo)],
+        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: GoalPanel(
               key: key,
-              account: _account,
+              pool: _pool,
               onResult: (_, r) => last = r,
             ),
           ),
@@ -168,10 +168,10 @@ void main() {
     final key = GlobalKey<GoalPanelState>();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [accountRepositoryProvider.overrideWithValue(repo)],
+        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
-            body: GoalPanel(key: key, account: _account, onResult: (_, _) {}),
+            body: GoalPanel(key: key, pool: _pool, onResult: (_, _) {}),
           ),
         ),
       ),

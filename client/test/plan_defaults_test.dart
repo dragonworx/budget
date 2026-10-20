@@ -39,7 +39,7 @@ Future<SolveResult> _solve(SolveRequest r) async {
     if (complete)
       'transaction': {
         'id': 't',
-        'accountId': 'a',
+        'poolId': 'a',
         'name': 'n',
         'direction': 'credit',
         'amount': '1',

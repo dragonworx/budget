@@ -3,11 +3,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:budget_server/api/accounts.dart';
+import 'package:budget_server/api/pools.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
 import 'package:budget_server/engine/calendar_math.dart';
-import 'package:budget_server/repo/account_repo.dart';
+import 'package:budget_server/repo/pool_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
@@ -43,9 +43,9 @@ void main() {
       return;
     }
     final owner = await testOwnerId(c, 'seed-shift-test@example.com');
-    await deleteOwnedAccounts(c, owner);
+    await deleteOwnedPools(c, owner);
     try {
-      final account = await AccountRepo(c).create(
+      final pool = await PoolRepo(c).create(
         ownerId: owner,
         name: 'A',
         seedBalance: Decimal.zero,
@@ -54,13 +54,13 @@ void main() {
       );
       final t = await c.execute(
         Sql.named('''
-          INSERT INTO transactions (id, account_id, name, direction, amount,
+          INSERT INTO transactions (id, pool_id, name, direction, amount,
             start_date, recurrence_mode, interval, unit, end_mode, end_date)
           VALUES (gen_random_uuid(), @a, 'Rent', 'debit', 100, '2026-10-20',
             'every', 1, 'weeks', 'until_date', '2026-12-01')
           RETURNING id::text
         '''),
-        parameters: {'a': account.id},
+        parameters: {'a': pool.id},
       );
       final tid = t.first[0] as String;
       for (final d in ['2026-10-27', '2026-11-03']) {
@@ -71,10 +71,10 @@ void main() {
           parameters: {'t': tid, 'd': d},
         );
       }
-      final api = buildAccountsApi(c);
+      final api = buildPoolsApi(c);
       final res = await api.call(Request(
         'PATCH',
-        Uri.parse('http://x/${account.id}'),
+        Uri.parse('http://x/${pool.id}'),
         body: jsonEncode({'seedDate': '2026-10-23'}),
       ));
       expect(res.statusCode, 200);
@@ -97,7 +97,7 @@ void main() {
       // A patch without seedDate moves nothing.
       await api.call(Request(
         'PATCH',
-        Uri.parse('http://x/${account.id}'),
+        Uri.parse('http://x/${pool.id}'),
         body: jsonEncode({'name': 'B'}),
       ));
       final again = await c.execute(
@@ -107,7 +107,7 @@ void main() {
       );
       expect(again.first[0], '2026-10-27');
     } finally {
-      await deleteOwnedAccounts(c, owner);
+      await deleteOwnedPools(c, owner);
     }
   });
 }

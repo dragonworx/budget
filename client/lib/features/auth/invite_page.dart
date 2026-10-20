@@ -56,14 +56,14 @@ class _InvitePageState extends ConsumerState<InvitePage> {
     setState(() => _accepting = true);
     try {
       final r = await ref.read(sharingRepositoryProvider).accept(widget.token);
-      ref.invalidate(accountsProvider);
+      ref.invalidate(poolsProvider);
       ref.invalidate(myInvitesProvider);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Invite accepted: you can now ${r.role.canEdit ? 'edit' : 'view'} it')),
       );
       context.go(
-        r.accountId != null ? '/accounts/${r.accountId}/timeline' : accountsPath,
+        r.poolId != null ? '/pools/${r.poolId}/timeline' : poolsPath,
       );
     } catch (e) {
       if (!mounted) return;
@@ -134,7 +134,7 @@ class _InvitePageState extends ConsumerState<InvitePage> {
             RoleChip(inv.role),
             const SizedBox(width: 8),
             Text(
-              'account',
+              'pool',
               style: theme.textTheme.bodySmall,
             ),
           ],
@@ -186,8 +186,8 @@ class _InvitePageState extends ConsumerState<InvitePage> {
                     ...body,
                     const SizedBox(height: 16),
                     TextButton(
-                      onPressed: () => context.go(accountsPath),
-                      child: const Text('Go to accounts'),
+                      onPressed: () => context.go(poolsPath),
+                      child: const Text('Go to pools'),
                     ),
                   ],
                 ),

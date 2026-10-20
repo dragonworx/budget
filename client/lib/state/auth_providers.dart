@@ -83,10 +83,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
   void _signedIn(AuthUser user) {
     // Drop any data cached for a previous user.
-    ref.invalidate(accountsProvider);
-    ref.invalidate(accountProvider);
+    ref.invalidate(poolsProvider);
+    ref.invalidate(poolProvider);
     ref.invalidate(myInvitesProvider);
-    // A fresh sign-in lands on the last-used account again.
+    // A fresh sign-in lands on the last-used pool again.
     ref.read(landedProvider.notifier).state = false;
     state = AsyncData(_current.copyWith(user: user));
   }
@@ -99,8 +99,8 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     }
     disableGoogleAutoSelect();
     state = AsyncData(_current.copyWith(clearUser: true));
-    ref.invalidate(accountsProvider);
-    ref.invalidate(accountProvider);
+    ref.invalidate(poolsProvider);
+    ref.invalidate(poolProvider);
     ref.read(landedProvider.notifier).state = false;
   }
 }

@@ -14,7 +14,7 @@ void main() {
     expect(belowAlert(Decimal.parse('-0.01'), Decimal.zero), isTrue);
   });
 
-  test('new account at 0 with a 0 threshold: no alert day, lowest not red', () {
+  test('new pool at 0 with a 0 threshold: no alert day, lowest not red', () {
     final day = DateTime(2026, 10, 1);
     final s = summarizePeriod(
       series: BalanceSeries(

@@ -37,25 +37,25 @@ String scenarioDeltaText(
   return parts.join(' · ');
 }
 
-/// Saved what-ifs for an account: include/exclude each on the chart (as a
-/// coloured ghost line), compare it with the account as it is, load it back
+/// Saved what-ifs for a pool: include/exclude each on the chart (as a
+/// coloured ghost line), compare it with the pool as it is, load it back
 /// into the goal planner, or delete it. Never edits real transactions.
 class ScenariosPanel extends ConsumerWidget {
   const ScenariosPanel({
     super.key,
-    required this.account,
+    required this.pool,
     required this.onLoad,
   });
 
-  final Account account;
+  final Pool pool;
   final ValueChanged<Scenario> onLoad;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final results = ref.watch(scenarioResultsProvider(account.id));
-    final insights = ref.watch(insightsProvider(account.id)).valueOrNull;
-    final repo = ref.read(accountRepositoryProvider);
+    final results = ref.watch(scenarioResultsProvider(pool.id));
+    final insights = ref.watch(insightsProvider(pool.id)).valueOrNull;
+    final repo = ref.read(poolRepositoryProvider);
     Future<void> run(Future<void> Function() f) async {
       try {
         await f();
@@ -65,7 +65,7 @@ class ScenariosPanel extends ConsumerWidget {
               .showSnackBar(SnackBar(content: Text('Scenario: $e')));
         }
       }
-      ref.invalidate(scenariosProvider(account.id));
+      ref.invalidate(scenariosProvider(pool.id));
     }
 
     final list = results.valueOrNull;
@@ -75,7 +75,7 @@ class ScenariosPanel extends ConsumerWidget {
       children: [
         Text(
           'Saved what-ifs. Included ones are drawn on the chart in their '
-          'colour and compared with the account as it is now. Save one '
+          'colour and compared with the pool as it is now. Save one '
           'from "Plan a goal".',
           style: theme.textTheme.bodySmall?.copyWith(color: AppTheme.textMuted),
         ),
@@ -124,11 +124,11 @@ class ScenariosPanel extends ConsumerWidget {
                       Switch(
                         key: ValueKey('scenario-include-${s.id}'),
                         value: s.included,
-                        onChanged: !account.role.canEdit
+                        onChanged: !pool.role.canEdit
                             ? null
                             : (on) => run(
                           () => repo.updateScenario(
-                            account.id,
+                            pool.id,
                             s.id,
                             included: on,
                           ),
@@ -141,13 +141,13 @@ class ScenariosPanel extends ConsumerWidget {
                         onPressed: () => onLoad(s),
                         icon: const Icon(Icons.edit_outlined, size: 18),
                       ),
-                      if (account.role.canEdit)
+                      if (pool.role.canEdit)
                       IconButton(
                         key: ValueKey('scenario-delete-${s.id}'),
                         tooltip: 'Delete scenario',
                         visualDensity: VisualDensity.compact,
                         onPressed: () =>
-                            run(() => repo.deleteScenario(account.id, s.id)),
+                            run(() => repo.deleteScenario(pool.id, s.id)),
                         icon: const Icon(Icons.delete_outline, size: 18),
                       ),
                     ],

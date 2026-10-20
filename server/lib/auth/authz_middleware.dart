@@ -5,7 +5,7 @@ import 'package:shelf/shelf.dart';
 
 import '../api/json_helpers.dart';
 import '../db_scope.dart';
-import '../repo/account_repo.dart';
+import '../repo/pool_repo.dart';
 import '../repo/audit_repo.dart';
 import '../repo/scenario_repo.dart';
 import '../repo/transaction_repo.dart';
@@ -42,28 +42,28 @@ Middleware authzMiddleware(ScopedDb db) {
           case Scope.admin:
             if (!auth.user.isAdmin) return jsonError(403, 'admin only');
             access = Access(params: params);
-          case Scope.account:
-            final a = await authz.account(params['a']!, uid);
+          case Scope.pool:
+            final a = await authz.pool(params['a']!, uid);
             if (a != null) {
               access =
-                  Access(role: a.role, accountId: a.accountId, params: params);
+                  Access(role: a.role, poolId: a.poolId, params: params);
             }
           case Scope.transaction:
-            final ta = await authz.transactionAccounts(params['t']!);
+            final ta = await authz.transactionPools(params['t']!);
             if (ta != null) {
-              final a = await authz.account(ta.$1, uid);
+              final a = await authz.pool(ta.$1, uid);
               if (a != null) {
                 access = Access(
                     role: a.role,
-                    accountId: a.accountId,
+                    poolId: a.poolId,
                     params: {...params, if (ta.$2 != null) 'peer': ta.$2!});
               }
             }
           case Scope.invite:
-            final acc = await authz.inviteAccount(params['i']!);
-            final a = acc == null ? null : await authz.account(acc, uid);
+            final acc = await authz.invitePool(params['i']!);
+            final a = acc == null ? null : await authz.pool(acc, uid);
             if (a != null) {
-              access = Access(role: a.role, accountId: acc, params: params);
+              access = Access(role: a.role, poolId: acc, params: params);
             }
         }
         if (access == null) return jsonError(404, 'not found');
@@ -89,22 +89,22 @@ Middleware authzMiddleware(ScopedDb db) {
             if (d is Map<String, dynamic>) body = d;
           } catch (_) {}
 
-          // Transfers: editor on the target account, and on the existing
+          // Transfers: editor on the target pool, and on the existing
           // peer of a linked row being changed.
-          final to = body?['transferToAccountId'];
+          final to = body?['transferToPoolId'];
           if (to != null) {
-            final t = await authz.account('$to', uid);
-            if (t == null) return jsonError(404, 'transfer account not found');
+            final t = await authz.pool('$to', uid);
+            if (t == null) return jsonError(404, 'transfer pool not found');
             if (!t.role!.atLeast(Role.editor)) {
-              return jsonError(403, 'requires editor role on transfer account');
+              return jsonError(403, 'requires editor role on transfer pool');
             }
           }
           final peer = access.params['peer'];
           if (policy.scope == Scope.transaction && peer != null) {
-            final p = await authz.account(peer, uid);
+            final p = await authz.pool(peer, uid);
             if (p == null || !p.role!.atLeast(Role.editor)) {
               return jsonError(
-                  403, 'requires editor role on the linked transfer account');
+                  403, 'requires editor role on the linked transfer pool');
             }
           }
         }
@@ -139,8 +139,8 @@ Middleware authzMiddleware(ScopedDb db) {
               decoded = jsonDecode(text);
             } catch (_) {}
             if (decoded is Map<String, dynamic>) resJson = decoded;
-            if ((rest[0] == 'accounts' || rest[0] == 'transactions') &&
-                text.contains('"peerAccountId"')) {
+            if ((rest[0] == 'pools' || rest[0] == 'transactions') &&
+                text.contains('"peerPoolId"')) {
               out = res.change(
                   body: jsonEncode(await _redact(authz, uid, decoded)));
             } else {
@@ -177,7 +177,7 @@ Middleware authzMiddleware(ScopedDb db) {
 Future<int?> _lockVersion(
     Session db, String table, Map<String, String> p) async {
   final id = switch (table) {
-    'accounts' => p['a'],
+    'pools' => p['a'],
     'transactions' => p['t'],
     'scenarios' => p['s'],
     _ => null,
@@ -206,26 +206,26 @@ Future<Map<String, dynamic>?> _current(
     Session db, String table, Map<String, String> p) async {
   Object? json;
   switch (table) {
-    case 'accounts':
-      json = (await AccountRepo(db).get(p['a']!))?.toJson();
+    case 'pools':
+      json = (await PoolRepo(db).get(p['a']!))?.toJson();
     case 'transactions':
       json = (await TransactionRepo(db).get(p['t']!))?.toJson();
     case 'scenarios':
       final s = await ScenarioRepo(db).get(p['s']!);
-      json = s != null && s.accountId == p['a'] ? s.toJson() : null;
+      json = s != null && s.poolId == p['a'] ? s.toJson() : null;
   }
   return json == null
       ? null
       : jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
 }
 
-/// Nulls peer account names on transfer links whose
-/// peer account the user cannot read; marks them `peerReadable: false`.
+/// Nulls peer pool names on transfer links whose
+/// peer pool the user cannot read; marks them `peerReadable: false`.
 Future<Object?> _redact(Authz authz, String uid, Object? json) async {
   final links = <Map<String, dynamic>>[];
   void walk(Object? n) {
     if (n is Map<String, dynamic>) {
-      if (n.containsKey('peerAccountId')) links.add(n);
+      if (n.containsKey('peerPoolId')) links.add(n);
       n.values.forEach(walk);
     } else if (n is List) {
       n.forEach(walk);
@@ -234,14 +234,14 @@ Future<Object?> _redact(Authz authz, String uid, Object? json) async {
 
   walk(json);
   if (links.isEmpty) return json;
-  final ids = links.map((l) => l['peerAccountId']).whereType<String>();
-  final readable = await authz.readableAccounts(ids, uid);
+  final ids = links.map((l) => l['peerPoolId']).whereType<String>();
+  final readable = await authz.readablePools(ids, uid);
   for (final l in links) {
-    final id = l['peerAccountId'];
+    final id = l['peerPoolId'];
     final ok = id == null || readable.contains(id);
     l['peerReadable'] = ok;
     if (!ok) {
-      l['peerAccountName'] = null;
+      l['peerPoolName'] = null;
     }
   }
   return json;

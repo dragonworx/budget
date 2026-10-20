@@ -6,7 +6,7 @@ class BudgetEvent {
     required this.action,
     required this.entity,
     this.entityId,
-    this.accountId,
+    this.poolId,
     this.actorId,
     this.subjectUserId,
     this.clientId,
@@ -18,7 +18,7 @@ class BudgetEvent {
   final String action;
   final String entity;
   final String? entityId;
-  final String? accountId;
+  final String? poolId;
   final String? actorId;
   final String? subjectUserId;
   final String? clientId;
@@ -29,14 +29,14 @@ class BudgetEvent {
 
   /// audit_log columns in [fromRow] order.
   static const columns = 'id, action, entity, entity_id, '
-      'account_id::text, user_id::text, subject_user_id::text, client_id, at, detail';
+      'pool_id::text, user_id::text, subject_user_id::text, client_id, at, detail';
 
   factory BudgetEvent.fromRow(List<Object?> r) => BudgetEvent(
         id: r[0] as int,
         action: r[1] as String,
         entity: r[2] as String,
         entityId: r[3] as String?,
-        accountId: r[4] as String?,
+        poolId: r[4] as String?,
         actorId: r[5] as String?,
         subjectUserId: r[6] as String?,
         clientId: r[7] as String?,
@@ -49,7 +49,7 @@ class BudgetEvent {
         action: j['action'] as String,
         entity: j['entity'] as String,
         entityId: j['entityId'] as String?,
-        accountId: j['accountId'] as String?,
+        poolId: j['poolId'] as String?,
         actorId: j['actorId'] as String?,
         subjectUserId: j['subjectUserId'] as String?,
         clientId: j['clientId'] as String?,
@@ -62,7 +62,7 @@ class BudgetEvent {
         'action': action,
         'entity': entity,
         'entityId': entityId,
-        'accountId': accountId,
+        'poolId': poolId,
         'actorId': actorId,
         'subjectUserId': subjectUserId,
         'clientId': clientId,
@@ -72,9 +72,9 @@ class BudgetEvent {
 
   /// Events that change who can see what.
   bool get changesAccess =>
-      entity == 'account_share' ||
+      entity == 'pool_share' ||
       action == 'invite.accepted' ||
-      action == 'account.created' ||
-      action == 'account.deleted' ||
+      action == 'pool.created' ||
+      action == 'pool.deleted' ||
       action == 'admin.user_updated';
 }

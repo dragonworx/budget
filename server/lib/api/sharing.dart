@@ -31,10 +31,10 @@ String _parseEmail(Map<String, dynamic> body) {
 
 String inviteUrl(Config c, String token) => '${c.publicOrigin}/invite/$token';
 
-/// Invites [email] to account [accountId]: an existing user gets the share
+/// Invites [email] to pool [poolId]: an existing user gets the share
 /// at once (`status: added`), anyone else a pending invite link.
 Future<Response> _invite(
-    Request r, Session db, Config config, String accountId) async {
+    Request r, Session db, Config config, String poolId) async {
   final auth = requireAuth(r);
   final body = await readJsonObject(r);
   final email = _parseEmail(body);
@@ -42,10 +42,10 @@ Future<Response> _invite(
   final existing = await UserRepo(db).byEmail(email);
   if (existing != null) {
     if (existing.id == auth.user.id) {
-      return jsonError(409, 'you already own this account');
+      return jsonError(409, 'you already own this pool');
     }
     await MembershipRepo(db)
-        .grantAccount(accountId, existing.id, role, addedBy: auth.user.id);
+        .grantPool(poolId, existing.id, role, addedBy: auth.user.id);
     return jsonOk({
       'id': existing.id,
       'status': 'added',
@@ -62,7 +62,7 @@ Future<Response> _invite(
       .create(
           email: email,
           role: role,
-          accountId: accountId,
+          poolId: poolId,
           invitedBy: auth.user.id);
   return jsonOk({
     'id': invite.id,
@@ -73,8 +73,8 @@ Future<Response> _invite(
   }, status: 201);
 }
 
-/// `/api/accounts/<a>/shares|invites|leave`.
-void attachAccountSharingRoutes(Router router, Session db, Config config) {
+/// `/api/pools/<a>/shares|invites|leave`.
+void attachPoolSharingRoutes(Router router, Session db, Config config) {
   final members = MembershipRepo(db);
   final invites = InviteRepo(db, secret: config.sessionSecret);
 
@@ -82,16 +82,16 @@ void attachAccountSharingRoutes(Router router, Session db, Config config) {
     final access = accessOf(r)!;
     final me = requireAuth(r).user.id;
     final isOwner = access.isOwner;
-    final shares = await members.accountShares(accountId: a);
+    final shares = await members.poolShares(poolId: a);
     return jsonOk({
       'role': access.role!.name,
-      'owner': (await members.accountOwner(a))?.toJson(),
+      'owner': (await members.poolOwner(a))?.toJson(),
       // The owner sees every share; others see only their own.
       'shares': isOwner
           ? shares.map((s) => s.toJson()).toList()
           : shares.where((s) => s.userId == me).map((s) => s.toJson()).toList(),
       if (isOwner)
-        'invites': (await invites.pending(accountId: a))
+        'invites': (await invites.pending(poolId: a))
             .map((i) => i.toJson())
             .toList(),
     });
@@ -102,14 +102,14 @@ void attachAccountSharingRoutes(Router router, Session db, Config config) {
 
   router.patch('/<a>/shares/<u>', (Request r, String a, String u) async {
     final role = _parseShareRole(await readJsonObject(r));
-    if (!await members.setAccountRole(a, u, role)) {
+    if (!await members.setPoolRole(a, u, role)) {
       return jsonError(404, 'share not found');
     }
     return jsonOk({'userId': u, 'role': role.name});
   });
 
   router.delete('/<a>/shares/<u>', (Request r, String a, String u) async {
-    if (!await members.removeAccountShare(a, u)) {
+    if (!await members.removePoolShare(a, u)) {
       return jsonError(404, 'share not found');
     }
     return jsonOk({'removed': u});
@@ -118,10 +118,10 @@ void attachAccountSharingRoutes(Router router, Session db, Config config) {
   router.post('/<a>/leave', (Request r, String a) async {
     final me = requireAuth(r).user.id;
     if (accessOf(r)!.isOwner) {
-      return jsonError(409, 'the owner cannot leave their own account');
+      return jsonError(409, 'the owner cannot leave their own pool');
     }
-    if (!await members.removeAccountShare(a, me)) {
-      return jsonError(404, 'no account share to leave');
+    if (!await members.removePoolShare(a, me)) {
+      return jsonError(404, 'no pool share to leave');
     }
     return jsonOk({'left': a});
   });
@@ -165,7 +165,7 @@ Router buildInvitesApi(Session db, Config config) {
     await invites.accept(inv, me.id);
     return jsonOk({
       'id': inv.id,
-      'accountId': inv.accountId,
+      'poolId': inv.poolId,
       'role': inv.role.name,
     });
   });

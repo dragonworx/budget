@@ -707,7 +707,7 @@ BalanceExtents includeZero(BalanceExtents range) {
       : BalanceExtents(range.min, pad);
 }
 
-/// Default balance view for an account's currency scale [unit] (dollars per
+/// Default balance view for a pool's currency scale [unit] (dollars per
 /// grid step): about 10 units tall, always including the origin. When the
 /// data in view ([dataMin]..[dataMax]) fits with zero inside 9 units it is
 /// centred; otherwise the window sits on the side of zero the data is on.

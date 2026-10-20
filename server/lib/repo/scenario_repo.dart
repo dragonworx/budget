@@ -6,7 +6,7 @@ import 'package:uuid/uuid.dart';
 class Scenario {
   const Scenario({
     required this.id,
-    required this.accountId,
+    required this.poolId,
     required this.name,
     required this.colorIndex,
     required this.included,
@@ -18,7 +18,7 @@ class Scenario {
   final int version;
 
   final String id;
-  final String accountId;
+  final String poolId;
   final String name;
   final int colorIndex;
   final bool included;
@@ -27,7 +27,7 @@ class Scenario {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'accountId': accountId,
+        'poolId': poolId,
         'name': name,
         'colorIndex': colorIndex,
         'included': included,
@@ -44,15 +44,15 @@ class ScenarioRepo {
   final _uuid = const Uuid();
 
   static const _cols =
-      'id, account_id, name, color_index, included, request, created_at, version';
+      'id, pool_id, name, color_index, included, request, created_at, version';
 
-  Future<List<Scenario>> listByAccount(String accountId) async {
+  Future<List<Scenario>> listByPool(String poolId) async {
     final rows = await _conn.execute(
       Sql.named(
-        'SELECT $_cols FROM scenarios WHERE account_id = @a '
+        'SELECT $_cols FROM scenarios WHERE pool_id = @a '
         'ORDER BY created_at ASC',
       ),
-      parameters: {'a': accountId},
+      parameters: {'a': poolId},
     );
     return rows.map(_fromRow).toList();
   }
@@ -66,7 +66,7 @@ class ScenarioRepo {
   }
 
   Future<Scenario> create({
-    required String accountId,
+    required String poolId,
     required String name,
     required int colorIndex,
     required bool included,
@@ -74,13 +74,13 @@ class ScenarioRepo {
   }) async {
     final rows = await _conn.execute(
       Sql.named('''
-        INSERT INTO scenarios (id, account_id, name, color_index, included, request)
+        INSERT INTO scenarios (id, pool_id, name, color_index, included, request)
         VALUES (@id, @a, @name, @color, @included, @request::jsonb)
         RETURNING $_cols
       '''),
       parameters: {
         'id': _uuid.v4(),
-        'a': accountId,
+        'a': poolId,
         'name': name,
         'color': colorIndex,
         'included': included,
@@ -131,7 +131,7 @@ class ScenarioRepo {
     final req = m['request'];
     return Scenario(
       id: m['id'].toString(),
-      accountId: m['account_id'].toString(),
+      poolId: m['pool_id'].toString(),
       name: m['name'] as String,
       colorIndex: m['color_index'] as int,
       included: m['included'] as bool,

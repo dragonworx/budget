@@ -34,7 +34,7 @@ const goalRows = [
 class GoalPanel extends ConsumerStatefulWidget {
   const GoalPanel({
     super.key,
-    required this.account,
+    required this.pool,
     required this.onResult,
     this.initial,
     this.onSaveScenario,
@@ -43,7 +43,7 @@ class GoalPanel extends ConsumerStatefulWidget {
   /// "Save as scenario": stores the current request as a what-if.
   final ValueChanged<GoalRequest>? onSaveScenario;
 
-  final Account account;
+  final Pool pool;
 
   /// Every solve (null while incomplete or failed), for the chart preview.
   final void Function(GoalRequest request, GoalResult? result) onResult;
@@ -194,8 +194,8 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     setState(() => _solving = true);
     try {
       final r = await ref
-          .read(accountRepositoryProvider)
-          .goal(widget.account.id, req);
+          .read(poolRepositoryProvider)
+          .goal(widget.pool.id, req);
       if (!mounted || seq != _seq) return;
       setState(() {
         _result = r;
@@ -319,20 +319,20 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
           FilledButton.icon(
             key: const ValueKey('goal-add-transactions'),
             onPressed:
-                !widget.account.role.canEdit ||
+                !widget.pool.role.canEdit ||
                     _saving ||
                     _solving ||
-                    (_result?.toTransactions(widget.account.id).isEmpty ?? true)
+                    (_result?.toTransactions(widget.pool.id).isEmpty ?? true)
                 ? null
                 : _addTransactions,
             icon: const Icon(Icons.add_rounded, size: 18),
             label: Text(
-              !widget.account.role.canEdit
-                  ? 'View only: can’t add to account'
-                  : (_saving ? 'Adding…' : 'Add plan to account'),
+              !widget.pool.role.canEdit
+                  ? 'View only: can’t add to pool'
+                  : (_saving ? 'Adding…' : 'Add plan to pool'),
             ),
           ),
-          if (widget.onSaveScenario != null && widget.account.role.canEdit) ...[
+          if (widget.onSaveScenario != null && widget.pool.role.canEdit) ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
               key: const ValueKey('goal-save-scenario'),
@@ -736,12 +736,12 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   }
 
   Future<void> _addTransactions() async {
-    final txs = _result?.toTransactions(widget.account.id) ?? const [];
+    final txs = _result?.toTransactions(widget.pool.id) ?? const [];
     if (txs.isEmpty) return;
     setState(() => _saving = true);
     try {
       final notifier = ref.read(
-        transactionsProvider(widget.account.id).notifier,
+        transactionsProvider(widget.pool.id).notifier,
       );
       for (final t in txs) {
         await notifier.create(t);

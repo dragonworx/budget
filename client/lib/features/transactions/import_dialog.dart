@@ -23,21 +23,21 @@ class ImportResult {
   }
 }
 
-/// Paste-a-JSON-array import into [accountId]. The server validates (dry
+/// Paste-a-JSON-array import into [poolId]. The server validates (dry
 /// run) as you type; Import is enabled once the whole paste is valid.
 Future<ImportResult?> showImportDialog(
   BuildContext context, {
-  required String accountId,
+  required String poolId,
 }) {
   return showDialog<ImportResult>(
     context: context,
-    builder: (_) => _ImportDialog(accountId: accountId),
+    builder: (_) => _ImportDialog(poolId: poolId),
   );
 }
 
 class _ImportDialog extends ConsumerStatefulWidget {
-  const _ImportDialog({required this.accountId});
-  final String accountId;
+  const _ImportDialog({required this.poolId});
+  final String poolId;
   @override
   ConsumerState<_ImportDialog> createState() => _ImportDialogState();
 }
@@ -85,7 +85,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
     try {
       final res = await ref
           .read(transactionRepositoryProvider)
-          .import(widget.accountId, raw, dryRun: true);
+          .import(widget.poolId, raw, dryRun: true);
       if (seq != _requestSeq || !mounted) return;
       setState(() {
         _items = (res['items'] as List).cast<Map<String, dynamic>>();
@@ -130,7 +130,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
     try {
       final res = await ref
           .read(transactionRepositoryProvider)
-          .import(widget.accountId, _controller.text);
+          .import(widget.poolId, _controller.text);
       if (!mounted) return;
       Navigator.of(context).pop(
         ImportResult(res['created'] as int? ?? 0, res['skipped'] as int? ?? 0),
@@ -175,7 +175,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
           children: [
             Text(
               'Paste a JSON array of transactions (```json fences are fine). '
-              'Items with an id that already exists in this account are skipped.',
+              'Items with an id that already exists in this pool are skipped.',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 12),

@@ -75,8 +75,8 @@ Router transactionsRouter(Session conn) {
           clearOccurrenceCount: clearCount,
         ))!;
         // Transfers: retarget / link / unlink, then mirror onto the peer.
-        if (body.containsKey('transferToAccountId')) {
-          final to = body['transferToAccountId']?.toString();
+        if (body.containsKey('transferToPoolId')) {
+          final to = body['transferToPoolId']?.toString();
           if (to == null) {
             if (updated.transfer != null) await transactions.unlink(updated);
           } else if (updated.transfer?.peerId != null) {

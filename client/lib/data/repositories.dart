@@ -3,85 +3,85 @@ import 'api_client.dart';
 import '../features/planning/goal_models.dart';
 import 'models.dart';
 
-/// `GET /api/accounts`: accessible accounts (mine first, then shared).
-class AccountList {
-  const AccountList(this.accounts, {this.lastAccountId});
-  final List<Account> accounts;
-  final String? lastAccountId;
+/// `GET /api/pools`: accessible pools (mine first, then shared).
+class PoolList {
+  const PoolList(this.pools, {this.lastPoolId});
+  final List<Pool> pools;
+  final String? lastPoolId;
 }
 
-class AccountRepository {
-  AccountRepository(this._api);
+class PoolRepository {
+  PoolRepository(this._api);
 
   final ApiClient _api;
 
-  /// My accounts and those shared with me, plus the one I opened last
+  /// My pools and those shared with me, plus the one I opened last
   /// (null when none or no longer accessible).
-  Future<AccountList> list() async {
-    final data = await _api.get('/api/accounts');
-    final last = data is Map<String, dynamic> ? data['lastAccountId'] : null;
-    return AccountList(
-      _asList(data).map(Account.fromJson).toList(),
-      lastAccountId: last?.toString(),
+  Future<PoolList> list() async {
+    final data = await _api.get('/api/pools');
+    final last = data is Map<String, dynamic> ? data['lastPoolId'] : null;
+    return PoolList(
+      _asList(data).map(Pool.fromJson).toList(),
+      lastPoolId: last?.toString(),
     );
   }
 
-  Future<Account> get(String id) async {
-    final data = await _api.get('/api/accounts/$id');
-    return Account.fromJson(data as Map<String, dynamic>);
+  Future<Pool> get(String id) async {
+    final data = await _api.get('/api/pools/$id');
+    return Pool.fromJson(data as Map<String, dynamic>);
   }
 
-  /// Remember [id] as my last-opened account (the next sign-in lands there).
+  /// Remember [id] as my last-opened pool (the next sign-in lands there).
   Future<void> markOpened(String id) async {
-    await _api.post('/api/accounts/$id/opened');
+    await _api.post('/api/pools/$id/opened');
   }
 
-  Future<Account> create(Account draft) async {
-    final data = await _api.post('/api/accounts', body: draft.toCreateJson());
-    return Account.fromJson(data as Map<String, dynamic>);
+  Future<Pool> create(Pool draft) async {
+    final data = await _api.post('/api/pools', body: draft.toCreateJson());
+    return Pool.fromJson(data as Map<String, dynamic>);
   }
 
   /// With [force], the version is left out (last write wins).
-  Future<Account> update(Account account, {bool force = false}) async {
-    final body = account.toPatchJson();
+  Future<Pool> update(Pool pool, {bool force = false}) async {
+    final body = pool.toPatchJson();
     if (force) body.remove('version');
-    final data = await _api.patch('/api/accounts/${account.id}', body: body);
-    return Account.fromJson(data as Map<String, dynamic>);
+    final data = await _api.patch('/api/pools/${pool.id}', body: body);
+    return Pool.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<void> delete(String id) => _api.delete('/api/accounts/$id');
+  Future<void> delete(String id) => _api.delete('/api/pools/$id');
 
   Future<BalanceSeries> balance(
-    String accountId, {
+    String poolId, {
     required DateTime from,
     required DateTime to,
   }) async {
     final data = await _api.get(
-      '/api/accounts/$accountId/balance',
+      '/api/pools/$poolId/balance',
       query: {'from': formatDate(from), 'to': formatDate(to)},
     );
     return BalanceSeries.fromJson(data);
   }
 
-  Future<Account> reorderTransactions(
-    String accountId,
+  Future<Pool> reorderTransactions(
+    String poolId,
     List<String> transactionIds,
   ) async {
     final data = await _api.patch(
-      '/api/accounts/$accountId/reorder-transactions',
+      '/api/pools/$poolId/reorder-transactions',
       body: {'transactionIds': transactionIds},
     );
-    return Account.fromJson(data as Map<String, dynamic>);
+    return Pool.fromJson(data as Map<String, dynamic>);
   }
 
   Future<BalanceInsights> insights(
-    String accountId,
+    String poolId,
     DateTime from, {
     int days = 365,
     int horizonDays = 1825,
   }) async {
     final data = await _api.get(
-      '/api/accounts/$accountId/insights',
+      '/api/pools/$poolId/insights',
       query: {
         'from': formatDate(from),
         'days': '$days',
@@ -91,9 +91,9 @@ class AccountRepository {
     return BalanceInsights.fromJson(data as Map<String, dynamic>);
   }
 
-  /// Solves one balance-goal unknown (`POST /accounts/:id/goal`).
-  Future<List<Scenario>> scenarios(String accountId) async {
-    final data = await _api.get('/api/accounts/$accountId/scenarios');
+  /// Solves one balance-goal unknown (`POST /pools/:id/goal`).
+  Future<List<Scenario>> scenarios(String poolId) async {
+    final data = await _api.get('/api/pools/$poolId/scenarios');
     return [
       for (final j in data as List)
         Scenario.fromJson(Map<String, dynamic>.from(j as Map)),
@@ -101,26 +101,26 @@ class AccountRepository {
   }
 
   Future<Scenario> createScenario(
-    String accountId, {
+    String poolId, {
     required String name,
     required GoalRequest request,
   }) async {
     final data = await _api.post(
-      '/api/accounts/$accountId/scenarios',
+      '/api/pools/$poolId/scenarios',
       body: {'name': name, 'request': request.toJson()},
     );
     return Scenario.fromJson(data as Map<String, dynamic>);
   }
 
   Future<Scenario> updateScenario(
-    String accountId,
+    String poolId,
     String id, {
     String? name,
     bool? included,
     GoalRequest? request,
   }) async {
     final data = await _api.patch(
-      '/api/accounts/$accountId/scenarios/$id',
+      '/api/pools/$poolId/scenarios/$id',
       body: {
         'name': ?name,
         'included': ?included,
@@ -130,12 +130,12 @@ class AccountRepository {
     return Scenario.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<void> deleteScenario(String accountId, String id) =>
-      _api.delete('/api/accounts/$accountId/scenarios/$id');
+  Future<void> deleteScenario(String poolId, String id) =>
+      _api.delete('/api/pools/$poolId/scenarios/$id');
 
-  Future<GoalResult> goal(String accountId, GoalRequest request) async {
+  Future<GoalResult> goal(String poolId, GoalRequest request) async {
     final data = await _api.post(
-      '/api/accounts/$accountId/goal',
+      '/api/pools/$poolId/goal',
       body: {...request.toJson(), 'today': formatDate(DateTime.now())},
     );
     return GoalResult.fromJson(data as Map<String, dynamic>);
@@ -143,13 +143,13 @@ class AccountRepository {
 
   /// Balance as if [extra] (unsaved) transactions were added.
   Future<BalanceSeries> project(
-    String accountId,
+    String poolId,
     List<Transaction> extra, {
     required DateTime from,
     required DateTime to,
   }) async {
     final data = await _api.post(
-      '/api/accounts/$accountId/project',
+      '/api/pools/$poolId/project',
       body: {
         'from': formatDate(from),
         'to': formatDate(to),
@@ -159,9 +159,9 @@ class AccountRepository {
     return BalanceSeries.fromJson(data);
   }
 
-  Future<SolveResult> solve(String accountId, SolveRequest request) async {
+  Future<SolveResult> solve(String poolId, SolveRequest request) async {
     final data = await _api.post(
-      '/api/accounts/$accountId/solve',
+      '/api/pools/$poolId/solve',
       body: request.toJson(),
     );
     return SolveResult.fromJson(data as Map<String, dynamic>);
@@ -173,14 +173,14 @@ class TransactionRepository {
 
   final ApiClient _api;
 
-  Future<List<Transaction>> listForAccount(String accountId) async {
-    final data = await _api.get('/api/accounts/$accountId/transactions');
+  Future<List<Transaction>> listForPool(String poolId) async {
+    final data = await _api.get('/api/pools/$poolId/transactions');
     return _asList(data).map(Transaction.fromJson).toList();
   }
 
-  Future<Transaction> create(String accountId, Transaction draft) async {
+  Future<Transaction> create(String poolId, Transaction draft) async {
     final data = await _api.post(
-      '/api/accounts/$accountId/transactions',
+      '/api/pools/$poolId/transactions',
       body: draft.toCreateJson(),
     );
     return Transaction.fromJson(data as Map<String, dynamic>);
@@ -205,12 +205,12 @@ class TransactionRepository {
   /// stripped server-side). With [dryRun] only validates and previews.
   /// Throws [ApiException] (status 400, `details` per-item issues) if invalid.
   Future<Map<String, dynamic>> import(
-    String accountId,
+    String poolId,
     String raw, {
     bool dryRun = false,
   }) async {
     final data = await _api.post(
-      '/api/accounts/$accountId/transactions/import${dryRun ? '?dryRun=true' : ''}',
+      '/api/pools/$poolId/transactions/import${dryRun ? '?dryRun=true' : ''}',
       body: raw,
     );
     return data as Map<String, dynamic>;
@@ -297,7 +297,7 @@ List<Map<String, dynamic>> _asList(dynamic data) {
     final nested =
         data['items'] ??
         data['data'] ??
-        data['accounts'] ??
+        data['pools'] ??
         data['transactions'] ??
         data['points'] ??
         data['balances'];

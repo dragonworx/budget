@@ -13,7 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/sharing_ui.dart';
 
-/// Opens the share dialog for an account. Resolves true when the user left
+/// Opens the share dialog for a pool. Resolves true when the user left
 /// it (callers navigate away).
 Future<bool> showShareDialog(BuildContext context, ShareTarget target) async {
   final r = await showDialog<bool>(
@@ -77,7 +77,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
       await action();
       await _load();
       // Roles and lists elsewhere depend on sharing.
-      ref.invalidate(accountsProvider);
+      ref.invalidate(poolsProvider);
       if (done != null) _toast(done);
     } catch (e) {
       _toast(friendlyError(e));
@@ -134,7 +134,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
     setState(() => _busy = true);
     try {
       await _repo.leave(_t);
-      ref.invalidate(accountsProvider);
+      ref.invalidate(poolsProvider);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       _toast(friendlyError(e));
@@ -174,7 +174,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
               children: [
                 Text('Share “${_t.name}”', maxLines: 1, overflow: TextOverflow.ellipsis),
                 Text(
-                  'Account',
+                  'Pool',
                   style: theme.textTheme.bodySmall,
                 ),
               ],
@@ -207,7 +207,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                     if (_link != null) _linkBox(theme),
                     _heading(theme, 'People with access'),
                     for (final m in info.members) _memberRow(m, info, me?.id, isOwner),
-                    for (final m in info.accountShares) _memberRow(m, info, me?.id, isOwner),
+                    for (final m in info.poolShares) _memberRow(m, info, me?.id, isOwner),
                     if (isOwner && info.invites.any((i) => i.pending)) ...[
                       _heading(theme, 'Pending invites'),
                       for (final i in info.invites.where((i) => i.pending)) _inviteRow(i, theme),
@@ -231,7 +231,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
             key: const ValueKey('share-leave'),
             onPressed: _busy ? null : _leave,
             icon: const Icon(Icons.logout_rounded, size: 18),
-            label: const Text('Leave account'),
+            label: const Text('Leave pool'),
           ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(false),
@@ -243,7 +243,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
 
   /// Only a share holder can leave (the owner deletes instead).
   bool _canLeave(ShareInfo info, String? myId) =>
-      info.accountShares.any((m) => m.userId == myId);
+      info.poolShares.any((m) => m.userId == myId);
 
   Widget _heading(ThemeData theme, String text) => Padding(
     padding: const EdgeInsets.only(top: 14, bottom: 4),

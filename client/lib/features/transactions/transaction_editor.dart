@@ -10,7 +10,7 @@ import '../../widgets/conflict_dialog.dart';
 import '../../state/realtime_providers.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/account_picker.dart';
+import '../../widgets/pool_picker.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/recurrence_interval_field.dart';
@@ -88,7 +88,7 @@ class EditorOutcome {
 /// deleted) transaction when anything changed, else null.
 Future<EditorOutcome?> showTransactionEditor(
   BuildContext context, {
-  required String accountId,
+  required String poolId,
   Transaction? existing,
   DateTime? initialDate,
   DateTime? initialEndDate,
@@ -101,7 +101,7 @@ Future<EditorOutcome?> showTransactionEditor(
     context,
     label: existing == null ? 'New transaction' : 'Edit transaction',
     builder: (context) => TransactionEditor(
-      accountId: accountId,
+      poolId: poolId,
       existing: existing,
       initialDate: initialDate,
       initialEndDate: initialEndDate,
@@ -116,7 +116,7 @@ Future<EditorOutcome?> showTransactionEditor(
 class TransactionEditor extends ConsumerStatefulWidget {
   const TransactionEditor({
     super.key,
-    required this.accountId,
+    required this.poolId,
     this.existing,
     this.initialDate,
     this.initialEndDate,
@@ -137,7 +137,7 @@ class TransactionEditor extends ConsumerStatefulWidget {
   /// When embedded: closes the whole host panel (the X button).
   final ValueChanged<EditorOutcome?>? onClosePanel;
 
-  final String accountId;
+  final String poolId;
   final Transaction? existing;
   final DateTime? initialDate;
 
@@ -159,8 +159,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   late final TextEditingController _count;
   late TransactionDirection _direction;
 
-  /// Transfer mode: the series moves money between this account and
-  /// [_transfer]'s account (the far side mirrors it with the opposite sign).
+  /// Transfer mode: the series moves money between this pool and
+  /// [_transfer]'s pool (the far side mirrors it with the opposite sign).
   late bool _transferMode;
   TransferLink? _transfer;
   String? _transferError;
@@ -253,7 +253,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       d.endDate,
       d.occurrenceCount,
       d.enabled,
-      d.transfer?.peerAccountId,
+      d.transfer?.peerPoolId,
     ].join('|');
   }
 
@@ -306,7 +306,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final endMode = repeating ? _endMode : EndMode.never;
     return Transaction(
       id: widget.existing?.id ?? 'preview',
-      accountId: widget.accountId,
+      poolId: widget.poolId,
       name: _name.text.trim(),
       direction: _direction,
       amount: parsedAmount,
@@ -334,25 +334,25 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
 
   Widget _transferField(ThemeData theme) {
     final link = _transfer;
-    final label = _receiving ? 'From account' : 'To account';
-    return AccountPicker(
+    final label = _receiving ? 'From pool' : 'To pool';
+    return PoolPicker(
       keyPrefix: 'transfer',
       title: label,
-      excludeAccountId: widget.accountId,
-      // Both sides of a transfer change: only accounts I can edit.
+      excludePoolId: widget.poolId,
+      // Both sides of a transfer change: only pools I can edit.
       editableOnly: true,
-      currentAccountId: link?.peerAccountId,
+      currentPoolId: link?.peerPoolId,
       onSelected: (a) => setState(() {
         _transferError = null;
         _transfer = TransferLink(
           id: link?.id,
           peerTransactionId: link?.peerTransactionId,
-          peerAccountId: a.id,
-          peerAccountName: a.name,
+          peerPoolId: a.id,
+          peerPoolName: a.name,
         );
       }),
       builder: (context, open) => InkWell(
-        key: const ValueKey('editor-transfer-account'),
+        key: const ValueKey('editor-transfer-pool'),
         onTap: _saving ? null : open,
         borderRadius: BorderRadius.circular(10),
         child: InputDecorator(
@@ -364,13 +364,13 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             helperText: link == null
                 ? null
                 : (_receiving
-                      ? 'Mirrors as money out of ${link.accountLabel}'
-                      : 'Arrives as money in to ${link.accountLabel}'),
+                      ? 'Mirrors as money out of ${link.poolLabel}'
+                      : 'Arrives as money in to ${link.poolLabel}'),
           ),
           child: Text(
             link == null
-                ? 'Choose account'
-                : '${_receiving ? 'From' : 'To'}: ${link.accountLabel}',
+                ? 'Choose pool'
+                : '${_receiving ? 'From' : 'To'}: ${link.poolLabel}',
             style: link == null
                 ? theme.textTheme.bodyLarge?.copyWith(color: AppTheme.textFaint)
                 : theme.textTheme.bodyLarge,
@@ -494,7 +494,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final ev = ref.watch(remoteChangesProvider)[id];
     if (ev == null || ev.id == _openedEvent) return null;
     final deleted = ev.action.endsWith('.deleted');
-    final who = actorName(ref, widget.accountId, ev.actorId) ?? 'someone else';
+    final who = actorName(ref, widget.poolId, ev.actorId) ?? 'someone else';
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(
@@ -722,7 +722,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                   _direction = TransactionDirection.debit;
                 case _Kind.transfer:
                   _transferMode = true;
-                  // A new transfer sends money out of this account; an
+                  // A new transfer sends money out of this pool; an
                   // existing receiving side keeps its direction.
                   if (widget.existing?.transfer == null) {
                     _direction = TransactionDirection.debit;
@@ -1196,7 +1196,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         d.enabled == e.enabled &&
         _sameScheduleAsSaved() &&
         _transferMode == e.isTransfer &&
-        d.transfer?.peerAccountId == e.transfer?.peerAccountId;
+        d.transfer?.peerPoolId == e.transfer?.peerPoolId;
   }
 
   /// Why "Save once-off" is unavailable (null: available).
@@ -1224,7 +1224,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         d.endDate == e.endDate &&
         d.occurrenceCount == e.occurrenceCount &&
         _transferMode == e.isTransfer &&
-        d.transfer?.peerAccountId == e.transfer?.peerAccountId;
+        d.transfer?.peerPoolId == e.transfer?.peerPoolId;
     if (!keepsFrame) return 'Start, end and transfer changes need Save';
     if (!_dirty) return 'Change something first';
     return null;
@@ -1365,7 +1365,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final existing = widget.existing!;
     final date = _day(widget.focusDate!);
     final amount = parseMoneyInput(_amount.text)!;
-    final notifier = ref.read(transactionsProvider(widget.accountId).notifier);
+    final notifier = ref.read(transactionsProvider(widget.poolId).notifier);
     setState(() => _saving = true);
     try {
       // Back to the natural value: that is clearing the override.
@@ -1387,7 +1387,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             );
           }
         },
-        reload: () => ref.invalidate(transactionsProvider(widget.accountId)),
+        reload: () => ref.invalidate(transactionsProvider(widget.poolId)),
       );
       if (r == SaveResult.cancelled) return;
       if (r == SaveResult.reloaded) {
@@ -1418,7 +1418,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final draft = _validatedDraft();
     if (draft == null) return;
     final date = _day(widget.focusDate!);
-    final notifier = ref.read(transactionsProvider(widget.accountId).notifier);
+    final notifier = ref.read(transactionsProvider(widget.poolId).notifier);
     setState(() => _saving = true);
     try {
       ({Transaction original, Transaction? created})? result;
@@ -1426,7 +1426,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         context,
         save: (force) async =>
             result = await notifier.split(draft, date, force: force),
-        reload: () => ref.invalidate(transactionsProvider(widget.accountId)),
+        reload: () => ref.invalidate(transactionsProvider(widget.poolId)),
       );
       if (r == SaveResult.cancelled) return;
       if (r == SaveResult.reloaded) {
@@ -1488,7 +1488,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     setState(() => _saving = true);
     try {
       await ref
-          .read(transactionsProvider(widget.accountId).notifier)
+          .read(transactionsProvider(widget.poolId).notifier)
           .clearOverrides(existing.id, date: date);
       if (mounted) _finish(_outcome(action, existing, date));
     } catch (error) {
@@ -1559,7 +1559,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     setState(() => _skipBusy.add(date));
     try {
       await ref
-          .read(transactionsProvider(widget.accountId).notifier)
+          .read(transactionsProvider(widget.poolId).notifier)
           .setSkip(existing.id, date, skipped: skip);
       setState(() {
         skip ? _skipped.add(date) : _skipped.remove(date);
@@ -1585,7 +1585,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     setState(() => _saving = true);
     try {
       await ref
-          .read(transactionsProvider(widget.accountId).notifier)
+          .read(transactionsProvider(widget.poolId).notifier)
           .delete(existing.id);
       if (mounted) _finish(_outcome(EditorAction.deleted, existing));
     } catch (error) {
@@ -1605,7 +1605,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final amount = parseMoneyInput(_amount.text);
     final result = await showSolveSheet(
       context,
-      accountId: widget.accountId,
+      poolId: widget.poolId,
       saveOnCommit: false,
       initial: SolveRequest(
         name: _name.text.trim(),
@@ -1660,13 +1660,13 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       return null;
     }
     if (_transferMode && _transfer == null) {
-      setState(() => _transferError = 'Pick the other account');
+      setState(() => _transferError = 'Pick the other pool');
       return null;
     }
 
     return _draft(amount: parseMoneyInput(_amount.text)!).copyWith(
       id: widget.existing?.id ?? const Uuid().v4(),
-      accountId: widget.accountId,
+      poolId: widget.poolId,
       name: _name.text.trim(),
       direction: _direction,
       startDate: _startDate,
@@ -1683,7 +1683,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     setState(() => _saving = true);
     try {
       final notifier = ref.read(
-        transactionsProvider(widget.accountId).notifier,
+        transactionsProvider(widget.poolId).notifier,
       );
       final Transaction saved;
       if (widget.existing == null) {
@@ -1692,7 +1692,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         final r = await saveWithConflictCheck(
           context,
           save: (force) => notifier.updateTransaction(draft, force: force),
-          reload: () => ref.invalidate(transactionsProvider(widget.accountId)),
+          reload: () => ref.invalidate(transactionsProvider(widget.poolId)),
         );
         if (r == SaveResult.cancelled) return;
         if (r == SaveResult.reloaded) {
@@ -1735,7 +1735,7 @@ class _ViewOnlyNote extends StatelessWidget {
         children: [
           Icon(Icons.visibility_outlined, size: 18, color: AppTheme.textMuted),
           SizedBox(width: 10),
-          Expanded(child: Text('View only: you have viewer access to this account.')),
+          Expanded(child: Text('View only: you have viewer access to this pool.')),
         ],
       ),
     );

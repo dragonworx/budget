@@ -3,11 +3,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:budget_server/api/accounts.dart';
+import 'package:budget_server/api/pools.dart';
 import 'package:budget_server/api/transactions.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
-import 'package:budget_server/repo/account_repo.dart';
+import 'package:budget_server/repo/pool_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
@@ -51,10 +51,10 @@ void main() {
     try {
       Future<String> acct(String name) async {
         await c.execute(
-            Sql.named('DELETE FROM accounts WHERE owner_id = @o::uuid '
+            Sql.named('DELETE FROM pools WHERE owner_id = @o::uuid '
                 'AND name = @n'),
             parameters: {'o': owner, 'n': name});
-        final id = (await AccountRepo(c).create(
+        final id = (await PoolRepo(c).create(
                 ownerId: owner,
                 name: name,
                 seedBalance: Decimal.zero,
@@ -67,23 +67,23 @@ void main() {
 
       final a = await acct('A');
       final b = await acct('B');
-      final accounts = buildAccountsApi(c).call;
+      final pools = buildPoolsApi(c).call;
       final txs = transactionsRouter(c).call;
 
       // Self-transfer rejected, nothing written.
-      final bad = await call(accounts, 'POST', '/$a/transactions', {
+      final bad = await call(pools, 'POST', '/$a/transactions', {
         'direction': 'debit',
         'amount': '10',
         'startDate': '2026-10-05',
-        'transferToAccountId': a,
+        'transferToPoolId': a,
       });
       expect(bad.status, 400);
       expect(
-          (await call(accounts, 'GET', '/$a/transactions'))
+          (await call(pools, 'GET', '/$a/transactions'))
               .json['transactions'],
           isEmpty);
 
-      final created = await call(accounts, 'POST', '/$a/transactions', {
+      final created = await call(pools, 'POST', '/$a/transactions', {
         'name': 'Savings',
         'direction': 'debit',
         'amount': '10',
@@ -93,27 +93,27 @@ void main() {
         'unit': 'weeks',
         'endMode': 'until_date',
         'endDate': '2026-11-30',
-        'transferToAccountId': b,
+        'transferToPoolId': b,
       });
       expect(created.status, 201);
       final src = created.json;
-      expect(src['transfer']['peerAccountId'], b);
-      expect(src['transfer']['peerAccountName'], 'B');
+      expect(src['transfer']['peerPoolId'], b);
+      expect(src['transfer']['peerPoolName'], 'B');
       expect(src['transfer'].containsKey('peerProjectName'), isFalse);
       final peerId = src['transfer']['peerTransactionId'] as String;
 
-      final bList = (await call(accounts, 'GET', '/$b/transactions'))
+      final bList = (await call(pools, 'GET', '/$b/transactions'))
           .json['transactions'] as List;
       expect(bList, hasLength(1));
       expect(bList.first['id'], peerId);
       expect(bList.first['direction'], 'credit');
       expect(bList.first['amount'], '10');
       expect(bList.first['endDate'], '2026-11-30');
-      expect(bList.first['transfer']['peerAccountId'], a);
+      expect(bList.first['transfer']['peerPoolId'], a);
 
       // B's balance gets +10 on the transfer date.
       final bal = await call(
-          accounts, 'GET', '/$b/balance?from=2026-10-05&to=2026-10-05');
+          pools, 'GET', '/$b/balance?from=2026-10-05&to=2026-10-05');
       expect(jsonEncode(bal.json), contains('"10"'));
 
       // Edit the destination side: source mirrors with inverted sign.
@@ -136,7 +136,7 @@ void main() {
       expect(skips.first[0], 1);
 
       // Seed shift of A moves the pair together (+3 days).
-      await call(accounts, 'PATCH', '/$a', {'seedDate': '2026-10-04'});
+      await call(pools, 'PATCH', '/$a', {'seedDate': '2026-10-04'});
       final peerNow = (await call(txs, 'GET', '/$peerId')).json;
       expect(peerNow['startDate'], '2026-10-09');
       expect(peerNow['endDate'], '2026-12-03');
@@ -150,25 +150,25 @@ void main() {
       expect((await call(txs, 'DELETE', '/$peerId')).status, 204);
       expect((await call(txs, 'GET', '/${src['id']}')).status, 404);
       expect(
-          (await call(accounts, 'GET', '/$a/transactions'))
+          (await call(pools, 'GET', '/$a/transactions'))
               .json['transactions'],
           isEmpty);
 
-      // Deleting an account turns the surviving side into a plain row.
-      final again = (await call(accounts, 'POST', '/$a/transactions', {
+      // Deleting a pool turns the surviving side into a plain row.
+      final again = (await call(pools, 'POST', '/$a/transactions', {
         'direction': 'debit',
         'amount': '5',
         'startDate': '2026-10-05',
-        'transferToAccountId': b,
+        'transferToPoolId': b,
         'skippedDates': [],
       }))
           .json;
-      await AccountRepo(c).delete(b);
+      await PoolRepo(c).delete(b);
       final left = (await call(txs, 'GET', '/${again['id']}')).json;
       expect(left['transfer'], isNull);
     } finally {
       for (final id in made) {
-        await c.execute(Sql.named('DELETE FROM accounts WHERE id = @a::uuid'),
+        await c.execute(Sql.named('DELETE FROM pools WHERE id = @a::uuid'),
             parameters: {'a': id});
       }
     }

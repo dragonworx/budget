@@ -10,7 +10,7 @@ import '../../data/sharing.dart';
 import '../../state/providers.dart';
 import '../../state/realtime_providers.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/account_dialog.dart';
+import '../../widgets/pool_dialog.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/conflict_dialog.dart';
 import '../../widgets/money_text.dart';
@@ -19,55 +19,55 @@ import '../../widgets/ui.dart';
 import '../../widgets/user_menu.dart';
 import '../sharing/share_dialog.dart';
 
-/// Opens the new-account dialog; the account is created inside it (errors
-/// keep it open). Resolves to the created account.
-Future<Account?> createAccount(BuildContext context) {
+/// Opens the new-pool dialog; the pool is created inside it (errors
+/// keep it open). Resolves to the created pool.
+Future<Pool?> createPool(BuildContext context) {
   final notifier = ProviderScope.containerOf(
     context,
     listen: false,
-  ).read(accountsProvider.notifier);
-  return showAccountDialog(context, onSave: notifier.create);
+  ).read(poolsProvider.notifier);
+  return showPoolDialog(context, onSave: notifier.create);
 }
 
-/// Accounts home: my accounts, then those shared with me, and New account.
-/// Accounts are top level (there are no projects). With [landing] (the `/`
-/// route), the first visit after sign-in opens the last-used account
+/// Pools home: my pools, then those shared with me, and New pool.
+/// Pools are top level (there are no projects). With [landing] (the `/`
+/// route), the first visit after sign-in opens the last-used pool
 /// instead, when I can still open it.
-class AccountsPage extends ConsumerStatefulWidget {
-  const AccountsPage({super.key, this.landing = false});
+class PoolsPage extends ConsumerStatefulWidget {
+  const PoolsPage({super.key, this.landing = false});
 
   final bool landing;
 
   @override
-  ConsumerState<AccountsPage> createState() => _AccountsPageState();
+  ConsumerState<PoolsPage> createState() => _PoolsPageState();
 }
 
-class _AccountsPageState extends ConsumerState<AccountsPage> {
+class _PoolsPageState extends ConsumerState<PoolsPage> {
   bool _jumping = false;
 
-  /// On the landing route, once per session: go to the last-used account.
-  void _maybeLand(List<Account> accounts) {
+  /// On the landing route, once per session: go to the last-used pool.
+  void _maybeLand(List<Pool> pools) {
     if (!widget.landing || _jumping || ref.read(landedProvider)) return;
-    final last = ref.read(accountsProvider.notifier).lastAccountId;
-    final target = accounts.where((a) => a.id == last).firstOrNull;
+    final last = ref.read(poolsProvider.notifier).lastPoolId;
+    final target = pools.where((a) => a.id == last).firstOrNull;
     _jumping = target != null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(landedProvider.notifier).state = true;
-      if (target != null) context.go('/accounts/${target.id}/timeline');
+      if (target != null) context.go('/pools/${target.id}/timeline');
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final accountsAsync = ref.watch(accountsProvider);
-    final accounts = accountsAsync.valueOrNull;
-    if (accounts != null && !accountsAsync.isLoading) _maybeLand(accounts);
+    final poolsAsync = ref.watch(poolsProvider);
+    final pools = poolsAsync.valueOrNull;
+    if (pools != null && !poolsAsync.isLoading) _maybeLand(pools);
     final deciding =
         widget.landing &&
         !ref.watch(landedProvider) &&
-        (accounts == null || _jumping);
-    final count = accounts?.length;
+        (pools == null || _jumping);
+    final count = pools?.length;
     return Scaffold(
       appBar: AppBar(
         title: const Row(
@@ -80,81 +80,81 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: () => ref.read(accountsProvider.notifier).refresh(),
+            onPressed: () => ref.read(poolsProvider.notifier).refresh(),
             icon: const Icon(Icons.refresh_rounded),
           ),
           const UserMenu(),
           const SizedBox(width: 12),
         ],
       ),
-      body: deciding && !accountsAsync.hasError
+      body: deciding && !poolsAsync.hasError
           ? const Center(child: CircularProgressIndicator())
           : PageBody(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   PageHeading(
-                    title: 'Accounts',
+                    title: 'Pools',
                     subtitle: count == null || count == 0
-                        ? 'Plan each account\'s balance over time'
-                        : '$count account${count == 1 ? '' : 's'} · open one to plan its balance over time',
+                        ? 'Plan each pool\'s balance over time'
+                        : '$count pool${count == 1 ? '' : 's'} · open one to plan its balance over time',
                     actions: [
                       if (count != null && count > 0)
                         FilledButton.icon(
-                          key: const ValueKey('new-account'),
+                          key: const ValueKey('new-pool'),
                           onPressed: () => _create(context),
                           icon: const Icon(Icons.add_rounded, size: 20),
-                          label: const Text('New account'),
+                          label: const Text('New pool'),
                         ),
                     ],
                   ),
-                  Expanded(child: _body(context, accountsAsync)),
+                  Expanded(child: _body(context, poolsAsync)),
                 ],
               ),
             ),
     );
   }
 
-  Widget _body(BuildContext context, AsyncValue<List<Account>> accountsAsync) {
-    return accountsAsync.when(
+  Widget _body(BuildContext context, AsyncValue<List<Pool>> poolsAsync) {
+    return poolsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => EmptyState(
         error: true,
         icon: Icons.cloud_off_rounded,
-        title: 'Could not load accounts',
+        title: 'Could not load pools',
         message: friendlyError(error),
         action: OutlinedButton.icon(
-          onPressed: () => ref.read(accountsProvider.notifier).refresh(),
+          onPressed: () => ref.read(poolsProvider.notifier).refresh(),
           icon: const Icon(Icons.refresh_rounded, size: 18),
           label: const Text('Retry'),
         ),
       ),
-      data: (accounts) {
+      data: (pools) {
         final invites =
             ref.watch(myInvitesProvider).valueOrNull ?? const <Invite>[];
-        if (accounts.isEmpty) {
+        if (pools.isEmpty) {
           return ListView(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
             children: [
               for (final i in invites) _PendingInviteTile(invite: i),
               EmptyState(
-                key: const ValueKey('accounts-empty'),
+                key: const ValueKey('pools-empty'),
                 icon: Icons.account_balance_wallet_rounded,
-                title: 'No accounts yet',
+                title: 'No pools yet',
                 message:
-                    'Create an account with a starting (seed) balance, then plan its transactions on the timeline. Accounts others share with you show up here too.',
+                    'Create a pool with a starting (seed) balance, then plan its transactions on the timeline. Pools others share with you show up here too.',
                 action: FilledButton.icon(
-                  key: const ValueKey('new-account'),
+                  key: const ValueKey('new-pool'),
                   onPressed: () => _create(context),
                   icon: const Icon(Icons.add_rounded, size: 20),
-                  label: const Text('New account'),
+                  label: const Text('New pool'),
                 ),
               ),
             ],
           );
         }
-        final mine = [for (final a in accounts) if (!a.shared) a];
-        final shared = [for (final a in accounts) if (a.shared) a];
+        final mine = [for (final a in pools) if (!a.shared) a];
+        final shared = [for (final a in pools) if (a.shared) a];
         return LayoutBuilder(
           builder: (context, c) {
             final cols = c.maxWidth >= 900
@@ -164,25 +164,25 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                 : 1;
             const gap = 16.0;
             final w = (c.maxWidth - 48 - gap * (cols - 1)) / cols;
-            Widget grid(List<Account> list) => Wrap(
+            Widget grid(List<Pool> list) => Wrap(
               spacing: gap,
               runSpacing: gap,
               children: [
-                for (final account in list)
+                for (final pool in list)
                   SizedBox(
                     width: w,
-                    child: _AccountCard(
-                      account: account,
-                      canDelete: account.role.isOwner,
-                      canShare: account.role.isOwner,
+                    child: _PoolCard(
+                      pool: pool,
+                      canDelete: pool.role.isOwner,
+                      canShare: pool.role.isOwner,
                       onShare: () => showShareDialog(
                         context,
-                        ShareTarget.account(account.id, account.name),
+                        ShareTarget.pool(pool.id, pool.name),
                       ),
                       onOpen: () =>
-                          context.go('/accounts/${account.id}/timeline'),
-                      onEdit: () => _edit(context, account),
-                      onDelete: () => _delete(context, account),
+                          context.go('/pools/${pool.id}/timeline'),
+                      onEdit: () => _edit(context, pool),
+                      onDelete: () => _delete(context, pool),
                     ),
                   ),
               ],
@@ -207,7 +207,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                     for (final i in invites) _PendingInviteTile(invite: i),
                   ],
                   if (mine.isNotEmpty && shared.isNotEmpty)
-                    heading('My accounts', 'mine-heading'),
+                    heading('My pools', 'mine-heading'),
                   if (mine.isNotEmpty) grid(mine),
                   if (shared.isNotEmpty) ...[
                     heading('Shared with me', 'shared-heading'),
@@ -223,21 +223,21 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
   }
 
   Future<void> _create(BuildContext context) async {
-    final created = await createAccount(context);
+    final created = await createPool(context);
     if (created != null && context.mounted) {
-      context.go('/accounts/${created.id}/timeline');
+      context.go('/pools/${created.id}/timeline');
     }
   }
 
-  Future<void> _edit(BuildContext context, Account existing) async {
-    final notifier = ref.read(accountsProvider.notifier);
-    final result = await showAccountDialog(context, existing: existing);
+  Future<void> _edit(BuildContext context, Pool existing) async {
+    final notifier = ref.read(poolsProvider.notifier);
+    final result = await showPoolDialog(context, existing: existing);
     if (result == null) return;
     try {
       if (!context.mounted) return;
       await saveWithConflictCheck(
         context,
-        save: (force) => notifier.updateAccount(result, force: force),
+        save: (force) => notifier.updatePool(result, force: force),
         reload: notifier.refresh,
       );
     } catch (error) {
@@ -249,15 +249,15 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     }
   }
 
-  Future<void> _delete(BuildContext context, Account account) async {
+  Future<void> _delete(BuildContext context, Pool pool) async {
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete account?',
-      message: '“${account.name}” and all of its transactions will be removed.',
+      title: 'Delete pool?',
+      message: '“${pool.name}” and all of its transactions will be removed.',
     );
     if (!confirmed) return;
     try {
-      await ref.read(accountsProvider.notifier).delete(account.id);
+      await ref.read(poolsProvider.notifier).delete(pool.id);
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(
@@ -268,11 +268,11 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
   }
 }
 
-enum _AccountAction { edit, delete, share }
+enum _PoolAction { edit, delete, share }
 
-class _AccountCard extends ConsumerWidget {
-  const _AccountCard({
-    required this.account,
+class _PoolCard extends ConsumerWidget {
+  const _PoolCard({
+    required this.pool,
     required this.onOpen,
     required this.onEdit,
     required this.onDelete,
@@ -284,7 +284,7 @@ class _AccountCard extends ConsumerWidget {
   final VoidCallback onShare;
   final bool canDelete;
   final bool canShare;
-  final Account account;
+  final Pool pool;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -292,9 +292,9 @@ class _AccountCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final today = ref.watch(todayBalanceProvider(account.id));
+    final today = ref.watch(todayBalanceProvider(pool.id));
     final value = today.valueOrNull;
-    final low = value != null && belowAlert(value, account.lossThreshold);
+    final low = value != null && belowAlert(value, pool.lossThreshold);
     String money(num v) =>
         formatMoneyAmount(v, decimalDigits: 2);
     return Material(
@@ -305,7 +305,7 @@ class _AccountCard extends ConsumerWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        key: ValueKey('account-card-${account.id}'),
+        key: ValueKey('pool-card-${pool.id}'),
         onTap: onOpen,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
@@ -318,10 +318,10 @@ class _AccountCard extends ConsumerWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Tooltip(
-                      message: account.name,
+                      message: pool.name,
                       waitDuration: const Duration(milliseconds: 500),
                       child: Text(
-                        account.name,
+                        pool.name,
                         style: theme.textTheme.titleMedium,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -329,10 +329,10 @@ class _AccountCard extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (!account.role.isOwner) ...[
-                    RoleChip(account.role),
+                  if (!pool.role.isOwner) ...[
+                    RoleChip(pool.role),
                     const SizedBox(width: 6),
-                  ] else if (ownedAccountShared(ref, account)) ...[
+                  ] else if (ownedPoolShared(ref, pool)) ...[
                     const Tooltip(
                       message: 'Shared with others',
                       child: Icon(
@@ -344,9 +344,9 @@ class _AccountCard extends ConsumerWidget {
                     ),
                     const SizedBox(width: 6),
                   ],
-                  if (account.role.canEdit || canShare)
-                  PopupMenuButton<_AccountAction>(
-                    tooltip: 'Account actions',
+                  if (pool.role.canEdit || canShare)
+                  PopupMenuButton<_PoolAction>(
+                    tooltip: 'Pool actions',
                     padding: EdgeInsets.zero,
                     style: const ButtonStyle(
                       visualDensity: VisualDensity.compact,
@@ -354,43 +354,43 @@ class _AccountCard extends ConsumerWidget {
                     iconSize: 20,
                     icon: const Icon(Icons.more_vert_rounded),
                     onSelected: (action) => switch (action) {
-                      _AccountAction.edit => onEdit(),
-                      _AccountAction.delete => onDelete(),
-                      _AccountAction.share => onShare(),
+                      _PoolAction.edit => onEdit(),
+                      _PoolAction.delete => onDelete(),
+                      _PoolAction.share => onShare(),
                     },
                     itemBuilder: (context) => [
                       if (canShare)
                         const PopupMenuItem(
-                          value: _AccountAction.share,
+                          value: _PoolAction.share,
                           child: ListTile(
                             leading: Icon(Icons.person_add_alt_1_outlined),
-                            title: Text('Share account…'),
+                            title: Text('Share pool…'),
                           ),
                         ),
-                      if (account.role.canEdit)
+                      if (pool.role.canEdit)
                       const PopupMenuItem(
-                        value: _AccountAction.edit,
+                        value: _PoolAction.edit,
                         child: ListTile(
                           leading: Icon(Icons.tune_rounded),
-                          title: Text('Account settings'),
+                          title: Text('Pool settings'),
                         ),
                       ),
                       if (canDelete)
                       const PopupMenuItem(
-                        value: _AccountAction.delete,
+                        value: _PoolAction.delete,
                         child: ListTile(
                           leading: Icon(Icons.delete_outline_rounded),
-                          title: Text('Delete account'),
+                          title: Text('Delete pool'),
                         ),
                       ),
                     ],
                   ),
                 ],
               ),
-              if (account.shared && account.owner != null) ...[
+              if (pool.shared && pool.owner != null) ...[
                 const SizedBox(height: 6),
                 Text(
-                  'Shared by ${account.owner!.displayName}',
+                  'Shared by ${pool.owner!.displayName}',
                   style: theme.textTheme.bodySmall,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -437,14 +437,14 @@ class _AccountCard extends ConsumerWidget {
                     Expanded(
                       child: _Fact(
                         label:
-                            'Seed · ${DateFormat('d MMM y').format(account.seedDate)}',
-                        value: money(account.seedBalance.toDouble()),
+                            'Seed · ${DateFormat('d MMM y').format(pool.seedDate)}',
+                        value: money(pool.seedBalance.toDouble()),
                       ),
                     ),
                     const SizedBox(width: 12),
                     _Fact(
                       label: 'Alert at',
-                      value: '< ${money(account.lossThreshold.toDouble())}',
+                      value: '< ${money(pool.lossThreshold.toDouble())}',
                       alignEnd: true,
                     ),
                   ],

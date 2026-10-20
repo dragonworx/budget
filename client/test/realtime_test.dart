@@ -103,9 +103,9 @@ void main() {
       c.ready(10);
       await _tick();
       expect(s.status.value, RealtimeStatus.connected);
-      c.change(11, {'action': 'transaction.updated', 'accountId': 'a1', 'clientId': 'other'});
-      c.change(11, {'action': 'transaction.updated', 'accountId': 'a1'});
-      c.change(12, {'action': 'account.updated', 'clientId': 'me-tab'});
+      c.change(11, {'action': 'transaction.updated', 'poolId': 'a1', 'clientId': 'other'});
+      c.change(11, {'action': 'transaction.updated', 'poolId': 'a1'});
+      c.change(12, {'action': 'pool.updated', 'clientId': 'me-tab'});
       await _tick();
       expect(got.map((e) => e.id), [11]);
       expect(s.lastEventId, 12);
@@ -201,7 +201,7 @@ void main() {
       final tx = _Txs();
       final c = ProviderContainer(overrides: [
         authRepositoryProvider.overrideWithValue(FakeAuthRepository(user: adminUser)),
-        accountRepositoryProvider.overrideWithValue(_Accounts()),
+        poolRepositoryProvider.overrideWithValue(_Pools()),
         transactionRepositoryProvider.overrideWithValue(tx),
       ]);
       addTearDown(c.dispose);
@@ -210,37 +210,37 @@ void main() {
       await c.read(transactionsProvider('a1').future);
       expect(tx.lists, 1);
       final ctl = c.read(realtimeControllerProvider);
-      ctl.handle(const ChangeEvent(id: 1, action: 'transaction.updated', accountId: 'a1', entityId: 't1'));
+      ctl.handle(const ChangeEvent(id: 1, action: 'transaction.updated', poolId: 'a1', entityId: 't1'));
       await c.read(transactionsProvider('a1').future);
       expect(tx.lists, 2);
       expect(c.read(remoteChangesProvider)['t1']?.id, 1);
 
-      c.read(routerProvider).go('/accounts/a1/timeline');
+      c.read(routerProvider).go('/pools/a1/timeline');
       await tester.pumpAndSettle();
       // Someone else's share going away does not move me.
       ctl.handle(const ChangeEvent(
         id: 2,
-        action: 'account_share.revoked',
-        accountId: 'a1',
+        action: 'pool_share.revoked',
+        poolId: 'a1',
         subjectUserId: 'u2',
       ));
       await tester.pumpAndSettle();
       expect(
         c.read(routerProvider).routerDelegate.currentConfiguration.uri.path,
-        '/accounts/a1/timeline',
+        '/pools/a1/timeline',
       );
       ctl.handle(ChangeEvent(
         id: 3,
-        action: 'account_share.revoked',
-        accountId: 'a1',
+        action: 'pool_share.revoked',
+        poolId: 'a1',
         subjectUserId: adminUser.id,
       ));
       await tester.pumpAndSettle();
       expect(
         c.read(routerProvider).routerDelegate.currentConfiguration.uri.path,
-        accountsPath,
+        poolsPath,
       );
-      expect(find.text('You no longer have access to that account'), findsOneWidget);
+      expect(find.text('You no longer have access to that pool'), findsOneWidget);
     });
 
     testWidgets('open editor shows "Updated by" instead of clobbering', (tester) async {
@@ -248,7 +248,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final c = ProviderContainer(overrides: [
-        accountRepositoryProvider.overrideWithValue(_Accounts()),
+        poolRepositoryProvider.overrideWithValue(_Pools()),
         transactionRepositoryProvider.overrideWithValue(_Txs()),
       ]);
       addTearDown(c.dispose);
@@ -256,7 +256,7 @@ void main() {
         container: c,
         child: MaterialApp(
           home: Scaffold(
-            body: TransactionEditor(accountId: 'a1', existing: _t, onDone: (_) {}),
+            body: TransactionEditor(poolId: 'a1', existing: _t, onDone: (_) {}),
           ),
         ),
       ));
@@ -276,7 +276,7 @@ void main() {
 
 final _t = Transaction(
   id: 't1',
-  accountId: 'a1',
+  poolId: 'a1',
   name: 'Rent',
   direction: TransactionDirection.debit,
   amount: Decimal.fromInt(100),
@@ -286,12 +286,12 @@ final _t = Transaction(
   version: 1,
 );
 
-class _Accounts extends AccountRepository {
-  _Accounts() : super(ApiClient());
+class _Pools extends PoolRepository {
+  _Pools() : super(ApiClient());
   @override
-  Future<AccountList> list() async => const AccountList([]);
+  Future<PoolList> list() async => const PoolList([]);
   @override
-  Future<Account> get(String id) async => Account(
+  Future<Pool> get(String id) async => Pool(
     id: id,
     ownerId: 'u1',
     name: 'Everyday',
@@ -305,7 +305,7 @@ class _Txs extends TransactionRepository {
   _Txs() : super(ApiClient());
   int lists = 0;
   @override
-  Future<List<Transaction>> listForAccount(String accountId) async {
+  Future<List<Transaction>> listForPool(String poolId) async {
     lists++;
     return [_t];
   }

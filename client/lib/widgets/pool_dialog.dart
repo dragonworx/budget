@@ -6,19 +6,19 @@ import '../data/models.dart';
 import 'money_text.dart';
 import '../theme/app_theme.dart';
 
-/// New / edit account dialog (name, seed balance + date, loss
-/// threshold). Returns the edited account, not yet saved — unless [onSave]
+/// New / edit pool dialog (name, seed balance + date, loss
+/// threshold). Returns the edited pool, not yet saved — unless [onSave]
 /// is given: then Save runs it inside the dialog (staying open with the error
 /// shown if it throws) and returns its result.
-Future<Account?> showAccountDialog(
+Future<Pool?> showPoolDialog(
   BuildContext context, {
-  Account? existing,
-  Future<Account> Function(Account draft)? onSave,
+  Pool? existing,
+  Future<Pool> Function(Pool draft)? onSave,
   int? transactionCount,
 }) {
-  return showDialog<Account>(
+  return showDialog<Pool>(
     context: context,
-    builder: (context) => AccountDialog(
+    builder: (context) => PoolDialog(
       existing: existing,
       onSave: onSave,
       transactionCount: transactionCount,
@@ -26,26 +26,26 @@ Future<Account?> showAccountDialog(
   );
 }
 
-class AccountDialog extends StatefulWidget {
-  const AccountDialog({
+class PoolDialog extends StatefulWidget {
+  const PoolDialog({
     super.key,
     this.existing,
     this.onSave,
     this.transactionCount,
   });
 
-  /// Transactions in the account (for the seed-move note); defaults to the
-  /// account's transaction order length.
+  /// Transactions in the pool (for the seed-move note); defaults to the
+  /// pool's transaction order length.
   final int? transactionCount;
 
-  final Account? existing;
-  final Future<Account> Function(Account draft)? onSave;
+  final Pool? existing;
+  final Future<Pool> Function(Pool draft)? onSave;
 
   @override
-  State<AccountDialog> createState() => _AccountDialogState();
+  State<PoolDialog> createState() => _PoolDialogState();
 }
 
-class _AccountDialogState extends State<AccountDialog> {
+class _PoolDialogState extends State<PoolDialog> {
   /// "All N transactions will move by X days" when editing and the seed
   /// date changed (the server shifts every schedule by the same delta).
   String? _seedMoveNote() {
@@ -66,7 +66,7 @@ class _AccountDialogState extends State<AccountDialog> {
   late final TextEditingController _lossThreshold;
   late DateTime _seedDate;
 
-  /// New accounts start at Hundreds ([Account.defaultCurrencyScale]).
+  /// New pools start at Hundreds ([Pool.defaultCurrencyScale]).
   late int _currencyScale;
   String? _nameError;
   String? _balanceError;
@@ -90,7 +90,7 @@ class _AccountDialogState extends State<AccountDialog> {
       text: existing?.lossThreshold.toString() ?? '0',
     );
     _seedDate = existing?.seedDate ?? DateTime.now();
-    _currencyScale = existing?.currencyScale ?? Account.defaultCurrencyScale;
+    _currencyScale = existing?.currencyScale ?? Pool.defaultCurrencyScale;
   }
 
   @override
@@ -104,7 +104,7 @@ class _AccountDialogState extends State<AccountDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.existing == null ? 'New account' : 'Edit account'),
+      title: Text(widget.existing == null ? 'New pool' : 'Edit pool'),
       scrollable: true,
       content: SizedBox(
         width: 420,
@@ -112,7 +112,7 @@ class _AccountDialogState extends State<AccountDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              key: const ValueKey('account-name'),
+              key: const ValueKey('pool-name'),
               controller: _name,
               onChanged: _revalidate,
               onSubmitted: (_) => _submit(),
@@ -125,7 +125,7 @@ class _AccountDialogState extends State<AccountDialog> {
             ),
             const SizedBox(height: 12),
             TextField(
-              key: const ValueKey('account-seed'),
+              key: const ValueKey('pool-seed'),
               controller: _seedBalance,
               onChanged: _revalidate,
               onSubmitted: (_) => _submit(),
@@ -142,7 +142,7 @@ class _AccountDialogState extends State<AccountDialog> {
             ),
             const SizedBox(height: 12),
             TextField(
-              key: const ValueKey('account-threshold'),
+              key: const ValueKey('pool-threshold'),
               controller: _lossThreshold,
               onChanged: _revalidate,
               onSubmitted: (_) => _submit(),
@@ -159,7 +159,7 @@ class _AccountDialogState extends State<AccountDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              key: ValueKey('account-currency-scale-$_currencyScale'),
+              key: ValueKey('pool-currency-scale-$_currencyScale'),
               initialValue: _currencyScale,
               isExpanded: true,
               decoration: const InputDecoration(
@@ -167,7 +167,7 @@ class _AccountDialogState extends State<AccountDialog> {
                 helperText: 'Sets the timeline\'s default vertical view',
               ),
               items: [
-                for (final e in Account.currencyScales.entries)
+                for (final e in Pool.currencyScales.entries)
                   DropdownMenuItem(
                     key: ValueKey('currency-scale-${e.key}'),
                     value: e.key,
@@ -232,7 +232,7 @@ class _AccountDialogState extends State<AccountDialog> {
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
               _saveError!,
-              key: const ValueKey('account-save-error'),
+              key: const ValueKey('pool-save-error'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
@@ -241,9 +241,9 @@ class _AccountDialogState extends State<AccountDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          key: const ValueKey('account-save'),
+          key: const ValueKey('pool-save'),
           onPressed: _saving ? null : _submit,
-          child: Text(widget.existing == null ? 'Create account' : 'Save'),
+          child: Text(widget.existing == null ? 'Create pool' : 'Save'),
         ),
       ],
     );
@@ -280,7 +280,7 @@ class _AccountDialogState extends State<AccountDialog> {
         ? Decimal.zero
         : parseMoneyInput(lossText)!;
     final existing = widget.existing;
-    final account = Account(
+    final pool = Pool(
       id: existing?.id ?? '',
       ownerId: existing?.ownerId ?? '',
       name: name,
@@ -295,7 +295,7 @@ class _AccountDialogState extends State<AccountDialog> {
     );
     final onSave = widget.onSave;
     if (onSave == null) {
-      Navigator.of(context).pop(account);
+      Navigator.of(context).pop(pool);
       return;
     }
     setState(() {
@@ -303,7 +303,7 @@ class _AccountDialogState extends State<AccountDialog> {
       _saveError = null;
     });
     try {
-      final saved = await onSave(account);
+      final saved = await onSave(pool);
       if (mounted) Navigator.of(context).pop(saved);
     } catch (error) {
       if (!mounted) return;

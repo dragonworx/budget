@@ -13,39 +13,39 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return client;
 });
 
-final accountRepositoryProvider = Provider<AccountRepository>((ref) {
-  return AccountRepository(ref.watch(apiClientProvider));
+final poolRepositoryProvider = Provider<PoolRepository>((ref) {
+  return PoolRepository(ref.watch(apiClientProvider));
 });
 
 final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
   return TransactionRepository(ref.watch(apiClientProvider));
 });
 
-/// Every account I can open: mine first (display order), then those shared
-/// with me. Accounts are top level (no projects).
-final accountsProvider =
-    AsyncNotifierProvider<AccountsNotifier, List<Account>>(AccountsNotifier.new);
+/// Every pool I can open: mine first (display order), then those shared
+/// with me. Pools are top level (no projects).
+final poolsProvider =
+    AsyncNotifierProvider<PoolsNotifier, List<Pool>>(PoolsNotifier.new);
 
-class AccountsNotifier extends AsyncNotifier<List<Account>> {
-  /// The account I opened last, if still accessible (from the last fetch).
-  String? lastAccountId;
+class PoolsNotifier extends AsyncNotifier<List<Pool>> {
+  /// The pool I opened last, if still accessible (from the last fetch).
+  String? lastPoolId;
 
-  Future<List<Account>> _fetch() async {
-    final list = await ref.read(accountRepositoryProvider).list();
-    lastAccountId = list.lastAccountId;
-    return list.accounts;
+  Future<List<Pool>> _fetch() async {
+    final list = await ref.read(poolRepositoryProvider).list();
+    lastPoolId = list.lastPoolId;
+    return list.pools;
   }
 
   @override
-  Future<List<Account>> build() => _fetch();
+  Future<List<Pool>> build() => _fetch();
 
   Future<void> refresh() async {
-    state = AsyncLoading<List<Account>>().copyWithPrevious(state);
+    state = AsyncLoading<List<Pool>>().copyWithPrevious(state);
     state = await AsyncValue.guard(_fetch);
   }
 
-  Future<Account> create(Account draft) async {
-    final created = await ref.read(accountRepositoryProvider).create(draft);
+  Future<Pool> create(Pool draft) async {
+    final created = await ref.read(poolRepositoryProvider).create(draft);
     final current = state.valueOrNull ?? [];
     final mine = [for (final a in current) if (!a.shared) a];
     final shared = [for (final a in current) if (a.shared) a];
@@ -53,39 +53,39 @@ class AccountsNotifier extends AsyncNotifier<List<Account>> {
     return created;
   }
 
-  Future<void> updateAccount(Account account, {bool force = false}) async {
+  Future<void> updatePool(Pool pool, {bool force = false}) async {
     final updated = await ref
-        .read(accountRepositoryProvider)
-        .update(account, force: force);
-    // A seed move also shifts the far side of this account's transfers.
+        .read(poolRepositoryProvider)
+        .update(pool, force: force);
+    // A seed move also shifts the far side of this pool's transfers.
     ref.invalidate(transactionsProvider);
     ref.invalidate(balanceProvider);
     ref.invalidate(todayBalanceProvider);
     ref.invalidate(insightsProvider);
-    ref.invalidate(accountProvider(account.id));
+    ref.invalidate(poolProvider(pool.id));
     final current = state.valueOrNull ?? [];
     state = AsyncData([
       for (final a in current)
-        a.id == account.id
+        a.id == pool.id
             ? updated.copyWith(role: a.role).withSharing(a)
             : a,
     ]);
   }
 
   Future<void> delete(String id) async {
-    await ref.read(accountRepositoryProvider).delete(id);
+    await ref.read(poolRepositoryProvider).delete(id);
     final current = state.valueOrNull ?? [];
     state = AsyncData(current.where((a) => a.id != id).toList());
   }
 }
 
 /// Whether this session has already landed (sign-in opens the last-used
-/// account once; later visits to the accounts home just show the list).
+/// pool once; later visits to the pools home just show the list).
 final landedProvider = StateProvider<bool>((ref) => false);
 
-/// One account, with my role on it (the server reports it).
-final accountProvider = FutureProvider.family<Account, String>((ref, id) {
-  return ref.read(accountRepositoryProvider).get(id);
+/// One pool, with my role on it (the server reports it).
+final poolProvider = FutureProvider.family<Pool, String>((ref, id) {
+  return ref.read(poolRepositoryProvider).get(id);
 });
 
 final transactionsProvider =
@@ -98,14 +98,14 @@ final transactionsProvider =
 class TransactionsNotifier
     extends FamilyAsyncNotifier<List<Transaction>, String> {
   @override
-  Future<List<Transaction>> build(String accountId) {
-    return ref.read(transactionRepositoryProvider).listForAccount(accountId);
+  Future<List<Transaction>> build(String poolId) {
+    return ref.read(transactionRepositoryProvider).listForPool(poolId);
   }
 
   Future<void> refresh() async {
     state = AsyncLoading<List<Transaction>>().copyWithPrevious(state);
     state = await AsyncValue.guard(
-      () => ref.read(transactionRepositoryProvider).listForAccount(arg),
+      () => ref.read(transactionRepositoryProvider).listForPool(arg),
     );
   }
 
@@ -135,11 +135,11 @@ class TransactionsNotifier
     _touchPeer(updated.transfer);
   }
 
-  /// A transfer changed: the other account's list and every balance
+  /// A transfer changed: the other pool's list and every balance
   /// (both sides move) are stale.
   void _touchPeer(TransferLink? link) {
     if (link == null) return;
-    ref.invalidate(transactionsProvider(link.peerAccountId));
+    ref.invalidate(transactionsProvider(link.peerPoolId));
     ref.invalidate(balanceProvider);
     ref.invalidate(todayBalanceProvider);
     ref.invalidate(insightsProvider);
@@ -196,7 +196,7 @@ class TransactionsNotifier
         .clearOverrides(transactionId, date: date);
     final fresh = await ref
         .read(transactionRepositoryProvider)
-        .listForAccount(arg);
+        .listForPool(arg);
     final before = (state.valueOrNull ?? [])
         .where((s) => s.id == transactionId)
         .firstOrNull;
@@ -215,7 +215,7 @@ class TransactionsNotifier
         .split(edited, date, force: force);
     final fresh = await ref
         .read(transactionRepositoryProvider)
-        .listForAccount(arg);
+        .listForPool(arg);
     state = AsyncData(fresh);
     _touchPeer(r.original.transfer);
     return r;
@@ -230,13 +230,13 @@ class TransactionsNotifier
   }
 
   Future<void> reorder(List<String> transactionIds) async {
-    final account = await ref
-        .read(accountRepositoryProvider)
+    final pool = await ref
+        .read(poolRepositoryProvider)
         .reorderTransactions(arg, transactionIds);
-    ref.invalidate(accountProvider(arg));
+    ref.invalidate(poolProvider(arg));
     final byId = {for (final s in state.valueOrNull ?? []) s.id: s};
     state = AsyncData([
-      for (final id in account.transactionOrder)
+      for (final id in pool.transactionOrder)
         if (byId.containsKey(id)) byId.remove(id)!,
       ...byId.values,
     ]);
@@ -245,25 +245,25 @@ class TransactionsNotifier
 
 class BalanceQuery {
   const BalanceQuery({
-    required this.accountId,
+    required this.poolId,
     required this.from,
     required this.to,
   });
 
-  final String accountId;
+  final String poolId;
   final DateTime from;
   final DateTime to;
 
   @override
   bool operator ==(Object other) {
     return other is BalanceQuery &&
-        other.accountId == accountId &&
+        other.poolId == poolId &&
         other.from == from &&
         other.to == to;
   }
 
   @override
-  int get hashCode => Object.hash(accountId, from, to);
+  int get hashCode => Object.hash(poolId, from, to);
 }
 
 final balanceProvider = FutureProvider.family<BalanceSeries, BalanceQuery>((
@@ -271,19 +271,19 @@ final balanceProvider = FutureProvider.family<BalanceSeries, BalanceQuery>((
   query,
 ) {
   return ref
-      .read(accountRepositoryProvider)
-      .balance(query.accountId, from: query.from, to: query.to);
+      .read(poolRepositoryProvider)
+      .balance(query.poolId, from: query.from, to: query.to);
 });
 
-/// Closing balance today for an account (null when there are no points).
+/// Closing balance today for a pool (null when there are no points).
 final todayBalanceProvider = FutureProvider.family<Decimal?, String>((
   ref,
-  accountId,
+  poolId,
 ) async {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final series = await ref.watch(
-    balanceProvider(BalanceQuery(accountId: accountId, from: today, to: today))
+    balanceProvider(BalanceQuery(poolId: poolId, from: today, to: today))
         .future,
   );
   return series.points.isEmpty ? null : series.points.last.closingBalance;
@@ -293,19 +293,19 @@ final todayBalanceProvider = FutureProvider.family<Decimal?, String>((
 /// zero dates within five years), from today.
 final insightsProvider = FutureProvider.family<BalanceInsights, String>((
   ref,
-  accountId,
+  poolId,
 ) {
   return ref
-      .read(accountRepositoryProvider)
-      .insights(accountId, DateTime.now());
+      .read(poolRepositoryProvider)
+      .insights(poolId, DateTime.now());
 });
 
-/// Saved what-if scenarios for an account.
+/// Saved what-if scenarios for a pool.
 final scenariosProvider = FutureProvider.family<List<Scenario>, String>((
   ref,
-  accountId,
+  poolId,
 ) {
-  return ref.read(accountRepositoryProvider).scenarios(accountId);
+  return ref.read(poolRepositoryProvider).scenarios(poolId);
 });
 
 /// Each scenario with its solve (null when excluded or unsolvable). Watches
@@ -314,16 +314,16 @@ final scenariosProvider = FutureProvider.family<List<Scenario>, String>((
 final scenarioResultsProvider =
     FutureProvider.family<List<(Scenario, GoalResult?)>, String>((
       ref,
-      accountId,
+      poolId,
     ) async {
-      final list = await ref.watch(scenariosProvider(accountId).future);
-      await ref.watch(insightsProvider(accountId).future);
-      final repo = ref.read(accountRepositoryProvider);
+      final list = await ref.watch(scenariosProvider(poolId).future);
+      await ref.watch(insightsProvider(poolId).future);
+      final repo = ref.read(poolRepositoryProvider);
       return Future.wait([
         for (final s in list)
           s.included
               ? repo
-                    .goal(accountId, s.request)
+                    .goal(poolId, s.request)
                     .then<(Scenario, GoalResult?)>((r) => (s, r))
                     .catchError((Object _) => (s, null))
               : Future.value((s, null)),
@@ -339,8 +339,8 @@ final myInvitesProvider = FutureProvider<List<Invite>>((ref) {
   return ref.read(sharingRepositoryProvider).myInvites();
 });
 
-/// The account's effective role (owner, or the share's role).
-Role accountRole(WidgetRef ref, String accountId) {
-  final a = ref.watch(accountProvider(accountId)).valueOrNull;
+/// The pool's effective role (owner, or the share's role).
+Role poolRole(WidgetRef ref, String poolId) {
+  final a = ref.watch(poolProvider(poolId)).valueOrNull;
   return a?.role ?? Role.owner;
 }

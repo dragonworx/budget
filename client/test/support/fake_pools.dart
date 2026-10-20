@@ -3,14 +3,14 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:decimal/decimal.dart';
 
-/// An account for tests (owned by me unless [shared]).
-Account testAccount(
+/// A pool for tests (owned by me unless [shared]).
+Pool testPool(
   String id,
   String name, {
   bool shared = false,
   Role role = Role.owner,
   String ownerName = 'Me',
-}) => Account(
+}) => Pool(
   id: id,
   ownerId: shared ? 'other' : 'u1',
   name: name,
@@ -26,33 +26,33 @@ Account testAccount(
   ),
 );
 
-/// In-memory `/api/accounts` (list, last-used, create, get).
-class FakeAccountRepository extends AccountRepository {
-  FakeAccountRepository({List<Account>? accounts, this.lastAccountId})
-    : accounts = accounts ?? [],
+/// In-memory `/api/pools` (list, last-used, create, get).
+class FakePoolRepository extends PoolRepository {
+  FakePoolRepository({List<Pool>? pools, this.lastPoolId})
+    : pools = pools ?? [],
       super(ApiClient());
 
-  final List<Account> accounts;
-  String? lastAccountId;
+  final List<Pool> pools;
+  String? lastPoolId;
   int lists = 0;
-  final created = <Account>[];
+  final created = <Pool>[];
 
   @override
-  Future<AccountList> list() async {
+  Future<PoolList> list() async {
     lists++;
-    return AccountList(
-      List.of(accounts),
-      lastAccountId: accounts.any((a) => a.id == lastAccountId)
-          ? lastAccountId
+    return PoolList(
+      List.of(pools),
+      lastPoolId: pools.any((a) => a.id == lastPoolId)
+          ? lastPoolId
           : null,
     );
   }
 
   @override
-  Future<Account> create(Account draft) async {
+  Future<Pool> create(Pool draft) async {
     final a = draft.copyWith(id: 'new-${created.length + 1}', ownerId: 'u1');
     created.add(a);
-    accounts.add(a);
+    pools.add(a);
     return a;
   }
 
@@ -61,14 +61,14 @@ class FakeAccountRepository extends AccountRepository {
   @override
   Future<void> markOpened(String id) async {
     opened.add(id);
-    lastAccountId = id;
+    lastPoolId = id;
   }
 
   @override
-  Future<Account> get(String id) async {
-    final a = accounts.where((a) => a.id == id).firstOrNull;
-    if (a == null) throw ApiException('account not found', statusCode: 404);
-    lastAccountId = id;
+  Future<Pool> get(String id) async {
+    final a = pools.where((a) => a.id == id).firstOrNull;
+    if (a == null) throw ApiException('pool not found', statusCode: 404);
+    lastPoolId = id;
     return a;
   }
 }

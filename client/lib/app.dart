@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'features/admin/admin_page.dart';
 import 'features/auth/invite_page.dart';
 import 'features/auth/sign_in_page.dart';
-import 'features/accounts/accounts_page.dart';
+import 'features/pools/pools_page.dart';
 import 'features/timeline/timeline_page.dart';
 import 'state/auth_providers.dart';
 import 'state/realtime_providers.dart';
@@ -14,9 +14,9 @@ import 'theme/app_theme.dart';
 
 const signInPath = '/sign-in';
 
-/// The accounts home (list, New account). `/` is the same page, but the
-/// first visit after sign-in jumps straight to the last-used account.
-const accountsPath = '/accounts';
+/// The pools home (list, New pool). `/` is the same page, but the
+/// first visit after sign-in jumps straight to the last-used pool.
+const poolsPath = '/pools';
 
 /// Where the guard sends [location] for the given auth state, or null to stay.
 /// Pure so it can be unit-tested.
@@ -73,11 +73,11 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (context, state) => const AccountsPage(landing: true),
+        builder: (context, state) => const PoolsPage(landing: true),
       ),
       GoRoute(
-        path: accountsPath,
-        builder: (context, state) => const AccountsPage(),
+        path: poolsPath,
+        builder: (context, state) => const PoolsPage(),
       ),
       GoRoute(
         path: signInPath,
@@ -89,13 +89,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) =>
             InvitePage(token: state.pathParameters['token']!),
       ),
-      // Old project links (projects are gone): the accounts home.
-      GoRoute(path: '/projects/:projectId', redirect: (_, _) => accountsPath),
+      // Old project links (projects are gone): the pools home.
+      GoRoute(path: '/projects/:projectId', redirect: (_, _) => poolsPath),
+      // Old account links (accounts are now pools).
+      GoRoute(path: '/accounts', redirect: (_, _) => poolsPath),
       GoRoute(
-        path: '/accounts/:accountId/timeline',
+        path: '/accounts/:id/timeline',
+        redirect: (_, state) => '/pools/${state.pathParameters['id']}/timeline',
+      ),
+      GoRoute(
+        path: '/accounts/:id',
+        redirect: (_, state) => '/pools/${state.pathParameters['id']}/timeline',
+      ),
+      GoRoute(
+        path: '/pools/:poolId/timeline',
         builder: (context, state) {
-          final accountId = state.pathParameters['accountId']!;
-          return TimelinePage(accountId: accountId);
+          final poolId = state.pathParameters['poolId']!;
+          return TimelinePage(poolId: poolId);
         },
       ),
     ],

@@ -15,11 +15,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _Solve extends AccountRepository {
+class _Solve extends PoolRepository {
   _Solve() : super(ApiClient());
   final requests = <SolveRequest>[];
   @override
-  Future<SolveResult> solve(String accountId, SolveRequest request) async {
+  Future<SolveResult> solve(String poolId, SolveRequest request) async {
     requests.add(request);
     // The spacing is calculated whenever it's left blank.
     return SolveResult.fromJson({
@@ -32,11 +32,11 @@ class _Solve extends AccountRepository {
   }
 }
 
-class _Goal extends AccountRepository {
+class _Goal extends PoolRepository {
   _Goal() : super(ApiClient());
   final requests = <GoalRequest>[];
   @override
-  Future<GoalResult> goal(String accountId, GoalRequest request) async {
+  Future<GoalResult> goal(String poolId, GoalRequest request) async {
     requests.add(request);
     return GoalResult.fromJson({
       'status': 'incomplete',
@@ -46,7 +46,7 @@ class _Goal extends AccountRepository {
   }
 }
 
-final _account = Account(
+final _pool = Pool(
   id: 'acc',
   ownerId: 'u',
   name: 'A',
@@ -91,11 +91,11 @@ Future<_Solve> _pumpSolve(WidgetTester tester, SolveRequest initial) async {
   final repo = _Solve();
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [accountRepositoryProvider.overrideWithValue(repo)],
+      overrides: [poolRepositoryProvider.overrideWithValue(repo)],
       child: MaterialApp(
         home: Scaffold(
           body: SolveSheet(
-            accountId: 'acc',
+            poolId: 'acc',
             initial: initial,
             creditOnly: true,
           ),
@@ -178,12 +178,12 @@ void main() {
     final key = GlobalKey<GoalPanelState>();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [accountRepositoryProvider.overrideWithValue(repo)],
+        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: GoalPanel(
               key: key,
-              account: _account,
+              pool: _pool,
               initial: const GoalRequest(
                 solveFor: GoalVar.amount,
                 unit: RecurrenceUnit.months,

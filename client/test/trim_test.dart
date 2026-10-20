@@ -19,7 +19,7 @@ Transaction _tx(
   bool enabled = true,
 }) => Transaction(
   id: id,
-  accountId: 'a',
+  poolId: 'a',
   name: 'Tx $id',
   direction: TransactionDirection.debit,
   amount: Decimal.fromInt(100),

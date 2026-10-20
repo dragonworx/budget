@@ -12,7 +12,7 @@ Transaction _credit({
 }) {
   return Transaction(
     id: id,
-    accountId: 'a1',
+    poolId: 'a1',
     name: id,
     direction: Direction.credit,
     amount: amount,
@@ -32,7 +32,7 @@ Transaction _debit({
 }) {
   return Transaction(
     id: id,
-    accountId: 'a1',
+    poolId: 'a1',
     name: id,
     direction: Direction.debit,
     amount: amount,

@@ -17,7 +17,7 @@ Transaction _transaction({
 }) {
   return Transaction(
     id: id,
-    accountId: 'a1',
+    poolId: 'a1',
     name: 'Rent',
     direction: Direction.debit,
     amount: Decimal.parse('1000'),

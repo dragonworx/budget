@@ -81,8 +81,8 @@ class UserRef {
   }
 }
 
-class Account {
-  const Account({
+class Pool {
+  const Pool({
     required this.id,
     this.ownerId = '',
     required this.name,
@@ -100,13 +100,13 @@ class Account {
 
   final int? version;
 
-  /// Effective role: owner for my own accounts, else the share's role.
+  /// Effective role: owner for my own pools, else the share's role.
   final Role role;
 
-  /// Someone else owns this account and shared it with me.
+  /// Someone else owns this pool and shared it with me.
   final bool shared;
 
-  /// Who owns it (reported in account lists).
+  /// Who owns it (reported in pool lists).
   final UserRef? owner;
 
   /// Currency scale choices: dollars per y-axis grid step, with labels.
@@ -136,7 +136,7 @@ class Account {
 
   final String id;
 
-  /// The owning user's id (accounts are top level).
+  /// The owning user's id (pools are top level).
   final String ownerId;
   final String name;
   final Decimal seedBalance;
@@ -147,11 +147,11 @@ class Account {
   final List<String> transactionOrder;
   final int displayOrder;
 
-  factory Account.fromJson(Map<String, dynamic> json) {
+  factory Pool.fromJson(Map<String, dynamic> json) {
     final order =
         json['transactionOrder'] ?? json['transaction_order'] ?? const [];
     final loss = json['lossThreshold'] ?? json['loss_threshold'];
-    return Account(
+    return Pool(
       id: json['id'] as String,
       ownerId: (json['ownerId'] ?? json['owner_id'] ?? '') as String,
       name: json['name'] as String,
@@ -202,7 +202,7 @@ class Account {
     if (version != null) 'version': version,
   };
 
-  Account copyWith({
+  Pool copyWith({
     String? id,
     String? ownerId,
     String? name,
@@ -216,7 +216,7 @@ class Account {
     bool clearVersion = false,
     Role? role,
   }) {
-    return Account(
+    return Pool(
       version: clearVersion ? null : (version ?? this.version),
       role: role ?? this.role,
       shared: shared,
@@ -234,9 +234,9 @@ class Account {
   }
 }
 
-extension AccountSharing on Account {
+extension PoolSharing on Pool {
   /// [this] with the sharing fields (shared, owner) of [from].
-  Account withSharing(Account from) => Account(
+  Pool withSharing(Pool from) => Pool(
     id: id,
     ownerId: ownerId,
     name: name,
@@ -322,7 +322,7 @@ enum EndMode {
 class Transaction {
   const Transaction({
     required this.id,
-    required this.accountId,
+    required this.poolId,
     required this.name,
     required this.direction,
     required this.amount,
@@ -359,11 +359,11 @@ class Transaction {
       overrideOn(date)?.signed ?? signedAmount;
 
   final String id;
-  final String accountId;
+  final String poolId;
   final String name;
   final TransactionDirection direction;
 
-  /// Set when this series is one side of a transfer between accounts.
+  /// Set when this series is one side of a transfer between pools.
   final TransferLink? transfer;
   bool get isTransfer => transfer != null;
   final Decimal amount;
@@ -425,7 +425,7 @@ class Transaction {
 
     return Transaction(
       id: json['id'] as String,
-      accountId: (json['accountId'] ?? json['account_id']) as String,
+      poolId: (json['poolId'] ?? json['pool_id']) as String,
       name: (json['name'] as String?) ?? '',
       direction: TransactionDirection.fromJson(json['direction'] as String),
       amount: parseMoney(json['amount']),
@@ -453,7 +453,7 @@ class Transaction {
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'accountId': accountId,
+    'poolId': poolId,
     'name': name,
     'direction': direction.toJson(),
     'amount': moneyToJson(amount),
@@ -481,12 +481,12 @@ class Transaction {
     if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
     'enabled': enabled,
     // Always sent: null on a patch turns a transfer back into a plain series.
-    'transferToAccountId': transfer?.peerAccountId,
+    'transferToPoolId': transfer?.peerPoolId,
   };
 
   Transaction copyWith({
     String? id,
-    String? accountId,
+    String? poolId,
     String? name,
     TransactionDirection? direction,
     Decimal? amount,
@@ -511,7 +511,7 @@ class Transaction {
       version: clearVersion ? null : (version ?? this.version),
       transfer: clearTransfer ? null : (transfer ?? this.transfer),
       id: id ?? this.id,
-      accountId: accountId ?? this.accountId,
+      poolId: poolId ?? this.poolId,
       name: name ?? this.name,
       direction: direction ?? this.direction,
       amount: amount ?? this.amount,
@@ -555,50 +555,50 @@ class TransferLink {
   const TransferLink({
     this.id,
     this.peerTransactionId,
-    required this.peerAccountId,
-    this.peerAccountName,
+    required this.peerPoolId,
+    this.peerPoolName,
     this.peerReadable = true,
   });
 
-  /// False when I can't see the other account (its names are withheld).
+  /// False when I can't see the other pool (its names are withheld).
   final bool peerReadable;
 
   final String? id;
   final String? peerTransactionId;
-  final String peerAccountId;
-  final String? peerAccountName;
+  final String peerPoolId;
+  final String? peerPoolName;
 
   factory TransferLink.fromJson(Map<String, dynamic> json) => TransferLink(
     id: json['id'] as String?,
     peerTransactionId: json['peerTransactionId'] as String?,
-    peerAccountId: (json['peerAccountId'] as String?) ?? '',
-    peerAccountName: json['peerAccountName'] as String?,
+    peerPoolId: (json['peerPoolId'] as String?) ?? '',
+    peerPoolName: json['peerPoolName'] as String?,
     peerReadable: json['peerReadable'] as bool? ?? true,
   );
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'peerTransactionId': peerTransactionId,
-    'peerAccountId': peerAccountId,
-    'peerAccountName': peerAccountName,
+    'peerPoolId': peerPoolId,
+    'peerPoolName': peerPoolName,
     'peerReadable': peerReadable,
   };
 
-  String get accountLabel => !peerReadable
-      ? 'Private account'
-      : (peerAccountName ?? 'another account');
+  String get poolLabel => !peerReadable
+      ? 'Private pool'
+      : (peerPoolName ?? 'another pool');
 }
 
-/// The other account of a transfer, from this side: "From: Everyday"
+/// The other pool of a transfer, from this side: "From: Everyday"
 /// (money in) / "To: Savings" (money out).
 String transferPhrase(Transaction t) {
   final link = t.transfer;
   if (link == null) return '';
   final dir = t.direction == TransactionDirection.debit ? 'To' : 'From';
-  return '$dir: ${link.accountLabel}';
+  return '$dir: ${link.poolLabel}';
 }
 
-/// Timeline / popup label: transfers add the other account, e.g.
+/// Timeline / popup label: transfers add the other pool, e.g.
 /// "Top up · From: Everyday" (in) / "Top up · To: Savings" (out); an
 /// unnamed transfer is just "From: Everyday".
 String transactionLabel(Transaction t) {
@@ -746,7 +746,7 @@ class SolveRequest {
     this.rounding = RoundingMode.nearest,
   });
 
-  /// Balance target mode: the account balance wanted on [endDate]; the
+  /// Balance target mode: the pool balance wanted on [endDate]; the
   /// server sets the total to `target − projected balance`.
   final Decimal? targetBalance;
 
@@ -918,7 +918,7 @@ class BalanceTargetInfo {
       );
 }
 
-/// Lowest point and runway from `GET /accounts/:id/insights`.
+/// Lowest point and runway from `GET /pools/:id/insights`.
 class BalanceInsights {
   const BalanceInsights({
     this.lowestDate,

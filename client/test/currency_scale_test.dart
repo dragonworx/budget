@@ -1,6 +1,6 @@
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
-import 'package:budget_client/widgets/account_dialog.dart';
+import 'package:budget_client/widgets/pool_dialog.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,17 +25,17 @@ void main() {
     });
   });
 
-  test('Account json round-trips currencyScale, defaults to 100', () {
-    final a = Account.fromJson({
+  test('Pool json round-trips currencyScale, defaults to 100', () {
+    final a = Pool.fromJson({
       'id': 'a', 'name': 'n', 'currency': 'AUD',
       'seedBalance': '0', 'seedDate': '2026-10-01',
     });
     expect(a.currencyScale, 100);
-    final b = Account.fromJson({...a.toJson(), 'currencyScale': 1000});
+    final b = Pool.fromJson({...a.toJson(), 'currencyScale': 1000});
     expect(b.currencyScale, 1000);
     expect(b.toPatchJson()['currencyScale'], 1000);
     expect(b.toCreateJson()['currencyScale'], 1000);
-    // Accounts have no currency: an older payload's field is ignored and
+    // Pools have no currency: an older payload's field is ignored and
     // never sent back.
     for (final json in [b.toJson(), b.toCreateJson(), b.toPatchJson()]) {
       expect(json.containsKey('currency'), isFalse);
@@ -43,17 +43,17 @@ void main() {
   });
 
   testWidgets('edit dialog changes Currency Scale', (tester) async {
-    final existing = Account(
+    final existing = Pool(
       id: 'a1', name: 'Main',
       seedBalance: Decimal.zero, seedDate: DateTime(2026, 10, 16),
       lossThreshold: Decimal.zero, currencyScale: 1000,
     );
-    late Future<Account?> result;
+    late Future<Pool?> result;
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (c) => TextButton(
           onPressed: () => result =
-              showAccountDialog(c, existing: existing),
+              showPoolDialog(c, existing: existing),
           child: const Text('open'),
         ),
       ),
@@ -66,52 +66,52 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('currency-scale-10')).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('account-save')));
+    await tester.tap(find.byKey(const ValueKey('pool-save')));
     await tester.pumpAndSettle();
     expect((await result)!.currencyScale, 10);
   });
 
   test('autoCurrencyScale fits the span in 9 units', () {
-    expect(Account.autoCurrencyScale(0), 1);
-    expect(Account.autoCurrencyScale(800), 100);
-    expect(Account.autoCurrencyScale(3500), 1000);
-    expect(Account.autoCurrencyScale(-42000), 10000);
-    expect(Account.autoCurrencyScale(5e9), 1000000);
+    expect(Pool.autoCurrencyScale(0), 1);
+    expect(Pool.autoCurrencyScale(800), 100);
+    expect(Pool.autoCurrencyScale(3500), 1000);
+    expect(Pool.autoCurrencyScale(-42000), 10000);
+    expect(Pool.autoCurrencyScale(5e9), 1000000);
   });
 
-  testWidgets('new account defaults to Hundreds; a pick sticks',
+  testWidgets('new pool defaults to Hundreds; a pick sticks',
       (tester) async {
-    late Future<Account?> result;
+    late Future<Pool?> result;
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (c) => TextButton(
-          onPressed: () => result = showAccountDialog(c),
+          onPressed: () => result = showPoolDialog(c),
           child: const Text('open'),
         ),
       ),
     ));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(Account.defaultCurrencyScale, 100);
+    expect(Pool.defaultCurrencyScale, 100);
     expect(find.text('Hundreds (\$100)'), findsOneWidget); // seed 0
     // The seed balance no longer changes it.
-    await tester.enterText(find.byKey(const ValueKey('account-seed')), '3500');
+    await tester.enterText(find.byKey(const ValueKey('pool-seed')), '3500');
     await tester.pumpAndSettle();
     expect(find.text('Hundreds (\$100)'), findsOneWidget);
-    await tester.enterText(find.byKey(const ValueKey('account-name')), 'N');
-    await tester.tap(find.byKey(const ValueKey('account-save')));
+    await tester.enterText(find.byKey(const ValueKey('pool-name')), 'N');
+    await tester.tap(find.byKey(const ValueKey('pool-save')));
     await tester.pumpAndSettle();
     expect((await result)!.currencyScale, 100);
     expect((await result)!.toCreateJson()['currencyScale'], 100);
   });
 
-  testWidgets('new account: an explicit Currency Scale pick is kept',
+  testWidgets('new pool: an explicit Currency Scale pick is kept',
       (tester) async {
-    late Future<Account?> result;
+    late Future<Pool?> result;
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (c) => TextButton(
-          onPressed: () => result = showAccountDialog(c),
+          onPressed: () => result = showPoolDialog(c),
           child: const Text('open'),
         ),
       ),
@@ -122,11 +122,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('currency-scale-10')).last);
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('account-seed')), '90000');
+    await tester.enterText(find.byKey(const ValueKey('pool-seed')), '90000');
     await tester.pumpAndSettle();
     expect(find.text('Tens (\$10)'), findsOneWidget);
-    await tester.enterText(find.byKey(const ValueKey('account-name')), 'N');
-    await tester.tap(find.byKey(const ValueKey('account-save')));
+    await tester.enterText(find.byKey(const ValueKey('pool-name')), 'N');
+    await tester.tap(find.byKey(const ValueKey('pool-save')));
     await tester.pumpAndSettle();
     expect((await result)!.currencyScale, 10);
   });

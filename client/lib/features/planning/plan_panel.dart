@@ -16,7 +16,7 @@ enum PlanTab { goal, payment, scenarios }
 class PlanPanel extends StatelessWidget {
   const PlanPanel({
     super.key,
-    required this.account,
+    required this.pool,
     required this.tab,
     required this.onTab,
     required this.onClose,
@@ -42,7 +42,7 @@ class PlanPanel extends StatelessWidget {
   final ValueChanged<GoalRequest>? onSaveScenario;
   final ValueChanged<Scenario>? onLoadScenario;
 
-  final Account account;
+  final Pool pool;
   final PlanTab tab;
   final ValueChanged<PlanTab> onTab;
   final VoidCallback onClose;
@@ -138,22 +138,22 @@ class PlanPanel extends StatelessWidget {
               children: [
                 GoalPanel(
                   key: goalKey,
-                  account: account,
+                  pool: pool,
                   initial: goalInitial,
                   onResult: onGoalResult,
                   onSaveScenario: onSaveScenario,
                 ),
                 SolveSheet(
-                  key: ValueKey('plan-payment-${account.id}'),
-                  accountId: account.id,
+                  key: ValueKey('plan-payment-${pool.id}'),
+                  poolId: pool.id,
                   initial: defaultPlanRequest(),
                   creditOnly: true,
-                  readOnly: !account.role.canEdit,
+                  readOnly: !pool.role.canEdit,
                   onPreview: onPreview,
                   onDone: onDone,
                 ),
                 ScenariosPanel(
-                  account: account,
+                  pool: pool,
                   onLoad: (s) => onLoadScenario?.call(s),
                 ),
               ],

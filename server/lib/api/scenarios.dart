@@ -3,12 +3,12 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import '../engine/solver.dart' show SolverException;
-import '../repo/account_repo.dart';
+import '../repo/pool_repo.dart';
 import '../repo/scenario_repo.dart';
 import 'goal.dart';
 import 'json_helpers.dart';
 
-const maxScenariosPerAccount = 8;
+const maxScenariosPerPool = 8;
 
 /// Validated scenario fields from a create (all required bar color/included)
 /// or patch (all optional) body. The request is checked by parsing it as a
@@ -39,10 +39,10 @@ const maxScenariosPerAccount = 8;
   return (name: name, colorIndex: color, included: included, request: request);
 }
 
-/// `/<accountId>/scenarios` CRUD. Scenarios are what-ifs only; they never
-/// touch the account's transactions.
+/// `/<poolId>/scenarios` CRUD. Scenarios are what-ifs only; they never
+/// touch the pool's transactions.
 void attachScenarioRoutes(Router router, Session conn) {
-  final accounts = AccountRepo(conn);
+  final pools = PoolRepo(conn);
   final repo = ScenarioRepo(conn);
 
   Future<Response> guard(Future<Response> Function() f) async {
@@ -57,24 +57,24 @@ void attachScenarioRoutes(Router router, Session conn) {
     }
   }
 
-  router.get('/<accountId>/scenarios', (Request r, String accountId) async {
-    if (await accounts.get(accountId) == null) {
-      return jsonError(404, 'account not found');
+  router.get('/<poolId>/scenarios', (Request r, String poolId) async {
+    if (await pools.get(poolId) == null) {
+      return jsonError(404, 'pool not found');
     }
-    final list = await repo.listByAccount(accountId);
+    final list = await repo.listByPool(poolId);
     return jsonOk([for (final s in list) s.toJson()]);
   });
 
   router.post(
-    '/<accountId>/scenarios',
-    (Request r, String accountId) => guard(() async {
-      if (await accounts.get(accountId) == null) {
-        return jsonError(404, 'account not found');
+    '/<poolId>/scenarios',
+    (Request r, String poolId) => guard(() async {
+      if (await pools.get(poolId) == null) {
+        return jsonError(404, 'pool not found');
       }
       final b = parseScenarioBody(await readJsonObject(r), create: true);
-      final existing = await repo.listByAccount(accountId);
-      if (existing.length >= maxScenariosPerAccount) {
-        return jsonError(409, 'at most $maxScenariosPerAccount scenarios');
+      final existing = await repo.listByPool(poolId);
+      if (existing.length >= maxScenariosPerPool) {
+        return jsonError(409, 'at most $maxScenariosPerPool scenarios');
       }
       final used = {for (final s in existing) s.colorIndex};
       final color = b.colorIndex ??
@@ -83,7 +83,7 @@ void attachScenarioRoutes(Router router, Session conn) {
             orElse: () => existing.length % 8,
           );
       final s = await repo.create(
-        accountId: accountId,
+        poolId: poolId,
         name: b.name!,
         colorIndex: color,
         included: b.included ?? true,
@@ -94,21 +94,21 @@ void attachScenarioRoutes(Router router, Session conn) {
   );
 
   Future<Response> owned(
-    String accountId,
+    String poolId,
     String id,
     Future<Response> Function() f,
   ) async {
     final s = await repo.get(id);
-    if (s == null || s.accountId != accountId) {
+    if (s == null || s.poolId != poolId) {
       return jsonError(404, 'scenario not found');
     }
     return f();
   }
 
   router.patch(
-    '/<accountId>/scenarios/<id>',
-    (Request r, String accountId, String id) => guard(
-      () => owned(accountId, id, () async {
+    '/<poolId>/scenarios/<id>',
+    (Request r, String poolId, String id) => guard(
+      () => owned(poolId, id, () async {
         final b = parseScenarioBody(await readJsonObject(r), create: false);
         final s = await repo.update(
           id,
@@ -123,8 +123,8 @@ void attachScenarioRoutes(Router router, Session conn) {
   );
 
   router.delete(
-    '/<accountId>/scenarios/<id>',
-    (Request r, String accountId, String id) => owned(accountId, id, () async {
+    '/<poolId>/scenarios/<id>',
+    (Request r, String poolId, String id) => owned(poolId, id, () async {
       await repo.delete(id);
       return jsonOk({'deleted': id});
     }),

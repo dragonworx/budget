@@ -1,16 +1,16 @@
 import 'package:decimal/decimal.dart';
-import 'package:postgres/postgres.dart';
+import 'package:postgres/postgres.dart' hide Pool;
 import 'package:uuid/uuid.dart';
 
 import '../domain/models.dart';
 
-class AccountRepo {
-  AccountRepo(this._conn);
+class PoolRepo {
+  PoolRepo(this._conn);
 
   final Session _conn;
   final _uuid = const Uuid();
 
-  /// Accounts [userId] owns or has been shared, with their role, owner and
+  /// Pools [userId] owns or has been shared, with their role, owner and
   /// whether they are shared with them. Mine first (display order, name),
   /// then shared ones by name.
   Future<List<Map<String, Object?>>> listAccessible(String userId) async {
@@ -21,10 +21,10 @@ class AccountRepo {
                a.currency_scale, a.version,
                CASE WHEN a.owner_id = @u::uuid THEN 'owner' ELSE s.role::text END,
                u.email, u.name, u.picture_url
-        FROM accounts a
+        FROM pools a
         JOIN users u ON u.id = a.owner_id
-        LEFT JOIN account_shares s
-          ON s.account_id = a.id AND s.user_id = @u::uuid
+        LEFT JOIN pool_shares s
+          ON s.pool_id = a.id AND s.user_id = @u::uuid
         WHERE a.owner_id = @u::uuid OR s.user_id IS NOT NULL
         ORDER BY (a.owner_id = @u::uuid) DESC,
                  CASE WHEN a.owner_id = @u::uuid THEN a.display_order ELSE 0 END,
@@ -48,29 +48,29 @@ class AccountRepo {
     }).toList();
   }
 
-  /// The account [userId] opened last (may no longer be accessible).
+  /// The pool [userId] opened last (may no longer be accessible).
   Future<String?> lastOpened(String userId) async {
     final r = await _conn.execute(
-      Sql.named('SELECT last_account_id::text FROM users WHERE id = @u::uuid'),
+      Sql.named('SELECT last_pool_id::text FROM users WHERE id = @u::uuid'),
       parameters: {'u': userId},
     );
     return r.isEmpty ? null : r.first[0] as String?;
   }
 
-  Future<void> markOpened(String userId, String accountId) async {
+  Future<void> markOpened(String userId, String poolId) async {
     await _conn.execute(
-      Sql.named('UPDATE users SET last_account_id = @a::uuid '
-          'WHERE id = @u::uuid AND last_account_id IS DISTINCT FROM @a::uuid'),
-      parameters: {'u': userId, 'a': accountId},
+      Sql.named('UPDATE users SET last_pool_id = @a::uuid '
+          'WHERE id = @u::uuid AND last_pool_id IS DISTINCT FROM @a::uuid'),
+      parameters: {'u': userId, 'a': poolId},
     );
   }
 
-  Future<Account?> get(String id) async {
+  Future<Pool?> get(String id) async {
     final rows = await _conn.execute(
       Sql.named('''
         SELECT id, owner_id, name, seed_balance, seed_date,
                loss_threshold, display_order, transaction_order, currency_scale, version
-        FROM accounts WHERE id = @id
+        FROM pools WHERE id = @id
       '''),
       parameters: {'id': id},
     );
@@ -78,19 +78,19 @@ class AccountRepo {
     return _fromRow(rows.first);
   }
 
-  Future<Account> create({
+  Future<Pool> create({
     required String ownerId,
     required String name,
     required Decimal seedBalance,
     required DateTime seedDate,
     required Decimal lossThreshold,
     int displayOrder = 0,
-    int currencyScale = Account.defaultCurrencyScale,
+    int currencyScale = Pool.defaultCurrencyScale,
   }) async {
     final id = _uuid.v4();
     final rows = await _conn.execute(
       Sql.named('''
-        INSERT INTO accounts (
+        INSERT INTO pools (
           id, owner_id, name, seed_balance, seed_date,
           loss_threshold, display_order, currency_scale, created_by
         ) VALUES (
@@ -114,7 +114,7 @@ class AccountRepo {
     return _fromRow(rows.first);
   }
 
-  Future<Account?> update(
+  Future<Pool?> update(
     String id, {
     String? name,
     Decimal? seedBalance,
@@ -128,7 +128,7 @@ class AccountRepo {
 
     final rows = await _conn.execute(
       Sql.named('''
-        UPDATE accounts SET
+        UPDATE pools SET
           name = @name,
           seed_balance = @seedBalance,
           seed_date = @seedDate,
@@ -158,28 +158,28 @@ class AccountRepo {
     return _fromRow(rows.first);
   }
 
-  /// Moves every transaction schedule of [accountId] by [days] calendar
+  /// Moves every transaction schedule of [poolId] by [days] calendar
   /// days (start date, until-date end, skipped dates) so the schedule keeps
   /// its position relative to the seed date. Run inside the same DB
   /// transaction as the seed-date update. Returns the number of
   /// transactions moved.
-  Future<int> shiftSchedules(String accountId, int days) async {
+  Future<int> shiftSchedules(String poolId, int days) async {
     if (days == 0) return 0;
-    // Transfers move as a pair: the peer row in the other account shifts
+    // Transfers move as a pair: the peer row in the other pool shifts
     // with its source so both sides keep the same dates.
     const scope = '''
-      account_id = @id OR transfer_id IN (
+      pool_id = @id OR transfer_id IN (
         SELECT transfer_id FROM transactions
-        WHERE account_id = @id AND transfer_id IS NOT NULL)''';
+        WHERE pool_id = @id AND transfer_id IS NOT NULL)''';
     final moved = await _conn.execute(
       Sql.named('''
         UPDATE transactions SET
           start_date = start_date + @d::int,
           end_date = CASE WHEN end_date IS NULL THEN NULL ELSE end_date + @d::int END
         WHERE $scope
-        RETURNING account_id = @id
+        RETURNING pool_id = @id
       '''),
-      parameters: {'id': accountId, 'd': days},
+      parameters: {'id': poolId, 'd': days},
     );
     // Skipped dates: delete + re-insert, so a uniform shift can't trip the
     // (transaction_id, date) primary key mid-update.
@@ -189,7 +189,7 @@ class AccountRepo {
         WHERE transaction_id IN (SELECT id FROM transactions WHERE $scope)
         RETURNING transaction_id::text, date
       '''),
-      parameters: {'id': accountId},
+      parameters: {'id': poolId},
     );
     for (final row in skipped) {
       await _conn.execute(
@@ -207,7 +207,7 @@ class AccountRepo {
         WHERE transaction_id IN (SELECT id FROM transactions WHERE $scope)
         RETURNING transaction_id::text, date, amount::text, direction
       '''),
-      parameters: {'id': accountId},
+      parameters: {'id': poolId},
     );
     for (final row in overrides) {
       await _conn.execute(
@@ -227,11 +227,11 @@ class AccountRepo {
     return moved.where((r) => r[0] == true).length;
   }
 
-  Future<Account?> reorderTransactions(
+  Future<Pool?> reorderTransactions(
       String id, List<String> transactionIds) async {
     final rows = await _conn.execute(
       Sql.named('''
-        UPDATE accounts SET transaction_order = @transactionOrder
+        UPDATE pools SET transaction_order = @transactionOrder
         WHERE id = @id
         RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, transaction_order, currency_scale, version
@@ -249,20 +249,20 @@ class AccountRepo {
     await _conn.execute(
       Sql.named('''
         UPDATE transactions SET transfer_id = NULL
-        WHERE account_id <> @a::uuid AND transfer_id IN (
+        WHERE pool_id <> @a::uuid AND transfer_id IN (
           SELECT transfer_id FROM transactions
-          WHERE account_id = @a::uuid AND transfer_id IS NOT NULL)
+          WHERE pool_id = @a::uuid AND transfer_id IS NOT NULL)
       '''),
       parameters: {'a': id},
     );
     final rows = await _conn.execute(
-      Sql.named('DELETE FROM accounts WHERE id = @id RETURNING id'),
+      Sql.named('DELETE FROM pools WHERE id = @id RETURNING id'),
       parameters: {'id': id},
     );
     return rows.isNotEmpty;
   }
 
-  Account _fromRow(ResultRow row) {
+  Pool _fromRow(ResultRow row) {
     final seedBalanceRaw = row[3];
     final transactionOrderRaw = row[7];
     final List<String> transactionOrder;
@@ -275,7 +275,7 @@ class AccountRepo {
     }
 
     final seedDate = row[4] as DateTime;
-    return Account(
+    return Pool(
       id: row[0].toString(),
       ownerId: row[1].toString(),
       name: row[2] as String,

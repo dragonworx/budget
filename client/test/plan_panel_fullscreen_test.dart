@@ -9,10 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _Repo extends AccountRepository {
+class _Repo extends PoolRepository {
   _Repo() : super(ApiClient());
   @override
-  Future<GoalResult> goal(String accountId, GoalRequest request) async =>
+  Future<GoalResult> goal(String poolId, GoalRequest request) async =>
       GoalResult.fromJson({
         'status': 'incomplete',
         'solveFor': request.solveFor.name,
@@ -20,7 +20,7 @@ class _Repo extends AccountRepository {
       });
 }
 
-final _account = Account(
+final _pool = Pool(
   id: 'acc',
   ownerId: 'u',
   name: 'A',
@@ -32,11 +32,11 @@ final _account = Account(
 Future<void> _pump(WidgetTester t, {required bool full, VoidCallback? expand}) =>
     t.pumpWidget(
       ProviderScope(
-        overrides: [accountRepositoryProvider.overrideWithValue(_Repo())],
+        overrides: [poolRepositoryProvider.overrideWithValue(_Repo())],
         child: MaterialApp(
           home: Scaffold(
             body: PlanPanel(
-              account: _account,
+              pool: _pool,
               tab: PlanTab.goal,
               onTab: (_) {},
               onClose: () {},

@@ -1,6 +1,6 @@
 # Deploying Budget
 
-The whole site (every user's accounts, i.e. all tenants) runs as one Docker Compose stack:
+The whole site (every user's pools, i.e. all tenants) runs as one Docker Compose stack:
 
 ```
 browser ──https──> caddy ──/api/*, /health──> api ×N (stateless) ──> db (Postgres 16, volume)

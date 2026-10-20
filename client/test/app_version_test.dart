@@ -110,7 +110,7 @@ void main() {
     test('HTML instead of JSON reads "please reload", not raw HTML', () async {
       final a = api((_) => http.Response('<!DOCTYPE html><html></html>', 200));
       await expectLater(
-        a.get('/api/accounts'),
+        a.get('/api/pools'),
         throwsA(
           isA<ApiException>().having(
             (e) => e.message,

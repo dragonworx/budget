@@ -15,7 +15,7 @@ const _size = Size(1000, 500);
 
 Transaction _t(String id, {bool enabled = true}) => Transaction(
   id: id,
-  accountId: 'a',
+  poolId: 'a',
   name: id,
   direction: TransactionDirection.debit,
   amount: Decimal.fromInt(10),

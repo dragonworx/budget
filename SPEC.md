@@ -1,6 +1,6 @@
 # Budget Tool
 
-A Flutter application for visually planning and tracking account balances over time through discrete credit/debit transactions.
+A Flutter application for visually planning and tracking pool balances over time through discrete credit/debit transactions.
 
 **Platforms (v1):** Web only (`flutter run -d chrome` / web build). iOS, Android, and desktop are out of scope.
 
@@ -12,8 +12,8 @@ A Flutter application for visually planning and tracking account balances over t
 
 ## 1. Goals
 
-1. Let a user model one or more **accounts** (top level, owned by the user and shareable per account), each with **transactions**.
-2. Show an account’s projected **balance over time** on an infinite, zoomable timeline.
+1. Let a user model one or more **pools** (top level, owned by the user and shareable per pool), each with **transactions**.
+2. Show a pool’s projected **balance over time** on an infinite, zoomable timeline.
 3. Let the user create transactions by picking dates/ranges on the timeline and **solving** for unknown transaction variables (goal planning).
 
 Non-goals for v1: bank sync, receipts, budgets-by-category, multi-currency conversion, interest accrual formulas.
@@ -26,27 +26,27 @@ Non-goals for v1: bank sync, receipts, budgets-by-category, multi-currency conve
 
 ```
 User
- └── Account (seed balance + seed date; shareable: owner / editor / viewer)
+ └── Pool (seed balance + seed date; shareable: owner / editor / viewer)
       └── Transaction (one-time or repeating credit/debit)
            └── Occurrence (computed instance on a calendar day)
 ```
 
 | Entity | Purpose |
 |--------|---------|
-| **Account** | Named ledger with a seed balance and seed date. Owns transactions. |
-| **Transaction** | A planned credit or debit pattern applied to one account. |
+| **Pool** | Named ledger with a seed balance and seed date. Owns transactions. |
+| **Transaction** | A planned credit or debit pattern applied to one pool. |
 | **Occurrence** | A concrete application of a transaction on one calendar day (derived, not stored unless overridden). |
 
-### 2.2 (Projects were removed: accounts are top level.)
+### 2.2 (Projects were removed: pools are top level.)
 
-### 2.3 Account
+### 2.3 Pool
 
 | Field | Type | Notes |
 |-------|------|--------|
 | `id` | UUID | |
 | `ownerId` | UUID | Owning user |
 | `name` | string | Required, unique per owner (case-insensitive) |
-| `currency` | ISO 4217 | Fixed per account in v1 (default device locale currency). No FX. |
+| `currency` | ISO 4217 | Fixed per pool in v1 (default device locale currency). No FX. |
 | `seedBalance` | decimal | Balance **at the start of** `seedDate` (before that day’s occurrences) |
 | `seedDate` | date | Anchor for the balance series; timeline may extend before this date (balance is undefined / not drawn before seed, or shown as flat seed—**decision: do not draw before seedDate**) |
 | `transactionOrder` | list of transaction IDs | Explicit order used as same-day tiebreaker (see §3) |
@@ -58,7 +58,7 @@ User
 | Field | Type | Notes |
 |-------|------|--------|
 | `id` | UUID | |
-| `accountId` | UUID | |
+| `poolId` | UUID | |
 | `name` | string | Optional label (e.g. “Rent”, “Paycheck”) |
 | `direction` | `credit` \| `debit` | Credit raises balance; debit lowers it |
 | `amount` | decimal ≥ 0 | Magnitude per occurrence (direction separate from sign) |
@@ -128,7 +128,7 @@ Balance is computed as a **daily** series:
 
 ### 3.2 Same-day order
 
-If multiple occurrences fall on the same date, apply them in **`transactionOrder`** (account-level list). Transactions not in the list append in creation order. Reordering in the UI updates `transactionOrder`.
+If multiple occurrences fall on the same date, apply them in **`transactionOrder`** (pool-level list). Transactions not in the list append in creation order. Reordering in the UI updates `transactionOrder`.
 
 ### 3.3 Calendar arithmetic
 
@@ -142,7 +142,7 @@ Computation and rendering use a **visible window** plus a buffer (e.g. ±2× vie
 
 ### 3.5 Precision
 
-Use decimal money (not binary float) with currency minor units (e.g. 2 places for USD). Display with the account’s currency formatter.
+Use decimal money (not binary float) with currency minor units (e.g. 2 places for USD). Display with the pool’s currency formatter.
 
 ---
 
@@ -198,18 +198,18 @@ then treat `needed` as signed `T` (credit if positive, debit if negative)—or r
 
 ## 5. Major UI
 
-### 5.1 Accounts home
+### 5.1 Pools home
 
-**Purpose:** List my accounts and those shared with me; enter Timeline for an account. After sign-in the app opens the last-used account directly; the home is shown when there is none (or via “Manage accounts”).
+**Purpose:** List my pools and those shared with me; enter Timeline for a pool. After sign-in the app opens the last-used pool directly; the home is shown when there is none (or via “Manage pools”).
 
 **Capabilities:**
 
-- List accounts: “My accounts”, then “Shared with me” (owner + my role).
-- Create / edit / delete accounts.
-- Reorder accounts (display order only).
-- Open **Timeline View** for an account (primary CTA).
+- List pools: “My pools”, then “Shared with me” (owner + my role).
+- Create / edit / delete pools.
+- Reorder pools (display order only).
+- Open **Timeline View** for a pool (primary CTA).
 
-**Empty state:** No accounts → “New account”.
+**Empty state:** No pools → “New pool”.
 
 ### 5.2 Timeline View
 
@@ -233,12 +233,12 @@ then treat `needed` as signed `T` (credit if positive, debit if negative)—or r
 - **Tap occurrence marker** → inspect transaction / edit / skip this occurrence / delete transaction.
 - **Tap empty day** → create **once** transaction on that date (amount + direction + name).
 - **Drag-select date range** → open **Solve / plan** sheet with `S`/`E` prefilled; user picks what to solve (§4).
-- **Transaction list panel** (side sheet or bottom sheet): all transactions for the account, enable/disable, reorder (`transactionOrder`), edit fields manually without solver.
+- **Transaction list panel** (side sheet or bottom sheet): all transactions for the pool, enable/disable, reorder (`transactionOrder`), edit fields manually without solver.
 
 #### Chrome
 
-- Account name + current (today’s) closing balance in app bar.
-- Back to the Accounts home.
+- Pool name + current (today’s) closing balance in app bar.
+- Back to the Pools home.
 - Zoom controls; “Jump to today”; “Jump to seed”.
 
 ### 5.3 Transaction editor (shared)
@@ -251,8 +251,8 @@ Fields matching §2.4. Validation inline. Recurrence and end-rule controls mutua
 
 ### v1 (must)
 
-- [ ] Accounts CRUD  
-- [ ] Accounts CRUD (name, currency, seed balance, seed date)  
+- [ ] Pools CRUD  
+- [ ] Pools CRUD (name, currency, seed balance, seed date)  
 - [ ] Transactions CRUD (once / every N units; end never / until date / count)  
 - [ ] Skip single occurrence  
 - [ ] Daily balance engine with same-day `transactionOrder`  
@@ -266,14 +266,14 @@ Fields matching §2.4. Validation inline. Recurrence and end-rule controls mutua
 ### v1.1 (should)
 
 - [ ] Target closing balance `B*` solver mode  
-- [ ] Duplicate transaction / duplicate account  
+- [ ] Duplicate transaction / duplicate pool  
 - [ ] Export/import transactions JSON  
 - [ ] Soft color coding per transaction on the chart  
 
 ### Out of scope (for now)
 
 - Bank / Plaid sync  
-- Transfers between accounts (model as paired transactions manually in v1)  
+- Transfers between pools (model as paired transactions manually in v1)  
 - Interest, fees, amortization schedules as first-class types  
 - Multi-currency conversion  
 - Auth / sync / multi-device  
@@ -305,7 +305,7 @@ Still open:
 
 1. Exact chart visual (step line vs bars).  
 2. Default currency source (device locale vs user setting at first launch).  
-3. Whether deleting an account is recoverable (trash vs hard delete).  
+3. Whether deleting a pool is recoverable (trash vs hard delete).  
 4. Max practical pan range for `endRule = never` (e.g. seed → seed+100 years clamp).  
 
 ---

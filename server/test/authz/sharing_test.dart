@@ -7,82 +7,82 @@ void main() {
   setUpAll(() => h.open());
   tearDownAll(() => h.close());
 
-  test('account roles: owner manages, editor writes, viewer reads', () async {
+  test('pool roles: owner manages, editor writes, viewer reads', () async {
     if (!h.ok) return markTestSkipped('no test DB');
     final s = await h.seed('owner', 'Roles');
-    final other = await h.call('POST', '/api/accounts',
+    final other = await h.call('POST', '/api/pools',
         as: 'owner', body: {'name': 'Secret', 'seedDate': '2026-01-01'});
     expect(other.status, 201);
     expect(other.json['role'], 'owner');
     await h.login('ed');
     await h.login('vi');
-    final inv = await h.call('POST', '/api/accounts/${s.a}/invites',
+    final inv = await h.call('POST', '/api/pools/${s.a}/invites',
         as: 'owner', body: {'email': h.email('ed'), 'role': 'editor'});
     expect(inv.status, 201);
     expect(inv.json['status'], 'added');
-    await h.call('POST', '/api/accounts/${s.a}/invites',
+    await h.call('POST', '/api/pools/${s.a}/invites',
         as: 'owner', body: {'email': h.email('vi')});
     // Inviting yourself is refused.
     expect(
-        (await h.call('POST', '/api/accounts/${s.a}/invites',
+        (await h.call('POST', '/api/pools/${s.a}/invites',
                 as: 'owner', body: {'email': h.email('owner')}))
             .status,
         409);
 
     // Lists: mine first, then shared with me (role + owner), nothing else.
-    final mine = await h.call('GET', '/api/accounts', as: 'owner');
-    expect((mine.json['accounts'] as List).map((a) => a['id']),
+    final mine = await h.call('GET', '/api/pools', as: 'owner');
+    expect((mine.json['pools'] as List).map((a) => a['id']),
         containsAll([s.a, other.json['id']]));
-    expect((mine.json['accounts'] as List).every((a) => a['shared'] == false),
+    expect((mine.json['pools'] as List).every((a) => a['shared'] == false),
         isTrue);
-    final list = await h.call('GET', '/api/accounts', as: 'vi');
-    final acc = (list.json['accounts'] as List).single;
+    final list = await h.call('GET', '/api/pools', as: 'vi');
+    final acc = (list.json['pools'] as List).single;
     expect(acc['id'], s.a);
     expect(acc['role'], 'viewer');
     expect(acc['shared'], true);
     expect(acc['owner']['email'], h.email('owner'));
-    expect(list.json['lastAccountId'], isNull);
-    expect((await h.call('GET', '/api/accounts/${s.a}', as: 'vi')).json['role'],
+    expect(list.json['lastPoolId'], isNull);
+    expect((await h.call('GET', '/api/pools/${s.a}', as: 'vi')).json['role'],
         'viewer');
-    // Opening an account makes it the landing account.
+    // Opening a pool makes it the landing pool.
     expect(
-        (await h.call('GET', '/api/accounts', as: 'vi')).json['lastAccountId'],
+        (await h.call('GET', '/api/pools', as: 'vi')).json['lastPoolId'],
         s.a);
     expect(
-        (await h.call('GET', '/api/accounts/${other.json['id']}', as: 'vi'))
+        (await h.call('GET', '/api/pools/${other.json['id']}', as: 'vi'))
             .status,
         404);
     // POST /opened records it explicitly (cached client views); a stranger's
-    // account cannot be recorded.
+    // pool cannot be recorded.
     expect(
-        (await h.call('POST', '/api/accounts/${other.json['id']}/opened',
+        (await h.call('POST', '/api/pools/${other.json['id']}/opened',
                 as: 'owner'))
             .status,
         200);
     expect(
-        (await h.call('GET', '/api/accounts', as: 'owner'))
-            .json['lastAccountId'],
+        (await h.call('GET', '/api/pools', as: 'owner'))
+            .json['lastPoolId'],
         other.json['id']);
     expect(
-        (await h.call('POST', '/api/accounts/${s.a}/opened', as: 'owner'))
+        (await h.call('POST', '/api/pools/${s.a}/opened', as: 'owner'))
             .status,
         200);
     expect(
-        (await h.call('GET', '/api/accounts', as: 'owner'))
-            .json['lastAccountId'],
+        (await h.call('GET', '/api/pools', as: 'owner'))
+            .json['lastPoolId'],
         s.a);
     expect(
-        (await h.call('POST', '/api/accounts/${other.json['id']}/opened',
+        (await h.call('POST', '/api/pools/${other.json['id']}/opened',
                 as: 'vi'))
             .status,
         404);
 
     expect(
-        (await h.call('GET', '/api/accounts/${s.a}/transactions', as: 'vi'))
+        (await h.call('GET', '/api/pools/${s.a}/transactions', as: 'vi'))
             .status,
         200);
     expect(
-        (await h.call('POST', '/api/accounts/${s.a}/transactions',
+        (await h.call('POST', '/api/pools/${s.a}/transactions',
                 as: 'vi', body: Harness.tx('x')))
             .status,
         403);
@@ -96,80 +96,80 @@ void main() {
                 as: 'ed', body: {'name': 'edited'}))
             .status,
         200);
-    // Only the owner deletes the account or shares it.
+    // Only the owner deletes the pool or shares it.
     expect(
-        (await h.call('DELETE', '/api/accounts/${s.a}', as: 'ed')).status, 403);
+        (await h.call('DELETE', '/api/pools/${s.a}', as: 'ed')).status, 403);
     expect(
-        (await h.call('POST', '/api/accounts/${s.a}/invites',
+        (await h.call('POST', '/api/pools/${s.a}/invites',
                 as: 'ed', body: {'email': h.email('z')}))
             .status,
         403);
 
     // Shares list: the owner sees all + invites; others only their own.
-    final own = await h.call('GET', '/api/accounts/${s.a}/shares', as: 'owner');
+    final own = await h.call('GET', '/api/pools/${s.a}/shares', as: 'owner');
     expect((own.json['shares'] as List).map((x) => x['role']),
         containsAll(['editor', 'viewer']));
     expect(own.json['owner']['email'], h.email('owner'));
     expect(own.json.containsKey('invites'), isTrue);
-    final m = await h.call('GET', '/api/accounts/${s.a}/shares', as: 'vi');
+    final m = await h.call('GET', '/api/pools/${s.a}/shares', as: 'vi');
     expect((m.json['shares'] as List).single['email'], h.email('vi'));
     expect(m.json.containsKey('invites'), isFalse);
 
     // Change role, revoke, leave.
     final vid = await h.userId('vi');
     expect(
-        (await h.call('PATCH', '/api/accounts/${s.a}/shares/$vid',
+        (await h.call('PATCH', '/api/pools/${s.a}/shares/$vid',
                 as: 'owner', body: {'role': 'editor'}))
             .status,
         200);
     expect(
-        (await h.call('POST', '/api/accounts/${s.a}/transactions',
+        (await h.call('POST', '/api/pools/${s.a}/transactions',
                 as: 'vi', body: Harness.tx('now ok')))
             .status,
         201);
     expect(
-        (await h.call('DELETE', '/api/accounts/${s.a}/shares/$vid',
+        (await h.call('DELETE', '/api/pools/${s.a}/shares/$vid',
                 as: 'owner'))
             .status,
         200);
-    expect((await h.call('GET', '/api/accounts/${s.a}', as: 'vi')).status, 404);
-    // Revoked: no longer offered as the landing account.
+    expect((await h.call('GET', '/api/pools/${s.a}', as: 'vi')).status, 404);
+    // Revoked: no longer offered as the landing pool.
     expect(
-        (await h.call('GET', '/api/accounts', as: 'vi')).json['lastAccountId'],
+        (await h.call('GET', '/api/pools', as: 'vi')).json['lastPoolId'],
         isNull);
     expect(
-        (await h.call('POST', '/api/accounts/${s.a}/leave', as: 'ed')).status,
+        (await h.call('POST', '/api/pools/${s.a}/leave', as: 'ed')).status,
         200);
-    expect((await h.call('GET', '/api/accounts/${s.a}', as: 'ed')).status, 404);
+    expect((await h.call('GET', '/api/pools/${s.a}', as: 'ed')).status, 404);
     expect(
-        (await h.call('POST', '/api/accounts/${s.a}/leave', as: 'owner'))
+        (await h.call('POST', '/api/pools/${s.a}/leave', as: 'owner'))
             .status,
         409);
     // The owner deletes it.
     expect(
-        (await h.call('DELETE', '/api/accounts/${other.json['id']}',
+        (await h.call('DELETE', '/api/pools/${other.json['id']}',
                 as: 'owner'))
             .status,
         204);
   });
 
-  test('account names are unique per owner, not site-wide', () async {
+  test('pool names are unique per owner, not site-wide', () async {
     if (!h.ok) return markTestSkipped('no test DB');
-    final a = await h.call('POST', '/api/accounts',
+    final a = await h.call('POST', '/api/pools',
         as: 'n1', body: {'name': 'Everyday', 'seedDate': '2026-01-01'});
     expect(a.status, 201);
     expect(
-        (await h.call('POST', '/api/accounts',
+        (await h.call('POST', '/api/pools',
                 as: 'n1', body: {'name': 'everyday', 'seedDate': '2026-01-01'}))
             .status,
         409);
     expect(
-        (await h.call('POST', '/api/accounts',
+        (await h.call('POST', '/api/pools',
                 as: 'n2', body: {'name': 'Everyday', 'seedDate': '2026-01-01'}))
             .status,
         201);
     // Old clients' projectId is ignored.
-    final legacy = await h.call('POST', '/api/accounts', as: 'n2', body: {
+    final legacy = await h.call('POST', '/api/pools', as: 'n2', body: {
       'name': 'Legacy',
       'seedDate': '2026-01-01',
       'projectId': '00000000-0000-0000-0000-000000000000',
@@ -183,13 +183,13 @@ void main() {
       () async {
     if (!h.ok) return markTestSkipped('no test DB');
     final s = await h.seed('own2', 'Invites');
-    final inv = await h.call('POST', '/api/accounts/${s.a}/invites',
+    final inv = await h.call('POST', '/api/pools/${s.a}/invites',
         as: 'own2', body: {'email': h.email('newbie'), 'role': 'editor'});
     expect(inv.status, 201);
     expect(inv.json['status'], 'invited');
     expect(inv.json['inviteUrl'], '$origin/invite/${inv.json['token']}');
     final shares =
-        await h.call('GET', '/api/accounts/${s.a}/shares', as: 'own2');
+        await h.call('GET', '/api/pools/${s.a}/shares', as: 'own2');
     expect((shares.json['invites'] as List).single['email'], h.email('newbie'));
 
     // Rotating the link invalidates the old token.
@@ -198,7 +198,7 @@ void main() {
     expect(rot.status, 200);
     final pre = await h.call('POST', '/api/invites/preview',
         as: 'other', body: {'token': rot.json['token']});
-    expect(pre.json['invite']['accountName'], 'Acc Invites');
+    expect(pre.json['invite']['poolName'], 'Acc Invites');
     expect(pre.json['invite'].containsKey('projectName'), isFalse);
     expect(pre.json['emailMatches'], false);
     expect(
@@ -216,14 +216,14 @@ void main() {
         as: 'newbie', body: {'token': rot.json['token']});
     expect(acc.status, 410);
     expect(
-        (await h.call('GET', '/api/accounts/${s.a}', as: 'newbie'))
+        (await h.call('GET', '/api/pools/${s.a}', as: 'newbie'))
             .json['role'],
         'editor');
-    final nl = await h.call('GET', '/api/accounts', as: 'newbie');
-    expect((nl.json['accounts'] as List).single['shared'], true);
+    final nl = await h.call('GET', '/api/pools', as: 'newbie');
+    expect((nl.json['pools'] as List).single['shared'], true);
 
     // Revoke before sign-in: no access.
-    final i2 = await h.call('POST', '/api/accounts/${s.a}/invites',
+    final i2 = await h.call('POST', '/api/pools/${s.a}/invites',
         as: 'own2', body: {'email': h.email('late')});
     final del =
         await h.call('DELETE', '/api/invites/${i2.json['id']}', as: 'newbie');
@@ -234,36 +234,36 @@ void main() {
         200);
     await h.login('late');
     expect(
-        (await h.call('GET', '/api/accounts/${s.a}', as: 'late')).status, 404);
+        (await h.call('GET', '/api/pools/${s.a}', as: 'late')).status, 404);
   });
 
-  test('transfers across differently shared accounts do not leak names',
+  test('transfers across differently shared pools do not leak names',
       () async {
     if (!h.ok) return markTestSkipped('no test DB');
     final mine = await h.seed('xa', 'Private Stuff');
     final shared = await h.seed('xa', 'Shared Stuff');
     await h.login('xb');
-    await h.call('POST', '/api/accounts/${shared.a}/invites',
+    await h.call('POST', '/api/pools/${shared.a}/invites',
         as: 'xa', body: {'email': h.email('xb'), 'role': 'editor'});
     // Owner links Shared -> Private.
-    final t = await h.call('POST', '/api/accounts/${shared.a}/transactions',
+    final t = await h.call('POST', '/api/pools/${shared.a}/transactions',
         as: 'xa', body: Harness.tx('Move', transferTo: mine.a));
     expect(t.status, 201, reason: '${t.json}');
-    expect(t.json['transfer']['peerAccountName'], 'Acc Private Stuff');
+    expect(t.json['transfer']['peerPoolName'], 'Acc Private Stuff');
     final seen =
-        await h.call('GET', '/api/accounts/${shared.a}/transactions', as: 'xb');
+        await h.call('GET', '/api/pools/${shared.a}/transactions', as: 'xb');
     final link = (seen.json['transactions'] as List)
         .firstWhere((x) => x['id'] == t.json['id'])['transfer'];
     expect(link['peerReadable'], false);
-    expect(link['peerAccountName'], isNull);
+    expect(link['peerPoolName'], isNull);
     // xb cannot edit/delete the linked row (it would change the private side)
     expect(
         (await h.call('DELETE', '/api/transactions/${t.json['id']}', as: 'xb'))
             .status,
         403);
-    // ... nor create a transfer into an account they can't edit.
+    // ... nor create a transfer into a pool they can't edit.
     expect(
-        (await h.call('POST', '/api/accounts/${shared.a}/transactions',
+        (await h.call('POST', '/api/pools/${shared.a}/transactions',
                 as: 'xb', body: Harness.tx('Steal', transferTo: mine.a)))
             .status,
         404);
@@ -285,16 +285,16 @@ void main() {
     expect(stale.json['details']['current']['name'], 'one');
     expect(stale.json['details']['current']['version'], v + 1);
     // If-Match header works too; no version = last write wins.
-    final a = await h.call('GET', '/api/accounts/${s.a}', as: 'vv');
+    final a = await h.call('GET', '/api/pools/${s.a}', as: 'vv');
     expect(
-        (await h.call('PATCH', '/api/accounts/${s.a}',
+        (await h.call('PATCH', '/api/pools/${s.a}',
                 as: 'vv',
                 body: {'name': 'Renamed'},
                 headers: {'if-match': '"${a.json['version'] + 5}"'}))
             .status,
         409);
     expect(
-        (await h.call('PATCH', '/api/accounts/${s.a}',
+        (await h.call('PATCH', '/api/pools/${s.a}',
                 as: 'vv', body: {'name': 'Renamed'}))
             .status,
         200);
@@ -307,10 +307,10 @@ void main() {
         as: 'au', body: {'name': 'x'});
     await h.call('DELETE', '/api/transactions/${s.t}', as: 'au');
     final rows = await h.conn!
-        .execute("SELECT action, entity_id, account_id::text FROM audit_log "
-            "WHERE account_id = '${s.a}' ORDER BY id");
+        .execute("SELECT action, entity_id, pool_id::text FROM audit_log "
+            "WHERE pool_id = '${s.a}' ORDER BY id");
     expect(rows.map((r) => r[0]), [
-      'account.created',
+      'pool.created',
       'transaction.created',
       'transaction.updated',
       'transaction.deleted',
@@ -319,7 +319,7 @@ void main() {
     expect(rows[1][1], s.t);
     expect(rows[1][2], s.a);
     final by = await h.conn!
-        .execute("SELECT updated_by::text FROM accounts WHERE id = '${s.a}'");
+        .execute("SELECT updated_by::text FROM pools WHERE id = '${s.a}'");
     expect(by.first[0], await h.userId('au'));
   });
 
@@ -337,7 +337,7 @@ void main() {
                 as: 'admin', body: {'disabled': true}))
             .status,
         200);
-    expect((await h.call('GET', '/api/accounts', as: 'victim')).status, 401);
+    expect((await h.call('GET', '/api/pools', as: 'victim')).status, 401);
     final aid = await h.userId('admin');
     expect(
         (await h.call('PATCH', '/api/admin/users/$aid',

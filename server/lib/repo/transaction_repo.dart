@@ -8,14 +8,14 @@ import '../domain/transaction_import.dart';
 import '../engine/occurrence_gen.dart';
 
 const _enrichedCols = '''
-  t.id, t.account_id, t.name, t.direction, t.amount, t.start_date,
+  t.id, t.pool_id, t.name, t.direction, t.amount, t.start_date,
   t.recurrence_mode, t.interval, t.unit, t.end_mode, t.end_date,
   t.occurrence_count, t.enabled, t.created_at, t.transfer_id,
   p.id, pa.id, pa.name, t.version AS t_version''';
 const _peerJoin = '''
   LEFT JOIN transactions p
     ON t.transfer_id IS NOT NULL AND p.transfer_id = t.transfer_id AND p.id <> t.id
-  LEFT JOIN accounts pa ON pa.id = p.account_id''';
+  LEFT JOIN pools pa ON pa.id = p.pool_id''';
 
 class TransactionRepo {
   TransactionRepo(this._conn);
@@ -23,15 +23,15 @@ class TransactionRepo {
   final Session _conn;
   final _uuid = const Uuid();
 
-  Future<List<Transaction>> listByAccount(String accountId) async {
+  Future<List<Transaction>> listByPool(String poolId) async {
     final rows = await _conn.execute(
       Sql.named('''
         SELECT $_enrichedCols
         FROM transactions t $_peerJoin
-        WHERE t.account_id = @accountId
+        WHERE t.pool_id = @poolId
         ORDER BY t.created_at ASC
       '''),
-      parameters: {'accountId': accountId},
+      parameters: {'poolId': poolId},
     );
     return _attachOverrides(rows.map(_fromRow).toList());
   }
@@ -212,7 +212,7 @@ class TransactionRepo {
       }
     }
     final created = await create(
-      accountId: t.accountId,
+      poolId: t.poolId,
       name: name,
       direction: direction,
       amount: amount,
@@ -250,10 +250,10 @@ class TransactionRepo {
         endMode: EndMode.untilDate,
         endDate: d.subtract(const Duration(days: 1)),
         clearOccurrenceCount: true))!;
-    // Keep the new series right after the original in the account order.
+    // Keep the new series right after the original in the pool order.
     await _conn.execute(
       Sql.named('''
-        UPDATE accounts SET transaction_order = (
+        UPDATE pools SET transaction_order = (
           SELECT array_agg(x ORDER BY ord) FROM (
             SELECT x, i::numeric AS ord
             FROM unnest(array_remove(transaction_order, @n::uuid))
@@ -264,11 +264,11 @@ class TransactionRepo {
         )
         WHERE id = @a::uuid AND @o::uuid = ANY (transaction_order)
       '''),
-      parameters: {'a': t.accountId, 'n': created.id, 'o': t.id},
+      parameters: {'a': t.poolId, 'n': created.id, 'o': t.id},
     );
-    if (t.transfer?.peerAccountId != null) {
+    if (t.transfer?.peerPoolId != null) {
       await syncPeer(ended);
-      await linkNewPeer(created, t.transfer!.peerAccountId!);
+      await linkNewPeer(created, t.transfer!.peerPoolId!);
       final linked = (await get(created.id))!;
       await syncPeer(linked);
     }
@@ -289,7 +289,7 @@ class TransactionRepo {
   }
 
   Future<Transaction> create({
-    required String accountId,
+    required String poolId,
     required String name,
     required Direction direction,
     required Decimal amount,
@@ -317,15 +317,15 @@ class TransactionRepo {
     await _conn.execute(
       Sql.named('''
         INSERT INTO transactions (
-          id, account_id, name, direction, amount, start_date,
+          id, pool_id, name, direction, amount, start_date,
           recurrence_mode, interval, unit, end_mode, end_date,
           occurrence_count, enabled, transfer_id
         ) VALUES (
-          @id, @accountId, @name, @direction, @amount, @startDate,
+          @id, @poolId, @name, @direction, @amount, @startDate,
           @recurrenceMode, @interval, @unit, @endMode, @endDate,
           @occurrenceCount, @enabled, @transferId::uuid
         )
-        RETURNING id, account_id, name, direction, amount, start_date,
+        RETURNING id, pool_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
                   occurrence_count, enabled, created_at, transfer_id,
                   NULL::uuid, NULL::uuid, NULL::text, NULL::uuid, NULL::text,
@@ -333,7 +333,7 @@ class TransactionRepo {
       '''),
       parameters: {
         'id': id,
-        'accountId': accountId,
+        'poolId': poolId,
         'name': name,
         'direction': direction.name,
         'amount': amount.toString(),
@@ -349,15 +349,15 @@ class TransactionRepo {
       },
     );
 
-    // Append to account transaction_order.
+    // Append to pool transaction_order.
     await _conn.execute(
       Sql.named('''
-        UPDATE accounts
+        UPDATE pools
         SET transaction_order = array_append(transaction_order, @transactionId::uuid)
-        WHERE id = @accountId
+        WHERE id = @poolId
           AND NOT (@transactionId::uuid = ANY (transaction_order))
       '''),
-      parameters: {'accountId': accountId, 'transactionId': id},
+      parameters: {'poolId': poolId, 'transactionId': id},
     );
 
     return (await get(id))!;
@@ -419,7 +419,7 @@ class TransactionRepo {
           occurrence_count = @occurrenceCount,
           enabled = @enabled
         WHERE id = @id
-        RETURNING id, account_id, name, direction, amount, start_date,
+        RETURNING id, pool_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
                   occurrence_count, enabled, created_at, transfer_id,
                   NULL::uuid, NULL::uuid, NULL::text, NULL::uuid, NULL::text,
@@ -458,12 +458,12 @@ class TransactionRepo {
     if (existing == null) return false;
     await _conn.execute(
       Sql.named('''
-        UPDATE accounts
+        UPDATE pools
         SET transaction_order = array_remove(transaction_order, @transactionId::uuid)
-        WHERE id = @accountId
+        WHERE id = @poolId
       '''),
       parameters: {
-        'accountId': existing.accountId,
+        'poolId': existing.poolId,
         'transactionId': id,
       },
     );
@@ -474,13 +474,13 @@ class TransactionRepo {
     return rows.isNotEmpty;
   }
 
-  /// Inserts validated import [items] into [accountId]. Call inside a DB
+  /// Inserts validated import [items] into [poolId]. Call inside a DB
   /// transaction (all-or-nothing). Items whose `id` already exists in this
-  /// account are skipped unchanged (idempotent re-import); an `id` owned by
-  /// another account is an error. New rows are appended to the account's
+  /// pool are skipped unchanged (idempotent re-import); an `id` owned by
+  /// another pool is an error. New rows are appended to the pool's
   /// transaction_order in array order; skippedDates go to skipped_occurrences.
   Future<({List<String> created, List<String> skipped})> importItems(
-    String accountId,
+    String poolId,
     List<ImportItem> items,
   ) async {
     final ids = [
@@ -491,7 +491,7 @@ class TransactionRepo {
     if (ids.isNotEmpty) {
       final rows = await _conn.execute(
         Sql.named(
-            'SELECT id::text, account_id::text FROM transactions WHERE id = ANY (@ids::uuid[])'),
+            'SELECT id::text, pool_id::text FROM transactions WHERE id = ANY (@ids::uuid[])'),
         parameters: {'ids': ids},
       );
       for (final r in rows) {
@@ -500,9 +500,9 @@ class TransactionRepo {
     }
     final conflicts = [
       for (final i in items)
-        if (i.id != null && owners[i.id] != null && owners[i.id] != accountId)
+        if (i.id != null && owners[i.id] != null && owners[i.id] != poolId)
           ImportIssue(i.index, 'id',
-              'already used by a transaction in another account'),
+              'already used by a transaction in another pool'),
     ];
     if (conflicts.isNotEmpty) throw ImportValidationException(conflicts);
 
@@ -525,18 +525,18 @@ class TransactionRepo {
       await _conn.execute(
         Sql.named('''
           INSERT INTO transactions (
-            id, account_id, name, direction, amount, start_date,
+            id, pool_id, name, direction, amount, start_date,
             recurrence_mode, interval, unit, end_mode, end_date,
             occurrence_count, enabled
           ) VALUES (
-            @id, @accountId, @name, @direction, @amount, @startDate,
+            @id, @poolId, @name, @direction, @amount, @startDate,
             @recurrenceMode, @interval, @unit, @endMode, @endDate,
             @occurrenceCount, @enabled
           )
         '''),
         parameters: {
           'id': id,
-          'accountId': accountId,
+          'poolId': poolId,
           'name': item.name,
           'direction': item.direction.name,
           'amount': item.amount.toString(),
@@ -558,11 +558,11 @@ class TransactionRepo {
     if (created.isNotEmpty) {
       await _conn.execute(
         Sql.named('''
-          UPDATE accounts
+          UPDATE pools
           SET transaction_order = transaction_order || @ids::uuid[]
-          WHERE id = @accountId
+          WHERE id = @poolId
         '''),
-        parameters: {'accountId': accountId, 'ids': created},
+        parameters: {'poolId': poolId, 'ids': created},
       );
     }
     return (created: created, skipped: skipped);
@@ -591,15 +591,15 @@ class TransactionRepo {
     }
   }
 
-  Future<Map<String, Set<DateTime>>> skipsForAccount(String accountId) async {
+  Future<Map<String, Set<DateTime>>> skipsForPool(String poolId) async {
     final rows = await _conn.execute(
       Sql.named('''
         SELECT s.transaction_id, s.date
         FROM skipped_occurrences s
         JOIN transactions st ON st.id = s.transaction_id
-        WHERE st.account_id = @accountId
+        WHERE st.pool_id = @poolId
       '''),
-      parameters: {'accountId': accountId},
+      parameters: {'poolId': poolId},
     );
     final map = <String, Set<DateTime>>{};
     for (final row in rows) {
@@ -674,7 +674,7 @@ class TransactionRepo {
     return Transaction(
       version: version is int ? version : 1,
       id: row[0].toString(),
-      accountId: row[1].toString(),
+      poolId: row[1].toString(),
       name: row[2] as String,
       direction: Direction.parse(row[3] as String),
       amount: Decimal.parse(row[4].toString()),
@@ -691,20 +691,20 @@ class TransactionRepo {
           ? TransferLink(
               id: row[14].toString(),
               peerId: row.length > 15 ? row[15]?.toString() : null,
-              peerAccountId: row.length > 16 ? row[16]?.toString() : null,
-              peerAccountName: row.length > 17 ? row[17] as String? : null,
+              peerPoolId: row.length > 16 ? row[16]?.toString() : null,
+              peerPoolName: row.length > 17 ? row[17] as String? : null,
             )
           : null,
     );
   }
   // ---- Transfers --------------------------------------------------------
 
-  /// Creates the peer row of a new transfer in [peerAccountId], mirroring
+  /// Creates the peer row of a new transfer in [peerPoolId], mirroring
   /// [source] with the opposite direction, and links both by a new
   /// transfer_id. Call inside a DB transaction.
   Future<Transaction> linkNewPeer(
-      Transaction source, String peerAccountId) async {
-    await _checkPeerAccount(source, peerAccountId);
+      Transaction source, String peerPoolId) async {
+    await _checkPeerPool(source, peerPoolId);
     final transferId = _uuid.v4();
     await _conn.execute(
       Sql.named(
@@ -712,7 +712,7 @@ class TransactionRepo {
       parameters: {'t': transferId, 'id': source.id},
     );
     final peer = await create(
-      accountId: peerAccountId,
+      poolId: peerPoolId,
       name: source.name,
       direction: source.direction == Direction.credit
           ? Direction.debit
@@ -732,15 +732,15 @@ class TransactionRepo {
     return (await get(source.id))!;
   }
 
-  Future<void> _checkPeerAccount(Transaction source, String accountId) async {
-    if (accountId == source.accountId) {
-      throw FormatException('transfer destination must be another account');
+  Future<void> _checkPeerPool(Transaction source, String poolId) async {
+    if (poolId == source.poolId) {
+      throw FormatException('transfer destination must be another pool');
     }
     final exists = await _conn.execute(
-      Sql.named('SELECT 1 FROM accounts WHERE id = @id::uuid'),
-      parameters: {'id': accountId},
+      Sql.named('SELECT 1 FROM pools WHERE id = @id::uuid'),
+      parameters: {'id': poolId},
     );
-    if (exists.isEmpty) throw FormatException('transfer account not found');
+    if (exists.isEmpty) throw FormatException('transfer pool not found');
   }
 
   /// Rewrites the peer of [source] (a transfer row) to mirror it exactly:
@@ -766,31 +766,31 @@ class TransactionRepo {
     await _copyOverrides(source.id, peerId);
   }
 
-  /// Moves the peer row of a transfer into [accountId] (changing where the
-  /// transfer goes), fixing both accounts' transaction_order.
-  Future<void> movePeer(Transaction source, String accountId) async {
+  /// Moves the peer row of a transfer into [poolId] (changing where the
+  /// transfer goes), fixing both pools' transaction_order.
+  Future<void> movePeer(Transaction source, String poolId) async {
     final peerId = source.transfer?.peerId;
-    if (peerId == null || source.transfer!.peerAccountId == accountId) return;
-    await _checkPeerAccount(source, accountId);
+    if (peerId == null || source.transfer!.peerPoolId == poolId) return;
+    await _checkPeerPool(source, poolId);
     await _conn.execute(
       Sql.named('''
-        UPDATE accounts SET transaction_order =
+        UPDATE pools SET transaction_order =
           array_remove(transaction_order, @p::uuid)
         WHERE id = @old::uuid
       '''),
-      parameters: {'p': peerId, 'old': source.transfer!.peerAccountId},
+      parameters: {'p': peerId, 'old': source.transfer!.peerPoolId},
     );
     await _conn.execute(
-      Sql.named('UPDATE transactions SET account_id = @a::uuid WHERE id = @p'),
-      parameters: {'a': accountId, 'p': peerId},
+      Sql.named('UPDATE transactions SET pool_id = @a::uuid WHERE id = @p'),
+      parameters: {'a': poolId, 'p': peerId},
     );
     await _conn.execute(
       Sql.named('''
-        UPDATE accounts SET transaction_order =
+        UPDATE pools SET transaction_order =
           array_append(transaction_order, @p::uuid)
         WHERE id = @a::uuid
       '''),
-      parameters: {'a': accountId, 'p': peerId},
+      parameters: {'a': poolId, 'p': peerId},
     );
   }
 
@@ -804,17 +804,17 @@ class TransactionRepo {
     );
   }
 
-  /// Before deleting [accountId] (cascade), turn the surviving side of each
+  /// Before deleting [poolId] (cascade), turn the surviving side of each
   /// of its transfers into a plain transaction.
-  Future<void> orphanPeersOfAccount(String accountId) async {
+  Future<void> orphanPeersOfPool(String poolId) async {
     await _conn.execute(
       Sql.named('''
         UPDATE transactions SET transfer_id = NULL
-        WHERE account_id <> @a::uuid AND transfer_id IN (
+        WHERE pool_id <> @a::uuid AND transfer_id IN (
           SELECT transfer_id FROM transactions
-          WHERE account_id = @a::uuid AND transfer_id IS NOT NULL)
+          WHERE pool_id = @a::uuid AND transfer_id IS NOT NULL)
       '''),
-      parameters: {'a': accountId},
+      parameters: {'a': poolId},
     );
   }
 

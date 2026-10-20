@@ -15,7 +15,7 @@ class ChangeEvent {
     required this.action,
     this.entity,
     this.entityId,
-    this.accountId,
+    this.poolId,
     this.actorId,
     this.subjectUserId,
     this.clientId,
@@ -26,14 +26,14 @@ class ChangeEvent {
   final String action;
   final String? entity;
   final String? entityId;
-  final String? accountId;
+  final String? poolId;
   final String? actorId;
   final String? subjectUserId;
   final String? clientId;
   final Map<String, dynamic> detail;
 
   String get kind => action.split('.').first;
-  String? get peerAccountId => detail['peerAccountId']?.toString();
+  String? get peerPoolId => detail['peerPoolId']?.toString();
   int? get version => (detail['version'] as num?)?.toInt();
 
   factory ChangeEvent.fromJson(Map<String, dynamic> j) => ChangeEvent(
@@ -41,7 +41,7 @@ class ChangeEvent {
     action: (j['action'] ?? '').toString(),
     entity: j['entity']?.toString(),
     entityId: j['entityId']?.toString(),
-    accountId: j['accountId']?.toString(),
+    poolId: j['poolId']?.toString(),
     actorId: j['actorId']?.toString(),
     subjectUserId: j['subjectUserId']?.toString(),
     clientId: j['clientId']?.toString(),

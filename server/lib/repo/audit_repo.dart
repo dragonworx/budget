@@ -6,7 +6,7 @@ import '../auth/authz.dart';
 import '../realtime/event.dart';
 
 const _entityTables = {
-  'account': 'accounts',
+  'pool': 'pools',
   'transaction': 'transactions',
   'scenario': 'scenarios',
 };
@@ -22,7 +22,7 @@ class AuditRepo {
   Future<BudgetEvent> record({
     required String? userId,
     required String action,
-    String? accountId,
+    String? poolId,
     String? entityId,
     String? subjectUserId,
     String? clientId,
@@ -31,7 +31,7 @@ class AuditRepo {
     final entity = action.split('.').first;
     final r = await _db.execute(
       Sql.named('''
-        INSERT INTO audit_log (user_id, account_id, action, entity,
+        INSERT INTO audit_log (user_id, pool_id, action, entity,
                                entity_id, detail, subject_user_id, client_id)
         VALUES (@u::uuid, @a::uuid, @action, @entity, @eid,
                 @detail::jsonb, @subj::uuid, @client)
@@ -39,7 +39,7 @@ class AuditRepo {
       '''),
       parameters: {
         'u': userId,
-        'a': _uuidOrNull(accountId),
+        'a': _uuidOrNull(poolId),
         'action': action,
         'entity': entity,
         'eid': entityId,
@@ -73,16 +73,16 @@ class AuditRepo {
     var action = policy.event!;
     // An invite to an existing user grants access immediately.
     if (action == 'invite.created' && response?['status'] == 'added') {
-      action = 'account_share.added';
+      action = 'pool_share.added';
     }
     final entity = action.split('.').first;
     final isCreate = action.endsWith('.created');
     String? entityId = switch (entity) {
-      'account' => params['a'],
+      'pool' => params['a'],
       'transaction' => params['t'],
       'skip' => params['t'],
       'scenario' => params['s'],
-      'account_share' =>
+      'pool_share' =>
         params['u'] ?? (response?['member'] as Map?)?['userId']?.toString(),
       'invite' => params['i'],
       'admin' => params['u'] ?? params['pattern'],
@@ -90,22 +90,22 @@ class AuditRepo {
     };
     if (isCreate || entityId == null) entityId = createdId ?? entityId;
     final subject = switch (entity) {
-      'account_share' => action.endsWith('.left') ? userId : entityId,
+      'pool_share' => action.endsWith('.left') ? userId : entityId,
       'admin' when action == 'admin.user_updated' => params['u'],
       'invite' when action == 'invite.accepted' => userId,
       _ => null,
     };
 
-    var accountId = access.accountId;
-    if (action == 'account.created') accountId = createdId;
+    var poolId = access.poolId;
+    if (action == 'pool.created') poolId = createdId;
     if (action == 'invite.accepted' && response != null) {
-      accountId = response['accountId']?.toString();
+      poolId = response['poolId']?.toString();
     }
 
     await record(
       userId: userId,
       action: action,
-      accountId: accountId,
+      poolId: poolId,
       entityId: entityId,
       subjectUserId: subject,
       clientId: clientId,
@@ -117,7 +117,7 @@ class AuditRepo {
           'disabled': response!['disabled'],
         if (params['d'] != null) 'date': params['d'],
         if (response?['version'] != null) 'version': response!['version'],
-        if (params['peer'] != null) 'peerAccountId': params['peer'],
+        if (params['peer'] != null) 'peerPoolId': params['peer'],
         if (action == 'transactions.imported' && response != null)
           'imported': response['imported'] ?? response['created'],
       },

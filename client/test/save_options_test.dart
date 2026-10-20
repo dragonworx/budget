@@ -23,7 +23,7 @@ Transaction _series({
   RecurrenceMode mode = RecurrenceMode.every,
 }) => Transaction(
   id: 't',
-  accountId: 'acc',
+  poolId: 'acc',
   name: 'Rent',
   direction: TransactionDirection.debit,
   amount: Decimal.fromInt(100),
@@ -48,7 +48,7 @@ class _Repo extends TransactionRepository {
   final calls = <String>[];
 
   @override
-  Future<List<Transaction>> listForAccount(String accountId) async => [t];
+  Future<List<Transaction>> listForPool(String poolId) async => [t];
 
   @override
   Future<Transaction> update(Transaction x, {bool force = false}) async {
@@ -57,7 +57,7 @@ class _Repo extends TransactionRepository {
   }
 
   @override
-  Future<Transaction> create(String accountId, Transaction draft) async {
+  Future<Transaction> create(String poolId, Transaction draft) async {
     calls.add('create ${draft.name}');
     return draft;
   }
@@ -134,7 +134,7 @@ Future<(_Repo, List<EditorOutcome?>)> _pump(
       child: MaterialApp(
         home: Scaffold(
           body: TransactionEditor(
-            accountId: 'acc',
+            poolId: 'acc',
             existing: repo.t,
             focusDate: focus,
             readOnly: readOnly,

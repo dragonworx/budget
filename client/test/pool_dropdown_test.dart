@@ -1,28 +1,28 @@
-// Account selector (header + transfer): an anchored dropdown with a flat list
-// of my accounts (current checked), a "Shared with me" section, then the
-// New account / Manage accounts actions. No submenus. Rows are touch-sized,
+// Pool selector (header + transfer): an anchored dropdown with a flat list
+// of my pools (current checked), a "Shared with me" section, then the
+// New pool / Manage pools actions. No submenus. Rows are touch-sized,
 // the menu stays on a 320–390px screen, Esc / outside tap dismiss, and the
 // keyboard works.
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/state/providers.dart';
-import 'package:budget_client/widgets/account_picker.dart';
+import 'package:budget_client/widgets/pool_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'support/fake_accounts.dart';
+import 'support/fake_pools.dart';
 
 final _all = [
-  testAccount('a', 'Everyday'),
-  testAccount('s', 'Savings for a very long holiday abroad and more'),
-  testAccount('b', 'Joint bills', shared: true, role: Role.editor, ownerName: 'Sam'),
-  testAccount('v', 'Kids', shared: true, role: Role.viewer, ownerName: 'Sam'),
+  testPool('a', 'Everyday'),
+  testPool('s', 'Savings for a very long holiday abroad and more'),
+  testPool('b', 'Joint bills', shared: true, role: Role.editor, ownerName: 'Sam'),
+  testPool('v', 'Kids', shared: true, role: Role.viewer, ownerName: 'Sam'),
 ];
 
 class _Log {
-  final picked = <Account>[];
+  final picked = <Pool>[];
   int created = 0;
   int managed = 0;
 }
@@ -30,7 +30,7 @@ class _Log {
 Future<_Log> _pump(
   WidgetTester tester,
   Size size, {
-  List<Account>? accounts,
+  List<Pool>? pools,
   String? exclude,
   bool editableOnly = false,
   bool actions = true,
@@ -43,22 +43,22 @@ Future<_Log> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        accountRepositoryProvider.overrideWithValue(
-          FakeAccountRepository(accounts: List.of(accounts ?? _all)),
+        poolRepositoryProvider.overrideWithValue(
+          FakePoolRepository(pools: List.of(pools ?? _all)),
         ),
       ],
       child: MaterialApp(
         home: Scaffold(
           body: Align(
             alignment: triggerAt,
-            child: AccountPicker(
+            child: PoolPicker(
               keyPrefix: 'nav',
-              currentAccountId: 'a',
-              excludeAccountId: exclude,
+              currentPoolId: 'a',
+              excludePoolId: exclude,
               editableOnly: editableOnly,
               onSelected: log.picked.add,
-              onNewAccount: actions ? () => log.created++ : null,
-              onManageAccounts: actions ? () => log.managed++ : null,
+              onNewPool: actions ? () => log.created++ : null,
+              onManagePools: actions ? () => log.managed++ : null,
               builder: (context, open) =>
                   TextButton(onPressed: open, child: const Text('Jump')),
             ),
@@ -87,7 +87,7 @@ void main() {
   for (final size in const [Size(320, 640), Size(390, 844)]) {
     final w = size.width.toInt();
     testWidgets('touch at ${w}px: flat mine / shared / actions; rows ≥44px; '
-        'all on screen; selecting picks the account', (tester) async {
+        'all on screen; selecting picks the pool', (tester) async {
       final log = await _pump(tester, size);
       final gesture = await tester.createGesture(kind: PointerDeviceKind.touch);
       Future<void> touch(Finder f) async {
@@ -99,16 +99,16 @@ void main() {
       await touch(find.text('Jump'));
       expect(find.byType(BottomSheet), findsNothing);
       expect(find.byType(SubmenuButton), findsNothing);
-      // Order: My accounts, mine, Shared with me, shared, actions.
+      // Order: My pools, mine, Shared with me, shared, actions.
       final order = [
         'nav-header-mine',
-        'nav-account-a',
-        'nav-account-s',
+        'nav-pool-a',
+        'nav-pool-s',
         'nav-header-shared',
-        'nav-account-b',
-        'nav-account-v',
-        'nav-new-account',
-        'nav-manage-accounts',
+        'nav-pool-b',
+        'nav-pool-v',
+        'nav-new-pool',
+        'nav-manage-pools',
       ];
       for (var i = 1; i < order.length; i++) {
         expect(
@@ -125,10 +125,10 @@ void main() {
         );
       }
       _expectOnScreen(tester, find.byType(MenuItemButton), size);
-      // The current account is checked, the others are not.
+      // The current pool is checked, the others are not.
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey('nav-account-a')),
+          of: find.byKey(const ValueKey('nav-pool-a')),
           matching: find.byIcon(Icons.check_rounded),
         ),
         findsOneWidget,
@@ -137,9 +137,9 @@ void main() {
       // Shared rows carry the people icon (my role in the tooltip).
       expect(find.byKey(const ValueKey('shared-indicator-b')), findsOneWidget);
       expect(find.byKey(const ValueKey('shared-indicator-a')), findsNothing);
-      await touch(find.byKey(const ValueKey('nav-account-b')));
+      await touch(find.byKey(const ValueKey('nav-pool-b')));
       expect(log.picked.single.id, 'b');
-      expect(find.byKey(const ValueKey('nav-account-a')), findsNothing);
+      expect(find.byKey(const ValueKey('nav-pool-a')), findsNothing);
       await gesture.removePointer();
     });
   }
@@ -151,12 +151,12 @@ void main() {
     await tester.tap(find.text('Jump'));
     await tester.pumpAndSettle();
     _expectOnScreen(tester, find.byType(MenuItemButton), size);
-    await tester.tap(find.byKey(const ValueKey('nav-new-account')));
+    await tester.tap(find.byKey(const ValueKey('nav-new-pool')));
     await tester.pumpAndSettle();
     expect(log.created, 1);
     await tester.tap(find.text('Jump'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('nav-manage-accounts')));
+    await tester.tap(find.byKey(const ValueKey('nav-manage-pools')));
     await tester.pumpAndSettle();
     expect(log.managed, 1);
   });
@@ -165,21 +165,21 @@ void main() {
     await _pump(tester, const Size(390, 844));
     await tester.tap(find.text('Jump'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('nav-account-a')), findsOneWidget);
+    expect(find.byKey(const ValueKey('nav-pool-a')), findsOneWidget);
     await tester.tapAt(const Offset(20, 800));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('nav-account-a')), findsNothing);
+    expect(find.byKey(const ValueKey('nav-pool-a')), findsNothing);
 
     await tester.tap(find.text('Jump'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('nav-account-a')), findsOneWidget);
+    expect(find.byKey(const ValueKey('nav-pool-a')), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('nav-account-a')), findsNothing);
+    expect(find.byKey(const ValueKey('nav-pool-a')), findsNothing);
   });
 
-  testWidgets('desktop keyboard: focus starts on the first account; arrows '
-      'skip headers; Enter picks a shared account', (tester) async {
+  testWidgets('desktop keyboard: focus starts on the first pool; arrows '
+      'skip headers; Enter picks a shared pool', (tester) async {
     final log = await _pump(
       tester,
       const Size(1200, 800),
@@ -197,7 +197,7 @@ void main() {
     expect(log.picked.single.id, 'b');
   });
 
-  testWidgets('desktop keyboard reaches New account', (tester) async {
+  testWidgets('desktop keyboard reaches New pool', (tester) async {
     final log = await _pump(
       tester,
       const Size(1200, 800),
@@ -215,7 +215,7 @@ void main() {
     expect(log.picked, isEmpty);
   });
 
-  testWidgets('transfer picker: only accounts I can edit, never the source, '
+  testWidgets('transfer picker: only pools I can edit, never the source, '
       'grouped mine / shared, no actions', (tester) async {
     final log = await _pump(
       tester,
@@ -226,31 +226,31 @@ void main() {
     );
     await tester.tap(find.text('Jump'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('nav-account-a')), findsNothing);
-    expect(find.byKey(const ValueKey('nav-account-v')), findsNothing);
-    expect(find.byKey(const ValueKey('nav-account-s')), findsOneWidget);
-    expect(find.byKey(const ValueKey('nav-account-b')), findsOneWidget);
+    expect(find.byKey(const ValueKey('nav-pool-a')), findsNothing);
+    expect(find.byKey(const ValueKey('nav-pool-v')), findsNothing);
+    expect(find.byKey(const ValueKey('nav-pool-s')), findsOneWidget);
+    expect(find.byKey(const ValueKey('nav-pool-b')), findsOneWidget);
     expect(find.byKey(const ValueKey('nav-header-mine')), findsOneWidget);
     expect(find.byKey(const ValueKey('nav-header-shared')), findsOneWidget);
-    expect(find.byKey(const ValueKey('nav-new-account')), findsNothing);
-    expect(find.byKey(const ValueKey('nav-manage-accounts')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('nav-account-s')));
+    expect(find.byKey(const ValueKey('nav-new-pool')), findsNothing);
+    expect(find.byKey(const ValueKey('nav-manage-pools')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('nav-pool-s')));
     await tester.pumpAndSettle();
     expect(log.picked.single.id, 's');
   });
 
-  testWidgets('no other editable accounts says so', (tester) async {
+  testWidgets('no other editable pools says so', (tester) async {
     await _pump(
       tester,
       const Size(390, 844),
-      accounts: [testAccount('a', 'Everyday'), _all.last],
+      pools: [testPool('a', 'Everyday'), _all.last],
       exclude: 'a',
       editableOnly: true,
       actions: false,
     );
     await tester.tap(find.text('Jump'));
     await tester.pumpAndSettle();
-    expect(find.text('No other accounts you can edit'), findsOneWidget);
+    expect(find.text('No other pools you can edit'), findsOneWidget);
   });
 
   BorderSide ring(WidgetTester tester, String key) {
@@ -270,11 +270,11 @@ void main() {
     await _pump(tester, const Size(390, 844));
     await tester.tap(find.text('Jump')); // touch
     await tester.pumpAndSettle();
-    expect(ring(tester, 'nav-account-a'), BorderSide.none);
+    expect(ring(tester, 'nav-pool-a'), BorderSide.none);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
-    expect(ring(tester, 'nav-account-s').width, 2);
-    expect(ring(tester, 'nav-account-a'), BorderSide.none);
+    expect(ring(tester, 'nav-pool-s').width, 2);
+    expect(ring(tester, 'nav-pool-a'), BorderSide.none);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
@@ -287,7 +287,7 @@ void main() {
     await tester.pumpAndSettle();
     await mouse.moveTo(const Offset(5, 830)); // off the menu
     await tester.pumpAndSettle();
-    expect(ring(tester, 'nav-account-a'), BorderSide.none);
+    expect(ring(tester, 'nav-pool-a'), BorderSide.none);
   });
 
   testWidgets('opened with the keyboard: the focused first row shows the '
@@ -298,7 +298,7 @@ void main() {
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('nav-account-a')), findsOneWidget);
-    expect(ring(tester, 'nav-account-a').width, 2);
+    expect(find.byKey(const ValueKey('nav-pool-a')), findsOneWidget);
+    expect(ring(tester, 'nav-pool-a').width, 2);
   });
 }

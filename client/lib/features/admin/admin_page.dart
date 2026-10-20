@@ -31,9 +31,9 @@ class AdminPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          tooltip: 'Accounts',
+          tooltip: 'Pools',
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.go(accountsPath),
+          onPressed: () => context.go(poolsPath),
         ),
         titleSpacing: 4,
         title: const Text('Admin'),
@@ -116,7 +116,7 @@ class _UsersTab extends ConsumerWidget {
             subtitle: Text(
               [
                 if (u.user.name != null && u.user.name!.isNotEmpty) u.user.email,
-                '${u.ownedAccounts} account${u.ownedAccounts == 1 ? '' : 's'}',
+                '${u.ownedPools} pool${u.ownedPools == 1 ? '' : 's'}',
                 last == null
                     ? 'never signed in'
                     : 'last in ${DateFormat('d MMM y').format(last.toLocal())}',

@@ -57,7 +57,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
         (GoRouterState.of(context).uri.queryParameters['from'] ?? '')
                 .startsWith('/invite/')
             ? 'Sign in to accept your invite'
-            : 'Sign in to see your accounts',
+            : 'Sign in to see your pools',
         style: theme.textTheme.bodyMedium,
         textAlign: TextAlign.center,
       ),

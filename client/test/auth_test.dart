@@ -12,19 +12,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'support/fake_accounts.dart';
+import 'support/fake_pools.dart';
 import 'support/fake_auth.dart';
 
-Future<(ProviderContainer, FakeAuthRepository, FakeAccountRepository)> _pump(
+Future<(ProviderContainer, FakeAuthRepository, FakePoolRepository)> _pump(
   WidgetTester tester,
   FakeAuthRepository auth, {
-  FakeAccountRepository? accounts,
+  FakePoolRepository? pools,
 }) async {
-  final repo = accounts ?? FakeAccountRepository();
+  final repo = pools ?? FakePoolRepository();
   final container = ProviderContainer(
     overrides: [
       authRepositoryProvider.overrideWithValue(auth),
-      accountRepositoryProvider.overrideWithValue(repo),
+      poolRepositoryProvider.overrideWithValue(repo),
     ],
   );
   addTearDown(container.dispose);
@@ -56,9 +56,9 @@ void main() {
         authRedirect(
           resolved: true,
           signedIn: false,
-          location: u('/accounts'),
+          location: u('/pools'),
         ),
-        '/sign-in?from=%2Faccounts',
+        '/sign-in?from=%2Fpools',
       );
     });
     test('signed in leaves sign-in for the target', () {
@@ -66,9 +66,9 @@ void main() {
         authRedirect(
           resolved: true,
           signedIn: true,
-          location: u('/sign-in?from=%2Faccounts'),
+          location: u('/sign-in?from=%2Fpools'),
         ),
-        '/accounts',
+        '/pools',
       );
       expect(
         authRedirect(
@@ -88,7 +88,7 @@ void main() {
   testWidgets('signed out shows sign-in; no data fetched', (tester) async {
     final (c, _, repo) = await _pump(tester, FakeAuthRepository());
     expect(_path(c), '/sign-in');
-    expect(find.text('Sign in to see your accounts'), findsOneWidget);
+    expect(find.text('Sign in to see your pools'), findsOneWidget);
     expect(find.byKey(const ValueKey('dev-login')), findsNothing);
     expect(find.byKey(const ValueKey('google-not-configured')), findsOneWidget);
     expect(repo.lists, 0);
@@ -104,10 +104,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(auth.devLogins, 1);
     expect(_path(c), '/');
-    // First sign-in, no accounts: the Accounts home with New account.
-    expect(find.text('Accounts'), findsWidgets);
-    expect(find.byKey(const ValueKey('accounts-empty')), findsOneWidget);
-    expect(find.byKey(const ValueKey('new-account')), findsOneWidget);
+    // First sign-in, no pools: the Pools home with New pool.
+    expect(find.text('Pools'), findsWidgets);
+    expect(find.byKey(const ValueKey('pools-empty')), findsOneWidget);
+    expect(find.byKey(const ValueKey('new-pool')), findsOneWidget);
     expect(find.text('New project'), findsNothing);
     expect(repo.lists, greaterThan(0));
   });
@@ -132,14 +132,14 @@ void main() {
 
   testWidgets('a 401 from the API sends you to sign-in', (tester) async {
     final (c, _, _) = await _pump(tester, FakeAuthRepository(user: adminUser));
-    c.read(routerProvider).go('/accounts');
+    c.read(routerProvider).go('/pools');
     ApiClient.onUnauthorized?.call();
     await tester.pumpAndSettle();
-    expect(_path(c), '/sign-in?from=%2Faccounts');
+    expect(_path(c), '/sign-in?from=%2Fpools');
     // Signing back in returns to where you were.
     await c.read(authProvider.notifier).devLogin();
     await tester.pump();
-    expect(_path(c), '/accounts');
+    expect(_path(c), '/pools');
   });
 
   testWidgets('a failed full-page sign-in shows its error, not a blank page', (
@@ -161,7 +161,7 @@ void main() {
       find.text('wife@gmail.com is not on the allowlist.'),
       findsOneWidget,
     );
-    expect(find.text('Sign in to see your accounts'), findsOneWidget);
+    expect(find.text('Sign in to see your pools'), findsOneWidget);
   });
 
   testWidgets('stuck popup: full-page sign-in fallback is offered', (
@@ -218,7 +218,7 @@ void main() {
           return http.Response(jsonEncode({'error': 'nope'}), 401);
         }),
       );
-      await expectLater(api.get('/api/accounts'), throwsA(isA<ApiException>()));
+      await expectLater(api.get('/api/pools'), throwsA(isA<ApiException>()));
       expect(seen.headers['X-Requested-With'], 'budget');
       expect(seen.headers['X-Client-Id'], ApiClient.clientId);
       expect(unauthorized, 1);

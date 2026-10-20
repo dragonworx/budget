@@ -4,7 +4,7 @@ import 'package:budget_client/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'support/fake_accounts.dart';
+import 'support/fake_pools.dart';
 import 'support/fake_auth.dart';
 
 void main() {
@@ -15,7 +15,7 @@ void main() {
           authRepositoryProvider.overrideWithValue(
             FakeAuthRepository(user: adminUser),
           ),
-          accountRepositoryProvider.overrideWithValue(FakeAccountRepository()),
+          poolRepositoryProvider.overrideWithValue(FakePoolRepository()),
         ],
         child: const BudgetApp(),
       ),

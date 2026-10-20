@@ -7,13 +7,13 @@ import 'zoom_level.dart';
 
 /// What the timeline's Fit menu fits.
 enum FitMode {
-  /// Time to all of the account's data, balance to that data's min/max.
+  /// Time to all of the pool's data, balance to that data's min/max.
   all('Fit all', 'A'),
 
   /// Balance to the data in the visible time range.
   vertical('Fit vertical', 'F'),
 
-  /// Time to all of the account's data; balance untouched.
+  /// Time to all of the pool's data; balance untouched.
   horizontal('Fit horizontal', 'H');
 
   const FitMode(this.label, this.shortcut);
@@ -61,11 +61,11 @@ TimeSpan monthContaining(DateTime moment) {
   return TimeSpan(start, calendarDaysBetween(start, next).toDouble());
 }
 
-/// Day range [first, last] (inclusive) covering an account's data: the seed
+/// Day range [first, last] (inclusive) covering a pool's data: the seed
 /// date and every enabled transaction's occurrences. Open-ended schedules
 /// have no last occurrence, so they extend the range to [openEndedHorizon]
 /// days past the later of today and the last finite date.
-({DateTime first, DateTime last}) accountDataRange({
+({DateTime first, DateTime last}) poolDataRange({
   required DateTime seedDate,
   required Iterable<Transaction> transactions,
   required DateTime today,

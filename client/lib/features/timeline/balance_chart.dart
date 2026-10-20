@@ -184,7 +184,7 @@ class BalanceChart extends StatefulWidget {
   /// Closing balances below this value are drawn as a loss (equal is not).
   final double lossThreshold;
 
-  /// Account currency scale (dollars per y grid step). When set, the chart
+  /// Pool currency scale (dollars per y grid step). When set, the chart
   /// opens at [currencyScaleRange] and re-applies it whenever it changes.
   final double? currencyScale;
 
@@ -2949,7 +2949,7 @@ class _BalanceChartState extends State<BalanceChart>
       }
       extra += 22;
       // Balance after the day's transactions: bold, green at or above the
-      // alert threshold (0 when the account has none), red below it.
+      // alert threshold (0 when the pool has none), red below it.
       final low = belowAlert(day.balanceAfter, widget.lossThreshold);
       children.add(
         Text.rich(
@@ -4944,7 +4944,7 @@ class _Dot {
 
   bool get isSeed => occurrences.isEmpty;
 
-  /// Account balance right after this occurrence applied.
+  /// Pool balance right after this occurrence applied.
   final double balanceAfter;
 }
 

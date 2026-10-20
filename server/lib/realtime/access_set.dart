@@ -5,18 +5,18 @@ import 'event.dart';
 /// What one user can currently read, for filtering events.
 class AccessSet {
   AccessSet(this.userId,
-      {this.ownedAccounts = const {},
-      this.sharedAccounts = const {},
+      {this.ownedPools = const {},
+      this.sharedPools = const {},
       this.isAdmin = false,
       this.disabled = false});
 
   final String userId;
 
-  /// Accounts the user owns.
-  final Set<String> ownedAccounts;
+  /// Pools the user owns.
+  final Set<String> ownedPools;
 
-  /// Accounts shared directly with the user.
-  final Set<String> sharedAccounts;
+  /// Pools shared directly with the user.
+  final Set<String> sharedPools;
   final bool isAdmin;
   final bool disabled;
 
@@ -24,8 +24,8 @@ class AccessSet {
     final r = await db.execute(
       Sql.named('''
         SELECT
-          ARRAY(SELECT id::text FROM accounts WHERE owner_id = @u::uuid),
-          ARRAY(SELECT s.account_id::text FROM account_shares s WHERE s.user_id = @u::uuid),
+          ARRAY(SELECT id::text FROM pools WHERE owner_id = @u::uuid),
+          ARRAY(SELECT s.pool_id::text FROM pool_shares s WHERE s.user_id = @u::uuid),
           COALESCE((SELECT is_admin FROM users WHERE id = @u::uuid), false),
           COALESCE((SELECT disabled FROM users WHERE id = @u::uuid), true)
       '''),
@@ -34,23 +34,23 @@ class AccessSet {
     Set<String> set(Object? v) => {for (final x in (v as List)) x.toString()};
     final row = r.first;
     return AccessSet(userId,
-        ownedAccounts: set(row[0]),
-        sharedAccounts: set(row[1]),
+        ownedPools: set(row[0]),
+        sharedPools: set(row[1]),
         isAdmin: row[2] as bool,
         disabled: row[3] as bool);
   }
 
-  bool canReadAccount(String id) =>
-      ownedAccounts.contains(id) || sharedAccounts.contains(id);
+  bool canReadPool(String id) =>
+      ownedPools.contains(id) || sharedPools.contains(id);
 
   bool touches(BudgetEvent e) =>
-      e.accountId != null && canReadAccount(e.accountId!);
+      e.poolId != null && canReadPool(e.poolId!);
 
   /// Whether [e] may be delivered to this user.
   bool canRead(BudgetEvent e) {
     if (e.subjectUserId == userId) return true;
     if (e.entity == 'admin') return isAdmin;
-    final a = e.accountId;
-    return a != null && canReadAccount(a);
+    final a = e.poolId;
+    return a != null && canReadPool(a);
   }
 }

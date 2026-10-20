@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 final _today = DateTime.now();
 final _day = DateTime(_today.year, _today.month, _today.day);
 
-Account _account({Role role = Role.owner}) => Account(
+Pool _pool({Role role = Role.owner}) => Pool(
   id: 'acc',
   ownerId: 'u',
   name: 'Everyday',
@@ -31,7 +31,7 @@ Account _account({Role role = Role.owner}) => Account(
 Transaction _tx(String id, String name, {TransactionDirection? dir}) =>
     Transaction(
       id: id,
-      accountId: 'acc',
+      poolId: 'acc',
       name: name,
       direction: dir ?? TransactionDirection.debit,
       amount: Decimal.fromInt(id == 'salary' ? 4200 : 50),
@@ -53,16 +53,16 @@ class _Store {
   Role role = Role.owner;
 }
 
-class _AccountRepo extends AccountRepository {
-  _AccountRepo(this.s) : super(ApiClient());
+class _PoolRepo extends PoolRepository {
+  _PoolRepo(this.s) : super(ApiClient());
   final _Store s;
 
   @override
-  Future<Account> get(String id) async => _account(role: s.role);
+  Future<Pool> get(String id) async => _pool(role: s.role);
 
   @override
   Future<BalanceSeries> balance(
-    String accountId, {
+    String poolId, {
     required DateTime from,
     required DateTime to,
   }) async {
@@ -95,7 +95,7 @@ class _TxRepo extends TransactionRepository {
   final _Store s;
 
   @override
-  Future<List<Transaction>> listForAccount(String accountId) async =>
+  Future<List<Transaction>> listForPool(String poolId) async =>
       s.txs.values.toList();
 
   @override
@@ -105,7 +105,7 @@ class _TxRepo extends TransactionRepository {
   }
 
   @override
-  Future<Transaction> create(String accountId, Transaction draft) async {
+  Future<Transaction> create(String poolId, Transaction draft) async {
     s.calls.add('create ${draft.name}');
     return s.txs[draft.id] = draft;
   }
@@ -146,10 +146,10 @@ Future<_Store> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        accountRepositoryProvider.overrideWithValue(_AccountRepo(store)),
+        poolRepositoryProvider.overrideWithValue(_PoolRepo(store)),
         transactionRepositoryProvider.overrideWithValue(_TxRepo(store)),
       ],
-      child: const MaterialApp(home: TimelinePage(accountId: 'acc')),
+      child: const MaterialApp(home: TimelinePage(poolId: 'acc')),
     ),
   );
   await tester.pumpAndSettle();
@@ -486,7 +486,7 @@ void main() {
       expect(back.height, greaterThanOrEqualTo(44));
       await tester.tap(find.byKey(const ValueKey('timeline-more')));
       await tester.pumpAndSettle();
-      expect(find.text('Account settings'), findsOneWidget);
+      expect(find.text('Pool settings'), findsOneWidget);
       expect(find.text('Import transactions'), findsOneWidget);
       await tester.tapAt(const Offset(5, 400));
       await tester.pumpAndSettle();
@@ -1128,7 +1128,7 @@ void main() {
       await _pump(tester, size: Size(w, 900));
       expect(tester.takeException(), isNull);
       // The header keeps the name visible next to its actions.
-      final name = tester.getRect(find.byKey(const ValueKey('header-account-picker')));
+      final name = tester.getRect(find.byKey(const ValueKey('header-pool-picker')));
       expect(name.width, greaterThan(60));
       for (final k in [
         'shift-left',

@@ -6,9 +6,9 @@ import '../data/models.dart';
 import '../state/providers.dart';
 import '../theme/app_theme.dart';
 
-/// Reusable account picker: a dropdown anchored to the trigger, with a flat
-/// list of my accounts (the current one checked), then a "Shared with me"
-/// section, then optional actions (New account, Manage accounts). Accounts
+/// Reusable pool picker: a dropdown anchored to the trigger, with a flat
+/// list of my pools (the current one checked), then a "Shared with me"
+/// section, then optional actions (New pool, Manage pools). Pools
 /// are top level, so there are no submenus.
 ///
 /// Rows are at least 48px tall and the menu is kept on screen (320px+).
@@ -16,38 +16,38 @@ import '../theme/app_theme.dart';
 /// on open); an outside tap dismisses.
 ///
 /// [builder] draws the trigger; call the `open` callback it receives.
-class AccountPicker extends ConsumerStatefulWidget {
-  const AccountPicker({
+class PoolPicker extends ConsumerStatefulWidget {
+  const PoolPicker({
     super.key,
     required this.builder,
     required this.onSelected,
-    this.excludeAccountId,
-    this.currentAccountId,
+    this.excludePoolId,
+    this.currentPoolId,
     this.editableOnly = false,
-    this.onNewAccount,
-    this.onManageAccounts,
-    this.title = 'Choose an account',
+    this.onNewPool,
+    this.onManagePools,
+    this.title = 'Choose a pool',
     this.keyPrefix = 'picker',
   });
 
   final Widget Function(BuildContext context, VoidCallback open) builder;
-  final ValueChanged<Account> onSelected;
-  final String? excludeAccountId;
-  final String? currentAccountId;
+  final ValueChanged<Pool> onSelected;
+  final String? excludePoolId;
+  final String? currentPoolId;
 
-  /// Only accounts I can edit (transfer destinations).
+  /// Only pools I can edit (transfer destinations).
   final bool editableOnly;
 
   /// Action rows at the bottom (omitted when null).
-  final VoidCallback? onNewAccount;
-  final VoidCallback? onManageAccounts;
+  final VoidCallback? onNewPool;
+  final VoidCallback? onManagePools;
 
   /// Accessible name of the menu.
   final String title;
   final String keyPrefix;
 
   @override
-  ConsumerState<AccountPicker> createState() => _AccountPickerState();
+  ConsumerState<PoolPicker> createState() => _PoolPickerState();
 }
 
 /// Touch-friendly menu rows (at least 48px tall).
@@ -68,9 +68,9 @@ MenuStyle _menuStyle(BuildContext context) {
   );
 }
 
-class _AccountPickerState extends ConsumerState<AccountPicker> {
+class _PoolPickerState extends ConsumerState<PoolPicker> {
   final _menu = MenuController();
-  final _firstItem = FocusNode(debugLabel: 'account picker first item');
+  final _firstItem = FocusNode(debugLabel: 'pool picker first item');
   bool _isOpen = false;
 
   /// The menu is being driven by the keyboard (opened with Enter / Space /
@@ -151,16 +151,16 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
     return f.context?.findAncestorWidgetOfExactType<MenuItemButton>() != null;
   }
 
-  Widget _accountItem(Account a, {FocusNode? focus}) => MenuItemButton(
-    key: ValueKey('${widget.keyPrefix}-account-${a.id}'),
+  Widget _poolItem(Pool a, {FocusNode? focus}) => MenuItemButton(
+    key: ValueKey('${widget.keyPrefix}-pool-${a.id}'),
     focusNode: focus,
     style: _style,
     leadingIcon: Icon(
-      a.id == widget.currentAccountId
+      a.id == widget.currentPoolId
           ? Icons.check_rounded
           : Icons.account_balance_wallet_outlined,
       size: 18,
-      color: a.id == widget.currentAccountId ? AppTheme.accent : null,
+      color: a.id == widget.currentPoolId ? AppTheme.accent : null,
     ),
     onPressed: () => widget.onSelected(a),
     trailingIcon: sharedIndicator(a),
@@ -178,11 +178,11 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
         child: _MenuLabel(label),
       );
 
-  List<Widget> _items(List<Account> all) {
+  List<Widget> _items(List<Pool> all) {
     final p = widget.keyPrefix;
     final choices = [
       for (final a in all)
-        if (a.id != widget.excludeAccountId &&
+        if (a.id != widget.excludePoolId &&
             (!widget.editableOnly || a.role.canEdit))
           a,
     ];
@@ -196,7 +196,7 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
     }
 
     final hasActions =
-        widget.onNewAccount != null || widget.onManageAccounts != null;
+        widget.onNewPool != null || widget.onManagePools != null;
     return [
       if (choices.isEmpty)
         MenuItemButton(
@@ -205,38 +205,38 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
           onPressed: null,
           child: Text(
             all.isEmpty
-                ? 'No accounts yet'
+                ? 'No pools yet'
                 : widget.editableOnly
-                ? 'No other accounts you can edit'
-                : 'No other accounts',
+                ? 'No other pools you can edit'
+                : 'No other pools',
           ),
         ),
       if (mine.isNotEmpty) ...[
-        PickerSectionHeader('My accounts', key: ValueKey('$p-header-mine')),
-        for (final a in mine) _accountItem(a, focus: first()),
+        PickerSectionHeader('My pools', key: ValueKey('$p-header-mine')),
+        for (final a in mine) _poolItem(a, focus: first()),
       ],
       if (shared.isNotEmpty) ...[
         PickerSectionHeader(
           'Shared with me',
           key: ValueKey('$p-header-shared'),
         ),
-        for (final a in shared) _accountItem(a, focus: first()),
+        for (final a in shared) _poolItem(a, focus: first()),
       ],
       if (hasActions) const Divider(height: 9),
-      if (widget.onNewAccount != null)
+      if (widget.onNewPool != null)
         _action(
-          'new-account',
+          'new-pool',
           Icons.add_rounded,
-          'New account',
-          widget.onNewAccount!,
+          'New pool',
+          widget.onNewPool!,
           focus: first(),
         ),
-      if (widget.onManageAccounts != null)
+      if (widget.onManagePools != null)
         _action(
-          'manage-accounts',
+          'manage-pools',
           Icons.view_list_rounded,
-          'Manage accounts',
-          widget.onManageAccounts!,
+          'Manage pools',
+          widget.onManagePools!,
           focus: first(),
         ),
     ];
@@ -244,8 +244,8 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
 
   @override
   Widget build(BuildContext context) {
-    final accounts = ref.watch(accountsProvider);
-    final children = accounts.when(
+    final pools = ref.watch(poolsProvider);
+    final children = pools.when(
       skipLoadingOnReload: true,
       loading: () => <Widget>[
         MenuItemButton(
@@ -258,7 +258,7 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
         MenuItemButton(
           style: _style,
           onPressed: null,
-          child: const Text('Could not load accounts'),
+          child: const Text('Could not load pools'),
         ),
       ],
       data: _items,
@@ -342,8 +342,8 @@ class PickerSectionHeader extends StatelessWidget {
   }
 }
 
-/// People icon for accounts shared with me (not owned), with my role.
-Widget? sharedIndicator(Account a) {
+/// People icon for pools shared with me (not owned), with my role.
+Widget? sharedIndicator(Pool a) {
   if (a.role.isOwner) return null;
   return Tooltip(
     message: 'Shared with you · ${a.role.label.toLowerCase()}',

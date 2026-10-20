@@ -40,16 +40,16 @@ final remoteChangesProvider = StateProvider<Map<String, ChangeEvent>>(
   (ref) => const {},
 );
 
-/// Owner / shares / invites of an account (the owner sees all), or null
+/// Owner / shares / invites of a pool (the owner sees all), or null
 /// when they can't be loaded. Used for the "Shared" badge and actor names.
-final accountPeopleProvider = FutureProvider.family<ShareInfo?, String>((
+final poolPeopleProvider = FutureProvider.family<ShareInfo?, String>((
   ref,
-  accountId,
+  poolId,
 ) async {
   try {
     return await ref
         .read(sharingRepositoryProvider)
-        .load(ShareTarget.account(accountId, ''));
+        .load(ShareTarget.pool(poolId, ''));
   } catch (_) {
     return null;
   }
@@ -58,17 +58,17 @@ final accountPeopleProvider = FutureProvider.family<ShareInfo?, String>((
 /// Bumped on membership / share / invite events so open share dialogs reload.
 final sharingEpochProvider = StateProvider<int>((ref) => 0);
 
-/// Display name of [userId] as known on [accountId] (null when unknown).
-String? actorName(WidgetRef ref, String? accountId, String? userId) {
-  if (userId == null || accountId == null) return null;
-  final info = ref.watch(accountPeopleProvider(accountId)).valueOrNull;
-  for (final m in [...?info?.members, ...?info?.accountShares]) {
+/// Display name of [userId] as known on [poolId] (null when unknown).
+String? actorName(WidgetRef ref, String? poolId, String? userId) {
+  if (userId == null || poolId == null) return null;
+  final info = ref.watch(poolPeopleProvider(poolId)).valueOrNull;
+  for (final m in [...?info?.members, ...?info?.poolShares]) {
     if (m.userId == userId) return m.user.displayName;
   }
   final a = ref
-      .watch(accountsProvider)
+      .watch(poolsProvider)
       .valueOrNull
-      ?.where((a) => a.id == accountId)
+      ?.where((a) => a.id == poolId)
       .firstOrNull;
   if (a?.owner?.id == userId) return a!.owner!.displayName;
   return null;
@@ -123,20 +123,20 @@ class RealtimeController {
 
   /// Everything cached is stale (resync, error, long disconnect).
   void refreshAll() {
-    ref.invalidate(accountsProvider);
-    ref.invalidate(accountProvider);
+    ref.invalidate(poolsProvider);
+    ref.invalidate(poolProvider);
     ref.invalidate(transactionsProvider);
     _balances();
     ref.invalidate(scenariosProvider);
     ref.invalidate(myInvitesProvider);
-    ref.invalidate(accountPeopleProvider);
+    ref.invalidate(poolPeopleProvider);
     ref.invalidate(adminUsersProvider);
     ref.invalidate(adminAllowlistProvider);
     ref.read(sharingEpochProvider.notifier).state++;
   }
 
-  void _balances([String? accountId]) {
-    if (accountId == null) {
+  void _balances([String? poolId]) {
+    if (poolId == null) {
       ref.invalidate(balanceProvider);
       ref.invalidate(todayBalanceProvider);
       ref.invalidate(insightsProvider);
@@ -144,54 +144,54 @@ class RealtimeController {
     }
     // Balance queries are keyed by range too: refresh the whole family.
     ref.invalidate(balanceProvider);
-    ref.invalidate(todayBalanceProvider(accountId));
-    ref.invalidate(insightsProvider(accountId));
+    ref.invalidate(todayBalanceProvider(poolId));
+    ref.invalidate(insightsProvider(poolId));
   }
 
-  void _account(String id) {
+  void _pool(String id) {
     ref.invalidate(transactionsProvider(id));
     _balances(id);
   }
 
   void handle(ChangeEvent e) {
-    final aid = e.accountId;
+    final aid = e.poolId;
     if (e.entityId != null) {
       final n = ref.read(remoteChangesProvider.notifier);
       n.state = {...n.state, e.entityId!: e};
     }
     switch (e.kind) {
-      case 'account':
-        ref.invalidate(accountsProvider);
+      case 'pool':
+        ref.invalidate(poolsProvider);
         if (aid != null) {
-          ref.invalidate(accountProvider(aid));
-          if (e.action == 'account.updated') _account(aid);
-          if (e.action == 'account.deleted') {
-            _leaveIfOn(accountId: aid, message: 'This account was deleted');
+          ref.invalidate(poolProvider(aid));
+          if (e.action == 'pool.updated') _pool(aid);
+          if (e.action == 'pool.deleted') {
+            _leaveIfOn(poolId: aid, message: 'This pool was deleted');
           }
         }
       case 'transaction':
       case 'transactions':
       case 'skip':
-        if (aid != null) _account(aid);
-        final peer = e.peerAccountId;
-        if (peer != null) _account(peer);
+        if (aid != null) _pool(aid);
+        final peer = e.peerPoolId;
+        if (peer != null) _pool(peer);
       case 'scenario':
         if (aid != null) {
           ref.invalidate(scenariosProvider(aid));
           ref.invalidate(scenarioResultsProvider(aid));
         }
-      case 'account_share':
+      case 'pool_share':
       case 'invite':
-        ref.invalidate(accountsProvider);
+        ref.invalidate(poolsProvider);
         ref.invalidate(myInvitesProvider);
         if (aid != null) {
-          ref.invalidate(accountPeopleProvider(aid));
-          ref.invalidate(accountProvider(aid));
+          ref.invalidate(poolPeopleProvider(aid));
+          ref.invalidate(poolProvider(aid));
         }
         ref.read(sharingEpochProvider.notifier).state++;
         final lost = e.action.endsWith('.revoked') || e.action.endsWith('.left');
         if (lost && e.subjectUserId != null && e.subjectUserId == _me && aid != null) {
-          _leaveIfOn(accountId: aid, message: 'You no longer have access to that account');
+          _leaveIfOn(poolId: aid, message: 'You no longer have access to that pool');
         }
       case 'admin':
         ref.invalidate(adminUsersProvider);
@@ -199,12 +199,12 @@ class RealtimeController {
     }
   }
 
-  void _leaveIfOn({required String accountId, required String message}) {
+  void _leaveIfOn({required String poolId, required String message}) {
     final router = ref.read(routerProvider);
     final path = router.routerDelegate.currentConfiguration.uri.path;
-    final m = RegExp(r'^/accounts/([^/]+)/').firstMatch(path);
-    if (m == null || m.group(1) != accountId) return;
-    router.go(accountsPath);
+    final m = RegExp(r'^/pools/([^/]+)/').firstMatch(path);
+    if (m == null || m.group(1) != poolId) return;
+    router.go(poolsPath);
     _notice(message);
   }
 
@@ -244,10 +244,10 @@ class RealtimeDot extends ConsumerWidget {
   }
 }
 
-/// Is my own [account] shared with anyone (or a pending invite)?
-bool ownedAccountShared(WidgetRef ref, Account account) {
-  if (account.shared || !account.role.isOwner) return false;
-  final info = ref.watch(accountPeopleProvider(account.id)).valueOrNull;
+/// Is my own [pool] shared with anyone (or a pending invite)?
+bool ownedPoolShared(WidgetRef ref, Pool pool) {
+  if (pool.shared || !pool.role.isOwner) return false;
+  final info = ref.watch(poolPeopleProvider(pool.id)).valueOrNull;
   if (info == null) return false;
-  return info.accountShares.isNotEmpty || info.invites.any((i) => i.pending);
+  return info.poolShares.isNotEmpty || info.invites.any((i) => i.pending);
 }

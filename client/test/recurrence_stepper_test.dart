@@ -13,15 +13,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'support/fake_accounts.dart';
+import 'support/fake_pools.dart';
 
 class _Txs extends TransactionRepository {
   _Txs() : super(ApiClient());
   final saved = <Transaction>[];
   @override
-  Future<List<Transaction>> listForAccount(String accountId) async => [];
+  Future<List<Transaction>> listForPool(String poolId) async => [];
   @override
-  Future<Transaction> create(String accountId, Transaction draft) async {
+  Future<Transaction> create(String poolId, Transaction draft) async {
     saved.add(draft);
     return draft;
   }
@@ -35,7 +35,7 @@ class _Txs extends TransactionRepository {
 
 Transaction _series(int? interval, RecurrenceUnit? unit) => Transaction(
   id: 't1',
-  accountId: 'a',
+  poolId: 'a',
   name: 'Rent',
   direction: TransactionDirection.debit,
   amount: Decimal.fromInt(100),
@@ -55,13 +55,13 @@ Future<_Txs> _pump(WidgetTester tester, {Transaction? existing}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        accountRepositoryProvider.overrideWithValue(FakeAccountRepository()),
+        poolRepositoryProvider.overrideWithValue(FakePoolRepository()),
         transactionRepositoryProvider.overrideWithValue(txs),
       ],
       child: MaterialApp(
         home: Scaffold(
           body: TransactionEditor(
-            accountId: 'a',
+            poolId: 'a',
             existing: existing,
             initialDate: DateTime(2026, 10, 20),
             onDone: (_) {},
