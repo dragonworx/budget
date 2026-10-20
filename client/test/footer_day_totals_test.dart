@@ -39,7 +39,6 @@ Future<List<DateTime>> _pump(
   WidgetTester tester, {
   required int balanceOn5th,
   double threshold = 0,
-  List<String>? trims,
 }) async {
   tester.view.physicalSize = _size;
   tester.view.devicePixelRatio = 1;
@@ -85,9 +84,6 @@ Future<List<DateTime>> _pump(
             visibleDays: _days,
             onViewportChanged: (_, _) {},
             onCreateOnDay: created.add,
-            onTrimOnDay: trims == null
-                ? null
-                : (t, d, n) => trims.add('${t.id} ${d.day}'),
           ),
         ),
       ),
@@ -132,10 +128,7 @@ void main() {
         _colorOf(tester, 'pick-day-totals', '−\$406'),
         AppTheme.debitColor,
       );
-      expect(
-        _plain(tester, 'pick-day-balance'),
-        'Balance end of day: \$2,994',
-      );
+      expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: \$2,994');
       expect(
         _colorOf(tester, 'pick-day-balance', '\$2,994'),
         AppTheme.creditColor,
@@ -181,12 +174,10 @@ void main() {
       // Finger still down: the date, the day's totals and balance.
       expect(find.byKey(const ValueKey('pick-bubble')), findsOneWidget);
       expect(_plain(tester, 'pick-day-totals'), '+\$2,450  ·  −\$406');
-      expect(
-        _plain(tester, 'pick-day-balance'),
-        'Balance end of day: \$2,994',
-      );
+      expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: \$2,994');
       expect(find.text('Release, then tap +'), findsOneWidget);
-      expect(find.byKey(const ValueKey('pick-add')), findsNothing);
+      // The day's + is there from the press on (it acts once released).
+      expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
       // Drag onto a quiet day, then onto the 12th (−$180): updates live.
       await g.moveTo(Offset(_x(8), y));
       await tester.pump();
@@ -204,11 +195,10 @@ void main() {
     }
   });
 
-  testWidgets('Trim zone keeps the day totals beside "Trim…"; cancel hides', (
+  testWidgets('dragging up keeps the totals (no Trim); cancel hides', (
     tester,
   ) async {
-    final trims = <String>[];
-    final created = await _pump(tester, balanceOn5th: 2994, trims: trims);
+    final created = await _pump(tester, balanceOn5th: 2994);
     final x = _x(4);
     final g = await tester.startGesture(
       Offset(x, _layout.axis.center.dy),
@@ -217,23 +207,25 @@ void main() {
     await tester.pump();
     await g.moveTo(Offset(x, _layout.axis.top - 30));
     await tester.pump();
-    expect(find.byKey(const ValueKey('pick-trim')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pick-trim')), findsNothing);
+    expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
     expect(_plain(tester, 'pick-day-totals'), '+\$2,450  ·  −\$406');
     expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: \$2,994');
-    // Above the line: cancelling, no totals.
+    // Well above the footer: cancelling, no totals, no +.
     await g.moveTo(Offset(x, _layout.plot.top + 2));
     await tester.pump();
     expect(find.text('Release to cancel'), findsOneWidget);
     expect(find.byKey(const ValueKey('pick-day-totals')), findsNothing);
+    expect(find.byKey(const ValueKey('pick-add')), findsNothing);
     await g.moveTo(Offset(x, _layout.axis.top - 30));
     await tester.pump();
     await g.up();
     await tester.pump();
-    expect(trims, isEmpty, reason: 'release never trims');
     expect(find.byKey(const ValueKey('pick-day-totals')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('pick-trim-action')));
+    expect(find.byKey(const ValueKey('pick-trim-action')), findsNothing);
+    expect(created, isEmpty, reason: 'release never creates');
+    await tester.tap(find.byKey(const ValueKey('pick-add')));
     await tester.pump();
-    expect(trims, ['rent 5']);
-    expect(created, isEmpty);
+    expect(created.single.day, 5);
   });
 }

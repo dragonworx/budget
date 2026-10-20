@@ -31,14 +31,6 @@ typedef CreateOnDay = void Function(DateTime day);
 /// a recurring one), focused on the tapped occurrence [date].
 typedef EditOccurrence = void Function(Transaction transaction, DateTime date);
 
-/// Release in the Trim zone: end [transaction] on [day] ([removed] loaded
-/// occurrences after it disappear). The receiver confirms before saving.
-typedef TrimOnDay = void Function(
-  Transaction transaction,
-  DateTime day,
-  int removed,
-);
-
 /// Step chart of closing balance with a calendar axis.
 ///
 /// The balance (Y) range is explicit view state: fitted once when the chart
@@ -52,15 +44,14 @@ typedef TrimOnDay = void Function(
 ///
 /// Pressing on the date axis (month/week/day lanes) picks a date instead:
 /// a bubble, guide line and day highlight follow the pointer, the view
-/// auto-scrolls near the plot edges. Releasing (or a plain tap) never acts
-/// by itself: the line and bubble stay pinned on that day and the bubble
-/// gets a "+" button; only tapping "+" calls [onCreateOnDay]. Dragging up
-/// into the balance fill (below the line) offers "Trim…" instead when
-/// [onTrimOnDay] is set and a recurring series runs past that day: the
-/// pinned bubble then has a scissors button that calls [onTrimOnDay] (and
-/// "+" too). Dragging above the line, or Esc, cancels. A pinned line goes
-/// on its close button, any press elsewhere on the chart, Esc, or a view
-/// navigation.
+/// auto-scrolls near the plot edges. The bubble shows the day's "+" from
+/// the press on, following the picked day while dragging. Releasing (or a
+/// plain tap) never acts by itself: the line and bubble stay pinned on
+/// that day; only tapping "+" calls [onCreateOnDay]. The only outcomes are
+/// add or discard: dragging well above the footer, or Esc, cancels. A
+/// pinned line goes on its close button, any press elsewhere on the chart,
+/// Esc, or a view navigation. (Trimming a series lives in the dot popup's
+/// ⋮ menu, [onTrimOccurrence].)
 /// With focus: arrow keys pan, +/- zoom time, F fits balances.
 /// Test hook: after each paint, every in-plot vertex as (name, x, labelled).
 @visibleForTesting
@@ -131,7 +122,6 @@ class BalanceChart extends StatefulWidget {
     this.onTargetChanged,
     this.onPlanPeriod,
     this.onAddForPeriod,
-    this.onTrimOnDay,
     this.onTrimOccurrence,
     this.onEditTransaction,
     this.onNewOnDay,
@@ -167,9 +157,6 @@ class BalanceChart extends StatefulWidget {
   /// this pool (also for another pool's row in a combined view). Null: no
   /// "+" (viewers). Only a tap on that button calls it.
   final CreateOnDay? onNewOnDay;
-
-  /// Trim zone release (see the class docs). Null: no Trim (viewers).
-  final TrimOnDay? onTrimOnDay;
 
   /// "Trim" on a recurring row of the dot popup: end that series on the
   /// tapped occurrence (it becomes the last one). Null: no Trim (viewers).
@@ -417,12 +404,10 @@ class _BalanceChartState extends State<BalanceChart>
   bool _pickCancelled = false;
   bool _pickTouch = false;
 
-  /// Set while the pick is in the Trim zone: the series it would end.
-  TrimTarget? _pickTrim;
   Timer? _autoScroll;
 
-  /// The pick was released: its line and bubble stay up (with the "+" /
-  /// Trim buttons) until acted on or dismissed.
+  /// The pick was released: its line and bubble stay up (with the "+"
+  /// button) until acted on or dismissed.
   bool _pickPinned = false;
   final GlobalKey _pinKey = GlobalKey();
 
@@ -432,22 +417,16 @@ class _BalanceChartState extends State<BalanceChart>
       _pickPinned = false;
       _pickDay = null;
       _pickPos = null;
-      _pickTrim = null;
       _pickCancelled = false;
     });
   }
 
-  /// The pinned bubble's "+" / scissors: the only way a pick acts.
-  void _actOnPin({required bool trim}) {
+  /// The pinned bubble's "+": the only way a pick acts.
+  void _addFromPin() {
     final day = _pickDay;
-    final target = _pickTrim;
     _clearPin();
     if (day == null) return;
-    if (trim && target != null) {
-      widget.onTrimOnDay?.call(target.transaction, day, target.removed.length);
-    } else {
-      widget.onCreateOnDay(day);
-    }
+    widget.onCreateOnDay(day);
   }
 
   /// A long-press on a dot (touch) shows its tooltip instead of opening it.
@@ -729,7 +708,6 @@ class _BalanceChartState extends State<BalanceChart>
         _mode = _Gesture.pick;
         _pickTouch = touch;
         _pickCancelled = false;
-        _pickTrim = null;
         _pickPos = event.localPosition;
         _pickDay = _dayAt(event.localPosition.dx);
       });
@@ -1010,67 +988,20 @@ class _BalanceChartState extends State<BalanceChart>
     widget.onViewportChanged(view.$1, view.$2);
   }
 
-  /// Zone and trim target for a pick at [pos] when the view starts at
-  /// [start].
-  (PickZone, TrimTarget?) _zoneAt(Offset pos, DateTime day, DateTime start) {
-    final layout = _layout;
-    final range = _ensureYRange();
-    final scale = range == null
-        ? null
-        : _YScale(range.min, range.max, layout.plot);
-    final closing = _closingOn(day);
-    final lineY = scale == null || closing == null ? null : scale.yOf(closing);
-    TrimTarget? target;
-    final inFill = lineY != null && pos.dy >= lineY && pos.dy < layout.axis.top;
-    if (inFill && widget.onTrimOnDay != null && scale != null) {
-      target = chooseTrimTarget(
-        day: day,
-        pointer: pos,
-        transactions: widget.transactions,
-        occurrences: widget.series.occurrences,
-        dotOf: (o) {
-          final c = _closingOn(o.date);
-          if (c == null) return null;
-          return Offset(
-            layout.xOf(_stepAtDay(o.date), start, widget.visibleDays),
-            scale.yOf(c),
-          );
-        },
-      );
-    }
-    final zone = pickZone(
-      y: pos.dy,
-      axisTop: layout.axis.top,
-      lineY: lineY,
-      canTrim: target != null,
-      cancelMargin: pickCancelMargin,
-    );
-    return (zone, zone == PickZone.trim ? target : null);
-  }
-
-  /// Closing balance at the end of [day] (last point on or before it).
-  double? _closingOn(DateTime day) {
-    final d = dateOnly(day);
-    BalancePoint? best;
-    for (final p in widget.series.points) {
-      final pd = dateOnly(p.date);
-      if (pd.isAfter(d)) continue;
-      if (best == null || pd.isAfter(dateOnly(best.date))) best = p;
-    }
-    return best?.closingBalance.toDouble();
-  }
-
-  static DateTime _stepAtDay(DateTime date) => addDays(dateOnly(date), 0.5);
+  /// Add or discard, by how far above the footer [pos] is.
+  PickZone _zoneAt(Offset pos) => pickZone(
+    y: pos.dy,
+    axisTop: _layout.axis.top,
+    cancelMargin: pickCancelMargin,
+  );
 
   void _updatePick(Offset pos) {
     final layout = _layout;
     final day = layout.dateAt(pos.dx, widget.viewStart, widget.visibleDays);
-    final (zone, trim) = _zoneAt(pos, day, widget.viewStart);
-    final cancelled = zone == PickZone.discard;
+    final cancelled = _zoneAt(pos) == PickZone.discard;
     setState(() {
       _pickPos = pos;
       _pickCancelled = cancelled;
-      _pickTrim = trim;
       _pickDay = day;
     });
     final depth = cancelled ? 0.0 : layout.edgeDepth(pos.dx);
@@ -1104,11 +1035,9 @@ class _BalanceChartState extends State<BalanceChart>
     final start = addDays(widget.viewStart, delta);
     widget.onViewportChanged(start, widget.visibleDays);
     final day = layout.dateAt(pos.dx, start, widget.visibleDays);
-    final (zone, trim) = _zoneAt(pos, day, start);
     setState(() {
       _pickDay = day;
-      _pickTrim = trim;
-      _pickCancelled = zone == PickZone.discard;
+      _pickCancelled = _zoneAt(pos) == PickZone.discard;
     });
   }
 
@@ -1116,20 +1045,17 @@ class _BalanceChartState extends State<BalanceChart>
     _autoScroll?.cancel();
     _autoScroll = null;
     final day = _pickDay;
-    final trim = _pickTrim;
     final ok = commit && !_pickCancelled && day != null;
     setState(() {
       _mode = _Gesture.none;
       if (ok) {
-        // Release never acts: pin the line + bubble; "+" / Trim in it do.
+        // Release never acts: pin the line + bubble; its "+" does.
         _pickPinned = true;
-        _pickTrim = trim;
         return;
       }
       _pickDay = null;
       _pickPos = null;
       _pickCancelled = false;
-      _pickTrim = null;
     });
   }
 
@@ -1894,21 +1820,15 @@ class _BalanceChartState extends State<BalanceChart>
     final right = x1.clamp(layout.plot.left, layout.plot.right).toDouble();
     final cx = (left + right) / 2;
     final cancelled = _pickCancelled;
-    final trim = _pickTrim;
-    final color = cancelled
-        ? AppTheme.textFaint
-        : trim != null
-        ? AppTheme.debitColor
-        : AppTheme.accent;
+    final color = cancelled ? AppTheme.textFaint : AppTheme.accent;
     final pinned = _pickPinned;
-    // The day's totals show from touch-down, live while dragging (Trim zone
-    // included), and stay on release; not while cancelling.
+    // The day's totals show from touch-down, live while dragging, and stay
+    // on release; not while cancelling.
     final stats = cancelled ? null : pickDayStats(day);
-    final bubbleW = trim != null ? 300.0 : 256.0;
+    const bubbleW = 256.0;
     final bubbleH = stats == null
         ? 60.0
         : (stats.balance == null ? 80.0 : 100.0);
-    final range = _ensureYRange();
     // Above the finger on touch so it stays visible; just above the cursor
     // otherwise. Clamped inside the chart.
     final lift = _pickTouch ? 84.0 : 56.0;
@@ -1919,40 +1839,7 @@ class _BalanceChartState extends State<BalanceChart>
     final by = (pos.dy - lift + 30 - bubbleH)
         .clamp(4.0, math.max(4.0, _size.height - bubbleH - 4))
         .toDouble();
-    final trimName = trim == null
-        ? ''
-        : (trim.transaction.name.trim().isEmpty
-              ? 'Transaction'
-              : trim.transaction.name.trim());
     return [
-      if (trim != null && range != null)
-        Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(
-              key: const ValueKey('trim-preview'),
-              painter: GhostLinePainter(
-                ghosts: [
-                  GhostLine(
-                    points: trimmedPoints(widget.series.points, trim.removed),
-                    color: AppTheme.debitColor,
-                    from: addCalendarDays(day, 1),
-                  ),
-                ],
-                plot: layout.plot,
-                xOf: (d) => layout.xOf(d, widget.viewStart, widget.visibleDays),
-                yOf: _YScale(range.min, range.max, layout.plot).yOf,
-                repaintKey: (
-                  widget.viewStart,
-                  widget.visibleDays,
-                  range.min,
-                  range.max,
-                  day,
-                  trim.transaction.id,
-                ),
-              ),
-            ),
-          ),
-        ),
       Positioned(
         left: left,
         top: layout.plot.top,
@@ -1979,16 +1866,11 @@ class _BalanceChartState extends State<BalanceChart>
         width: bubbleW,
         height: bubbleH,
         child: pinned
-            ? KeyedSubtree(
-                key: _pinKey,
-                child: _pickBubble(theme, day, trim, trimName, stats),
-              )
+            ? KeyedSubtree(key: _pinKey, child: _pickBubble(theme, day, stats))
             : IgnorePointer(
                 child: _pickBubble(
                   theme,
                   day,
-                  trim,
-                  trimName,
                   stats,
                   interactive: false,
                   cancelled: cancelled,
@@ -2034,26 +1916,20 @@ class _BalanceChartState extends State<BalanceChart>
     return PickDayStats(gains: gains, losses: losses, balance: balance);
   }
 
-  /// The pick's bubble: date (or "Trim…" and "`name` ends `date`"), the
-  /// day's money in / out and closing balance ([stats]; null while
-  /// cancelling). Once released ([interactive]) it adds the "+" add
-  /// button, scissors for Trim in the Trim zone, and close.
+  /// The pick's bubble: date, the day's money in / out and closing balance
+  /// ([stats]; null while cancelling) and the day's "+" (from the press on;
+  /// not while cancelling). Once released ([interactive]) "+" acts and a
+  /// close button joins it.
   Widget _pickBubble(
     ThemeData theme,
     DateTime day,
-    TrimTarget? trim,
-    String trimName,
     PickDayStats? stats, {
     bool interactive = true,
     bool cancelled = false,
   }) {
     // A dark card like the dot popup, edged in the action colour, so the
     // day's green / red totals read clearly.
-    final fg = cancelled
-        ? AppTheme.textFaint
-        : trim != null
-        ? AppTheme.debitColor
-        : AppTheme.accent;
+    final fg = cancelled ? AppTheme.textFaint : AppTheme.accent;
     final btn = IconButton.styleFrom(
       backgroundColor: fg.withValues(alpha: 0.18),
       foregroundColor: fg,
@@ -2084,8 +1960,8 @@ class _BalanceChartState extends State<BalanceChart>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      trim != null ? 'Trim…' : formatOccurrenceDate(day),
-                      key: ValueKey(trim != null ? 'pick-trim' : 'pick-date'),
+                      formatOccurrenceDate(day),
+                      key: const ValueKey('pick-date'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall?.copyWith(
@@ -2094,14 +1970,12 @@ class _BalanceChartState extends State<BalanceChart>
                       ),
                     ),
                     Text(
-                      trim != null
-                          ? '$trimName ends ${formatOccurrenceDate(day)}'
-                          : cancelled
+                      cancelled
                           ? 'Release to cancel'
                           : interactive
                           ? 'Tap + to add here'
                           : 'Release, then tap +',
-                      key: trim != null ? const ValueKey('pick-date') : null,
+                      key: const ValueKey('pick-hint'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: small.copyWith(
@@ -2168,24 +2042,21 @@ class _BalanceChartState extends State<BalanceChart>
                   ],
                 ),
               ),
-              if (interactive && trim != null)
-                IconButton(
-                  key: const ValueKey('pick-trim-action'),
-                  tooltip:
-                      'Trim “$trimName” to end ${formatOccurrenceDate(day)}',
-                  style: btn,
-                  icon: const Icon(Icons.content_cut_rounded, size: 20),
-                  onPressed: () => _actOnPin(trim: true),
-                ),
-              if (interactive) ...[
+              // The day's "+" shows from the press on (live while dragging,
+              // where the pointer is busy, so it only reads as the target);
+              // it acts once the pick is pinned. Not while cancelling.
+              if (!cancelled) ...[
                 const SizedBox(width: 2),
                 IconButton(
                   key: const ValueKey('pick-add'),
                   tooltip: 'Add a transaction on ${formatOccurrenceDate(day)}',
                   style: btn,
                   icon: const Icon(Icons.add_rounded, size: 22),
-                  onPressed: () => _actOnPin(trim: false),
+                  // Same look mid-drag (under an IgnorePointer then).
+                  onPressed: _addFromPin,
                 ),
+              ],
+              if (interactive)
                 IconButton(
                   key: const ValueKey('pick-close'),
                   tooltip: 'Close',
@@ -2194,7 +2065,6 @@ class _BalanceChartState extends State<BalanceChart>
                   icon: const Icon(Icons.close_rounded, size: 18),
                   onPressed: _clearPin,
                 ),
-              ],
             ],
           ),
         ),

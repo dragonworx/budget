@@ -261,31 +261,13 @@ Future<void> _editFromPanel(WidgetTester tester, String name) async {
 
 void main() {
   popupSizeProbe();
-  testWidgets('Trim release asks first, then ends the series on that day', (
+  testWidgets('the date drag has no Trim hook; the popup\'s ⋮ keeps it', (
     tester,
   ) async {
-    final store = await _pump(tester);
+    await _pump(tester);
     final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
-    expect(chart.onTrimOnDay, isNotNull, reason: 'editors can trim');
-    final day = _day.add(const Duration(days: 10));
-    // Cancel: nothing saved.
-    chart.onTrimOnDay!(store.txs['rent']!, day, 3);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('trim-dialog')), findsOneWidget);
-    expect(find.textContaining('Currently repeats forever'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(store.calls.where((c) => c.startsWith('update')), isEmpty);
-    // Confirm: saved through the normal update with the until-date end.
-    chart.onTrimOnDay!(store.txs['rent']!, day, 3);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('trim-confirm')));
-    await tester.pumpAndSettle();
-    final rent = store.txs['rent']!;
-    expect(rent.endMode, EndMode.untilDate);
-    expect(rent.endDate, day);
-    expect(store.txs['salary']!.endMode, EndMode.never);
-    expect(find.textContaining('now ends'), findsOneWidget);
+    expect(chart.onTrimOccurrence, isNotNull, reason: 'editors: ⋮ Trim');
+    expect(find.byKey(const ValueKey('trim-dialog')), findsNothing);
   });
 
   testWidgets('footer tap pins a line; only its "+" opens the add flow', (
@@ -1591,7 +1573,9 @@ void main() {
       expect(heat.right, closeTo(chart.right + 1, 1.5));
       expect(r('range-start').left, lessThan(r('range-heatmap').left));
       expect(r('range-end').right, greaterThan(r('range-heatmap').right));
-      expect(r('range-heatmap').width, greaterThan(w * 0.35));
+      // 0.3: two-digit start days ("10 Oct") are one test-font glyph wider
+      // than "9 Oct"; 0.35 failed on those days at 320px.
+      expect(r('range-heatmap').width, greaterThan(w * 0.3));
       // What overflowed is in More (Pool settings first when it is there).
       await tester.tap(find.byKey(const ValueKey('timeline-more')));
       await tester.pumpAndSettle();
