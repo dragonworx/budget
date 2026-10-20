@@ -57,8 +57,27 @@ class TimelinePage extends ConsumerStatefulWidget {
   ConsumerState<TimelinePage> createState() => _TimelinePageState();
 }
 
+/// Docked Transactions list: wide landscape screens (desktop, landscape
+/// tablet) only; smaller ones keep the overlay panel.
+const double dockedListMinWidth = 1024;
+
+/// Tests: false lays the timeline out as on smaller screens (overlay list).
+@visibleForTesting
+bool dockedListEnabled = true;
+
+/// The docked list starts open unless this browser closed it.
+@visibleForTesting
+bool dockedListDefaultOpen = true;
+
+/// Width of the docked list for a [screenWidth]-wide window.
+double dockedListWidth(double screenWidth) =>
+    (screenWidth * 0.3).clamp(384.0, 420.0).toDouble();
+
+/// Eased show / hide of the docked list.
+const Duration dockedListDuration = Duration(milliseconds: 280);
+
 class _TimelinePageState extends ConsumerState<TimelinePage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   /// Eases unit zoom steps and ◀ ▶; pans, pinches, wheel and fits are instant.
   late final AnimationController _viewAnim = AnimationController(
     vsync: this,
@@ -69,8 +88,93 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   double _animFromDays = 1;
   double _animToDays = 1;
 
+  // ---- Docked Transactions list (wide landscape screens). ----
+
+  static const _dockStoreKey = 'budget_tx_docked';
+
+  /// Open / closed, remembered per browser.
+  late bool _dockOpen = switch (page.localGet(_dockStoreKey)) {
+    '1' => true,
+    '0' => false,
+    _ => dockedListDefaultOpen,
+  };
+
+  /// Drives the panel's width (the chart repaints into what is left).
+  late final AnimationController _dockAnim = AnimationController(
+    vsync: this,
+    duration: dockedListDuration,
+    value: _dockOpen ? 1 : 0,
+  );
+  late final Animation<double> _dockCurve = CurvedAnimation(
+    parent: _dockAnim,
+    curve: Curves.easeInOutCubic,
+  );
+
+  /// Wide landscape: the list docks beside the timeline. While the planner
+  /// is docked there instead, the list falls back to the overlay.
+  bool _dockable(BuildContext context) {
+    if (!dockedListEnabled) return false;
+    final size = MediaQuery.sizeOf(context);
+    return size.width >= dockedListMinWidth &&
+        size.width > size.height &&
+        !(_planOpen && !_planFull(context));
+  }
+
+  void _toggleDock() {
+    setState(() => _dockOpen = !_dockOpen);
+    page.localSet(_dockStoreKey, _dockOpen ? '1' : '0');
+    if (_dockOpen) {
+      _dockAnim.forward();
+    } else {
+      _dockAnim.reverse();
+    }
+  }
+
+  /// [child] (the timeline) with the docked list on its right. The panel
+  /// keeps its width and is revealed / clipped, so only the timeline
+  /// relayouts while it eases; the date window and balance range stay.
+  Widget _withDockedList(BuildContext context, Pool pool, Widget child) {
+    if (!_dockable(context)) return child;
+    final width = dockedListWidth(MediaQuery.sizeOf(context).width);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: child),
+        SizeTransition(
+          key: const ValueKey('docked-transactions'),
+          sizeFactor: _dockCurve,
+          axis: Axis.horizontal,
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 12, 16, 10),
+            child: SizedBox(
+              width: width,
+              child: RepaintBoundary(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: DecoratedBox(
+                    position: DecorationPosition.foreground,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: TickerMode(
+                      enabled: _dockOpen || _dockAnim.isAnimating,
+                      child: _transactionsPanel(context, pool, docked: true),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   void dispose() {
+    _dockAnim.dispose();
     _flushView(keepalive: true);
     final h = _hiddenHandle;
     if (h != null) page.offPageHidden(h);
@@ -903,206 +1007,218 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             body: _withPlanPanel(
               context,
               compact: compact,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      compact ? 8 : 16,
-                      compact ? 6 : 12,
-                      compact ? 8 : 16,
-                      0,
-                    ),
-                    // The second row is the date range heatmap alone,
-                    // full width.
-                    child: DateRangeHeatmap(
-                      from: _firstClearDay,
-                      to: lastVisibleDay(_viewStart, _visibleDays),
-                      today: DateTime.now(),
-                      height: 44,
-                      nets: shown == null
-                          ? const {}
-                          : dayNetTotals(
-                              shown,
-                              enabledOf: (id) =>
-                                  (transactionsById[id] ??
-                                          combo?.transactions[id])
-                                      ?.enabled,
-                            ),
-                      // The strip between the labels: the start picker, as
-                      // the whole control did before (least surprising).
-                      onTap: () => _pickRangeEnd(context, start: true),
-                      onStartTap: () => _pickRangeEnd(context, start: true),
-                      onEndTap: () => _pickRangeEnd(context, start: false),
-                    ),
-                  ),
-                  Expanded(
-                    child: Padding(
+              child: _withDockedList(
+                context,
+                pool,
+                Column(
+                  children: [
+                    Padding(
                       padding: EdgeInsets.fromLTRB(
                         compact ? 8 : 16,
-                        compact ? 6 : 10,
+                        compact ? 6 : 12,
                         compact ? 8 : 16,
-                        6,
+                        0,
                       ),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppTheme.border),
+                      // The second row is the date range heatmap alone,
+                      // full width.
+                      child: DateRangeHeatmap(
+                        from: _firstClearDay,
+                        to: lastVisibleDay(_viewStart, _visibleDays),
+                        today: DateTime.now(),
+                        height: 44,
+                        nets: shown == null
+                            ? const {}
+                            : dayNetTotals(
+                                shown,
+                                enabledOf: (id) =>
+                                    (transactionsById[id] ??
+                                            combo?.transactions[id])
+                                        ?.enabled,
+                              ),
+                        // The strip between the labels: the start picker, as
+                        // the whole control did before (least surprising).
+                        onTap: () => _pickRangeEnd(context, start: true),
+                        onStartTap: () => _pickRangeEnd(context, start: true),
+                        onEndTap: () => _pickRangeEnd(context, start: false),
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          compact ? 8 : 16,
+                          compact ? 6 : 10,
+                          compact ? 8 : 16,
+                          6,
                         ),
-                        child: ClipRRect(
-                          key: _chartAreaKey,
-                          borderRadius: BorderRadius.circular(15),
-                          child: series == null
-                              ? balanceAsync.when(
-                                  loading: () => const Center(
-                                    child: CircularProgressIndicator(),
-                                  ),
-                                  error: (error, _) => _BalanceError(
-                                    message: friendlyError(error),
-                                    onRetry: _invalidateBalance,
-                                  ),
-                                  data: (_) => const SizedBox.shrink(),
-                                )
-                              : Stack(
-                                  children: [
-                                    BalanceChart(
-                                      key: ValueKey(pool.id),
-                                      fitToken: _fitToken,
-                                      combineKey: combo == null
-                                          ? ''
-                                          : (combo.pools.keys.toList()..sort())
-                                                .join(','),
-                                      zeroToken: _zeroToken,
-                                      onFitRequested: (mode) =>
-                                          _fit(mode, pool),
-                                      onZoomStep: _zoomStep,
-                                      onShift: _shift,
-                                      series: shown!,
-                                      seedDate: pool.seedDate,
-                                      // Combined: no opening diamond (the
-                                      // line is a sum, not this seed).
-                                      seedBalance: combo != null
-                                          ? null
-                                          : pool.seedBalance.toDouble(),
-                                      lineStart: combo?.lineStart,
-                                      combinedPools: combo?.pools ?? const {},
-                                      otherTransactions:
-                                          combo?.transactions ?? const {},
-                                      onOpenOtherTransaction: (
-                                        other,
-                                        t,
-                                        date,
-                                      ) => _openOther(context, other, t, date),
-                                      lossThreshold: pool.lossThreshold
-                                          .toDouble(),
-                                      currencyScale: pool.currencyScale
-                                          .toDouble(),
-                                      viewStart: _viewStart,
-                                      visibleDays: _visibleDays,
-                                      onViewportChanged: _onChartViewport,
-                                      restoreYRange: _restoreY,
-                                      yRestoreToken: _yRestoreToken,
-                                      onYRangeChanged: _onChartY,
-                                      onCreateOnDay: (day) => pool.role.canEdit
-                                          ? _createOnceOnDay(context, day)
-                                          : _viewOnlyToast(context),
-                                      onTrimOnDay: pool.role.canEdit
-                                          ? (t, day, removed) => _confirmTrim(
-                                              context,
-                                              t,
-                                              day,
-                                              removed,
-                                            )
-                                          : null,
-                                      onTrimOccurrence: pool.role.canEdit
-                                          ? (t, day) => _trimAt(context, t, day)
-                                          : null,
-                                      onNewOnDay: pool.role.canEdit
-                                          ? (day) => _openEditor(
-                                              context,
-                                              pool,
-                                              initialDate: day,
-                                            )
-                                          : null,
-                                      onEditTransaction: pool.role.canEdit
-                                          ? (t, date) => _openEditor(
-                                              context,
-                                              pool,
-                                              existing: t,
-                                              focusDate: date,
-                                            )
-                                          : null,
-                                      transactionNames: transactionNames,
-                                      transactions: {
-                                        for (final t in transactions) t.id: t,
-                                      },
-                                      dataFrom: _seriesCacheQuery?.from,
-                                      dataThrough: _seriesCacheQuery?.to,
-                                      ghosts: _ghosts,
-                                      target: _goalActive ? _goalTarget : null,
-                                      targetMode: _goalActive && _targetMode,
-                                      onTargetChanged: _onTargetDrag,
-                                      onAddForPeriod: pool.role.canEdit
-                                          ? (start, end) => _openEditor(
-                                              context,
-                                              pool,
-                                              initialDate: start,
-                                              initialEndDate: end,
-                                            )
-                                          : null,
-                                      onPlanPeriod: (p) => _planPeriod(
-                                        p,
-                                        pool.lossThreshold.toDouble(),
-                                      ),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppTheme.border),
+                          ),
+                          child: ClipRRect(
+                            key: _chartAreaKey,
+                            borderRadius: BorderRadius.circular(15),
+                            child: series == null
+                                ? balanceAsync.when(
+                                    loading: () => const Center(
+                                      child: CircularProgressIndicator(),
                                     ),
-                                    if (_goalActive)
-                                      Positioned(
-                                        top: combo != null ? 44 : 8,
-                                        right: 8,
-                                        child: FilterChip(
-                                          key: const ValueKey('target-tool'),
-                                          avatar: const Icon(
-                                            Icons.my_location_rounded,
-                                            size: 16,
+                                    error: (error, _) => _BalanceError(
+                                      message: friendlyError(error),
+                                      onRetry: _invalidateBalance,
+                                    ),
+                                    data: (_) => const SizedBox.shrink(),
+                                  )
+                                : Stack(
+                                    children: [
+                                      BalanceChart(
+                                        key: ValueKey(pool.id),
+                                        fitToken: _fitToken,
+                                        combineKey: combo == null
+                                            ? ''
+                                            : (combo.pools.keys.toList()
+                                                    ..sort())
+                                                  .join(','),
+                                        zeroToken: _zeroToken,
+                                        onFitRequested: (mode) =>
+                                            _fit(mode, pool),
+                                        onZoomStep: _zoomStep,
+                                        onShift: _shift,
+                                        series: shown!,
+                                        seedDate: pool.seedDate,
+                                        // Combined: no opening diamond (the
+                                        // line is a sum, not this seed).
+                                        seedBalance: combo != null
+                                            ? null
+                                            : pool.seedBalance.toDouble(),
+                                        lineStart: combo?.lineStart,
+                                        combinedPools: combo?.pools ?? const {},
+                                        otherTransactions:
+                                            combo?.transactions ?? const {},
+                                        onOpenOtherTransaction:
+                                            (other, t, date) => _openOther(
+                                              context,
+                                              other,
+                                              t,
+                                              date,
+                                            ),
+                                        lossThreshold: pool.lossThreshold
+                                            .toDouble(),
+                                        currencyScale: pool.currencyScale
+                                            .toDouble(),
+                                        viewStart: _viewStart,
+                                        visibleDays: _visibleDays,
+                                        onViewportChanged: _onChartViewport,
+                                        restoreYRange: _restoreY,
+                                        yRestoreToken: _yRestoreToken,
+                                        onYRangeChanged: _onChartY,
+                                        onCreateOnDay: (day) =>
+                                            pool.role.canEdit
+                                            ? _createOnceOnDay(context, day)
+                                            : _viewOnlyToast(context),
+                                        onTrimOnDay: pool.role.canEdit
+                                            ? (t, day, removed) => _confirmTrim(
+                                                context,
+                                                t,
+                                                day,
+                                                removed,
+                                              )
+                                            : null,
+                                        onTrimOccurrence: pool.role.canEdit
+                                            ? (t, day) =>
+                                                  _trimAt(context, t, day)
+                                            : null,
+                                        onNewOnDay: pool.role.canEdit
+                                            ? (day) => _openEditor(
+                                                context,
+                                                pool,
+                                                initialDate: day,
+                                              )
+                                            : null,
+                                        onEditTransaction: pool.role.canEdit
+                                            ? (t, date) => _openEditor(
+                                                context,
+                                                pool,
+                                                existing: t,
+                                                focusDate: date,
+                                              )
+                                            : null,
+                                        transactionNames: transactionNames,
+                                        transactions: {
+                                          for (final t in transactions) t.id: t,
+                                        },
+                                        dataFrom: _seriesCacheQuery?.from,
+                                        dataThrough: _seriesCacheQuery?.to,
+                                        ghosts: _ghosts,
+                                        target: _goalActive
+                                            ? _goalTarget
+                                            : null,
+                                        targetMode: _goalActive && _targetMode,
+                                        onTargetChanged: _onTargetDrag,
+                                        onAddForPeriod: pool.role.canEdit
+                                            ? (start, end) => _openEditor(
+                                                context,
+                                                pool,
+                                                initialDate: start,
+                                                initialEndDate: end,
+                                              )
+                                            : null,
+                                        onPlanPeriod: (p) => _planPeriod(
+                                          p,
+                                          pool.lossThreshold.toDouble(),
+                                        ),
+                                      ),
+                                      if (_goalActive)
+                                        Positioned(
+                                          top: combo != null ? 44 : 8,
+                                          right: 8,
+                                          child: FilterChip(
+                                            key: const ValueKey('target-tool'),
+                                            avatar: const Icon(
+                                              Icons.my_location_rounded,
+                                              size: 16,
+                                            ),
+                                            label: Text(
+                                              _targetMode
+                                                  ? 'Tap or drag to set target'
+                                                  : 'Set target',
+                                            ),
+                                            tooltip: 'Target tool: tap or drag on the chart to set the goal balance and date',
+                                            selected: _targetMode,
+                                            onSelected: (on) => setState(
+                                              () => _targetMode = on,
+                                            ),
                                           ),
-                                          label: Text(
-                                            _targetMode
-                                                ? 'Tap or drag to set target'
-                                                : 'Set target',
+                                        ),
+                                      if (combo != null)
+                                        Positioned(
+                                          top: 8,
+                                          right: 8,
+                                          child: _CombinedLegend(
+                                            combo: combo,
+                                            poolName: pool.name,
                                           ),
-                                          tooltip: 'Target tool: tap or drag on the chart to set the goal balance and date',
-                                          selected: _targetMode,
-                                          onSelected: (on) =>
-                                              setState(() => _targetMode = on),
                                         ),
-                                      ),
-                                    if (combo != null)
-                                      Positioned(
-                                        top: 8,
-                                        right: 8,
-                                        child: _CombinedLegend(
-                                          combo: combo,
-                                          poolName: pool.name,
+                                      if (balanceAsync.isLoading ||
+                                          (combo?.loading ?? false))
+                                        const Positioned(
+                                          top: 0,
+                                          left: 0,
+                                          right: 0,
+                                          child: LinearProgressIndicator(
+                                            minHeight: 2,
+                                          ),
                                         ),
-                                      ),
-                                    if (balanceAsync.isLoading ||
-                                        (combo?.loading ?? false))
-                                      const Positioned(
-                                        top: 0,
-                                        left: 0,
-                                        right: 0,
-                                        child: LinearProgressIndicator(
-                                          minHeight: 2,
-                                        ),
-                                      ),
-                                  ],
-                                ),
+                                    ],
+                                  ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  if (!_planOpen || !compact) _TipsBar(compact: compact),
-                ],
+                    if (!_planOpen || !compact) _TipsBar(compact: compact),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1853,32 +1969,49 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     await _openEditor(context, pool, initialDate: day, onceOnly: true);
   }
 
+  /// The toolbar's Transactions: shows / hides the docked list on wide
+  /// landscape screens, else opens it over the timeline.
   Future<void> _openTransactionsPanel(BuildContext context, Pool pool) async {
+    if (_dockable(context)) return _toggleDock();
     await showSidePanel<void>(
       context,
       width: 520,
       label: 'Transactions',
-      builder: (panelContext) => TransactionsPanel(
-        pool: pool,
-        skipsFor: _skipsFor,
-        onPanelClosed: (outcome) {
-          if (context.mounted) _report(context, outcome);
-        },
-        onLocate: (date) {
-          Navigator.of(panelContext).pop();
-          _showFrom(date);
-        },
-        onChanged: _invalidateBalance,
-        // New ▾ Plan: the only way into the planner.
-        onPlan: () {
-          Navigator.of(panelContext).pop();
-          _openPlan();
-          // "Plan a payment" (the planner's other tabs are one tap away).
-          setState(() => _planTab = PlanTab.payment);
-        },
+      builder: (panelContext) => _transactionsPanel(
+        context,
+        pool,
+        docked: false,
+        close: () => Navigator.of(panelContext).pop(),
       ),
     );
   }
+
+  Widget _transactionsPanel(
+    BuildContext context,
+    Pool pool, {
+    required bool docked,
+    VoidCallback? close,
+  }) => TransactionsPanel(
+    pool: pool,
+    skipsFor: _skipsFor,
+    onClose: docked ? _toggleDock : null,
+    onPanelClosed: (outcome) {
+      if (context.mounted) _report(context, outcome);
+    },
+    // Locate: the docked list stays; the overlay gets out of the way.
+    onLocate: (date) {
+      close?.call();
+      _showFrom(date);
+    },
+    onChanged: _invalidateBalance,
+    // New ▾ Plan: the only way into the planner.
+    onPlan: () {
+      close?.call();
+      _openPlan();
+      // "Plan a payment" (the planner's other tabs are one tap away).
+      setState(() => _planTab = PlanTab.payment);
+    },
+  );
 }
 
 class _PoolHeader extends StatelessWidget {

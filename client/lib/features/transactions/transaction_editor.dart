@@ -726,71 +726,92 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
-          SegmentedButton<_Kind>(
-            key: const ValueKey('editor-kind'),
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(
-                value: _Kind.credit,
-                label: Text('Money in'),
-                icon: Icon(Icons.south_west_rounded, size: 18),
-              ),
-              ButtonSegment(
-                value: _Kind.debit,
-                label: Text('Money out'),
-                icon: Icon(Icons.north_east_rounded, size: 18),
-              ),
-              ButtonSegment(
-                value: _Kind.transfer,
-                label: Text('Transfer', key: ValueKey('editor-kind-transfer')),
-                icon: Icon(Icons.swap_horiz_rounded, size: 18),
-              ),
-            ],
-            selected: {_kind},
-            onSelectionChanged: (value) => setState(() {
-              switch (value.first) {
-                case _Kind.credit:
-                  _transferMode = false;
-                  _direction = TransactionDirection.credit;
-                case _Kind.debit:
-                  _transferMode = false;
-                  _direction = TransactionDirection.debit;
-                case _Kind.transfer:
-                  _transferMode = true;
-                  // A new transfer sends money out of this pool; an
-                  // existing receiving side keeps its direction.
-                  if (widget.existing?.transfer == null) {
-                    _direction = TransactionDirection.debit;
+          // Narrow (docked list, small phones): labels only, one line.
+          LayoutBuilder(
+            builder: (context, c) {
+              final icons = c.maxWidth >= 330;
+              return SegmentedButton<_Kind>(
+                key: const ValueKey('editor-kind'),
+                showSelectedIcon: false,
+                segments: [
+                  ButtonSegment(
+                    value: _Kind.credit,
+                    label: const Text('Money in', maxLines: 1, softWrap: false),
+                    icon: icons
+                        ? const Icon(Icons.south_west_rounded, size: 18)
+                        : null,
+                  ),
+                  ButtonSegment(
+                    value: _Kind.debit,
+                    label: const Text(
+                      'Money out',
+                      maxLines: 1,
+                      softWrap: false,
+                    ),
+                    icon: icons
+                        ? const Icon(Icons.north_east_rounded, size: 18)
+                        : null,
+                  ),
+                  ButtonSegment(
+                    value: _Kind.transfer,
+                    label: const Text(
+                      'Transfer',
+                      key: ValueKey('editor-kind-transfer'),
+                      maxLines: 1,
+                      softWrap: false,
+                    ),
+                    icon: icons
+                        ? const Icon(Icons.swap_horiz_rounded, size: 18)
+                        : null,
+                  ),
+                ],
+                selected: {_kind},
+                onSelectionChanged: (value) => setState(() {
+                  switch (value.first) {
+                    case _Kind.credit:
+                      _transferMode = false;
+                      _direction = TransactionDirection.credit;
+                    case _Kind.debit:
+                      _transferMode = false;
+                      _direction = TransactionDirection.debit;
+                    case _Kind.transfer:
+                      _transferMode = true;
+                      // A new transfer sends money out of this pool; an
+                      // existing receiving side keeps its direction.
+                      if (widget.existing?.transfer == null) {
+                        _direction = TransactionDirection.debit;
+                      }
                   }
-              }
-              _transferError = null;
-            }),
-            style: ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              padding: const WidgetStatePropertyAll(
-                EdgeInsets.symmetric(horizontal: 6),
-              ),
-              foregroundColor: WidgetStateProperty.resolveWith((states) {
-                if (!states.contains(WidgetState.selected)) {
-                  return AppTheme.textMuted;
-                }
-                return switch (_kind) {
-                  _Kind.credit => AppTheme.creditColor,
-                  _Kind.debit => AppTheme.debitColor,
-                  _Kind.transfer => AppTheme.transferColor,
-                };
-              }),
-              backgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (!states.contains(WidgetState.selected)) {
-                  return AppTheme.surface;
-                }
-                return switch (_kind) {
-                  _Kind.credit => AppTheme.creditSoft,
-                  _Kind.debit => AppTheme.debitSoft,
-                  _Kind.transfer => AppTheme.transferSoft,
-                };
-              }),
-            ),
+                  _transferError = null;
+                }),
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  padding: const WidgetStatePropertyAll(
+                    EdgeInsets.symmetric(horizontal: 6),
+                  ),
+                  foregroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (!states.contains(WidgetState.selected)) {
+                      return AppTheme.textMuted;
+                    }
+                    return switch (_kind) {
+                      _Kind.credit => AppTheme.creditColor,
+                      _Kind.debit => AppTheme.debitColor,
+                      _Kind.transfer => AppTheme.transferColor,
+                    };
+                  }),
+                  backgroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (!states.contains(WidgetState.selected)) {
+                      return AppTheme.surface;
+                    }
+                    return switch (_kind) {
+                      _Kind.credit => AppTheme.creditSoft,
+                      _Kind.debit => AppTheme.debitSoft,
+                      _Kind.transfer => AppTheme.transferSoft,
+                    };
+                  }),
+                ),
+              );
+            },
           ),
           if (_transferMode) ...[
             const SizedBox(height: 12),

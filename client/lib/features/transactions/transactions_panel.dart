@@ -73,9 +73,15 @@ class TransactionsPanel extends ConsumerStatefulWidget {
     required this.onLocate,
     required this.onChanged,
     this.onPlan,
+    this.onClose,
   });
 
   final Pool pool;
+
+  /// Docked beside the timeline (wide screens): Close calls this instead of
+  /// popping a route, and closing the editor returns to the list.
+  final VoidCallback? onClose;
+  bool get docked => onClose != null;
 
   /// Currently skipped occurrence dates of a series.
   final Set<DateTime> Function(String transactionId) skipsFor;
@@ -339,7 +345,11 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
                     onDone: (o) => _editorDone(context, o),
                     onClosePanel: (o) {
                       widget.onChanged();
-                      Navigator.of(context).pop();
+                      if (widget.docked) {
+                        setState(() => _editing = null);
+                      } else {
+                        Navigator.of(context).pop();
+                      }
                       widget.onPanelClosed(o);
                     },
                   ),
@@ -389,9 +399,17 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
                   ] else
                     _newSplitButton(),
                   IconButton(
-                    tooltip: 'Close (Esc)',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
+                    key: const ValueKey('panel-close'),
+                    tooltip: widget.docked
+                        ? 'Hide transactions'
+                        : 'Close (Esc)',
+                    onPressed:
+                        widget.onClose ?? () => Navigator.of(context).pop(),
+                    icon: Icon(
+                      widget.docked
+                          ? Icons.keyboard_double_arrow_right_rounded
+                          : Icons.close_rounded,
+                    ),
                   ),
                 ],
               ),
