@@ -11,12 +11,11 @@ const _enrichedCols = '''
   t.id, t.account_id, t.name, t.direction, t.amount, t.start_date,
   t.recurrence_mode, t.interval, t.unit, t.end_mode, t.end_date,
   t.occurrence_count, t.enabled, t.created_at, t.transfer_id,
-  p.id, pa.id, pa.name, pp.id, pp.name, t.version AS t_version''';
+  p.id, pa.id, pa.name, t.version AS t_version''';
 const _peerJoin = '''
   LEFT JOIN transactions p
     ON t.transfer_id IS NOT NULL AND p.transfer_id = t.transfer_id AND p.id <> t.id
-  LEFT JOIN accounts pa ON pa.id = p.account_id
-  LEFT JOIN projects pp ON pp.id = pa.project_id''';
+  LEFT JOIN accounts pa ON pa.id = p.account_id''';
 
 class TransactionRepo {
   TransactionRepo(this._conn);
@@ -694,8 +693,6 @@ class TransactionRepo {
               peerId: row.length > 15 ? row[15]?.toString() : null,
               peerAccountId: row.length > 16 ? row[16]?.toString() : null,
               peerAccountName: row.length > 17 ? row[17] as String? : null,
-              peerProjectId: row.length > 18 ? row[18]?.toString() : null,
-              peerProjectName: row.length > 19 ? row[19] as String? : null,
             )
           : null,
     );

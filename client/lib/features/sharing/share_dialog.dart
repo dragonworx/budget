@@ -13,8 +13,8 @@ import '../../theme/app_theme.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/sharing_ui.dart';
 
-/// Opens the share dialog for a project or account. Resolves true when the
-/// user left or gave away the target (callers navigate away).
+/// Opens the share dialog for an account. Resolves true when the user left
+/// it (callers navigate away).
 Future<bool> showShareDialog(BuildContext context, ShareTarget target) async {
   final r = await showDialog<bool>(
     context: context,
@@ -76,8 +76,8 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
     try {
       await action();
       await _load();
-      // Roles and lists elsewhere depend on membership.
-      ref.invalidate(projectsProvider);
+      // Roles and lists elsewhere depend on sharing.
+      ref.invalidate(accountsProvider);
       if (done != null) _toast(done);
     } catch (e) {
       _toast(friendlyError(e));
@@ -134,27 +134,12 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
     setState(() => _busy = true);
     try {
       await _repo.leave(_t);
-      ref.invalidate(projectsProvider);
+      ref.invalidate(accountsProvider);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       _toast(friendlyError(e));
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  Future<void> _transfer(Member m) async {
-    final ok = await showConfirmDialog(
-      context,
-      title: 'Transfer ownership?',
-      message:
-          '${m.user.displayName} will own “${_t.name}”. You stay on as an editor and can no longer share or delete it.',
-      confirmLabel: 'Transfer',
-    );
-    if (!ok) return;
-    await _run(
-      () => _repo.transferOwnership(_t.id, m.userId),
-      done: '${m.user.displayName} now owns “${_t.name}”',
-    );
   }
 
   Future<void> _remove(Member m, ShareTarget on) async {
@@ -189,7 +174,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
               children: [
                 Text('Share “${_t.name}”', maxLines: 1, overflow: TextOverflow.ellipsis),
                 Text(
-                  _t.isAccount ? 'Account' : 'Project and all its accounts',
+                  'Account',
                   style: theme.textTheme.bodySmall,
                 ),
               ],
@@ -246,7 +231,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
             key: const ValueKey('share-leave'),
             onPressed: _busy ? null : _leave,
             icon: const Icon(Icons.logout_rounded, size: 18),
-            label: Text(_t.isAccount ? 'Leave account' : 'Leave project'),
+            label: const Text('Leave account'),
           ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(false),
@@ -256,14 +241,9 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
     );
   }
 
-  bool _canLeave(ShareInfo info, String? myId) {
-    if (_t.isAccount) {
-      // Only an account share holder can leave an account.
-      return info.accountShares.any((m) => m.userId == myId) ||
-          info.members.isEmpty;
-    }
-    return info.members.any((m) => m.userId == myId && m.role != Role.owner);
-  }
+  /// Only a share holder can leave (the owner deletes instead).
+  bool _canLeave(ShareInfo info, String? myId) =>
+      info.accountShares.any((m) => m.userId == myId);
 
   Widget _heading(ThemeData theme, String text) => Padding(
     padding: const EdgeInsets.only(top: 14, bottom: 4),
@@ -354,13 +334,10 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
   Widget _memberRow(Member m, ShareInfo info, String? myId, bool isOwner) {
     final theme = Theme.of(context);
     final isMe = m.userId == myId;
-    final accountShare = m.accountId != null;
-    final on = accountShare && !_t.isAccount
-        ? ShareTarget.account(m.accountId!, m.accountName ?? 'account')
-        : _t;
+    final on = _t;
     final editable = isOwner && m.role != Role.owner && !isMe;
     return Padding(
-      key: ValueKey('member-${m.user.email}${accountShare ? '-${m.accountId}' : ''}'),
+      key: ValueKey('member-${m.user.email}'),
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
@@ -378,7 +355,6 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                 Text(
                   [
                     if (m.user.name != null && m.user.name!.isNotEmpty) m.user.email,
-                    if (accountShare && !_t.isAccount) 'Only ${m.accountName ?? 'an account'}',
                   ].join(' · '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -411,16 +387,8 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
               key: ValueKey('member-menu-${m.user.email}'),
               tooltip: 'More for ${m.user.displayName}',
               icon: const Icon(Icons.more_vert_rounded, size: 20),
-              onSelected: (v) => v == 'transfer' ? _transfer(m) : _remove(m, on),
+              onSelected: (_) => _remove(m, on),
               itemBuilder: (_) => [
-                if (!_t.isAccount && !accountShare)
-                  const PopupMenuItem(
-                    value: 'transfer',
-                    child: ListTile(
-                      leading: Icon(Icons.swap_horiz_rounded),
-                      title: Text('Transfer ownership'),
-                    ),
-                  ),
                 const PopupMenuItem(
                   value: 'remove',
                   child: ListTile(
@@ -458,7 +426,6 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                 Text(
                   [
                     '${i.role.label} · pending',
-                    if (i.accountName != null && !_t.isAccount) 'only ${i.accountName}',
                     if (exp != null) 'expires ${DateFormat('d MMM').format(exp.toLocal())}',
                   ].join(' · '),
                   style: theme.textTheme.bodySmall,

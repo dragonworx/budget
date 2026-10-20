@@ -6,7 +6,6 @@ import '../auth/authz.dart';
 import '../realtime/event.dart';
 
 const _entityTables = {
-  'project': 'projects',
   'account': 'accounts',
   'transaction': 'transactions',
   'scenario': 'scenarios',
@@ -23,7 +22,6 @@ class AuditRepo {
   Future<BudgetEvent> record({
     required String? userId,
     required String action,
-    String? projectId,
     String? accountId,
     String? entityId,
     String? subjectUserId,
@@ -33,15 +31,14 @@ class AuditRepo {
     final entity = action.split('.').first;
     final r = await _db.execute(
       Sql.named('''
-        INSERT INTO audit_log (user_id, project_id, account_id, action, entity,
+        INSERT INTO audit_log (user_id, account_id, action, entity,
                                entity_id, detail, subject_user_id, client_id)
-        VALUES (@u::uuid, @p::uuid, @a::uuid, @action, @entity, @eid,
+        VALUES (@u::uuid, @a::uuid, @action, @entity, @eid,
                 @detail::jsonb, @subj::uuid, @client)
         RETURNING ${BudgetEvent.columns}
       '''),
       parameters: {
         'u': userId,
-        'p': _uuidOrNull(projectId),
         'a': _uuidOrNull(accountId),
         'action': action,
         'entity': entity,
@@ -76,17 +73,15 @@ class AuditRepo {
     var action = policy.event!;
     // An invite to an existing user grants access immediately.
     if (action == 'invite.created' && response?['status'] == 'added') {
-      action = params['a'] != null ? 'account_share.added' : 'membership.added';
+      action = 'account_share.added';
     }
     final entity = action.split('.').first;
     final isCreate = action.endsWith('.created');
     String? entityId = switch (entity) {
-      'project' => params['p'],
       'account' => params['a'],
       'transaction' => params['t'],
       'skip' => params['t'],
       'scenario' => params['s'],
-      'membership' ||
       'account_share' =>
         params['u'] ?? (response?['member'] as Map?)?['userId']?.toString(),
       'invite' => params['i'],
@@ -95,29 +90,21 @@ class AuditRepo {
     };
     if (isCreate || entityId == null) entityId = createdId ?? entityId;
     final subject = switch (entity) {
-      'membership' ||
-      'account_share' =>
-        action.endsWith('.left') ? userId : entityId,
+      'account_share' => action.endsWith('.left') ? userId : entityId,
       'admin' when action == 'admin.user_updated' => params['u'],
       'invite' when action == 'invite.accepted' => userId,
-      'project' when action == 'project.ownership_transferred' =>
-        response?['ownerId']?.toString(),
       _ => null,
     };
 
-    var projectId = access.projectId;
     var accountId = access.accountId;
-    if (action == 'project.created') projectId = createdId;
     if (action == 'account.created') accountId = createdId;
     if (action == 'invite.accepted' && response != null) {
-      projectId = response['projectId']?.toString();
       accountId = response['accountId']?.toString();
     }
 
     await record(
       userId: userId,
       action: action,
-      projectId: projectId,
       accountId: accountId,
       entityId: entityId,
       subjectUserId: subject,

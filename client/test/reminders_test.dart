@@ -35,7 +35,7 @@ Transaction tx(
 
 final account = Account(
   id: 'a',
-  projectId: 'p',
+  ownerId: 'u',
   name: 'Everyday',
   seedBalance: Decimal.zero,
   seedDate: DateTime(2026, 1, 1),

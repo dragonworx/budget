@@ -26,15 +26,15 @@ class Scenario {
   final DateTime createdAt;
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'accountId': accountId,
-    'name': name,
-    'colorIndex': colorIndex,
-    'included': included,
-    'request': request,
-    'createdAt': createdAt.toUtc().toIso8601String(),
-    'version': version,
-  };
+        'id': id,
+        'accountId': accountId,
+        'name': name,
+        'colorIndex': colorIndex,
+        'included': included,
+        'request': request,
+        'createdAt': createdAt.toUtc().toIso8601String(),
+        'version': version,
+      };
 }
 
 class ScenarioRepo {

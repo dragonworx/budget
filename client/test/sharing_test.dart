@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fake_accounts.dart';
 import 'support/fake_auth.dart';
 
 const _owner = UserRef(id: 'u1', email: 'musicartscience@gmail.com', name: 'Ali');
@@ -21,7 +22,7 @@ const _bob = UserRef(id: 'u2', email: 'bob@example.com', name: 'Bob');
 
 Account _acct(String id, {Role role = Role.owner}) => Account(
   id: id,
-  projectId: 'p1',
+  ownerId: 'u1',
   name: 'Everyday',
   seedBalance: Decimal.zero,
   seedDate: DateTime(2026, 10, 1),
@@ -33,10 +34,8 @@ class FakeSharing implements SharingRepository {
   final calls = <String>[];
   ShareInfo info = const ShareInfo(
     role: Role.owner,
-    members: [
-      Member(user: _owner, role: Role.owner),
-      Member(user: _bob, role: Role.viewer),
-    ],
+    members: [Member(user: _owner, role: Role.owner)],
+    accountShares: [Member(user: _bob, role: Role.viewer)],
     invites: [Invite(id: 'i1', email: 'carol@example.com', role: Role.editor)],
   );
   InvitePreview? preview_;
@@ -64,8 +63,6 @@ class FakeSharing implements SharingRepository {
   @override
   Future<void> leave(ShareTarget t) async => calls.add('leave ${t.id}');
   @override
-  Future<void> transferOwnership(String p, String u) async => calls.add('transfer $u');
-  @override
   Future<String> rotateLink(String id) async {
     calls.add('rotate $id');
     return inviteLink('new');
@@ -85,7 +82,7 @@ class FakeSharing implements SharingRepository {
   Future<AcceptedInvite> accept(String token) async {
     calls.add('accept $token');
     if (acceptError != null) throw acceptError!;
-    return const AcceptedInvite(projectId: 'p9', role: Role.viewer);
+    return const AcceptedInvite(accountId: 'a9', role: Role.viewer);
   }
 
   @override
@@ -100,26 +97,10 @@ class FakeSharing implements SharingRepository {
   Future<void> removeAllowed(String p) async => calls.add('disallow $p');
 }
 
-class _Projects extends ProjectRepository {
-  _Projects(this.items) : super(ApiClient());
-  final List<Project> items;
-  @override
-  Future<List<Project>> list() async => items;
-  @override
-  Future<Project> get(String id) async =>
-      items.firstWhere((p) => p.id == id, orElse: () => Project(id: id, name: 'X'));
-}
-
-class _Accounts extends AccountRepository {
-  _Accounts() : super(ApiClient());
-  @override
-  Future<List<Account>> listForProject(String projectId) async => const [];
-}
-
 Future<ProviderContainer> _app(
   WidgetTester tester, {
   required FakeSharing sharing,
-  List<Project> projects = const [],
+  List<Account> accounts = const [],
   String path = '/',
   Size size = const Size(1200, 900),
 }) async {
@@ -129,8 +110,9 @@ Future<ProviderContainer> _app(
   final c = ProviderContainer(
     overrides: [
       authRepositoryProvider.overrideWithValue(FakeAuthRepository(user: adminUser)),
-      projectRepositoryProvider.overrideWithValue(_Projects(projects)),
-      accountRepositoryProvider.overrideWithValue(_Accounts()),
+      accountRepositoryProvider.overrideWithValue(
+        FakeAccountRepository(accounts: List.of(accounts)),
+      ),
       sharingRepositoryProvider.overrideWithValue(sharing),
     ],
   );
@@ -155,7 +137,7 @@ Future<void> _dialog(WidgetTester tester, FakeSharing sharing, {ShareTarget? tar
       overrides: [
         authRepositoryProvider.overrideWithValue(FakeAuthRepository(user: adminUser)),
         sharingRepositoryProvider.overrideWithValue(sharing),
-        projectRepositoryProvider.overrideWithValue(_Projects(const [])),
+        accountRepositoryProvider.overrideWithValue(FakeAccountRepository()),
       ],
       child: MaterialApp(
         home: Scaffold(
@@ -163,7 +145,7 @@ Future<void> _dialog(WidgetTester tester, FakeSharing sharing, {ShareTarget? tar
             builder: (context) => TextButton(
               onPressed: () => showShareDialog(
                 context,
-                target ?? const ShareTarget.project('p1', 'Home'),
+                target ?? const ShareTarget.account('a1', 'Home'),
               ),
               child: const Text('open'),
             ),
@@ -178,27 +160,49 @@ Future<void> _dialog(WidgetTester tester, FakeSharing sharing, {ShareTarget? tar
 
 void main() {
   group('models', () {
-    test('project sharing fields parse', () {
-      final p = Project.fromJson({
-        'id': 'p',
+    test('account sharing fields parse', () {
+      final a = Account.fromJson({
+        'id': 'a',
+        'ownerId': 'u2',
         'name': 'Shared',
+        'seedBalance': '0',
+        'seedDate': '2026-01-01',
         'version': 3,
         'role': 'viewer',
-        'access': 'account',
         'shared': true,
-        'owner': {'id': 'u1', 'email': 'a@b.co', 'name': null},
-        'sharedAccountIds': ['a1'],
+        'owner': {'id': 'u2', 'email': 'a@b.co', 'name': null},
       });
-      expect(p.role, Role.viewer);
-      expect(p.limited, isTrue);
-      expect(p.shared, isTrue);
-      expect(p.owner!.email, 'a@b.co');
-      expect(p.sharedAccountIds, ['a1']);
-      expect(p.version, 3);
+      expect(a.role, Role.viewer);
+      expect(a.shared, isTrue);
+      expect(a.ownerId, 'u2');
+      expect(a.owner!.email, 'a@b.co');
+      expect(a.version, 3);
+      expect(a.toJson().containsKey('projectId'), isFalse);
     });
 
-    test('older payloads default to owner', () {
-      expect(Project.fromJson({'id': 'p', 'name': 'n'}).role, Role.owner);
+    test('older payloads default to my own account', () {
+      final a = Account.fromJson({
+        'id': 'a',
+        'projectId': 'p',
+        'name': 'n',
+        'seedBalance': '0',
+        'seedDate': '2026-01-01',
+      });
+      expect(a.role, Role.owner);
+      expect(a.shared, isFalse);
+    });
+
+    test('share info: owner first, then shares', () {
+      final i = ShareInfo.fromJson({
+        'role': 'owner',
+        'owner': {'userId': 'u1', 'email': 'a@b.co'},
+        'shares': [
+          {'userId': 'u2', 'email': 'b@b.co', 'role': 'editor', 'accountId': 'a'},
+        ],
+      });
+      expect(i.members.single.role, Role.owner);
+      expect(i.members.single.userId, 'u1');
+      expect(i.accountShares.single.role, Role.editor);
     });
 
     test('unreadable transfer peer reads "Private account"', () {
@@ -250,7 +254,7 @@ void main() {
       expect(find.textContaining('/invite/tok123'), findsOneWidget);
     });
 
-    testWidgets('revoke and rotate pending invites; transfer ownership', (tester) async {
+    testWidgets('revoke and rotate pending invites; remove access', (tester) async {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
         (call) async => null,
@@ -267,20 +271,20 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('member-menu-bob@example.com')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Transfer ownership'));
+      expect(find.text('Transfer ownership'), findsNothing);
+      await tester.tap(find.text('Remove access'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Transfer'));
+      await tester.tap(find.text('Remove'));
       await tester.pumpAndSettle();
-      expect(s.calls, contains('transfer u2'));
+      expect(s.calls, contains('remove u2'));
     });
 
     testWidgets('a viewer sees no invite controls and can leave', (tester) async {
       final s = FakeSharing()
         ..info = const ShareInfo(
           role: Role.viewer,
-          members: [
-            Member(user: _owner, role: Role.owner),
-            Member(user: UserRef(id: 'u1x', email: 'x@y.co'), role: Role.viewer),
+          members: [Member(user: _bob, role: Role.owner)],
+          accountShares: [
             Member(user: UserRef(id: 'u1', email: 'me@y.co'), role: Role.viewer),
           ],
         );
@@ -291,7 +295,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Leave'));
       await tester.pumpAndSettle();
-      expect(s.calls, contains('leave p1'));
+      expect(s.calls, contains('leave a1'));
       expect(find.byKey(const ValueKey('share-dialog')), findsNothing);
     });
   });
@@ -308,13 +312,13 @@ void main() {
       id: 'i1',
       email: 'musicartscience@gmail.com',
       role: Role.viewer,
-      projectId: 'p9',
-      projectName: 'Holiday',
+      accountId: 'a9',
+      accountName: 'Holiday',
       invitedBy: _bob,
       status: status,
     );
 
-    testWidgets('preview then accept opens the project', (tester) async {
+    testWidgets('preview then accept opens the account', (tester) async {
       final s = FakeSharing()..preview_ = InvitePreview(invite: inv(), emailMatches: true);
       final c = await _app(tester, sharing: s, path: '/invite/tok');
       expect(find.byKey(const ValueKey('invite-target')), findsOneWidget);
@@ -322,7 +326,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('invite-accept')));
       await tester.pumpAndSettle();
       expect(s.calls, contains('accept tok'));
-      expect(_path(c), '/projects/p9');
+      expect(_path(c), '/accounts/a9/timeline');
     });
 
     testWidgets('signed in as someone else', (tester) async {
@@ -354,7 +358,7 @@ void main() {
       final s = FakeSharing()..preview_ = InvitePreview(invite: inv(), emailMatches: true);
       final c = ProviderContainer(overrides: [
         authRepositoryProvider.overrideWithValue(auth),
-        projectRepositoryProvider.overrideWithValue(_Projects(const [])),
+        accountRepositoryProvider.overrideWithValue(FakeAccountRepository()),
         sharingRepositoryProvider.overrideWithValue(s),
       ]);
       addTearDown(c.dispose);
@@ -371,30 +375,25 @@ void main() {
     });
   });
 
-  testWidgets('projects page splits mine and shared, with owner and role', (tester) async {
-    await _app(
+  testWidgets('accounts home splits mine and shared, with owner and role', (tester) async {
+    final c = await _app(
       tester,
       sharing: FakeSharing(),
-      projects: const [
-        Project(id: 'p1', name: 'Mine'),
-        Project(id: 'p2', name: 'Theirs', shared: true, role: Role.viewer, owner: _bob),
-        Project(
-          id: 'p3',
-          name: 'Bits',
-          shared: true,
-          limited: true,
-          role: Role.editor,
-          owner: _bob,
-          sharedAccountIds: ['a1'],
-        ),
+      path: '/accounts',
+      accounts: [
+        testAccount('a1', 'Mine'),
+        testAccount('a2', 'Theirs', shared: true, role: Role.viewer, ownerName: 'Bob'),
       ],
     );
+    expect(_path(c), '/accounts');
+    expect(find.byKey(const ValueKey('mine-heading')), findsOneWidget);
     expect(find.byKey(const ValueKey('shared-heading')), findsOneWidget);
-    expect(find.byKey(const ValueKey('owner-avatar')), findsNWidgets(2));
     expect(find.byKey(const ValueKey('role-chip-viewer')), findsOneWidget);
-    expect(find.text('1 shared account only · Owner Bob'), findsOneWidget);
-    // My own project has another member -> shared badge.
+    expect(find.text('Shared by Bob'), findsOneWidget);
+    // My own account is shared with someone -> shared badge.
     expect(find.byKey(const ValueKey('owned-shared-badge')), findsOneWidget);
+    expect(find.text('New project'), findsNothing);
+    expect(find.byKey(const ValueKey('new-account')), findsOneWidget);
   });
 
   testWidgets('viewer gets a read-only transactions panel', (tester) async {

@@ -4,41 +4,20 @@ import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/transactions/transaction_editor.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:budget_client/widgets/account_picker.dart';
-import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Account _acct(String id, String project, String name) => Account(
-  id: id,
-  projectId: project,
-  name: name,
-  seedBalance: Decimal.zero,
-  seedDate: DateTime(2026, 10, 1),
-  lossThreshold: Decimal.zero,
-);
+import 'support/fake_accounts.dart';
 
-final _projects = [
-  Project(id: 'p1', name: 'Home', createdAt: DateTime(2026)),
-  Project(id: 'p2', name: 'Business', createdAt: DateTime(2026)),
+final _accounts = [
+  testAccount('a', 'Everyday'),
+  testAccount('s', 'Savings'),
+  testAccount('b', 'Ops', shared: true, role: Role.editor, ownerName: 'Sam'),
+  testAccount('v', 'Kids', shared: true, role: Role.viewer, ownerName: 'Sam'),
 ];
-final _accounts = {
-  'p1': [_acct('a', 'p1', 'Everyday'), _acct('s', 'p1', 'Savings')],
-  'p2': [_acct('b', 'p2', 'Ops')],
-};
 
-class _Projects extends ProjectRepository {
-  _Projects() : super(ApiClient());
-  @override
-  Future<List<Project>> list() async => _projects;
-}
-
-class _Accounts extends AccountRepository {
-  _Accounts() : super(ApiClient());
-  @override
-  Future<List<Account>> listForProject(String projectId) async =>
-      _accounts[projectId]!;
-}
+FakeAccountRepository _repo() => FakeAccountRepository(accounts: List.of(_accounts));
 
 class _Txs extends TransactionRepository {
   _Txs() : super(ApiClient());
@@ -67,7 +46,6 @@ Transaction _transfer(TransactionDirection dir, String peer) =>
         'peerTransactionId': 't2',
         'peerAccountId': 'b',
         'peerAccountName': peer,
-        'peerProjectName': 'Business',
       },
     });
 
@@ -107,8 +85,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          projectRepositoryProvider.overrideWithValue(_Projects()),
-          accountRepositoryProvider.overrideWithValue(_Accounts()),
+          accountRepositoryProvider.overrideWithValue(_repo()),
           transactionRepositoryProvider.overrideWithValue(txs),
         ],
         child: MaterialApp(
@@ -132,9 +109,8 @@ void main() {
     return txs;
   }
 
-  testWidgets('desktop: Transfer uses a project > account cascading menu', (
-    tester,
-  ) async {
+  testWidgets('desktop: Transfer offers every account I can edit except the '
+      'source, mine then shared', (tester) async {
     final txs = await pumpEditor(tester, const Size(1200, 1600));
     // Saving without a destination is blocked.
     await tester.tap(find.text('Create'));
@@ -144,30 +120,22 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('editor-transfer-account')));
     await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('transfer-header-projects')),
-      findsOneWidget,
-    );
-    expect(find.text('Projects:'), findsOneWidget);
+    expect(find.byType(SubmenuButton), findsNothing);
+    expect(find.byKey(const ValueKey('transfer-header-mine')), findsOneWidget);
+    expect(find.byKey(const ValueKey('transfer-header-shared')), findsOneWidget);
     // Headers are not focusable menu items.
     expect(
       find.ancestor(
-        of: find.text('Projects:'),
+        of: find.text('Shared with me'),
         matching: find.byType(MenuItemButton),
       ),
       findsNothing,
     );
-    // The source account itself is not offered.
-    await tester.tap(find.byKey(const ValueKey('transfer-project-p1')));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('transfer-header-accounts-p1')),
-      findsOneWidget,
-    );
+    // The source and read-only accounts are not offered.
     expect(find.byKey(const ValueKey('transfer-account-a')), findsNothing);
+    expect(find.byKey(const ValueKey('transfer-account-v')), findsNothing);
     expect(find.byKey(const ValueKey('transfer-account-s')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('transfer-project-p2')));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('transfer-new-account')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('transfer-account-b')));
     await tester.pumpAndSettle();
     expect(find.text('To: Ops'), findsOneWidget);
@@ -177,32 +145,21 @@ void main() {
     expect(txs.created.single['direction'], 'debit');
   });
 
-  testWidgets('phone: the transfer picker is a dropdown; tapping a project '
-      'opens its accounts below it', (tester) async {
+  testWidgets('phone: the transfer picker is an on-screen dropdown', (
+    tester,
+  ) async {
     await pumpEditor(tester, const Size(390, 1600));
     await tester.tap(find.byKey(const ValueKey('editor-transfer-account')));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsNothing);
-    expect(find.text('Projects:'), findsOneWidget);
-    expect(find.byKey(const ValueKey('transfer-account-b')), findsNothing);
-    final row = tester.getRect(
-      find.byKey(const ValueKey('transfer-project-p2')),
-    );
-    await tester.tap(find.byKey(const ValueKey('transfer-project-p2')));
-    await tester.pumpAndSettle();
-    // The source account itself is not offered.
-    expect(find.byKey(const ValueKey('transfer-account-a')), findsNothing);
-    final item = tester.getRect(
-      find.byKey(const ValueKey('transfer-account-b')),
-    );
-    // Opens below its project row (not off the side of a narrow screen).
-    expect(item.top, greaterThanOrEqualTo(row.bottom - 1));
-    expect(item.right, lessThanOrEqualTo(390));
-    await tester.tap(find.byKey(const ValueKey('transfer-account-b')));
-    await tester.pumpAndSettle();
     expect(find.text('Projects:'), findsNothing);
-    expect(find.text('To: Ops'), findsOneWidget);
-    expect(find.textContaining('(Business)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('transfer-account-a')), findsNothing);
+    final item = tester.getRect(find.byKey(const ValueKey('transfer-account-s')));
+    expect(item.right, lessThanOrEqualTo(390));
+    expect(item.height, greaterThanOrEqualTo(44));
+    await tester.tap(find.byKey(const ValueKey('transfer-account-s')));
+    await tester.pumpAndSettle();
+    expect(find.text('To: Savings'), findsOneWidget);
   });
 
   testWidgets('AccountPicker marks the current account', (tester) async {
@@ -210,8 +167,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          projectRepositoryProvider.overrideWithValue(_Projects()),
-          accountRepositoryProvider.overrideWithValue(_Accounts()),
+          accountRepositoryProvider.overrideWithValue(_repo()),
         ],
         child: MaterialApp(
           home: Scaffold(
@@ -227,11 +183,6 @@ void main() {
       ),
     );
     await tester.tap(find.text('Jump'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('nav-project-p1')));
-    await tester.pumpAndSettle();
-    // A second click (e.g. after hover opened it) keeps it open.
-    await tester.tap(find.byKey(const ValueKey('nav-project-p1')));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.check_rounded), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('nav-account-s')));

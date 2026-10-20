@@ -1,7 +1,10 @@
+import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
+import '../auth/authz_middleware.dart';
+import '../auth/middleware.dart';
 import '../domain/models.dart';
 import '../domain/transaction_import.dart';
 import '../engine/calendar_math.dart';
@@ -19,6 +22,53 @@ Router buildAccountsApi(Session conn) {
   final accounts = AccountRepo(conn);
   final transactions = TransactionRepo(conn);
   final router = Router();
+
+  // Accounts are top level: mine (owner) plus those shared with me.
+  router.get('/', (Request request) async {
+    final me = requireAuth(request).user.id;
+    final items = await accounts.listAccessible(me);
+    final last = await accounts.lastOpened(me);
+    return jsonOk({
+      'accounts': items,
+      // Only when still accessible (a share may have been revoked).
+      'lastAccountId': items.any((a) => a['id'] == last) ? last : null,
+    });
+  });
+
+  router.post('/', (Request request) async {
+    try {
+      final me = requireAuth(request).user.id;
+      final body = await readJsonObject(request);
+      final name = requireString(body, 'name').trim();
+      if (name.isEmpty) return jsonError(400, 'name is required');
+      // A 'currency' or 'projectId' field (older clients / exports) is
+      // ignored: accounts no longer have either.
+      final seedBalance = parseDecimal(body['seedBalance'] ?? '0');
+      final seedDate = parseDate(requireString(body, 'seedDate'));
+      final lossThreshold = body.containsKey('lossThreshold')
+          ? parseDecimal(body['lossThreshold'])
+          : Decimal.zero;
+      final account = await accounts.create(
+        ownerId: me,
+        name: name,
+        seedBalance: seedBalance,
+        seedDate: seedDate,
+        lossThreshold: lossThreshold,
+        displayOrder: optionalInt(body, 'displayOrder') ?? 0,
+        // No explicit choice: Hundreds, like the dialog's preselected value.
+        currencyScale: parseCurrencyScale(body) ?? Account.defaultCurrencyScale,
+      );
+      return jsonOk({...account.toJson(), 'role': 'owner', 'shared': false},
+          status: 201);
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    } on ServerException catch (e) {
+      if (e.code == '23505') {
+        return jsonError(409, 'you already have an account with this name');
+      }
+      rethrow;
+    }
+  });
 
   router.get('/<accountId>/transactions',
       (Request request, String accountId) async {
@@ -143,10 +193,26 @@ Router buildAccountsApi(Session conn) {
     }
   });
 
+  /// `POST /<id>/opened`: the timeline was opened (any role). The next
+  /// sign-in lands here.
+  router.post('/<id>/opened', (Request request, String id) async {
+    final auth = authOf(request);
+    if (auth != null) await accounts.markOpened(auth.user.id, id);
+    return jsonOk({'lastAccountId': id});
+  });
+
   router.get('/<id>', (Request request, String id) async {
     final account = await accounts.get(id);
     if (account == null) return jsonError(404, 'account not found');
-    return jsonOk(account.toJson());
+    final access = accessOf(request);
+    // Remember it: sign-in lands on the account opened last.
+    final auth = authOf(request);
+    if (auth != null) await accounts.markOpened(auth.user.id, id);
+    return jsonOk({
+      ...account.toJson(),
+      if (access?.role != null) 'role': access!.role!.name,
+      'shared': access?.isOwner == false,
+    });
   });
 
   router.patch('/<id>', (Request request, String id) async {
@@ -188,7 +254,7 @@ Router buildAccountsApi(Session conn) {
       return jsonError(400, e.message);
     } on ServerException catch (e) {
       if (e.code == '23505') {
-        return jsonError(409, 'account name already exists in project');
+        return jsonError(409, 'you already have an account with this name');
       }
       rethrow;
     }

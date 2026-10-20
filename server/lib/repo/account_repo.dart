@@ -10,24 +10,65 @@ class AccountRepo {
   final Session _conn;
   final _uuid = const Uuid();
 
-  Future<List<Account>> listByProject(String projectId) async {
+  /// Accounts [userId] owns or has been shared, with their role, owner and
+  /// whether they are shared with them. Mine first (display order, name),
+  /// then shared ones by name.
+  Future<List<Map<String, Object?>>> listAccessible(String userId) async {
     final rows = await _conn.execute(
       Sql.named('''
-        SELECT id, project_id, name, seed_balance, seed_date,
-               loss_threshold, display_order, transaction_order, currency_scale, version
-        FROM accounts
-        WHERE project_id = @projectId
-        ORDER BY display_order ASC, name ASC
+        SELECT a.id, a.owner_id, a.name, a.seed_balance, a.seed_date,
+               a.loss_threshold, a.display_order, a.transaction_order,
+               a.currency_scale, a.version,
+               CASE WHEN a.owner_id = @u::uuid THEN 'owner' ELSE s.role::text END,
+               u.email, u.name, u.picture_url
+        FROM accounts a
+        JOIN users u ON u.id = a.owner_id
+        LEFT JOIN account_shares s
+          ON s.account_id = a.id AND s.user_id = @u::uuid
+        WHERE a.owner_id = @u::uuid OR s.user_id IS NOT NULL
+        ORDER BY (a.owner_id = @u::uuid) DESC,
+                 CASE WHEN a.owner_id = @u::uuid THEN a.display_order ELSE 0 END,
+                 lower(a.name), a.id
       '''),
-      parameters: {'projectId': projectId},
+      parameters: {'u': userId},
     );
-    return rows.map(_fromRow).toList();
+    return rows.map((r) {
+      final shared = r[1].toString() != userId;
+      return {
+        ..._fromRow(r).toJson(),
+        'role': r[10],
+        'shared': shared,
+        'owner': {
+          'id': r[1].toString(),
+          'email': r[11],
+          'name': r[12],
+          'pictureUrl': r[13],
+        },
+      };
+    }).toList();
+  }
+
+  /// The account [userId] opened last (may no longer be accessible).
+  Future<String?> lastOpened(String userId) async {
+    final r = await _conn.execute(
+      Sql.named('SELECT last_account_id::text FROM users WHERE id = @u::uuid'),
+      parameters: {'u': userId},
+    );
+    return r.isEmpty ? null : r.first[0] as String?;
+  }
+
+  Future<void> markOpened(String userId, String accountId) async {
+    await _conn.execute(
+      Sql.named('UPDATE users SET last_account_id = @a::uuid '
+          'WHERE id = @u::uuid AND last_account_id IS DISTINCT FROM @a::uuid'),
+      parameters: {'u': userId, 'a': accountId},
+    );
   }
 
   Future<Account?> get(String id) async {
     final rows = await _conn.execute(
       Sql.named('''
-        SELECT id, project_id, name, seed_balance, seed_date,
+        SELECT id, owner_id, name, seed_balance, seed_date,
                loss_threshold, display_order, transaction_order, currency_scale, version
         FROM accounts WHERE id = @id
       '''),
@@ -38,7 +79,7 @@ class AccountRepo {
   }
 
   Future<Account> create({
-    required String projectId,
+    required String ownerId,
     required String name,
     required Decimal seedBalance,
     required DateTime seedDate,
@@ -50,18 +91,18 @@ class AccountRepo {
     final rows = await _conn.execute(
       Sql.named('''
         INSERT INTO accounts (
-          id, project_id, name, seed_balance, seed_date,
-          loss_threshold, display_order, currency_scale
+          id, owner_id, name, seed_balance, seed_date,
+          loss_threshold, display_order, currency_scale, created_by
         ) VALUES (
-          @id, @projectId, @name, @seedBalance, @seedDate,
-          @lossThreshold, @displayOrder, @currencyScale
+          @id, @ownerId::uuid, @name, @seedBalance, @seedDate,
+          @lossThreshold, @displayOrder, @currencyScale, @ownerId::uuid
         )
-        RETURNING id, project_id, name, seed_balance, seed_date,
+        RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, transaction_order, currency_scale, version
       '''),
       parameters: {
         'id': id,
-        'projectId': projectId,
+        'ownerId': ownerId,
         'name': name,
         'seedBalance': seedBalance.toString(),
         'seedDate': DateTime.utc(seedDate.year, seedDate.month, seedDate.day),
@@ -95,7 +136,7 @@ class AccountRepo {
           display_order = @displayOrder,
           currency_scale = @currencyScale
         WHERE id = @id
-        RETURNING id, project_id, name, seed_balance, seed_date,
+        RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, transaction_order, currency_scale, version
       '''),
       parameters: {
@@ -192,7 +233,7 @@ class AccountRepo {
       Sql.named('''
         UPDATE accounts SET transaction_order = @transactionOrder
         WHERE id = @id
-        RETURNING id, project_id, name, seed_balance, seed_date,
+        RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, transaction_order, currency_scale, version
       '''),
       parameters: {
@@ -236,7 +277,7 @@ class AccountRepo {
     final seedDate = row[4] as DateTime;
     return Account(
       id: row[0].toString(),
-      projectId: row[1].toString(),
+      ownerId: row[1].toString(),
       name: row[2] as String,
       seedBalance: Decimal.parse(seedBalanceRaw.toString()),
       seedDate: DateTime.utc(seedDate.year, seedDate.month, seedDate.day),

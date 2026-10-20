@@ -8,7 +8,6 @@ import 'package:budget_server/api/transactions.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
 import 'package:budget_server/repo/account_repo.dart';
-import 'package:budget_server/repo/project_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
@@ -47,21 +46,27 @@ void main() {
       markTestSkipped('no test database');
       return;
     }
-    final p1 = await ProjectRepo(c)
-        .create('transfer test 1', ownerId: await testOwnerId(c));
-    final p2 = await ProjectRepo(c)
-        .create('transfer test 2', ownerId: await testOwnerId(c));
+    final owner = await testOwnerId(c);
+    final made = <String>[];
     try {
-      Future<String> acct(String pid, String name) async =>
-          (await AccountRepo(c).create(
-                  projectId: pid,
-                  name: name,
-                  seedBalance: Decimal.zero,
-                  seedDate: DateTime.utc(2026, 10, 1),
-                  lossThreshold: Decimal.zero))
-              .id;
-      final a = await acct(p1.id, 'A');
-      final b = await acct(p2.id, 'B');
+      Future<String> acct(String name) async {
+        await c.execute(
+            Sql.named('DELETE FROM accounts WHERE owner_id = @o::uuid '
+                'AND name = @n'),
+            parameters: {'o': owner, 'n': name});
+        final id = (await AccountRepo(c).create(
+                ownerId: owner,
+                name: name,
+                seedBalance: Decimal.zero,
+                seedDate: DateTime.utc(2026, 10, 1),
+                lossThreshold: Decimal.zero))
+            .id;
+        made.add(id);
+        return id;
+      }
+
+      final a = await acct('A');
+      final b = await acct('B');
       final accounts = buildAccountsApi(c).call;
       final txs = transactionsRouter(c).call;
 
@@ -94,7 +99,7 @@ void main() {
       final src = created.json;
       expect(src['transfer']['peerAccountId'], b);
       expect(src['transfer']['peerAccountName'], 'B');
-      expect(src['transfer']['peerProjectName'], 'transfer test 2');
+      expect(src['transfer'].containsKey('peerProjectName'), isFalse);
       final peerId = src['transfer']['peerTransactionId'] as String;
 
       final bList = (await call(accounts, 'GET', '/$b/transactions'))
@@ -162,9 +167,9 @@ void main() {
       final left = (await call(txs, 'GET', '/${again['id']}')).json;
       expect(left['transfer'], isNull);
     } finally {
-      for (final p in [p1, p2]) {
-        await c.execute(Sql.named('DELETE FROM projects WHERE id = @p'),
-            parameters: {'p': p.id});
+      for (final id in made) {
+        await c.execute(Sql.named('DELETE FROM accounts WHERE id = @a::uuid'),
+            parameters: {'a': id});
       }
     }
   });

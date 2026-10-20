@@ -71,10 +71,9 @@ void main() {
   setUpAll(() => h.open());
   tearDownAll(() => h.close());
 
-  Future<String> account(String who, String p, String name) async {
-    final a = await h.call('POST', '/api/projects/$p/accounts',
-        as: who,
-        body: {'name': name, 'seedDate': '2026-01-01'});
+  Future<String> account(String who, String name) async {
+    final a = await h.call('POST', '/api/accounts',
+        as: who, body: {'name': name, 'seedDate': '2026-01-01'});
     expect(a.status, 201, reason: '${a.json}');
     return a.json['id'] as String;
   }
@@ -354,7 +353,7 @@ void main() {
   test('transfers mirror overrides and split into a new pair', () async {
     if (!h.ok) return markTestSkipped('no test DB');
     final s = await h.seed('o5', 'Transfer');
-    final b = await account('o5', s.p, 'Savings');
+    final b = await account('o5', 'Savings');
     final t = await create('o5', s.a, weekly('Save', transferTo: b));
     final id = t['id'];
     final set = await h.call(
@@ -404,7 +403,7 @@ void main() {
     if (!h.ok) return markTestSkipped('no test DB');
     final s = await h.seed('o7', 'Authz');
     await h.login('v7');
-    await h.call('POST', '/api/projects/${s.p}/invites',
+    await h.call('POST', '/api/accounts/${s.a}/invites',
         as: 'o7', body: {'email': h.email('v7'), 'role': 'viewer'});
     final t = await create('o7', s.a, weekly('R'));
     final id = t['id'];

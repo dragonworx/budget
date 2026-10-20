@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../app.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/api_client.dart';
@@ -54,19 +56,15 @@ class _InvitePageState extends ConsumerState<InvitePage> {
     setState(() => _accepting = true);
     try {
       final r = await ref.read(sharingRepositoryProvider).accept(widget.token);
-      ref.invalidate(projectsProvider);
+      ref.invalidate(accountsProvider);
       ref.invalidate(myInvitesProvider);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Invite accepted: you can now ${r.role.canEdit ? 'edit' : 'view'} it')),
       );
-      if (r.accountId != null) {
-        context.go('/accounts/${r.accountId}/timeline');
-      } else if (r.projectId != null) {
-        context.go('/projects/${r.projectId}');
-      } else {
-        context.go('/');
-      }
+      context.go(
+        r.accountId != null ? '/accounts/${r.accountId}/timeline' : accountsPath,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -136,7 +134,7 @@ class _InvitePageState extends ConsumerState<InvitePage> {
             RoleChip(inv.role),
             const SizedBox(width: 8),
             Text(
-              inv.accountId != null ? 'one account' : 'whole project',
+              'account',
               style: theme.textTheme.bodySmall,
             ),
           ],
@@ -188,8 +186,8 @@ class _InvitePageState extends ConsumerState<InvitePage> {
                     ...body,
                     const SizedBox(height: 16),
                     TextButton(
-                      onPressed: () => context.go('/'),
-                      child: const Text('Go to projects'),
+                      onPressed: () => context.go(accountsPath),
+                      child: const Text('Go to accounts'),
                     ),
                   ],
                 ),

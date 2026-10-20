@@ -8,7 +8,6 @@ import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
 import 'package:budget_server/engine/calendar_math.dart';
 import 'package:budget_server/repo/account_repo.dart';
-import 'package:budget_server/repo/project_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
@@ -43,11 +42,11 @@ void main() {
       markTestSkipped('no test database');
       return;
     }
-    final project = await ProjectRepo(c)
-        .create('seed shift test', ownerId: await testOwnerId(c));
+    final owner = await testOwnerId(c, 'seed-shift-test@example.com');
+    await deleteOwnedAccounts(c, owner);
     try {
       final account = await AccountRepo(c).create(
-        projectId: project.id,
+        ownerId: owner,
         name: 'A',
         seedBalance: Decimal.zero,
         seedDate: DateTime.utc(2026, 10, 16),
@@ -108,10 +107,7 @@ void main() {
       );
       expect(again.first[0], '2026-10-27');
     } finally {
-      await c.execute(
-        Sql.named('DELETE FROM projects WHERE id = @p'),
-        parameters: {'p': project.id},
-      );
+      await deleteOwnedAccounts(c, owner);
     }
   });
 }

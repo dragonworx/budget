@@ -3,8 +3,6 @@ import 'dart:convert';
 import 'package:budget_client/app.dart';
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/auth_repository.dart';
-import 'package:budget_client/data/models.dart';
-import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/auth/google_button.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
@@ -14,29 +12,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'support/fake_accounts.dart';
 import 'support/fake_auth.dart';
 
-class _Projects implements ProjectRepository {
-  int lists = 0;
-  @override
-  Future<List<Project>> list() async {
-    lists++;
-    return [];
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
-}
-
-Future<(ProviderContainer, FakeAuthRepository, _Projects)> _pump(
+Future<(ProviderContainer, FakeAuthRepository, FakeAccountRepository)> _pump(
   WidgetTester tester,
-  FakeAuthRepository auth,
-) async {
-  final projects = _Projects();
+  FakeAuthRepository auth, {
+  FakeAccountRepository? accounts,
+}) async {
+  final repo = accounts ?? FakeAccountRepository();
   final container = ProviderContainer(
     overrides: [
       authRepositoryProvider.overrideWithValue(auth),
-      projectRepositoryProvider.overrideWithValue(projects),
+      accountRepositoryProvider.overrideWithValue(repo),
     ],
   );
   addTearDown(container.dispose);
@@ -44,7 +32,7 @@ Future<(ProviderContainer, FakeAuthRepository, _Projects)> _pump(
     UncontrolledProviderScope(container: container, child: const BudgetApp()),
   );
   await tester.pumpAndSettle();
-  return (container, auth, projects);
+  return (container, auth, repo);
 }
 
 String _path(ProviderContainer c) =>
@@ -68,9 +56,9 @@ void main() {
         authRedirect(
           resolved: true,
           signedIn: false,
-          location: u('/projects/p1'),
+          location: u('/accounts'),
         ),
-        '/sign-in?from=%2Fprojects%2Fp1',
+        '/sign-in?from=%2Faccounts',
       );
     });
     test('signed in leaves sign-in for the target', () {
@@ -78,9 +66,9 @@ void main() {
         authRedirect(
           resolved: true,
           signedIn: true,
-          location: u('/sign-in?from=%2Fprojects%2Fp1'),
+          location: u('/sign-in?from=%2Faccounts'),
         ),
-        '/projects/p1',
+        '/accounts',
       );
       expect(
         authRedirect(
@@ -98,16 +86,16 @@ void main() {
   });
 
   testWidgets('signed out shows sign-in; no data fetched', (tester) async {
-    final (c, _, projects) = await _pump(tester, FakeAuthRepository());
+    final (c, _, repo) = await _pump(tester, FakeAuthRepository());
     expect(_path(c), '/sign-in');
-    expect(find.text('Sign in to see your projects'), findsOneWidget);
+    expect(find.text('Sign in to see your accounts'), findsOneWidget);
     expect(find.byKey(const ValueKey('dev-login')), findsNothing);
     expect(find.byKey(const ValueKey('google-not-configured')), findsOneWidget);
-    expect(projects.lists, 0);
+    expect(repo.lists, 0);
   });
 
   testWidgets('dev bypass button signs in as admin', (tester) async {
-    final (c, auth, projects) = await _pump(
+    final (c, auth, repo) = await _pump(
       tester,
       FakeAuthRepository(devBypass: true),
     );
@@ -116,8 +104,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(auth.devLogins, 1);
     expect(_path(c), '/');
-    expect(find.text('Projects'), findsWidgets);
-    expect(projects.lists, greaterThan(0));
+    // First sign-in, no accounts: the Accounts home with New account.
+    expect(find.text('Accounts'), findsWidgets);
+    expect(find.byKey(const ValueKey('accounts-empty')), findsOneWidget);
+    expect(find.byKey(const ValueKey('new-account')), findsOneWidget);
+    expect(find.text('New project'), findsNothing);
+    expect(repo.lists, greaterThan(0));
   });
 
   testWidgets('user menu shows email, admin badge and signs out', (
@@ -140,14 +132,14 @@ void main() {
 
   testWidgets('a 401 from the API sends you to sign-in', (tester) async {
     final (c, _, _) = await _pump(tester, FakeAuthRepository(user: adminUser));
-    c.read(routerProvider).go('/projects/p1');
+    c.read(routerProvider).go('/accounts');
     ApiClient.onUnauthorized?.call();
     await tester.pumpAndSettle();
-    expect(_path(c), '/sign-in?from=%2Fprojects%2Fp1');
+    expect(_path(c), '/sign-in?from=%2Faccounts');
     // Signing back in returns to where you were.
     await c.read(authProvider.notifier).devLogin();
     await tester.pump();
-    expect(_path(c), '/projects/p1');
+    expect(_path(c), '/accounts');
   });
 
   testWidgets('a failed full-page sign-in shows its error, not a blank page', (
@@ -169,7 +161,7 @@ void main() {
       find.text('wife@gmail.com is not on the allowlist.'),
       findsOneWidget,
     );
-    expect(find.text('Sign in to see your projects'), findsOneWidget);
+    expect(find.text('Sign in to see your accounts'), findsOneWidget);
   });
 
   testWidgets('stuck popup: full-page sign-in fallback is offered', (
@@ -226,7 +218,7 @@ void main() {
           return http.Response(jsonEncode({'error': 'nope'}), 401);
         }),
       );
-      await expectLater(api.get('/api/projects'), throwsA(isA<ApiException>()));
+      await expectLater(api.get('/api/accounts'), throwsA(isA<ApiException>()));
       expect(seen.headers['X-Requested-With'], 'budget');
       expect(seen.headers['X-Client-Id'], ApiClient.clientId);
       expect(unauthorized, 1);

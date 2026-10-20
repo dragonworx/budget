@@ -15,7 +15,6 @@ class ChangeEvent {
     required this.action,
     this.entity,
     this.entityId,
-    this.projectId,
     this.accountId,
     this.actorId,
     this.subjectUserId,
@@ -27,7 +26,6 @@ class ChangeEvent {
   final String action;
   final String? entity;
   final String? entityId;
-  final String? projectId;
   final String? accountId;
   final String? actorId;
   final String? subjectUserId;
@@ -43,7 +41,6 @@ class ChangeEvent {
     action: (j['action'] ?? '').toString(),
     entity: j['entity']?.toString(),
     entityId: j['entityId']?.toString(),
-    projectId: j['projectId']?.toString(),
     accountId: j['accountId']?.toString(),
     actorId: j['actorId']?.toString(),
     subjectUserId: j['subjectUserId']?.toString(),

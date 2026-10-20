@@ -243,17 +243,13 @@ void main() {
   test('a change on A reaches a subscriber on B; outsiders get nothing',
       () async {
     if (admin == null) return markTestSkipped('no test DB');
-    final p =
-        await call(a, 'POST', '/api/projects', 'owner', body: {'name': 'RT'});
-    final pid = p.json['id'] as String;
     final ownerB = await subscribe(b, 'owner');
     final outsider = await subscribe(b, 'outsider');
-    final acc = await call(a, 'POST', '/api/projects/$pid/accounts', 'owner',
-        body: {'name': 'A1', 'seedDate': '2026-01-01'},
-        clientTag: 'tab-1');
+    final acc = await call(a, 'POST', '/api/accounts', 'owner',
+        body: {'name': 'A1', 'seedDate': '2026-01-01'}, clientTag: 'tab-1');
     final aid = acc.json['id'] as String;
     final ev = await ownerB.waitAction('account.created', entityId: aid);
-    expect(ev['projectId'], pid);
+    expect(ev.containsKey('projectId'), isFalse);
     expect(ev['accountId'], aid);
     expect(ev['clientId'], 'tab-1');
     expect(ev['actorId'], await userId('owner'));
@@ -267,30 +263,28 @@ void main() {
     outsider.close();
   });
 
-  test('membership grant, role change and revocation stop delivery', () async {
+  test('account share grant, role change and revocation stop delivery',
+      () async {
     if (admin == null) return markTestSkipped('no test DB');
-    final p =
-        await call(a, 'POST', '/api/projects', 'own2', body: {'name': 'RT2'});
-    final pid = p.json['id'] as String;
-    final acc = await call(a, 'POST', '/api/projects/$pid/accounts', 'own2',
+    final acc = await call(a, 'POST', '/api/accounts', 'own2',
         body: {'name': 'A', 'seedDate': '2026-01-01'});
     final aid = acc.json['id'] as String;
     await login('guest');
     final gid = await userId('guest');
     final guest = await subscribe(b, 'guest');
-    await call(a, 'POST', '/api/projects/$pid/invites', 'own2',
+    await call(a, 'POST', '/api/accounts/$aid/invites', 'own2',
         body: {'email': 'guest@$domain', 'role': 'viewer'});
-    final added = await guest.waitAction('membership.added');
+    final added = await guest.waitAction('account_share.added');
     expect(added['subjectUserId'], gid);
     final t1 = await call(a, 'POST', '/api/accounts/$aid/transactions', 'own2',
         body: tx('seen'));
     await guest.waitAction('transaction.created', entityId: t1.json['id']);
-    await call(a, 'PATCH', '/api/projects/$pid/members/$gid', 'own2',
+    await call(a, 'PATCH', '/api/accounts/$aid/shares/$gid', 'own2',
         body: {'role': 'editor'});
-    final changed = await guest.waitAction('membership.changed');
+    final changed = await guest.waitAction('account_share.changed');
     expect(changed['detail']['role'], 'editor');
-    await call(a, 'DELETE', '/api/projects/$pid/members/$gid', 'own2');
-    await guest.waitAction('membership.revoked');
+    await call(a, 'DELETE', '/api/accounts/$aid/shares/$gid', 'own2');
+    await guest.waitAction('account_share.revoked');
     final t2 = await call(a, 'POST', '/api/accounts/$aid/transactions', 'own2',
         body: tx('hidden'));
     // Owner on A sees it; the revoked guest must not.
@@ -305,13 +299,10 @@ void main() {
   test('catch-up via Last-Event-ID, resync when too far behind or ahead',
       () async {
     if (admin == null) return markTestSkipped('no test DB');
-    final p =
-        await call(a, 'POST', '/api/projects', 'own3', body: {'name': 'RT3'});
-    final pid = p.json['id'] as String;
     final first = await subscribe(b, 'own3');
     final cursor = first.events.firstWhere((e) => e.event == 'ready').id!;
     first.close();
-    final acc = await call(a, 'POST', '/api/projects/$pid/accounts', 'own3',
+    final acc = await call(a, 'POST', '/api/accounts', 'own3',
         body: {'name': 'Late', 'seedDate': '2026-01-01'});
     final again = await subscribe(b, 'own3', since: cursor);
     final ev =
@@ -335,30 +326,26 @@ void main() {
 
   test('failed mutations roll back their audit row; no event fires', () async {
     if (admin == null) return markTestSkipped('no test DB');
-    final p =
-        await call(a, 'POST', '/api/projects', 'own4', body: {'name': 'RT4'});
-    final pid = p.json['id'] as String;
+    final acc = await call(a, 'POST', '/api/accounts', 'own4',
+        body: {'name': 'RT4', 'seedDate': '2026-01-01'});
+    final aid = acc.json['id'] as String;
     final sub = await subscribe(b, 'own4');
-    final before = (await admin!.execute(
-            Sql.named(
-                'SELECT count(*) FROM audit_log WHERE project_id = @p::uuid'),
-            parameters: {'p': pid}))
+    Future<Object?> count() async => (await admin!.execute(
+            Sql.named('SELECT count(*) FROM audit_log '
+                'WHERE user_id = (SELECT id FROM users WHERE email = @e)'),
+            parameters: {'e': 'own4@$domain'}))
         .first[0];
-    final conflict = await call(a, 'PATCH', '/api/projects/$pid', 'own4',
+    final before = await count();
+    final conflict = await call(a, 'PATCH', '/api/accounts/$aid', 'own4',
         body: {'name': 'nope', 'version': 999});
     expect(conflict.status, 409);
-    final bad = await call(a, 'POST', '/api/projects/$pid/accounts', 'own4',
+    final bad = await call(a, 'POST', '/api/accounts', 'own4',
         body: {'name': 'x', 'seedDate': 'not-a-date'});
     expect(bad.status, 400);
-    final after = (await admin!.execute(
-            Sql.named(
-                'SELECT count(*) FROM audit_log WHERE project_id = @p::uuid'),
-            parameters: {'p': pid}))
-        .first[0];
-    expect(after, before);
-    final ok = await call(a, 'PATCH', '/api/projects/$pid', 'own4',
+    expect(await count(), before);
+    final ok = await call(a, 'PATCH', '/api/accounts/$aid', 'own4',
         body: {'name': 'RT4b'});
-    final ev = await sub.waitAction('project.updated', entityId: pid);
+    final ev = await sub.waitAction('account.updated', entityId: aid);
     expect(ev['detail']['version'], ok.json['version']);
     expect(sub.events.where((e) => e.event == 'change').length, 1);
     sub.close();
@@ -367,16 +354,16 @@ void main() {
   test('listener reconnect: events after a dropped LISTEN still arrive',
       () async {
     if (admin == null) return markTestSkipped('no test DB');
-    final p =
-        await call(a, 'POST', '/api/projects', 'own5', body: {'name': 'RT5'});
-    final pid = p.json['id'] as String;
+    final acc = await call(a, 'POST', '/api/accounts', 'own5',
+        body: {'name': 'RT5', 'seedDate': '2026-01-01'});
+    final aid = acc.json['id'] as String;
     final sub = await subscribe(b, 'own5');
     await b.listener.dropConnection();
     // Written while B's listener is down; recovered by the gap catch-up.
-    final r = await call(a, 'PATCH', '/api/projects/$pid', 'own5',
+    final r = await call(a, 'PATCH', '/api/accounts/$aid', 'own5',
         body: {'name': 'RT5b'});
     expect(r.status, 200);
-    await sub.waitAction('project.updated', entityId: pid);
+    await sub.waitAction('account.updated', entityId: aid);
     sub.close();
   });
 

@@ -19,7 +19,7 @@ final _day = DateTime(_today.year, _today.month, _today.day);
 
 Account _account({Role role = Role.owner}) => Account(
   id: 'acc',
-  projectId: 'p',
+  ownerId: 'u',
   name: 'Everyday',
   seedBalance: Decimal.fromInt(1000),
   seedDate: _day.subtract(const Duration(days: 30)),

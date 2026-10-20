@@ -52,9 +52,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
 
   List<Account> _scope() {
     if (!_allAccounts) return [widget.account];
-    final list = ref
-        .watch(accountsProvider(widget.account.projectId))
-        .valueOrNull;
+    final list = ref.watch(accountsProvider).valueOrNull;
     return (list == null || list.isEmpty) ? [widget.account] : list;
   }
 
@@ -131,7 +129,7 @@ class _RemindersPageState extends ConsumerState<RemindersPage> {
           children: [
             const Text('Reminders'),
             Text(
-              _allAccounts ? 'All accounts in project' : widget.account.name,
+              _allAccounts ? 'All accounts' : widget.account.name,
               style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: AppTheme.textMuted),
               overflow: TextOverflow.ellipsis,

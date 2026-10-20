@@ -2,31 +2,10 @@ import 'package:decimal/decimal.dart';
 
 import 'enums.dart';
 
-class Project {
-  Project({
-    required this.id,
-    required this.name,
-    required this.createdAt,
-    this.version = 1,
-  });
-
-  final String id;
-  final String name;
-  final DateTime createdAt;
-  final int version;
-
-  Map<String, Object?> toJson() => {
-        'id': id,
-        'name': name,
-        'createdAt': createdAt.toUtc().toIso8601String(),
-        'version': version,
-      };
-}
-
 class Account {
   Account({
     required this.id,
-    required this.projectId,
+    required this.ownerId,
     required this.name,
     required this.seedBalance,
     required this.seedDate,
@@ -44,7 +23,9 @@ class Account {
   static const defaultCurrencyScale = 100;
 
   final String id;
-  final String projectId;
+
+  /// The user who owns the account (accounts are top level).
+  final String ownerId;
   final String name;
   final Decimal seedBalance;
   final DateTime seedDate;
@@ -55,7 +36,7 @@ class Account {
 
   Map<String, Object?> toJson() => {
         'id': id,
-        'projectId': projectId,
+        'ownerId': ownerId,
         'currencyScale': currencyScale,
         'name': name,
         'seedBalance': seedBalance.toString(),
@@ -232,24 +213,18 @@ class TransferLink {
     this.peerId,
     this.peerAccountId,
     this.peerAccountName,
-    this.peerProjectId,
-    this.peerProjectName,
   });
 
   final String id;
   final String? peerId;
   final String? peerAccountId;
   final String? peerAccountName;
-  final String? peerProjectId;
-  final String? peerProjectName;
 
   Map<String, Object?> toJson() => {
         'id': id,
         'peerTransactionId': peerId,
         'peerAccountId': peerAccountId,
         'peerAccountName': peerAccountName,
-        'peerProjectId': peerProjectId,
-        'peerProjectName': peerProjectName,
       };
 }
 

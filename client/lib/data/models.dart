@@ -1,11 +1,5 @@
 import 'package:decimal/decimal.dart';
 
-DateTime? _parseDateTime(dynamic value) {
-  if (value == null) return null;
-  if (value is DateTime) return value;
-  return DateTime.tryParse(value.toString());
-}
-
 DateTime parseDate(dynamic value) {
   final s = value.toString();
   final parts = s.split('T').first.split('-');
@@ -87,76 +81,10 @@ class UserRef {
   }
 }
 
-class Project {
-  const Project({
-    required this.id,
-    required this.name,
-    this.createdAt,
-    this.version,
-    this.role = Role.owner,
-    this.limited = false,
-    this.shared = false,
-    this.owner,
-    this.sharedAccountIds = const [],
-  });
-
-  final String id;
-  final String name;
-  final DateTime? createdAt;
-  final int? version;
-
-  /// The signed-in user's role on the project (owner when not reported).
-  final Role role;
-
-  /// Only some accounts are shared with this user (`access: "account"`).
-  final bool limited;
-
-  /// Someone else owns this project and shared it (or some accounts) with me.
-  final bool shared;
-  final UserRef? owner;
-  final List<String> sharedAccountIds;
-
-  factory Project.fromJson(Map<String, dynamic> json) {
-    return Project(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      createdAt: _parseDateTime(json['createdAt'] ?? json['created_at']),
-      version: (json['version'] as num?)?.toInt(),
-      role: Role.parse(json['role'], json['access'] == 'account' ? Role.viewer : Role.owner),
-      limited: json['access'] == 'account',
-      shared: json['shared'] == true,
-      owner: UserRef.maybe(json['owner']),
-      sharedAccountIds: [
-        for (final a in (json['sharedAccountIds'] as List?) ?? const []) a.toString(),
-      ],
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    if (createdAt != null) 'createdAt': createdAt!.toUtc().toIso8601String(),
-  };
-
-  Project copyWith({String? id, String? name, DateTime? createdAt}) {
-    return Project(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      createdAt: createdAt ?? this.createdAt,
-      version: version,
-      role: role,
-      limited: limited,
-      shared: shared,
-      owner: owner,
-      sharedAccountIds: sharedAccountIds,
-    );
-  }
-}
-
 class Account {
   const Account({
     required this.id,
-    required this.projectId,
+    this.ownerId = '',
     required this.name,
     required this.seedBalance,
     required this.seedDate,
@@ -166,12 +94,20 @@ class Account {
     this.currencyScale = defaultCurrencyScale,
     this.version,
     this.role = Role.owner,
+    this.shared = false,
+    this.owner,
   });
 
   final int? version;
 
-  /// Effective role on this account (max of project role and account share).
+  /// Effective role: owner for my own accounts, else the share's role.
   final Role role;
+
+  /// Someone else owns this account and shared it with me.
+  final bool shared;
+
+  /// Who owns it (reported in account lists).
+  final UserRef? owner;
 
   /// Currency scale choices: dollars per y-axis grid step, with labels.
   static const currencyScales = <int, String>{
@@ -199,7 +135,9 @@ class Account {
   final int currencyScale;
 
   final String id;
-  final String projectId;
+
+  /// The owning user's id (accounts are top level).
+  final String ownerId;
   final String name;
   final Decimal seedBalance;
   final DateTime seedDate;
@@ -215,7 +153,7 @@ class Account {
     final loss = json['lossThreshold'] ?? json['loss_threshold'];
     return Account(
       id: json['id'] as String,
-      projectId: (json['projectId'] ?? json['project_id']) as String,
+      ownerId: (json['ownerId'] ?? json['owner_id'] ?? '') as String,
       name: json['name'] as String,
       seedBalance: parseMoney(json['seedBalance'] ?? json['seed_balance']),
       seedDate: parseDate(json['seedDate'] ?? json['seed_date']),
@@ -229,12 +167,14 @@ class Account {
               as int,
       version: (json['version'] as num?)?.toInt(),
       role: Role.parse(json['role']),
+      shared: json['shared'] == true,
+      owner: UserRef.maybe(json['owner']),
     );
   }
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'projectId': projectId,
+    'ownerId': ownerId,
     'name': name,
     'seedBalance': moneyToJson(seedBalance),
     'seedDate': formatDate(seedDate),
@@ -264,7 +204,7 @@ class Account {
 
   Account copyWith({
     String? id,
-    String? projectId,
+    String? ownerId,
     String? name,
     Decimal? seedBalance,
     DateTime? seedDate,
@@ -279,8 +219,10 @@ class Account {
     return Account(
       version: clearVersion ? null : (version ?? this.version),
       role: role ?? this.role,
+      shared: shared,
+      owner: owner,
       id: id ?? this.id,
-      projectId: projectId ?? this.projectId,
+      ownerId: ownerId ?? this.ownerId,
       name: name ?? this.name,
       seedBalance: seedBalance ?? this.seedBalance,
       seedDate: seedDate ?? this.seedDate,
@@ -290,6 +232,25 @@ class Account {
       currencyScale: currencyScale ?? this.currencyScale,
     );
   }
+}
+
+extension AccountSharing on Account {
+  /// [this] with the sharing fields (shared, owner) of [from].
+  Account withSharing(Account from) => Account(
+    id: id,
+    ownerId: ownerId,
+    name: name,
+    seedBalance: seedBalance,
+    seedDate: seedDate,
+    lossThreshold: lossThreshold,
+    transactionOrder: transactionOrder,
+    displayOrder: displayOrder,
+    currencyScale: currencyScale,
+    version: version,
+    role: role,
+    shared: from.shared,
+    owner: from.owner,
+  );
 }
 
 enum TransactionDirection {
@@ -596,8 +557,6 @@ class TransferLink {
     this.peerTransactionId,
     required this.peerAccountId,
     this.peerAccountName,
-    this.peerProjectId,
-    this.peerProjectName,
     this.peerReadable = true,
   });
 
@@ -608,16 +567,12 @@ class TransferLink {
   final String? peerTransactionId;
   final String peerAccountId;
   final String? peerAccountName;
-  final String? peerProjectId;
-  final String? peerProjectName;
 
   factory TransferLink.fromJson(Map<String, dynamic> json) => TransferLink(
     id: json['id'] as String?,
     peerTransactionId: json['peerTransactionId'] as String?,
     peerAccountId: (json['peerAccountId'] as String?) ?? '',
     peerAccountName: json['peerAccountName'] as String?,
-    peerProjectId: json['peerProjectId'] as String?,
-    peerProjectName: json['peerProjectName'] as String?,
     peerReadable: json['peerReadable'] as bool? ?? true,
   );
 
@@ -626,8 +581,6 @@ class TransferLink {
     'peerTransactionId': peerTransactionId,
     'peerAccountId': peerAccountId,
     'peerAccountName': peerAccountName,
-    'peerProjectId': peerProjectId,
-    'peerProjectName': peerProjectName,
     'peerReadable': peerReadable,
   };
 

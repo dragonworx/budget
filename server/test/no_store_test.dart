@@ -9,8 +9,8 @@ void main() {
 
   test('API responses (incl. after deletes) are never cacheable', () async {
     for (final path in [
-      '/api/projects',
-      '/api/projects/x/accounts',
+      '/api/accounts',
+      '/api/accounts/x/transactions',
       '/health'
     ]) {
       final res = await handler(Request('GET', Uri.parse('http://h$path')));

@@ -14,9 +14,7 @@ class Invite {
     required this.id,
     required this.email,
     required this.role,
-    this.projectId,
-    this.accountId,
-    this.projectName,
+    required this.accountId,
     this.accountName,
     required this.invitedBy,
     required this.invitedByEmail,
@@ -30,9 +28,7 @@ class Invite {
   final String id;
   final String email;
   final Role role;
-  final String? projectId;
-  final String? accountId;
-  final String? projectName;
+  final String accountId;
   final String? accountName;
   final String invitedBy;
   final String invitedByEmail;
@@ -54,9 +50,7 @@ class Invite {
         'id': id,
         'email': email,
         'role': role.name,
-        'projectId': projectId,
         'accountId': accountId,
-        'projectName': projectName,
         'accountName': accountName,
         'invitedBy': {
           'id': invitedBy,
@@ -70,34 +64,30 @@ class Invite {
 }
 
 const _cols = '''
-  i.id::text, i.email, i.role::text, i.project_id::text, i.account_id::text,
-  COALESCE(p.name, ap.name), a.name, u.id::text, u.email, u.name,
+  i.id::text, i.email, i.role::text, i.account_id::text,
+  a.name, u.id::text, u.email, u.name,
   i.created_at, i.expires_at, i.accepted_at, i.revoked_at''';
 const _from = '''
   FROM invites i
   JOIN users u ON u.id = i.invited_by
-  LEFT JOIN projects p ON p.id = i.project_id
-  LEFT JOIN accounts a ON a.id = i.account_id
-  LEFT JOIN projects ap ON ap.id = a.project_id''';
+  JOIN accounts a ON a.id = i.account_id''';
 
 Invite _row(List<Object?> x) => Invite(
       id: x[0] as String,
       email: x[1] as String,
       role: Role.parse(x[2])!,
-      projectId: x[3] as String?,
-      accountId: x[4] as String?,
-      projectName: x[5] as String?,
-      accountName: x[6] as String?,
-      invitedBy: x[7] as String,
-      invitedByEmail: x[8] as String,
-      invitedByName: x[9] as String?,
-      createdAt: x[10] as DateTime,
-      expiresAt: x[11] as DateTime,
-      acceptedAt: x[12] as DateTime?,
-      revokedAt: x[13] as DateTime?,
+      accountId: x[3] as String,
+      accountName: x[4] as String?,
+      invitedBy: x[5] as String,
+      invitedByEmail: x[6] as String,
+      invitedByName: x[7] as String?,
+      createdAt: x[8] as DateTime,
+      expiresAt: x[9] as DateTime,
+      acceptedAt: x[10] as DateTime?,
+      revokedAt: x[11] as DateTime?,
     );
 
-/// Invites by email to a project or a single account. Tokens are random;
+/// Invites by email to a single account. Tokens are random;
 /// only HMAC(SESSION_SECRET, token) is stored.
 class InviteRepo {
   InviteRepo(this._db,
@@ -122,32 +112,29 @@ class InviteRepo {
   Future<(Invite, String)> create({
     required String email,
     required Role role,
-    String? projectId,
-    String? accountId,
+    required String accountId,
     required String invitedBy,
   }) async {
     await _db.execute(
       Sql.named('''
         UPDATE invites SET revoked_at = now()
         WHERE email = @e AND accepted_at IS NULL AND revoked_at IS NULL
-          AND project_id IS NOT DISTINCT FROM @p::uuid
-          AND account_id IS NOT DISTINCT FROM @a::uuid
+          AND account_id = @a::uuid
       '''),
-      parameters: {'e': email, 'p': projectId, 'a': accountId},
+      parameters: {'e': email, 'a': accountId},
     );
     final id = _uuid.v4();
     final token = _newToken();
     await _db.execute(
       Sql.named('''
-        INSERT INTO invites (id, token_hash, email, project_id, account_id, role, invited_by, expires_at)
-        VALUES (@id::uuid, @h, @e, @p::uuid, @a::uuid, @r::text::member_role, @by::uuid,
+        INSERT INTO invites (id, token_hash, email, account_id, role, invited_by, expires_at)
+        VALUES (@id::uuid, @h, @e, @a::uuid, @r::text::member_role, @by::uuid,
                 now() + make_interval(secs => @ttl))
       '''),
       parameters: {
         'id': id,
         'h': TypedValue(Type.byteArray, _hash(token)),
         'e': email,
-        'p': projectId,
         'a': accountId,
         'r': role.name,
         'by': invitedBy,
@@ -201,41 +188,24 @@ class InviteRepo {
   }
 
   /// Pending invites, by target or by email.
-  Future<List<Invite>> pending(
-      {String? projectId,
-      String? accountId,
-      String? email,
-      bool includeAccounts = false}) async {
+  Future<List<Invite>> pending({String? accountId, String? email}) async {
     final r = await _db.execute(
       Sql.named('''
         SELECT $_cols $_from
         WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()
           AND (@e::text IS NULL OR i.email = @e::text)
           AND (@a::uuid IS NULL OR i.account_id = @a::uuid)
-          AND (@p::uuid IS NULL OR i.project_id = @p::uuid
-               OR (@inc::bool AND a.project_id = @p::uuid))
         ORDER BY i.created_at
       '''),
-      parameters: {
-        'e': email,
-        'a': accountId,
-        'p': projectId,
-        'inc': includeAccounts,
-      },
+      parameters: {'e': email, 'a': accountId},
     );
     return r.map(_row).toList();
   }
 
   /// Grants the invite to [userId] and marks it accepted.
   Future<void> accept(Invite inv, String userId) async {
-    final m = MembershipRepo(_db);
-    if (inv.projectId != null) {
-      await m.grantProject(inv.projectId!, userId, inv.role,
-          addedBy: inv.invitedBy);
-    } else {
-      await m.grantAccount(inv.accountId!, userId, inv.role,
-          addedBy: inv.invitedBy);
-    }
+    await MembershipRepo(_db)
+        .grantAccount(inv.accountId, userId, inv.role, addedBy: inv.invitedBy);
     await _db.execute(
       Sql.named(
           'UPDATE invites SET accepted_at = now(), accepted_by = @u::uuid '

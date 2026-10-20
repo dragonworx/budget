@@ -6,7 +6,7 @@ import 'package:test/test.dart';
 
 Account _account() => Account(
       id: 'a',
-      projectId: 'p',
+      ownerId: 'p',
       name: 'A',
       seedBalance: Decimal.parse('1000'),
       seedDate: DateTime.utc(2026, 1, 1),

@@ -172,8 +172,10 @@ List<ImportItem> parseImport(String raw) {
       'enabled',
       'skippedDates',
     };
+    // Older files may carry project fields (projects are gone): ignored.
+    const legacy = {'projectId', 'projectName'};
     for (final k in m.keys) {
-      if (!known.contains(k)) bad(k, 'unknown field');
+      if (!known.contains(k) && !legacy.contains(k)) bad(k, 'unknown field');
     }
 
     String? id;

@@ -12,7 +12,6 @@ import '../theme/app_theme.dart';
 /// shown if it throws) and returns its result.
 Future<Account?> showAccountDialog(
   BuildContext context, {
-  required String projectId,
   Account? existing,
   Future<Account> Function(Account draft)? onSave,
   int? transactionCount,
@@ -20,7 +19,6 @@ Future<Account?> showAccountDialog(
   return showDialog<Account>(
     context: context,
     builder: (context) => AccountDialog(
-      projectId: projectId,
       existing: existing,
       onSave: onSave,
       transactionCount: transactionCount,
@@ -31,7 +29,6 @@ Future<Account?> showAccountDialog(
 class AccountDialog extends StatefulWidget {
   const AccountDialog({
     super.key,
-    required this.projectId,
     this.existing,
     this.onSave,
     this.transactionCount,
@@ -41,7 +38,6 @@ class AccountDialog extends StatefulWidget {
   /// account's transaction order length.
   final int? transactionCount;
 
-  final String projectId;
   final Account? existing;
   final Future<Account> Function(Account draft)? onSave;
 
@@ -286,7 +282,7 @@ class _AccountDialogState extends State<AccountDialog> {
     final existing = widget.existing;
     final account = Account(
       id: existing?.id ?? '',
-      projectId: widget.projectId,
+      ownerId: existing?.ownerId ?? '',
       name: name,
       seedBalance: balance,
       seedDate: _seedDate,

@@ -332,23 +332,15 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
 
   bool get _receiving => _direction == TransactionDirection.credit;
 
-  String? _projectName(String projectId) {
-    final projects = ref.read(accountDirectoryProvider).value;
-    for (final (project, _) in projects ?? const <(Project, List<Account>)>[]) {
-      if (project.id == projectId) return project.name;
-    }
-    return null;
-  }
-
   Widget _transferField(ThemeData theme) {
     final link = _transfer;
     final label = _receiving ? 'From account' : 'To account';
-    final project = link?.peerProjectName;
-    final inProject = project == null ? '' : ' ($project)';
     return AccountPicker(
       keyPrefix: 'transfer',
       title: label,
       excludeAccountId: widget.accountId,
+      // Both sides of a transfer change: only accounts I can edit.
+      editableOnly: true,
       currentAccountId: link?.peerAccountId,
       onSelected: (a) => setState(() {
         _transferError = null;
@@ -357,8 +349,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           peerTransactionId: link?.peerTransactionId,
           peerAccountId: a.id,
           peerAccountName: a.name,
-          peerProjectId: a.projectId,
-          peerProjectName: _projectName(a.projectId),
         );
       }),
       builder: (context, open) => InkWell(
@@ -374,12 +364,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             helperText: link == null
                 ? null
                 : (_receiving
-                      ? 'Mirrors as money out of ${link.accountLabel}$inProject'
-                      : 'Arrives as money in to ${link.accountLabel}$inProject'),
+                      ? 'Mirrors as money out of ${link.accountLabel}'
+                      : 'Arrives as money in to ${link.accountLabel}'),
           ),
           child: Text(
             link == null
-                ? 'Choose project › account'
+                ? 'Choose account'
                 : '${_receiving ? 'From' : 'To'}: ${link.accountLabel}',
             style: link == null
                 ? theme.textTheme.bodyLarge?.copyWith(color: AppTheme.textFaint)
@@ -504,8 +494,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     final ev = ref.watch(remoteChangesProvider)[id];
     if (ev == null || ev.id == _openedEvent) return null;
     final deleted = ev.action.endsWith('.deleted');
-    final pid = ref.watch(accountProvider(widget.accountId)).valueOrNull?.projectId;
-    final who = actorName(ref, pid, ev.actorId) ?? 'someone else';
+    final who = actorName(ref, widget.accountId, ev.actorId) ?? 'someone else';
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(

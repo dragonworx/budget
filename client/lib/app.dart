@@ -6,14 +6,17 @@ import 'package:go_router/go_router.dart';
 import 'features/admin/admin_page.dart';
 import 'features/auth/invite_page.dart';
 import 'features/auth/sign_in_page.dart';
-import 'features/projects/project_detail_page.dart';
-import 'features/projects/projects_page.dart';
+import 'features/accounts/accounts_page.dart';
 import 'features/timeline/timeline_page.dart';
 import 'state/auth_providers.dart';
 import 'state/realtime_providers.dart';
 import 'theme/app_theme.dart';
 
 const signInPath = '/sign-in';
+
+/// The accounts home (list, New account). `/` is the same page, but the
+/// first visit after sign-in jumps straight to the last-used account.
+const accountsPath = '/accounts';
 
 /// Where the guard sends [location] for the given auth state, or null to stay.
 /// Pure so it can be unit-tested.
@@ -68,7 +71,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       );
     },
     routes: [
-      GoRoute(path: '/', builder: (context, state) => const ProjectsPage()),
+      GoRoute(
+        path: '/',
+        builder: (context, state) => const AccountsPage(landing: true),
+      ),
+      GoRoute(
+        path: accountsPath,
+        builder: (context, state) => const AccountsPage(),
+      ),
       GoRoute(
         path: signInPath,
         builder: (context, state) => const SignInPage(),
@@ -79,13 +89,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) =>
             InvitePage(token: state.pathParameters['token']!),
       ),
-      GoRoute(
-        path: '/projects/:projectId',
-        builder: (context, state) {
-          final projectId = state.pathParameters['projectId']!;
-          return ProjectDetailPage(projectId: projectId);
-        },
-      ),
+      // Old project links (projects are gone): the accounts home.
+      GoRoute(path: '/projects/:projectId', redirect: (_, _) => accountsPath),
       GoRoute(
         path: '/accounts/:accountId/timeline',
         builder: (context, state) {

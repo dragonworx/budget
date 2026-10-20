@@ -27,7 +27,7 @@ void main() {
 
   test('Account json round-trips currencyScale, defaults to 100', () {
     final a = Account.fromJson({
-      'id': 'a', 'projectId': 'p', 'name': 'n', 'currency': 'AUD',
+      'id': 'a', 'name': 'n', 'currency': 'AUD',
       'seedBalance': '0', 'seedDate': '2026-10-01',
     });
     expect(a.currencyScale, 100);
@@ -44,7 +44,7 @@ void main() {
 
   testWidgets('edit dialog changes Currency Scale', (tester) async {
     final existing = Account(
-      id: 'a1', projectId: 'p1', name: 'Main',
+      id: 'a1', name: 'Main',
       seedBalance: Decimal.zero, seedDate: DateTime(2026, 10, 16),
       lossThreshold: Decimal.zero, currencyScale: 1000,
     );
@@ -53,7 +53,7 @@ void main() {
       home: Builder(
         builder: (c) => TextButton(
           onPressed: () => result =
-              showAccountDialog(c, projectId: 'p1', existing: existing),
+              showAccountDialog(c, existing: existing),
           child: const Text('open'),
         ),
       ),
@@ -85,7 +85,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (c) => TextButton(
-          onPressed: () => result = showAccountDialog(c, projectId: 'p1'),
+          onPressed: () => result = showAccountDialog(c),
           child: const Text('open'),
         ),
       ),
@@ -111,7 +111,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (c) => TextButton(
-          onPressed: () => result = showAccountDialog(c, projectId: 'p1'),
+          onPressed: () => result = showAccountDialog(c),
           child: const Text('open'),
         ),
       ),

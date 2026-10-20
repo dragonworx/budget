@@ -114,26 +114,15 @@ class Harness {
     return r.json['user']['id'] as String;
   }
 
-  /// Project with one account and one transaction, owned by [who].
-  Future<({String p, String a, String t})> seed(String who, String name) async {
-    final p =
-        await call('POST', '/api/projects', as: who, body: {'name': name});
-    expect(p.status, 201, reason: '${p.json}');
-    final a = await call('POST', '/api/projects/${p.json['id']}/accounts',
-        as: who,
-        body: {
-          'name': 'Acc $name',
-          'seedDate': '2026-01-01'
-        });
+  /// An account with one transaction, owned by [who].
+  Future<({String a, String t})> seed(String who, String name) async {
+    final a = await call('POST', '/api/accounts',
+        as: who, body: {'name': 'Acc $name', 'seedDate': '2026-01-01'});
     expect(a.status, 201, reason: '${a.json}');
     final t = await call('POST', '/api/accounts/${a.json['id']}/transactions',
         as: who, body: tx('Pay'));
     expect(t.status, 201, reason: '${t.json}');
-    return (
-      p: p.json['id'] as String,
-      a: a.json['id'] as String,
-      t: t.json['id'] as String
-    );
+    return (a: a.json['id'] as String, t: t.json['id'] as String);
   }
 
   static Map<String, Object?> tx(String name, {String? transferTo}) => {

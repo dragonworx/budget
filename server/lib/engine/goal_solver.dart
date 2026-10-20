@@ -112,10 +112,11 @@ class GoalRequest {
         GoalVar.rate =>
           const [GoalVar.targetBalance, GoalVar.endDate],
         GoalVar.endDate => const [GoalVar.targetBalance],
-        GoalVar.count ||
-        GoalVar.interval ||
-        GoalVar.startDate =>
-          const [GoalVar.targetBalance, GoalVar.endDate, GoalVar.amount],
+        GoalVar.count || GoalVar.interval || GoalVar.startDate => const [
+            GoalVar.targetBalance,
+            GoalVar.endDate,
+            GoalVar.amount
+          ],
       };
 }
 
@@ -139,7 +140,9 @@ class GoalBaseline {
 
   double closeAt(int i) => i < 0
       ? opening
-      : (i < closes.length ? closes[i] : (closes.isEmpty ? opening : closes.last));
+      : (i < closes.length
+          ? closes[i]
+          : (closes.isEmpty ? opening : closes.last));
 
   double openingAt(int i) => closeAt(i - 1);
   double deltaAt(int i) => closeAt(i) - closeAt(i - 1);
@@ -283,8 +286,7 @@ class GoalSolver {
 
   // --- projection ----------------------------------------------------------
 
-  double _opening(_Params p) =>
-      baseline.openingAt(baseline.indexOf(p.start));
+  double _opening(_Params p) => baseline.openingAt(baseline.indexOf(p.start));
 
   List<DateTime> _payments(_Params p, DateTime end) {
     if (p.amount == 0 || p.count == 0) return const [];
@@ -362,8 +364,7 @@ class GoalSolver {
         final slope = s1[k] - s0[k];
         if (slope.abs() < 1e-9) {
           if (s0[k] < target - 0.005) {
-            throw SolverException(
-                'the balance drops below the target on '
+            throw SolverException('the balance drops below the target on '
                 '${formatDate(p.start.add(Duration(days: k)))} before this '
                 'value can help');
           }
@@ -455,12 +456,14 @@ class GoalSolver {
   /// The least frequent spacing that still reaches the target.
   int _solveInterval(_Params p, double target) {
     final days = CalendarMath.daysBetween(p.start, p.end!);
-    final maxK = math.max(1, switch (p.unit) {
-      RecurrenceUnit.days => days + 1,
-      RecurrenceUnit.weeks => days ~/ 7 + 1,
-      RecurrenceUnit.months => days ~/ 28 + 1,
-      RecurrenceUnit.years => days ~/ 365 + 1,
-    });
+    final maxK = math.max(
+        1,
+        switch (p.unit) {
+          RecurrenceUnit.days => days + 1,
+          RecurrenceUnit.weeks => days ~/ 7 + 1,
+          RecurrenceUnit.months => days ~/ 28 + 1,
+          RecurrenceUnit.years => days ~/ 365 + 1,
+        });
     final q = p.copy();
     int? best;
     for (var k = 1; k <= math.min(maxK, 2000); k++) {
@@ -549,8 +552,8 @@ class GoalSolver {
     var last = opening;
     final stride = math.max(1, s.length ~/ 1500);
     for (var k = 0; k < s.length; k++) {
-      final keep = (s[k] - last).abs() >= 0.005 &&
-          (p.rate == 0 || k % stride == 0);
+      final keep =
+          (s[k] - last).abs() >= 0.005 && (p.rate == 0 || k % stride == 0);
       if (keep || k == s.length - 1) {
         points.add(GoalPoint(p.start.add(Duration(days: k)), s[k]));
         last = s[k];

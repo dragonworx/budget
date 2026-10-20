@@ -6,7 +6,6 @@ class BudgetEvent {
     required this.action,
     required this.entity,
     this.entityId,
-    this.projectId,
     this.accountId,
     this.actorId,
     this.subjectUserId,
@@ -19,7 +18,6 @@ class BudgetEvent {
   final String action;
   final String entity;
   final String? entityId;
-  final String? projectId;
   final String? accountId;
   final String? actorId;
   final String? subjectUserId;
@@ -30,7 +28,7 @@ class BudgetEvent {
   static const channel = 'budget_events';
 
   /// audit_log columns in [fromRow] order.
-  static const columns = 'id, action, entity, entity_id, project_id::text, '
+  static const columns = 'id, action, entity, entity_id, '
       'account_id::text, user_id::text, subject_user_id::text, client_id, at, detail';
 
   factory BudgetEvent.fromRow(List<Object?> r) => BudgetEvent(
@@ -38,14 +36,12 @@ class BudgetEvent {
         action: r[1] as String,
         entity: r[2] as String,
         entityId: r[3] as String?,
-        projectId: r[4] as String?,
-        accountId: r[5] as String?,
-        actorId: r[6] as String?,
-        subjectUserId: r[7] as String?,
-        clientId: r[8] as String?,
-        at: (r[9] as DateTime).toUtc(),
-        detail:
-            r[10] is Map ? Map<String, dynamic>.from(r[10] as Map) : const {},
+        accountId: r[4] as String?,
+        actorId: r[5] as String?,
+        subjectUserId: r[6] as String?,
+        clientId: r[7] as String?,
+        at: (r[8] as DateTime).toUtc(),
+        detail: r[9] is Map ? Map<String, dynamic>.from(r[9] as Map) : const {},
       );
 
   factory BudgetEvent.fromJson(Map<String, dynamic> j) => BudgetEvent(
@@ -53,7 +49,6 @@ class BudgetEvent {
         action: j['action'] as String,
         entity: j['entity'] as String,
         entityId: j['entityId'] as String?,
-        projectId: j['projectId'] as String?,
         accountId: j['accountId'] as String?,
         actorId: j['actorId'] as String?,
         subjectUserId: j['subjectUserId'] as String?,
@@ -67,7 +62,6 @@ class BudgetEvent {
         'action': action,
         'entity': entity,
         'entityId': entityId,
-        'projectId': projectId,
         'accountId': accountId,
         'actorId': actorId,
         'subjectUserId': subjectUserId,
@@ -78,12 +72,8 @@ class BudgetEvent {
 
   /// Events that change who can see what.
   bool get changesAccess =>
-      entity == 'membership' ||
       entity == 'account_share' ||
       action == 'invite.accepted' ||
-      action == 'project.created' ||
-      action == 'project.deleted' ||
-      action == 'project.ownership_transferred' ||
       action == 'account.created' ||
       action == 'account.deleted' ||
       action == 'admin.user_updated';

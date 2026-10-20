@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../app.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/api_client.dart';
@@ -29,9 +31,9 @@ class AdminPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          tooltip: 'All projects',
+          tooltip: 'Accounts',
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.go('/'),
+          onPressed: () => context.go(accountsPath),
         ),
         titleSpacing: 4,
         title: const Text('Admin'),
@@ -114,7 +116,7 @@ class _UsersTab extends ConsumerWidget {
             subtitle: Text(
               [
                 if (u.user.name != null && u.user.name!.isNotEmpty) u.user.email,
-                '${u.ownedProjects} project${u.ownedProjects == 1 ? '' : 's'}',
+                '${u.ownedAccounts} account${u.ownedAccounts == 1 ? '' : 's'}',
                 last == null
                     ? 'never signed in'
                     : 'last in ${DateFormat('d MMM y').format(last.toLocal())}',

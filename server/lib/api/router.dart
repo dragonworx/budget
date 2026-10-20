@@ -21,7 +21,6 @@ import 'admin.dart';
 import 'sharing.dart';
 import 'auth.dart';
 import 'json_helpers.dart';
-import 'projects.dart';
 import 'transactions.dart';
 
 Handler buildHandler(Session base, Config config,
@@ -81,11 +80,8 @@ Handler buildHandler(Session base, Config config,
               jwks: JwksCache(httpJwksFetcher()),
             ),
       ).call);
-  final projectsApi = buildProjectsApi(conn);
-  attachProjectSharingRoutes(projectsApi, conn, config);
   final accountsApi = buildAccountsApi(conn);
   attachAccountSharingRoutes(accountsApi, conn, config);
-  root.mount('/api/projects', projectsApi.call);
   root.mount('/api/accounts', accountsApi.call);
   root.mount('/api/invites', buildInvitesApi(conn, config).call);
   root.mount('/api/admin', buildAdminApi(conn, config, sessions).call);

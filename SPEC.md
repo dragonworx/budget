@@ -12,11 +12,11 @@ A Flutter application for visually planning and tracking account balances over t
 
 ## 1. Goals
 
-1. Let a user model one or more **projects**, each with **accounts** and **transactions**.
+1. Let a user model one or more **accounts** (top level, owned by the user and shareable per account), each with **transactions**.
 2. Show an account’s projected **balance over time** on an infinite, zoomable timeline.
 3. Let the user create transactions by picking dates/ranges on the timeline and **solving** for unknown transaction variables (goal planning).
 
-Non-goals for v1: bank sync, receipts, budgets-by-category, multi-currency conversion, interest accrual formulas, shared/collaborative projects.
+Non-goals for v1: bank sync, receipts, budgets-by-category, multi-currency conversion, interest accrual formulas.
 
 ---
 
@@ -25,34 +25,27 @@ Non-goals for v1: bank sync, receipts, budgets-by-category, multi-currency conve
 ### 2.1 Hierarchy
 
 ```
-Project
- └── Account (seed balance + seed date)
+User
+ └── Account (seed balance + seed date; shareable: owner / editor / viewer)
       └── Transaction (one-time or repeating credit/debit)
            └── Occurrence (computed instance on a calendar day)
 ```
 
 | Entity | Purpose |
 |--------|---------|
-| **Project** | Named workspace (e.g. “Household”, “Trip”). Owns accounts. |
 | **Account** | Named ledger with a seed balance and seed date. Owns transactions. |
 | **Transaction** | A planned credit or debit pattern applied to one account. |
 | **Occurrence** | A concrete application of a transaction on one calendar day (derived, not stored unless overridden). |
 
-### 2.2 Project
-
-| Field | Type | Notes |
-|-------|------|--------|
-| `id` | UUID | Stable identity |
-| `name` | string | Required, unique within the app (case-insensitive) |
-| `createdAt` | datetime | |
+### 2.2 (Projects were removed: accounts are top level.)
 
 ### 2.3 Account
 
 | Field | Type | Notes |
 |-------|------|--------|
 | `id` | UUID | |
-| `projectId` | UUID | Parent project |
-| `name` | string | Required, unique within project |
+| `ownerId` | UUID | Owning user |
+| `name` | string | Required, unique per owner (case-insensitive) |
 | `currency` | ISO 4217 | Fixed per account in v1 (default device locale currency). No FX. |
 | `seedBalance` | decimal | Balance **at the start of** `seedDate` (before that day’s occurrences) |
 | `seedDate` | date | Anchor for the balance series; timeline may extend before this date (balance is undefined / not drawn before seed, or shown as flat seed—**decision: do not draw before seedDate**) |
@@ -205,19 +198,18 @@ then treat `needed` as signed `T` (credit if positive, debit if negative)—or r
 
 ## 5. Major UI
 
-### 5.1 Project View
+### 5.1 Accounts home
 
-**Purpose:** Manage projects and the selected project’s accounts; enter Timeline for an account.
+**Purpose:** List my accounts and those shared with me; enter Timeline for an account. After sign-in the app opens the last-used account directly; the home is shown when there is none (or via “Manage accounts”).
 
 **Capabilities:**
 
-- List / create / rename / delete projects (delete confirms; cascades accounts + transactions).
-- For selected project: list accounts (name, currency, seed balance, seed date).
+- List accounts: “My accounts”, then “Shared with me” (owner + my role).
 - Create / edit / delete accounts.
 - Reorder accounts (display order only).
 - Open **Timeline View** for an account (primary CTA).
 
-**Empty states:** No projects → prompt to create one. Project with no accounts → prompt to add account.
+**Empty state:** No accounts → “New account”.
 
 ### 5.2 Timeline View
 
@@ -246,7 +238,7 @@ then treat `needed` as signed `T` (credit if positive, debit if negative)—or r
 #### Chrome
 
 - Account name + current (today’s) closing balance in app bar.
-- Back to Project View.
+- Back to the Accounts home.
 - Zoom controls; “Jump to today”; “Jump to seed”.
 
 ### 5.3 Transaction editor (shared)
@@ -259,7 +251,7 @@ Fields matching §2.4. Validation inline. Recurrence and end-rule controls mutua
 
 ### v1 (must)
 
-- [ ] Projects CRUD  
+- [ ] Accounts CRUD  
 - [ ] Accounts CRUD (name, currency, seed balance, seed date)  
 - [ ] Transactions CRUD (once / every N units; end never / until date / count)  
 - [ ] Skip single occurrence  
@@ -275,7 +267,7 @@ Fields matching §2.4. Validation inline. Recurrence and end-rule controls mutua
 
 - [ ] Target closing balance `B*` solver mode  
 - [ ] Duplicate transaction / duplicate account  
-- [ ] Export/import project JSON  
+- [ ] Export/import transactions JSON  
 - [ ] Soft color coding per transaction on the chart  
 
 ### Out of scope (for now)
@@ -313,7 +305,7 @@ Still open:
 
 1. Exact chart visual (step line vs bars).  
 2. Default currency source (device locale vs user setting at first launch).  
-3. Whether deleting a project is recoverable (trash vs hard delete).  
+3. Whether deleting an account is recoverable (trash vs hard delete).  
 4. Max practical pan range for `endRule = never` (e.g. seed → seed+100 years clamp).  
 
 ---

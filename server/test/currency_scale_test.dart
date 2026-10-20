@@ -3,13 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:budget_server/api/accounts.dart';
+import 'package:budget_server/auth/middleware.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
 import 'package:budget_server/domain/models.dart';
-import 'package:budget_server/api/projects.dart';
 import 'package:budget_server/repo/account_repo.dart';
 import 'package:budget_server/repo/currency_scale_backfill.dart';
-import 'package:budget_server/repo/project_repo.dart';
+import 'package:budget_server/repo/user_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
@@ -54,11 +54,11 @@ void main() {
       markTestSkipped('no test database');
       return;
     }
-    final project = await ProjectRepo(c)
-        .create('currency scale test', ownerId: await testOwnerId(c));
+    final owner = await testOwnerId(c, 'currency-scale-test@example.com');
+    await deleteOwnedAccounts(c, owner);
     try {
       final account = await AccountRepo(c).create(
-        projectId: project.id,
+        ownerId: owner,
         name: 'A',
         seedBalance: Decimal.zero,
         seedDate: DateTime.utc(2026, 10, 16),
@@ -82,7 +82,7 @@ void main() {
           body: jsonEncode({'name': 'B'})));
       expect((await AccountRepo(c).get(account.id))!.currencyScale, 1000);
     } finally {
-      await ProjectRepo(c).delete(project.id);
+      await deleteOwnedAccounts(c, owner);
     }
   });
 
@@ -94,12 +94,12 @@ void main() {
       markTestSkipped('no test database');
       return;
     }
-    final project = await ProjectRepo(c)
-        .create('currency backfill test', ownerId: await testOwnerId(c));
+    final owner = await testOwnerId(c, 'currency-backfill-test@example.com');
+    await deleteOwnedAccounts(c, owner);
     try {
       final repo = AccountRepo(c);
       final a = await repo.create(
-        projectId: project.id,
+        ownerId: owner,
         name: 'A',
         seedBalance: Decimal.fromInt(3500),
         seedDate: DateTime.utc(2026, 10, 1),
@@ -116,7 +116,7 @@ void main() {
         parameters: {'a': a.id},
       );
       final b = await repo.create(
-        projectId: project.id,
+        ownerId: owner,
         name: 'B',
         seedBalance: Decimal.fromInt(-650),
         seedDate: DateTime.utc(2026, 10, 1),
@@ -126,11 +126,12 @@ void main() {
       expect((await repo.get(a.id))!.currencyScale, 100000);
       expect((await repo.get(b.id))!.currencyScale, 100);
 
-      final api = buildProjectsApi(c);
+      final api = buildAccountsApi(c);
+      final user =
+          (await UserRepo(c).byEmail('currency-backfill-test@example.com'))!;
       Future<Map<String, dynamic>> create(Map<String, Object?> body) async {
-        final res = await api.call(Request(
-            'POST', Uri.parse('http://x/${project.id}/accounts'),
-            body: jsonEncode(
+        final res = await api.call(Request('POST', Uri.parse('http://x/'),
+            context: {'auth': AuthContext(user, 't')}, body: jsonEncode(
                 // An older client's currency field is ignored, even invalid.
                 {'currency': 'TOOLONG', 'seedDate': '2026-10-01', ...body})));
         expect(res.statusCode, 201);
@@ -155,7 +156,7 @@ void main() {
           }))['currencyScale'],
           10);
     } finally {
-      await ProjectRepo(c).delete(project.id);
+      await deleteOwnedAccounts(c, owner);
     }
   });
 }

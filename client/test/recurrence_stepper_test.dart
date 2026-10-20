@@ -13,11 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _Projects extends ProjectRepository {
-  _Projects() : super(ApiClient());
-  @override
-  Future<List<Project>> list() async => [];
-}
+import 'support/fake_accounts.dart';
 
 class _Txs extends TransactionRepository {
   _Txs() : super(ApiClient());
@@ -59,7 +55,7 @@ Future<_Txs> _pump(WidgetTester tester, {Transaction? existing}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        projectRepositoryProvider.overrideWithValue(_Projects()),
+        accountRepositoryProvider.overrideWithValue(FakeAccountRepository()),
         transactionRepositoryProvider.overrideWithValue(txs),
       ],
       child: MaterialApp(

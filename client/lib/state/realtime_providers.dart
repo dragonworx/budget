@@ -40,16 +40,16 @@ final remoteChangesProvider = StateProvider<Map<String, ChangeEvent>>(
   (ref) => const {},
 );
 
-/// Members / shares / invites of a project (owner sees all), or null when
-/// they can't be loaded. Used for the "Shared" badge and actor names.
-final projectPeopleProvider = FutureProvider.family<ShareInfo?, String>((
+/// Owner / shares / invites of an account (the owner sees all), or null
+/// when they can't be loaded. Used for the "Shared" badge and actor names.
+final accountPeopleProvider = FutureProvider.family<ShareInfo?, String>((
   ref,
-  projectId,
+  accountId,
 ) async {
   try {
     return await ref
         .read(sharingRepositoryProvider)
-        .load(ShareTarget.project(projectId, ''));
+        .load(ShareTarget.account(accountId, ''));
   } catch (_) {
     return null;
   }
@@ -58,21 +58,19 @@ final projectPeopleProvider = FutureProvider.family<ShareInfo?, String>((
 /// Bumped on membership / share / invite events so open share dialogs reload.
 final sharingEpochProvider = StateProvider<int>((ref) => 0);
 
-/// Display name of [userId] as known in [projectId] (null when unknown).
-String? actorName(WidgetRef ref, String? projectId, String? userId) {
-  if (userId == null) return null;
-  if (projectId != null) {
-    final info = ref.watch(projectPeopleProvider(projectId)).valueOrNull;
-    for (final m in [...?info?.members, ...?info?.accountShares]) {
-      if (m.userId == userId) return m.user.displayName;
-    }
-    final p = ref
-        .watch(projectsProvider)
-        .valueOrNull
-        ?.where((p) => p.id == projectId)
-        .firstOrNull;
-    if (p?.owner?.id == userId) return p!.owner!.displayName;
+/// Display name of [userId] as known on [accountId] (null when unknown).
+String? actorName(WidgetRef ref, String? accountId, String? userId) {
+  if (userId == null || accountId == null) return null;
+  final info = ref.watch(accountPeopleProvider(accountId)).valueOrNull;
+  for (final m in [...?info?.members, ...?info?.accountShares]) {
+    if (m.userId == userId) return m.user.displayName;
   }
+  final a = ref
+      .watch(accountsProvider)
+      .valueOrNull
+      ?.where((a) => a.id == accountId)
+      .firstOrNull;
+  if (a?.owner?.id == userId) return a!.owner!.displayName;
   return null;
 }
 
@@ -125,15 +123,13 @@ class RealtimeController {
 
   /// Everything cached is stale (resync, error, long disconnect).
   void refreshAll() {
-    ref.invalidate(projectsProvider);
-    ref.invalidate(projectProvider);
     ref.invalidate(accountsProvider);
     ref.invalidate(accountProvider);
     ref.invalidate(transactionsProvider);
     _balances();
     ref.invalidate(scenariosProvider);
     ref.invalidate(myInvitesProvider);
-    ref.invalidate(projectPeopleProvider);
+    ref.invalidate(accountPeopleProvider);
     ref.invalidate(adminUsersProvider);
     ref.invalidate(adminAllowlistProvider);
     ref.read(sharingEpochProvider.notifier).state++;
@@ -158,21 +154,14 @@ class RealtimeController {
   }
 
   void handle(ChangeEvent e) {
-    final pid = e.projectId;
     final aid = e.accountId;
     if (e.entityId != null) {
       final n = ref.read(remoteChangesProvider.notifier);
       n.state = {...n.state, e.entityId!: e};
     }
     switch (e.kind) {
-      case 'project':
-        ref.invalidate(projectsProvider);
-        if (pid != null) ref.invalidate(projectProvider(pid));
-        if (e.action == 'project.deleted' && pid != null) {
-          _leaveIfOn(projectId: pid, message: 'This project was deleted');
-        }
       case 'account':
-        if (pid != null) ref.invalidate(accountsProvider(pid));
+        ref.invalidate(accountsProvider);
         if (aid != null) {
           ref.invalidate(accountProvider(aid));
           if (e.action == 'account.updated') _account(aid);
@@ -191,25 +180,18 @@ class RealtimeController {
           ref.invalidate(scenariosProvider(aid));
           ref.invalidate(scenarioResultsProvider(aid));
         }
-      case 'membership':
       case 'account_share':
       case 'invite':
-        ref.invalidate(projectsProvider);
+        ref.invalidate(accountsProvider);
         ref.invalidate(myInvitesProvider);
-        if (pid != null) {
-          ref.invalidate(projectPeopleProvider(pid));
-          ref.invalidate(projectProvider(pid));
-          ref.invalidate(accountsProvider(pid));
+        if (aid != null) {
+          ref.invalidate(accountPeopleProvider(aid));
+          ref.invalidate(accountProvider(aid));
         }
-        if (aid != null) ref.invalidate(accountProvider(aid));
         ref.read(sharingEpochProvider.notifier).state++;
         final lost = e.action.endsWith('.revoked') || e.action.endsWith('.left');
-        if (lost && e.subjectUserId != null && e.subjectUserId == _me) {
-          if (e.kind == 'membership' && pid != null) {
-            _leaveIfOn(projectId: pid, message: 'You no longer have access to that project');
-          } else if (aid != null) {
-            _leaveIfOn(accountId: aid, message: 'You no longer have access to that account');
-          }
+        if (lost && e.subjectUserId != null && e.subjectUserId == _me && aid != null) {
+          _leaveIfOn(accountId: aid, message: 'You no longer have access to that account');
         }
       case 'admin':
         ref.invalidate(adminUsersProvider);
@@ -217,20 +199,12 @@ class RealtimeController {
     }
   }
 
-  void _leaveIfOn({String? projectId, String? accountId, required String message}) {
+  void _leaveIfOn({required String accountId, required String message}) {
     final router = ref.read(routerProvider);
     final path = router.routerDelegate.currentConfiguration.uri.path;
-    var on = false;
-    if (projectId != null && path == '/projects/$projectId') on = true;
     final m = RegExp(r'^/accounts/([^/]+)/').firstMatch(path);
-    if (m != null) {
-      final current = m.group(1)!;
-      if (current == accountId) on = true;
-      final acct = ref.read(accountProvider(current)).valueOrNull;
-      if (projectId != null && acct?.projectId == projectId) on = true;
-    }
-    if (!on) return;
-    router.go('/');
+    if (m == null || m.group(1) != accountId) return;
+    router.go(accountsPath);
     _notice(message);
   }
 
@@ -270,12 +244,10 @@ class RealtimeDot extends ConsumerWidget {
   }
 }
 
-/// Is [projectId] (owned by me) shared with anyone?
-bool ownedProjectShared(WidgetRef ref, Project p) {
-  if (p.shared || !p.role.isOwner) return false;
-  final info = ref.watch(projectPeopleProvider(p.id)).valueOrNull;
+/// Is my own [account] shared with anyone (or a pending invite)?
+bool ownedAccountShared(WidgetRef ref, Account account) {
+  if (account.shared || !account.role.isOwner) return false;
+  final info = ref.watch(accountPeopleProvider(account.id)).valueOrNull;
   if (info == null) return false;
-  return info.members.length > 1 ||
-      info.accountShares.isNotEmpty ||
-      info.invites.any((i) => i.pending);
+  return info.accountShares.isNotEmpty || info.invites.any((i) => i.pending);
 }

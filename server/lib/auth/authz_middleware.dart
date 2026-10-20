@@ -7,7 +7,6 @@ import '../api/json_helpers.dart';
 import '../db_scope.dart';
 import '../repo/account_repo.dart';
 import '../repo/audit_repo.dart';
-import '../repo/project_repo.dart';
 import '../repo/scenario_repo.dart';
 import '../repo/transaction_repo.dart';
 import 'authz.dart';
@@ -43,37 +42,11 @@ Middleware authzMiddleware(ScopedDb db) {
           case Scope.admin:
             if (!auth.user.isAdmin) return jsonError(403, 'admin only');
             access = Access(params: params);
-          case Scope.project:
-            final r = await authz.projectRole(params['p']!, uid);
-            if (r != null) {
-              access = Access(
-                  role: r,
-                  projectRole: r,
-                  projectId: params['p'],
-                  params: params);
-            }
-          case Scope.projectView:
-            final a = await authz.projectView(params['p']!, uid);
-            if (a != null) {
-              access = Access(
-                  role: a.role,
-                  projectRole: a.projectRole,
-                  projectId: a.projectId,
-                  limited: a.limited,
-                  params: params);
-            }
           case Scope.account:
-          case Scope.accountProject:
             final a = await authz.account(params['a']!, uid);
             if (a != null) {
-              final role =
-                  policy.scope == Scope.account ? a.role : a.projectRole;
-              access = Access(
-                  role: role,
-                  projectRole: a.projectRole,
-                  projectId: a.projectId,
-                  accountId: a.accountId,
-                  params: params);
+              access =
+                  Access(role: a.role, accountId: a.accountId, params: params);
             }
           case Scope.transaction:
             final ta = await authz.transactionAccounts(params['t']!);
@@ -82,18 +55,15 @@ Middleware authzMiddleware(ScopedDb db) {
               if (a != null) {
                 access = Access(
                     role: a.role,
-                    projectRole: a.projectRole,
-                    projectId: a.projectId,
                     accountId: a.accountId,
                     params: {...params, if (ta.$2 != null) 'peer': ta.$2!});
               }
             }
           case Scope.invite:
-            final p = await authz.inviteProject(params['i']!);
-            final r = p == null ? null : await authz.projectRole(p, uid);
-            if (r != null) {
-              access =
-                  Access(role: r, projectRole: r, projectId: p, params: params);
+            final acc = await authz.inviteAccount(params['i']!);
+            final a = acc == null ? null : await authz.account(acc, uid);
+            if (a != null) {
+              access = Access(role: a.role, accountId: acc, params: params);
             }
         }
         if (access == null) return jsonError(404, 'not found');
@@ -207,7 +177,6 @@ Middleware authzMiddleware(ScopedDb db) {
 Future<int?> _lockVersion(
     Session db, String table, Map<String, String> p) async {
   final id = switch (table) {
-    'projects' => p['p'],
     'accounts' => p['a'],
     'transactions' => p['t'],
     'scenarios' => p['s'],
@@ -237,8 +206,6 @@ Future<Map<String, dynamic>?> _current(
     Session db, String table, Map<String, String> p) async {
   Object? json;
   switch (table) {
-    case 'projects':
-      json = (await ProjectRepo(db).get(p['p']!))?.toJson();
     case 'accounts':
       json = (await AccountRepo(db).get(p['a']!))?.toJson();
     case 'transactions':
@@ -252,7 +219,7 @@ Future<Map<String, dynamic>?> _current(
       : jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
 }
 
-/// Nulls peer account/project names (and project id) on transfer links whose
+/// Nulls peer account names on transfer links whose
 /// peer account the user cannot read; marks them `peerReadable: false`.
 Future<Object?> _redact(Authz authz, String uid, Object? json) async {
   final links = <Map<String, dynamic>>[];
@@ -275,8 +242,6 @@ Future<Object?> _redact(Authz authz, String uid, Object? json) async {
     l['peerReadable'] = ok;
     if (!ok) {
       l['peerAccountName'] = null;
-      l['peerProjectName'] = null;
-      l['peerProjectId'] = null;
     }
   }
   return json;

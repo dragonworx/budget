@@ -221,10 +221,10 @@ void main() {
     test('unreachable targets explain why', () {
       expect(
         () => _solver().solve(GoalRequest(
-              solveFor: GoalVar.endDate,
-              startDate: _start,
-              targetBalance: 5000,
-            )),
+          solveFor: GoalVar.endDate,
+          startDate: _start,
+          targetBalance: 5000,
+        )),
         throwsA(isA<SolverException>()),
       );
     });

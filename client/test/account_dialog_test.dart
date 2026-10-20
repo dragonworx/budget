@@ -16,7 +16,6 @@ Future<Future<Account?>> _open(
         builder: (context) => TextButton(
           onPressed: () => result = showAccountDialog(
             context,
-            projectId: 'p1',
             existing: existing,
             onSave: onSave,
           ),
@@ -86,7 +85,6 @@ void main() {
   testWidgets('changing the seed date shows the move note', (tester) async {
     final existing = Account(
       id: 'a1',
-      projectId: 'p1',
       name: 'Main',
       seedBalance: Decimal.zero,
       seedDate: DateTime(2026, 10, 16),

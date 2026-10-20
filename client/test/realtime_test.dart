@@ -195,10 +195,12 @@ void main() {
 
   group('controller', () {
     testWidgets('events invalidate data; revocation navigates away', (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final tx = _Txs();
       final c = ProviderContainer(overrides: [
         authRepositoryProvider.overrideWithValue(FakeAuthRepository(user: adminUser)),
-        projectRepositoryProvider.overrideWithValue(_Projects()),
         accountRepositoryProvider.overrideWithValue(_Accounts()),
         transactionRepositoryProvider.overrideWithValue(tx),
       ]);
@@ -213,17 +215,32 @@ void main() {
       expect(tx.lists, 2);
       expect(c.read(remoteChangesProvider)['t1']?.id, 1);
 
-      c.read(routerProvider).go('/projects/p1');
+      c.read(routerProvider).go('/accounts/a1/timeline');
       await tester.pumpAndSettle();
-      ctl.handle(ChangeEvent(
+      // Someone else's share going away does not move me.
+      ctl.handle(const ChangeEvent(
         id: 2,
-        action: 'membership.revoked',
-        projectId: 'p1',
+        action: 'account_share.revoked',
+        accountId: 'a1',
+        subjectUserId: 'u2',
+      ));
+      await tester.pumpAndSettle();
+      expect(
+        c.read(routerProvider).routerDelegate.currentConfiguration.uri.path,
+        '/accounts/a1/timeline',
+      );
+      ctl.handle(ChangeEvent(
+        id: 3,
+        action: 'account_share.revoked',
+        accountId: 'a1',
         subjectUserId: adminUser.id,
       ));
       await tester.pumpAndSettle();
-      expect(c.read(routerProvider).routerDelegate.currentConfiguration.uri.path, '/');
-      expect(find.text('You no longer have access to that project'), findsOneWidget);
+      expect(
+        c.read(routerProvider).routerDelegate.currentConfiguration.uri.path,
+        accountsPath,
+      );
+      expect(find.text('You no longer have access to that account'), findsOneWidget);
     });
 
     testWidgets('open editor shows "Updated by" instead of clobbering', (tester) async {
@@ -233,7 +250,6 @@ void main() {
       final c = ProviderContainer(overrides: [
         accountRepositoryProvider.overrideWithValue(_Accounts()),
         transactionRepositoryProvider.overrideWithValue(_Txs()),
-        projectRepositoryProvider.overrideWithValue(_Projects()),
       ]);
       addTearDown(c.dispose);
       await tester.pumpWidget(UncontrolledProviderScope(
@@ -270,22 +286,14 @@ final _t = Transaction(
   version: 1,
 );
 
-class _Projects extends ProjectRepository {
-  _Projects() : super(ApiClient());
-  @override
-  Future<List<Project>> list() async => const [Project(id: 'p1', name: 'Home')];
-  @override
-  Future<Project> get(String id) async => const Project(id: 'p1', name: 'Home');
-}
-
 class _Accounts extends AccountRepository {
   _Accounts() : super(ApiClient());
   @override
-  Future<List<Account>> listForProject(String projectId) async => const [];
+  Future<AccountList> list() async => const AccountList([]);
   @override
   Future<Account> get(String id) async => Account(
     id: id,
-    projectId: 'p1',
+    ownerId: 'u1',
     name: 'Everyday',
     seedBalance: Decimal.zero,
     seedDate: DateTime(2026, 10, 1),

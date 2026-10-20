@@ -13,10 +13,6 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return client;
 });
 
-final projectRepositoryProvider = Provider<ProjectRepository>((ref) {
-  return ProjectRepository(ref.watch(apiClientProvider));
-});
-
 final accountRepositoryProvider = Provider<AccountRepository>((ref) {
   return AccountRepository(ref.watch(apiClientProvider));
 });
@@ -25,95 +21,35 @@ final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
   return TransactionRepository(ref.watch(apiClientProvider));
 });
 
-final projectsProvider = AsyncNotifierProvider<ProjectsNotifier, List<Project>>(
-  ProjectsNotifier.new,
-);
-
-class ProjectsNotifier extends AsyncNotifier<List<Project>> {
-  @override
-  Future<List<Project>> build() {
-    return ref.read(projectRepositoryProvider).list();
-  }
-
-  Future<void> refresh() async {
-    state = AsyncLoading<List<Project>>().copyWithPrevious(state);
-    state = await AsyncValue.guard(
-      () => ref.read(projectRepositoryProvider).list(),
-    );
-  }
-
-  Future<Project> create(String name) async {
-    final created = await ref.read(projectRepositoryProvider).create(name);
-    final current = state.valueOrNull ?? [];
-    state = AsyncData([...current, created]);
-    return created;
-  }
-
-  Future<void> rename(String id, String name, {bool force = false}) async {
-    final current0 = state.valueOrNull ?? [];
-    final before = current0.where((p) => p.id == id).firstOrNull;
-    final fresh = await ref
-        .read(projectRepositoryProvider)
-        .rename(id, name, version: force ? null : before?.version);
-    // PATCH answers without the sharing fields: keep them.
-    final updated = before == null
-        ? fresh
-        : Project(
-            id: fresh.id,
-            name: fresh.name,
-            createdAt: fresh.createdAt ?? before.createdAt,
-            version: fresh.version,
-            role: before.role,
-            limited: before.limited,
-            shared: before.shared,
-            owner: before.owner,
-            sharedAccountIds: before.sharedAccountIds,
-          );
-    final current = state.valueOrNull ?? [];
-    state = AsyncData([for (final p in current) p.id == id ? updated : p]);
-  }
-
-  Future<void> delete(String id) async {
-    await ref.read(projectRepositoryProvider).delete(id);
-    final current = state.valueOrNull ?? [];
-    state = AsyncData(current.where((p) => p.id != id).toList());
-  }
-}
-
-final projectProvider = FutureProvider.family<Project, String>((ref, id) async {
-  final cached = ref.watch(projectsProvider).valueOrNull;
-  if (cached != null) {
-    for (final project in cached) {
-      if (project.id == id) return project;
-    }
-  }
-  return ref.read(projectRepositoryProvider).get(id);
-});
-
+/// Every account I can open: mine first (display order), then those shared
+/// with me. Accounts are top level (no projects).
 final accountsProvider =
-    AsyncNotifierProvider.family<AccountsNotifier, List<Account>, String>(
-      AccountsNotifier.new,
-    );
+    AsyncNotifierProvider<AccountsNotifier, List<Account>>(AccountsNotifier.new);
 
-class AccountsNotifier extends FamilyAsyncNotifier<List<Account>, String> {
-  @override
-  Future<List<Account>> build(String projectId) {
-    return ref.read(accountRepositoryProvider).listForProject(projectId);
+class AccountsNotifier extends AsyncNotifier<List<Account>> {
+  /// The account I opened last, if still accessible (from the last fetch).
+  String? lastAccountId;
+
+  Future<List<Account>> _fetch() async {
+    final list = await ref.read(accountRepositoryProvider).list();
+    lastAccountId = list.lastAccountId;
+    return list.accounts;
   }
+
+  @override
+  Future<List<Account>> build() => _fetch();
 
   Future<void> refresh() async {
     state = AsyncLoading<List<Account>>().copyWithPrevious(state);
-    state = await AsyncValue.guard(
-      () => ref.read(accountRepositoryProvider).listForProject(arg),
-    );
+    state = await AsyncValue.guard(_fetch);
   }
 
   Future<Account> create(Account draft) async {
-    final created = await ref
-        .read(accountRepositoryProvider)
-        .create(arg, draft);
+    final created = await ref.read(accountRepositoryProvider).create(draft);
     final current = state.valueOrNull ?? [];
-    state = AsyncData([...current, created]);
+    final mine = [for (final a in current) if (!a.shared) a];
+    final shared = [for (final a in current) if (a.shared) a];
+    state = AsyncData([...mine, created, ...shared]);
     return created;
   }
 
@@ -126,9 +62,13 @@ class AccountsNotifier extends FamilyAsyncNotifier<List<Account>, String> {
     ref.invalidate(balanceProvider);
     ref.invalidate(todayBalanceProvider);
     ref.invalidate(insightsProvider);
+    ref.invalidate(accountProvider(account.id));
     final current = state.valueOrNull ?? [];
     state = AsyncData([
-      for (final a in current) a.id == account.id ? updated : a,
+      for (final a in current)
+        a.id == account.id
+            ? updated.copyWith(role: a.role).withSharing(a)
+            : a,
     ]);
   }
 
@@ -139,15 +79,13 @@ class AccountsNotifier extends FamilyAsyncNotifier<List<Account>, String> {
   }
 }
 
-final accountProvider = FutureProvider.family<Account, String>((ref, id) async {
-  final account = await ref.read(accountRepositoryProvider).get(id);
-  // GET /accounts/:id has no `role`; the project's account list does.
-  try {
-    final list = await ref.watch(accountsProvider(account.projectId).future);
-    final listed = list.where((a) => a.id == id).firstOrNull;
-    if (listed != null) return account.copyWith(role: listed.role);
-  } catch (_) {}
-  return account;
+/// Whether this session has already landed (sign-in opens the last-used
+/// account once; later visits to the accounts home just show the list).
+final landedProvider = StateProvider<bool>((ref) => false);
+
+/// One account, with my role on it (the server reports it).
+final accountProvider = FutureProvider.family<Account, String>((ref, id) {
+  return ref.read(accountRepositoryProvider).get(id);
 });
 
 final transactionsProvider =
@@ -392,18 +330,6 @@ final scenarioResultsProvider =
       ]);
     });
 
-/// Every project with its accounts, in display order — for the
-/// project > account pickers (header navigation and transfer destination).
-final accountDirectoryProvider = FutureProvider<List<(Project, List<Account>)>>(
-  (ref) async {
-    final projects = await ref.watch(projectsProvider.future);
-    return [
-      for (final p in projects)
-        (p, await ref.watch(accountsProvider(p.id).future)),
-    ];
-  },
-);
-
 final sharingRepositoryProvider = Provider<SharingRepository>((ref) {
   return SharingRepository(ref.watch(apiClientProvider));
 });
@@ -413,7 +339,7 @@ final myInvitesProvider = FutureProvider<List<Invite>>((ref) {
   return ref.read(sharingRepositoryProvider).myInvites();
 });
 
-/// The account's effective role, from the cached account or project lists.
+/// The account's effective role (owner, or the share's role).
 Role accountRole(WidgetRef ref, String accountId) {
   final a = ref.watch(accountProvider(accountId)).valueOrNull;
   return a?.role ?? Role.owner;

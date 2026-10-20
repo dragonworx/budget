@@ -46,6 +46,18 @@ void main() {
     expect(items[3].endDate, DateTime.utc(2027, 10, 31));
   });
 
+  test('ignores project fields from older files', () {
+    final items = parseImport('[{"name":"Old","direction":"debit","amount":"5",'
+        '"startDate":"2026-11-01","recurrence":{"mode":"once"},'
+        '"projectId":"x","projectName":"Household"}]');
+    expect(items.single.name, 'Old');
+    expect(
+        issuesOf('[{"direction":"debit","amount":"5",'
+                '"startDate":"2026-11-01","bogus":1}]')
+            .map((i) => i.field),
+        contains('bogus'));
+  });
+
   test('accepts ```json fences, bare fences and a single object', () {
     expect(parseImport('```json\n$valid\n```'), hasLength(4));
     expect(parseImport('  ```\n$valid\n```  '), hasLength(4));

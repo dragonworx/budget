@@ -3,35 +3,11 @@ import 'api_client.dart';
 import '../features/planning/goal_models.dart';
 import 'models.dart';
 
-class ProjectRepository {
-  ProjectRepository(this._api);
-
-  final ApiClient _api;
-
-  Future<List<Project>> list() async {
-    final data = await _api.get('/api/projects');
-    return _asList(data).map(Project.fromJson).toList();
-  }
-
-  Future<Project> get(String id) async {
-    final data = await _api.get('/api/projects/$id');
-    return Project.fromJson(data as Map<String, dynamic>);
-  }
-
-  Future<Project> create(String name) async {
-    final data = await _api.post('/api/projects', body: {'name': name});
-    return Project.fromJson(data as Map<String, dynamic>);
-  }
-
-  Future<Project> rename(String id, String name, {int? version}) async {
-    final data = await _api.patch(
-      '/api/projects/$id',
-      body: {'name': name, 'version': ?version},
-    );
-    return Project.fromJson(data as Map<String, dynamic>);
-  }
-
-  Future<void> delete(String id) => _api.delete('/api/projects/$id');
+/// `GET /api/accounts`: accessible accounts (mine first, then shared).
+class AccountList {
+  const AccountList(this.accounts, {this.lastAccountId});
+  final List<Account> accounts;
+  final String? lastAccountId;
 }
 
 class AccountRepository {
@@ -39,9 +15,15 @@ class AccountRepository {
 
   final ApiClient _api;
 
-  Future<List<Account>> listForProject(String projectId) async {
-    final data = await _api.get('/api/projects/$projectId/accounts');
-    return _asList(data).map(Account.fromJson).toList();
+  /// My accounts and those shared with me, plus the one I opened last
+  /// (null when none or no longer accessible).
+  Future<AccountList> list() async {
+    final data = await _api.get('/api/accounts');
+    final last = data is Map<String, dynamic> ? data['lastAccountId'] : null;
+    return AccountList(
+      _asList(data).map(Account.fromJson).toList(),
+      lastAccountId: last?.toString(),
+    );
   }
 
   Future<Account> get(String id) async {
@@ -49,11 +31,13 @@ class AccountRepository {
     return Account.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<Account> create(String projectId, Account draft) async {
-    final data = await _api.post(
-      '/api/projects/$projectId/accounts',
-      body: draft.toCreateJson(),
-    );
+  /// Remember [id] as my last-opened account (the next sign-in lands there).
+  Future<void> markOpened(String id) async {
+    await _api.post('/api/accounts/$id/opened');
+  }
+
+  Future<Account> create(Account draft) async {
+    final data = await _api.post('/api/accounts', body: draft.toCreateJson());
     return Account.fromJson(data as Map<String, dynamic>);
   }
 
@@ -313,7 +297,6 @@ List<Map<String, dynamic>> _asList(dynamic data) {
     final nested =
         data['items'] ??
         data['data'] ??
-        data['projects'] ??
         data['accounts'] ??
         data['transactions'] ??
         data['points'] ??

@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../app.dart';
+import '../accounts/accounts_page.dart';
+
 import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../widgets/conflict_dialog.dart';
@@ -305,9 +308,21 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _dataTo = addCalendarDays(today, 120);
   }
 
+  /// Server-side "last opened" (the account may come from cache, so the GET
+  /// alone is not enough). Best effort.
+  void _markOpened(String id) {
+    final notifier = ref.read(accountsProvider.notifier);
+    notifier.lastAccountId = id;
+    ref
+        .read(accountRepositoryProvider)
+        .markOpened(id)
+        .catchError((Object _) {});
+  }
+
   void _ensureWindow(Account account) {
     if (_windowAccountId == account.id) return;
     _windowAccountId = account.id;
+    _markOpened(account.id);
     _viewAnim.stop();
     _seriesCache = null;
     _seriesCacheQuery = null;
@@ -482,7 +497,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         appBar: AppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () => _goBack(context, null),
+            onPressed: () => _goBack(context),
           ),
           title: const Text('Timeline'),
         ),
@@ -528,9 +543,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               toolbarHeight: compact ? 60 : 68,
               leading: IconButton(
                 key: const ValueKey('timeline-back'),
-                tooltip: 'Back to project',
+                tooltip: 'All accounts',
                 icon: const Icon(Icons.arrow_back_rounded),
-                onPressed: () => _goBack(context, account.projectId),
+                onPressed: () => _goBack(context),
               ),
               titleSpacing: compact ? 0 : 4,
               title: _AccountHeader(
@@ -1318,7 +1333,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   Future<void> _editAccount(BuildContext context, Account account) async {
     final edited = await showAccountDialog(
       context,
-      projectId: account.projectId,
       existing: account,
       transactionCount: ref
           .read(transactionsProvider(widget.accountId))
@@ -1327,7 +1341,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
     if (edited == null || !context.mounted) return;
     try {
-      final n = ref.read(accountsProvider(account.projectId).notifier);
+      final n = ref.read(accountsProvider.notifier);
       final r = await saveWithConflictCheck(
         context,
         save: (force) => n.updateAccount(edited, force: force),
@@ -1350,15 +1364,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     }
   }
 
-  void _goBack(BuildContext context, String? projectId) {
-    if (projectId != null) {
-      context.go('/projects/$projectId');
-    } else if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/');
-    }
-  }
+  void _goBack(BuildContext context) => context.go(accountsPath);
 
   void _viewOnlyToast(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1542,7 +1548,8 @@ class _AccountHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Project > account jump menu (same picker as transfers).
+              // Account jump menu (same picker as transfers), with
+              // New account / Manage accounts at the bottom.
               AccountPicker(
                 keyPrefix: 'nav',
                 title: 'Jump to account',
@@ -1551,6 +1558,13 @@ class _AccountHeader extends StatelessWidget {
                   if (a.id == account.id) return;
                   context.pushReplacement('/accounts/${a.id}/timeline');
                 },
+                onNewAccount: () async {
+                  final created = await createAccount(context);
+                  if (created != null && context.mounted) {
+                    context.go('/accounts/${created.id}/timeline');
+                  }
+                },
+                onManageAccounts: () => context.go(accountsPath),
                 builder: (context, open) => InkWell(
                   key: const ValueKey('header-account-picker'),
                   borderRadius: BorderRadius.circular(8),

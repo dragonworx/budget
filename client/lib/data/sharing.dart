@@ -3,7 +3,7 @@ import 'models.dart';
 
 DateTime? _dt(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
 
-/// A project member or account share holder.
+/// An account's owner or share holder.
 class Member {
   const Member({
     required this.user,
@@ -37,9 +37,7 @@ class Invite {
     required this.id,
     required this.email,
     required this.role,
-    this.projectId,
     this.accountId,
-    this.projectName,
     this.accountName,
     this.invitedBy,
     this.status = 'pending',
@@ -50,9 +48,7 @@ class Invite {
   final String id;
   final String email;
   final Role role;
-  final String? projectId;
   final String? accountId;
-  final String? projectName;
   final String? accountName;
   final UserRef? invitedBy;
   final String status;
@@ -61,18 +57,14 @@ class Invite {
 
   bool get pending => status == 'pending';
 
-  /// "Household" or "Household › Savings".
-  String get targetLabel => accountName == null
-      ? (projectName ?? 'a project')
-      : '${projectName ?? 'a project'} › $accountName';
+  /// The shared account's name.
+  String get targetLabel => accountName ?? 'an account';
 
   factory Invite.fromJson(Map<String, dynamic> j) => Invite(
     id: j['id'].toString(),
     email: (j['email'] ?? '').toString(),
     role: Role.parse(j['role'], Role.viewer),
-    projectId: j['projectId']?.toString(),
     accountId: j['accountId']?.toString(),
-    projectName: j['projectName']?.toString(),
     accountName: j['accountName']?.toString(),
     invitedBy: UserRef.maybe(j['invitedBy']),
     status: (j['status'] ?? 'pending').toString(),
@@ -81,8 +73,8 @@ class Invite {
   );
 }
 
-/// Members, account shares and (for owners) pending invites of a project or
-/// account.
+/// An account's owner, its shares (all of them for the owner, else just
+/// mine) and, for the owner, pending invites.
 class ShareInfo {
   const ShareInfo({
     required this.role,
@@ -91,8 +83,10 @@ class ShareInfo {
     this.invites = const [],
   });
 
-  /// My role on the target.
+  /// My role on the account.
   final Role role;
+
+  /// The owner (one entry).
   final List<Member> members;
   final List<Member> accountShares;
   final List<Invite> invites;
@@ -104,7 +98,14 @@ class ShareInfo {
 
   factory ShareInfo.fromJson(Map<String, dynamic> j) => ShareInfo(
     role: Role.parse(j['role'], Role.viewer),
-    members: _list(j['members'], Member.fromJson),
+    members: j['owner'] is Map
+        ? [
+            Member.fromJson({
+              ...Map<String, dynamic>.from(j['owner'] as Map),
+              'role': 'owner',
+            }),
+          ]
+        : _list(j['members'], Member.fromJson),
     accountShares: _list(j['accountShares'] ?? j['shares'], Member.fromJson),
     invites: _list(j['invites'], Invite.fromJson),
   );
@@ -129,8 +130,7 @@ class InvitePreview {
 }
 
 class AcceptedInvite {
-  const AcceptedInvite({this.projectId, this.accountId, required this.role});
-  final String? projectId;
+  const AcceptedInvite({this.accountId, required this.role});
   final String? accountId;
   final Role role;
 }
@@ -142,14 +142,14 @@ class AdminUser {
     this.disabled = false,
     this.createdAt,
     this.lastLoginAt,
-    this.ownedProjects = 0,
+    this.ownedAccounts = 0,
   });
   final UserRef user;
   final bool isAdmin;
   final bool disabled;
   final DateTime? createdAt;
   final DateTime? lastLoginAt;
-  final int ownedProjects;
+  final int ownedAccounts;
 
   factory AdminUser.fromJson(Map<String, dynamic> j) => AdminUser(
     user: UserRef.maybe(j)!,
@@ -157,7 +157,7 @@ class AdminUser {
     disabled: j['disabled'] == true,
     createdAt: _dt(j['createdAt']),
     lastLoginAt: _dt(j['lastLoginAt']),
-    ownedProjects: (j['ownedProjects'] as num?)?.toInt() ?? 0,
+    ownedAccounts: (j['ownedAccounts'] as num?)?.toInt() ?? 0,
   );
 }
 
@@ -189,14 +189,12 @@ class Allowlist {
   );
 }
 
-/// Which thing is being shared.
+/// The account being shared.
 class ShareTarget {
-  const ShareTarget.project(this.id, this.name) : isAccount = false;
-  const ShareTarget.account(this.id, this.name) : isAccount = true;
+  const ShareTarget.account(this.id, this.name);
   final String id;
   final String name;
-  final bool isAccount;
-  String get _base => isAccount ? '/api/accounts/$id' : '/api/projects/$id';
+  String get _base => '/api/accounts/$id';
 }
 
 /// Sharing, invites and admin endpoints (plan §4b).
@@ -208,7 +206,7 @@ class SharingRepository {
       d is Map ? Map<String, dynamic>.from(d) : const {};
 
   Future<ShareInfo> load(ShareTarget t) async => ShareInfo.fromJson(
-    _map(await _api.get(t.isAccount ? '${t._base}/shares' : '${t._base}/members')),
+    _map(await _api.get('${t._base}/shares')),
   );
 
   Future<InviteResult> invite(ShareTarget t, String email, Role role) async {
@@ -227,21 +225,13 @@ class SharingRepository {
     );
   }
 
-  Future<void> setRole(ShareTarget t, String userId, Role role) => _api.patch(
-    t.isAccount ? '${t._base}/shares/$userId' : '${t._base}/members/$userId',
-    body: {'role': role.name},
-  );
+  Future<void> setRole(ShareTarget t, String userId, Role role) =>
+      _api.patch('${t._base}/shares/$userId', body: {'role': role.name});
 
-  Future<void> remove(ShareTarget t, String userId) => _api.delete(
-    t.isAccount ? '${t._base}/shares/$userId' : '${t._base}/members/$userId',
-  );
+  Future<void> remove(ShareTarget t, String userId) =>
+      _api.delete('${t._base}/shares/$userId');
 
   Future<void> leave(ShareTarget t) => _api.post('${t._base}/leave');
-
-  Future<void> transferOwnership(String projectId, String userId) => _api.post(
-    '/api/projects/$projectId/transfer-ownership',
-    body: {'userId': userId},
-  );
 
   /// New link for a pending invite; the old one stops working.
   Future<String> rotateLink(String inviteId) async {
@@ -271,7 +261,6 @@ class SharingRepository {
   Future<AcceptedInvite> accept(String token) async {
     final d = _map(await _api.post('/api/invites/accept', body: {'token': token}));
     return AcceptedInvite(
-      projectId: d['projectId']?.toString(),
       accountId: d['accountId']?.toString(),
       role: Role.parse(d['role'], Role.viewer),
     );

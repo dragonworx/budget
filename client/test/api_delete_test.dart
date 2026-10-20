@@ -15,11 +15,9 @@ void main() {
         return http.Response('', status);
       }),
     );
-    await ProjectRepository(api).delete('p1');
     await AccountRepository(api).delete('a1');
     await TransactionRepository(api).delete('t1');
     expect(seen, [
-      'DELETE /api/projects/p1 no-cache',
       'DELETE /api/accounts/a1 no-cache',
       'DELETE /api/transactions/t1 no-cache',
     ]);

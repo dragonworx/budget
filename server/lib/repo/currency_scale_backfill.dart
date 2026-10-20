@@ -29,7 +29,10 @@ Future<double> accountBalanceSpan(Session conn, Account account,
   );
   var hi = 0.0, lo = 0.0;
   final seedV = account.seedBalance.toDouble();
-  for (final v in [seedV, ...series.points.map((p) => p.closingBalance.toDouble())]) {
+  for (final v in [
+    seedV,
+    ...series.points.map((p) => p.closingBalance.toDouble())
+  ]) {
     if (v > hi) hi = v;
     if (v < lo) lo = v;
   }
@@ -48,4 +51,3 @@ Future<void> backfillCurrencyScales(Session conn) async {
     await repo.update(account.id, currencyScale: scale);
   }
 }
-

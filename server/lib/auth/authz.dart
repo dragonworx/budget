@@ -23,26 +23,17 @@ enum Role {
 class Access {
   Access({
     this.role,
-    this.projectId,
     this.accountId,
-    this.projectRole,
-    this.limited = false,
     this.params = const {},
   });
 
-  /// Effective role on the target (null for scope `auth`/`admin`).
+  /// Effective role on the target (null for scope `auth`/`admin`): owner
+  /// for the account's owner, else the account share's role.
   final Role? role;
-  final String? projectId;
   final String? accountId;
-
-  /// Role from project membership alone (null when access is only via an
-  /// account share).
-  final Role? projectRole;
-
-  /// True when project access comes only from account shares: the user sees
-  /// the project container and only the accounts shared with them.
-  final bool limited;
   final Map<String, String> params;
+
+  bool get isOwner => role == Role.owner;
 }
 
 /// How a route's target is resolved to a role.
@@ -53,22 +44,13 @@ enum Scope {
   /// Admin users only.
   admin,
 
-  /// `:p` via project membership only.
-  project,
-
-  /// `:p` via membership, or limited viewer via any account share in it.
-  projectView,
-
-  /// `:a` via max(project membership, account share).
+  /// `:a`: owner if the user owns it, else their account share's role.
   account,
-
-  /// `:a` via the account's project membership only (structural changes).
-  accountProject,
 
   /// `:t` via its account.
   transaction,
 
-  /// `:i` (invite id) via the invite's project membership.
+  /// `:i` (invite id) via the invite's account.
   invite,
 }
 
@@ -113,34 +95,16 @@ const _e = Role.editor, _o = Role.owner;
 /// Every authenticated `/api` route. Anything not listed is denied (404);
 /// `test/authz/route_sweep_test.dart` checks each router route has an entry.
 const policies = <Policy>[
-  // Projects
-  Policy('GET', 'projects', Scope.auth),
-  Policy('POST', 'projects', Scope.auth, event: 'project.created'),
-  Policy('GET', 'projects/:p', Scope.projectView),
-  Policy('PATCH', 'projects/:p', Scope.project,
-      min: _o, event: 'project.updated', versioned: 'projects'),
-  Policy('DELETE', 'projects/:p', Scope.project,
-      min: _o, event: 'project.deleted'),
-  Policy('GET', 'projects/:p/accounts', Scope.projectView),
-  Policy('POST', 'projects/:p/accounts', Scope.project,
-      min: _e, event: 'account.created'),
-  // Project sharing
-  Policy('GET', 'projects/:p/members', Scope.projectView),
-  Policy('POST', 'projects/:p/invites', Scope.project,
-      min: _o, event: 'invite.created'),
-  Policy('PATCH', 'projects/:p/members/:u', Scope.project,
-      min: _o, event: 'membership.changed'),
-  Policy('DELETE', 'projects/:p/members/:u', Scope.project,
-      min: _o, event: 'membership.revoked'),
-  Policy('POST', 'projects/:p/leave', Scope.project, event: 'membership.left'),
-  Policy('POST', 'projects/:p/transfer-ownership', Scope.project,
-      min: _o, event: 'project.ownership_transferred'),
   // Accounts
+  Policy('GET', 'accounts', Scope.auth),
+  Policy('POST', 'accounts', Scope.auth, event: 'account.created'),
   Policy('GET', 'accounts/:a', Scope.account),
+  // Remember the last-opened account (landing after sign-in). No event.
+  Policy('POST', 'accounts/:a/opened', Scope.account),
   Policy('PATCH', 'accounts/:a', Scope.account,
       min: _e, event: 'account.updated', versioned: 'accounts'),
-  Policy('DELETE', 'accounts/:a', Scope.accountProject,
-      min: _e, event: 'account.deleted'),
+  Policy('DELETE', 'accounts/:a', Scope.account,
+      min: _o, event: 'account.deleted'),
   Policy('GET', 'accounts/:a/transactions', Scope.account),
   Policy('POST', 'accounts/:a/transactions', Scope.account,
       min: _e, event: 'transaction.created'),
@@ -162,11 +126,11 @@ const policies = <Policy>[
       min: _e, event: 'scenario.deleted'),
   // Account sharing
   Policy('GET', 'accounts/:a/shares', Scope.account),
-  Policy('POST', 'accounts/:a/invites', Scope.accountProject,
+  Policy('POST', 'accounts/:a/invites', Scope.account,
       min: _o, event: 'invite.created'),
-  Policy('PATCH', 'accounts/:a/shares/:u', Scope.accountProject,
+  Policy('PATCH', 'accounts/:a/shares/:u', Scope.account,
       min: _o, event: 'account_share.changed'),
-  Policy('DELETE', 'accounts/:a/shares/:u', Scope.accountProject,
+  Policy('DELETE', 'accounts/:a/shares/:u', Scope.account,
       min: _o, event: 'account_share.revoked'),
   Policy('POST', 'accounts/:a/leave', Scope.account,
       event: 'account_share.left'),
@@ -228,42 +192,14 @@ class Authz {
   Authz(this._db);
   final Session _db;
 
-  Future<Role?> projectRole(String projectId, String userId) async {
-    if (!uuidRe.hasMatch(projectId)) return null;
-    final r = await _db.execute(
-      Sql.named('SELECT role::text FROM project_members '
-          'WHERE project_id = @p::uuid AND user_id = @u::uuid'),
-      parameters: {'p': projectId, 'u': userId},
-    );
-    return r.isEmpty ? null : Role.parse(r.first[0]);
-  }
-
-  /// Membership role, else limited viewer if any account in it is shared.
-  Future<Access?> projectView(String projectId, String userId) async {
-    final role = await projectRole(projectId, userId);
-    if (role != null) {
-      return Access(role: role, projectRole: role, projectId: projectId);
-    }
-    if (!uuidRe.hasMatch(projectId)) return null;
-    final r = await _db.execute(
-      Sql.named('SELECT 1 FROM account_shares s JOIN accounts a '
-          'ON a.id = s.account_id WHERE a.project_id = @p::uuid '
-          'AND s.user_id = @u::uuid LIMIT 1'),
-      parameters: {'p': projectId, 'u': userId},
-    );
-    if (r.isEmpty) return null;
-    return Access(role: Role.viewer, projectId: projectId, limited: true);
-  }
-
-  /// (projectId, effective role, project-only role) for an account.
+  /// Effective access to an account: owner, else its share role.
   Future<Access?> account(String accountId, String userId) async {
     if (!uuidRe.hasMatch(accountId)) return null;
     final r = await _db.execute(
       Sql.named('''
-        SELECT a.project_id::text, pm.role::text, s.role::text
+        SELECT CASE WHEN a.owner_id = @u::uuid THEN 'owner'
+                    ELSE s.role::text END
         FROM accounts a
-        LEFT JOIN project_members pm
-          ON pm.project_id = a.project_id AND pm.user_id = @u::uuid
         LEFT JOIN account_shares s
           ON s.account_id = a.id AND s.user_id = @u::uuid
         WHERE a.id = @a::uuid
@@ -271,14 +207,9 @@ class Authz {
       parameters: {'a': accountId, 'u': userId},
     );
     if (r.isEmpty) return null;
-    final pr = Role.parse(r.first[1]);
-    final role = Role.max(pr, Role.parse(r.first[2]));
+    final role = Role.parse(r.first[0]);
     if (role == null) return null;
-    return Access(
-        role: role,
-        projectRole: pr,
-        projectId: r.first[0] as String,
-        accountId: accountId);
+    return Access(role: role, accountId: accountId);
   }
 
   /// Accounts (of [ids]) that [userId] can read.
@@ -290,8 +221,7 @@ class Authz {
       Sql.named('''
         SELECT a.id::text FROM accounts a
         WHERE a.id = ANY (@ids::uuid[]) AND (
-          EXISTS (SELECT 1 FROM project_members pm
-                  WHERE pm.project_id = a.project_id AND pm.user_id = @u::uuid)
+          a.owner_id = @u::uuid
           OR EXISTS (SELECT 1 FROM account_shares s
                   WHERE s.account_id = a.id AND s.user_id = @u::uuid))
       '''),
@@ -316,14 +246,11 @@ class Authz {
     return (r.first[0] as String, r.first[1] as String?);
   }
 
-  /// The project an invite targets (directly or via its account).
-  Future<String?> inviteProject(String inviteId) async {
+  /// The account an invite targets.
+  Future<String?> inviteAccount(String inviteId) async {
     if (!uuidRe.hasMatch(inviteId)) return null;
     final r = await _db.execute(
-      Sql.named('''
-        SELECT COALESCE(i.project_id, a.project_id)::text FROM invites i
-        LEFT JOIN accounts a ON a.id = i.account_id WHERE i.id = @i::uuid
-      '''),
+      Sql.named('SELECT account_id::text FROM invites WHERE id = @i::uuid'),
       parameters: {'i': inviteId},
     );
     return r.isEmpty ? null : r.first[0] as String?;

@@ -10,7 +10,6 @@ import 'harness.dart';
 
 /// file -> function name -> mount prefix below /api.
 const _mounts = {
-  'projects.dart': {'buildProjectsApi': 'projects'},
   'accounts.dart': {'buildAccountsApi': 'accounts'},
   'balance.dart': {'attachBalanceRoutes': 'accounts'},
   'goal.dart': {'attachGoalRoutes': 'accounts'},
@@ -18,7 +17,6 @@ const _mounts = {
   'scenarios.dart': {'attachScenarioRoutes': 'accounts'},
   'transactions.dart': {'transactionsRouter': 'transactions'},
   'sharing.dart': {
-    'attachProjectSharingRoutes': 'projects',
     'attachAccountSharingRoutes': 'accounts',
     'buildInvitesApi': 'invites',
   },
@@ -78,7 +76,9 @@ void main() {
       final computeOnly = p.path.endsWith('/project') ||
           p.path.endsWith('/solve') ||
           p.path.endsWith('/goal') ||
-          p.path.startsWith('invites/preview');
+          p.path.startsWith('invites/preview') ||
+          // A per-user preference (landing account), not shared data.
+          p.path.endsWith('/opened');
       if (mutating && !computeOnly) {
         expect(p.event, isNotNull, reason: '${p.method} ${p.path}');
       }
@@ -98,11 +98,10 @@ void main() {
         'name': 'S',
         'request': {'solveFor': 'amount'}
       });
-      final inv = await h.call('POST', '/api/projects/${s.p}/invites',
+      final inv = await h.call('POST', '/api/accounts/${s.a}/invites',
           as: 'owner', body: {'email': h.email('pending')});
       final ownerId = await h.userId('owner');
       final ids = {
-        'p': s.p,
         'a': s.a,
         't': s.t,
         's': (sc.json?['id'] ?? '00000000-0000-0000-0000-000000000000')
@@ -133,7 +132,15 @@ void main() {
       // Unknown routes are denied even when signed in.
       expect((await h.call('GET', '/api/secret-debug', as: 'outsider')).status,
           404);
-      expect((await h.call('DELETE', '/api/projects', as: 'outsider')).status,
+      expect((await h.call('DELETE', '/api/accounts', as: 'outsider')).status,
+          404);
+      // Projects are gone.
+      expect(
+          (await h.call('GET', '/api/projects', as: 'outsider')).status, 404);
+      expect(
+          (await h.call('POST', '/api/projects',
+                  as: 'outsider', body: {'name': 'x'}))
+              .status,
           404);
     });
   });

@@ -50,7 +50,6 @@ Router buildAuthApi({
         await txAudit.record(
           userId: user.id,
           action: 'invite.accepted',
-          projectId: inv.projectId,
           accountId: inv.accountId,
           entityId: inv.id,
           subjectUserId: user.id,

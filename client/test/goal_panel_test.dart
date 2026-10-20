@@ -60,7 +60,7 @@ class _Repo extends AccountRepository {
 
 final _account = Account(
   id: 'acc',
-  projectId: 'p',
+  ownerId: 'u',
   name: 'A',
   seedBalance: Decimal.fromInt(1000),
   seedDate: DateTime(2026, 1, 1),
