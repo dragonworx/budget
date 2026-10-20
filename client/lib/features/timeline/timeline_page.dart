@@ -792,7 +792,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                       from: _firstClearDay,
                       to: lastVisibleDay(_viewStart, _visibleDays),
                       today: DateTime.now(),
-                      height: compact ? 44 : 40,
+                      height: 44,
                       nets: shown == null
                           ? const {}
                           : dayNetTotals(
@@ -802,7 +802,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           combo?.transactions[id])
                                       ?.enabled,
                             ),
-                      onTap: () => _jumpToDate(context),
+                      // The strip between the labels: the start picker, as
+                      // the whole control did before (least surprising).
+                      onTap: () => _pickRangeEnd(context, start: true),
+                      onStartTap: () => _pickRangeEnd(context, start: true),
+                      onEndTap: () => _pickRangeEnd(context, start: false),
                     ),
                   ),
                   Expanded(
@@ -1360,16 +1364,53 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     icon: const Icon(Icons.list_alt_rounded),
   );
 
-  Future<void> _jumpToDate(BuildContext context) async {
+  /// Start / end label of the date-range row: pick that end of the view.
+  /// A start before the end (or an end on / after the start) moves just that
+  /// end, so the span changes; otherwise the span is kept and the view
+  /// shifts to the picked day. The balance range is refitted, as for every
+  /// "go to a date" action.
+  Future<void> _pickRangeEnd(
+    BuildContext context, {
+    required bool start,
+  }) async {
+    final first = _firstClearDay;
+    final last = lastVisibleDay(_viewStart, _visibleDays);
     final picked = await showDatePicker(
       context: context,
-      initialDate: _firstClearDay,
+      initialDate: start ? first : last,
       firstDate: DateTime(1970),
       lastDate: DateTime(2100),
-      helpText: 'Jump to date',
+      helpText: start ? 'Start date' : 'End date',
     );
-    if (picked == null) return;
-    _showFrom(picked);
+    if (picked == null || !mounted) return;
+    final day = dateOnly(picked);
+    final w = _chartWidth;
+    final (DateTime, double) view;
+    if (start) {
+      if (!day.isBefore(last)) return _showFrom(day);
+      view = viewForRange(
+        day,
+        last,
+        w,
+        stripWidth: ChartLayout.laneNameWidth(w),
+      );
+    } else {
+      if (day.isBefore(first)) {
+        // Keep the span: [day] becomes the last visible day.
+        view = (addDays(day, 1 - _visibleDays), _visibleDays);
+      } else {
+        view = viewForRange(
+          first,
+          day,
+          w,
+          stripWidth: ChartLayout.laneNameWidth(w),
+          anchorEnd: true,
+        );
+      }
+    }
+    _setUnit(ViewUnit.nearest(view.$2));
+    _onViewport(view.$1, view.$2);
+    setState(() => _fitToken++);
   }
 
   Future<void> _showShortcuts(BuildContext context) {

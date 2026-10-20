@@ -116,3 +116,24 @@ TimeSpan dataTimeSpan(DateTime first, DateTime last) {
 /// (the end is exclusive: a 7-day view from Monday ends on Sunday).
 DateTime lastVisibleDay(DateTime start, double days) =>
     dateOnly(addDays(start, math.max(0, days - 1e-6)));
+
+/// The view showing [first]..[last] (inclusive) with [first] as the first
+/// day clear of the left strip (as the timeline's left-align rule) and [last] the last
+/// visible day ([stripWidth]: the plot's left strip, in pixels). The span is clamped to the zoom limits; a clamp keeps
+/// [first] (or, with [anchorEnd], [last]) where asked.
+(DateTime, double) viewForRange(
+  DateTime first,
+  DateTime last,
+  double chartWidth, {
+  required double stripWidth,
+  bool anchorEnd = false,
+}) {
+  final f = (stripWidth / chartWidth).clamp(0.0, 0.9).toDouble();
+  final n = dayCoord(dateOnly(last)) - dayCoord(dateOnly(first)) + 1;
+  final want = n / (1 - f);
+  final days = want.clamp(minVisibleDays, maxVisibleDays).toDouble();
+  if (anchorEnd && (days - want).abs() > 1e-9) {
+    return (addDays(dateOnly(last), 1 - days), days);
+  }
+  return (addDays(dateOnly(first), -f * days), days);
+}

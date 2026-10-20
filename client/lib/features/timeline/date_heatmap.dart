@@ -110,7 +110,11 @@ List<Color> heatmapBlend(List<double> cells) {
 }
 
 /// The date-range control: start date at the left, end date at the right,
-/// and a heatmap of each day's net in between. Tap opens the date picker.
+/// and a heatmap of each day's net in between. Three separate tap targets
+/// (and screen-reader buttons): the start label edits the view's start
+/// ([onStartTap]), the end label its end ([onEndTap]), and the heatmap
+/// between them ([onTap]) opens the start picker too. Taps only open
+/// pickers; they never create or edit anything.
 class DateRangeHeatmap extends StatelessWidget {
   const DateRangeHeatmap({
     super.key,
@@ -118,16 +122,31 @@ class DateRangeHeatmap extends StatelessWidget {
     required this.to,
     required this.nets,
     required this.onTap,
+    this.onStartTap,
+    this.onEndTap,
     this.today,
-    this.height = 40,
+    this.height = 44,
   });
 
   final DateTime from;
   final DateTime to;
   final Map<int, double> nets;
+
+  /// The heatmap strip between the labels.
   final VoidCallback onTap;
+
+  /// The start label (null: the strip's [onTap]).
+  final VoidCallback? onStartTap;
+
+  /// The end label (null: the strip's [onTap]).
+  final VoidCallback? onEndTap;
   final DateTime? today;
+
+  /// Row height; the label tap targets are at least [minTapHeight] tall.
   final double height;
+
+  /// Smallest touch height of each tap target.
+  static const double minTapHeight = 44;
 
   static String _yy(DateTime d) => '’${DateFormat('yy').format(d)}';
 
@@ -137,6 +156,40 @@ class DateRangeHeatmap extends StatelessWidget {
       : '${DateFormat('d MMM').format(from)} ${_yy(from)}';
   String get endLabel => '${DateFormat('d MMM').format(to)} ${_yy(to)}';
 
+  /// The full dates, for screen readers.
+  static String _long(DateTime d) => DateFormat('d MMMM y').format(d);
+
+  Widget _target({
+    required Key key,
+    required String tooltip,
+    required String semantics,
+    required VoidCallback onPressed,
+    required Widget child,
+    EdgeInsets padding = EdgeInsets.zero,
+  }) => Tooltip(
+    message: tooltip,
+    excludeFromSemantics: true,
+    child: Semantics(
+      button: true,
+      label: semantics,
+      onTap: onPressed,
+      excludeSemantics: true,
+      child: InkWell(
+        key: key,
+        onTap: onPressed,
+        mouseCursor: SystemMouseCursors.click,
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: minTapHeight),
+          child: Padding(
+            padding: padding,
+            child: Center(child: child),
+          ),
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -144,80 +197,79 @@ class DateRangeHeatmap extends StatelessWidget {
       fontWeight: FontWeight.w700,
       color: AppTheme.text,
     );
-    return Tooltip(
-      message: 'Jump to a date',
-      excludeFromSemantics: true,
-      child: Semantics(
-        button: true,
-        label: 'Jump to a date: $startLabel – $endLabel',
-        // The InkWell's own action is excluded with its children: keep tap.
-        onTap: onTap,
-        excludeSemantics: true,
-        child: Material(
-          color: AppTheme.raised,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: const BorderSide(color: AppTheme.border),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            key: const ValueKey('jump-to-date'),
-            onTap: onTap,
-            child: SizedBox(
-              height: height,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Row(
-                  children: [
-                    Text(
-                      startLabel,
-                      key: const ValueKey('range-start'),
-                      style: label,
-                      maxLines: 1,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, box) {
-                          final cells = heatmapBuckets(
-                            nets,
-                            from,
-                            to,
-                            math.max(
-                              1,
-                              (box.maxWidth / heatmapMinCell).floor(),
-                            ),
-                          );
-                          final a = dayCoord(from);
-                          final span = dayCoord(to) - a + 1; // inclusive days
-                          final t = today == null
-                              ? null
-                              : (dayCoord(today!) - a + 0.5) / span;
-                          return CustomPaint(
-                            key: const ValueKey('range-heatmap'),
-                            size: Size(box.maxWidth, height - 16),
-                            painter: HeatmapPainter(
-                              colors: heatmapBlend(cells),
-                              todayFraction: t != null && t >= 0 && t <= 1
-                                  ? t
-                                  : null,
-                            ),
-                          );
-                        },
+    final rowHeight = math.max(height, minTapHeight);
+    return Material(
+      key: const ValueKey('jump-to-date'),
+      color: AppTheme.raised,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        height: rowHeight,
+        child: Row(
+          children: [
+            _target(
+              key: const ValueKey('range-start-button'),
+              tooltip: 'Edit start date',
+              semantics: 'Start date: ${_long(from)}. Edit start date',
+              onPressed: onStartTap ?? onTap,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                startLabel,
+                key: const ValueKey('range-start'),
+                style: label,
+                maxLines: 1,
+              ),
+            ),
+            Expanded(
+              child: _target(
+                key: const ValueKey('range-heatmap-button'),
+                tooltip: 'Jump to a date',
+                semantics:
+                    'Jump to a date: $startLabel – $endLabel '
+                    '(daily net heatmap)',
+                onPressed: onTap,
+                child: LayoutBuilder(
+                  builder: (context, box) {
+                    final cells = heatmapBuckets(
+                      nets,
+                      from,
+                      to,
+                      math.max(1, (box.maxWidth / heatmapMinCell).floor()),
+                    );
+                    final a = dayCoord(from);
+                    final span = dayCoord(to) - a + 1; // inclusive days
+                    final t = today == null
+                        ? null
+                        : (dayCoord(today!) - a + 0.5) / span;
+                    return CustomPaint(
+                      key: const ValueKey('range-heatmap'),
+                      size: Size(box.maxWidth, rowHeight - 16),
+                      painter: HeatmapPainter(
+                        colors: heatmapBlend(cells),
+                        todayFraction: t != null && t >= 0 && t <= 1 ? t : null,
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      endLabel,
-                      key: const ValueKey('range-end'),
-                      style: label,
-                      maxLines: 1,
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
             ),
-          ),
+            _target(
+              key: const ValueKey('range-end-button'),
+              tooltip: 'Edit end date',
+              semantics: 'End date: ${_long(to)}. Edit end date',
+              onPressed: onEndTap ?? onTap,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                endLabel,
+                key: const ValueKey('range-end'),
+                style: label,
+                maxLines: 1,
+              ),
+            ),
+          ],
         ),
       ),
     );

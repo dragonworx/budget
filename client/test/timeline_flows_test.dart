@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/date_heatmap.dart';
+import 'package:budget_client/features/timeline/fit_ranges.dart';
 import 'package:budget_client/theme/app_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -1909,6 +1910,142 @@ void main() {
     expect(find.byKey(const ValueKey('tip-trim-rent')), findsNothing);
     expect(find.byKey(const ValueKey('tip-trim-salary')), findsNothing);
   });
+
+  test('viewForRange: picked first day clear of the strip, picked last day '
+      'the last visible one', () {
+    for (final w in [390.0, 1440.0]) {
+      for (final (a, b) in [
+        (DateTime(2026, 10, 5), DateTime(2026, 11, 4)),
+        (DateTime(2026, 1, 1), DateTime(2026, 1, 1)),
+        (DateTime(2026, 3, 1), DateTime(2027, 2, 28)),
+      ]) {
+        final (start, days) = viewForRange(
+          a,
+          b,
+          w,
+          stripWidth: ChartLayout.laneNameWidth(w),
+        );
+        final inset = ChartLayout.laneNameWidth(w) * days / w;
+        final firstClear = dateFromDayCoord(
+          (dayCoord(start) + inset - 1e-6).ceilToDouble(),
+        );
+        expect(firstClear, a, reason: '$w $a');
+        expect(lastVisibleDay(start, days), b, reason: '$w $b');
+      }
+    }
+  });
+
+  for (final (size, kind) in const [
+    (Size(390, 844), PointerDeviceKind.touch),
+    (Size(1440, 900), PointerDeviceKind.mouse),
+  ]) {
+    testWidgets('${size.width.toInt()}px ${kind.name}: start / end labels '
+        'edit that end of the view; past the other end the span is kept', (
+      tester,
+    ) async {
+      final store = await _pump(tester, size: size);
+      final handle = tester.ensureSemantics();
+      String startText() =>
+          tester.widget<Text>(find.byKey(const ValueKey('range-start'))).data!;
+      String endText() =>
+          tester.widget<Text>(find.byKey(const ValueKey('range-end'))).data!;
+      String d(DateTime x, {bool year = false}) => year
+          ? '${DateFormat('d MMM').format(x)} ’${DateFormat('yy').format(x)}'
+          : DateFormat('d MMM').format(x);
+      BalanceChart chart() =>
+          tester.widget<BalanceChart>(find.byType(BalanceChart));
+      DateTime first() => DateFormat('d MMM y').parse(
+        '${startText().split(' ').take(2).join(' ')} ${_firstYear(tester)}',
+      );
+      DateTime last() => lastVisibleDay(chart().viewStart, chart().visibleDays);
+      // Clear tap targets, three separate screen-reader buttons.
+      for (final k in ['range-start-button', 'range-end-button']) {
+        expect(
+          tester.getSize(find.byKey(ValueKey(k))).height,
+          greaterThanOrEqualTo(44),
+        );
+      }
+      expect(
+        find.bySemanticsLabel(RegExp(r'^Start date: .*Edit start date$')),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp(r'^End date: .*Edit end date$')),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp(r'^Jump to a date: ')),
+        findsOneWidget,
+      );
+      handle.dispose();
+
+      Future<void> pick(
+        String key,
+        String help,
+        DateTime initial,
+        DateTime day,
+      ) async {
+        await tester.tap(find.byKey(ValueKey(key)), kind: kind);
+        await tester.pumpAndSettle();
+        expect(find.byType(DatePickerDialog), findsOneWidget);
+        expect(find.text(help), findsOneWidget);
+        await tester.tap(find.byTooltip('Switch to input'));
+        await tester.pumpAndSettle();
+        final field = find.descendant(
+          of: find.byType(DatePickerDialog),
+          matching: find.byType(TextField),
+        );
+        expect(
+          tester.widget<TextField>(field).controller!.text,
+          DateFormat('MM/dd/yyyy').format(initial),
+          reason: 'opens on the tapped date',
+        );
+        await tester.enterText(field, DateFormat('MM/dd/yyyy').format(day));
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+      }
+
+      // Start earlier: the end stays, the span grows.
+      final e0 = last();
+      final s1 = _plus(first(), -9);
+      await pick('range-start-button', 'Start date', first(), s1);
+      expect(first(), s1);
+      expect(last(), e0);
+      // End later: the start stays.
+      final e1 = _plus(e0, 12);
+      await pick('range-end-button', 'End date', e0, e1);
+      expect(first(), s1);
+      expect(last(), e1);
+      // End before the start: same span, ending on that day.
+      final span = chart().visibleDays;
+      final e2 = _plus(s1, -20);
+      await pick('range-end-button', 'End date', e1, e2);
+      expect(last(), e2);
+      expect(chart().visibleDays, closeTo(span, 1e-6));
+      // Start on / after the end: same span, starting on that day.
+      final s3 = _plus(last(), 40);
+      await pick('range-start-button', 'Start date', first(), s3);
+      expect(first(), s3);
+      expect(chart().visibleDays, closeTo(span, 1e-6));
+      // The strip between the labels opens the start picker.
+      await tester.tap(
+        find.byKey(const ValueKey('range-heatmap-button')),
+        kind: kind,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Start date'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(endText(), d(last(), year: true));
+      expect(
+        store.calls.where(
+          (c) => c.startsWith('create') || c.startsWith('update'),
+        ),
+        isEmpty,
+        reason: 'taps never create or edit',
+      );
+    });
+  }
 }
 
 /// The heatmap's start label without any year ("9 Oct").
@@ -1918,3 +2055,14 @@ String _rangeStart(WidgetTester tester) => tester
     .split(' ')
     .take(2)
     .join(' ');
+
+/// Year of the heatmap's start day (from the chart's view).
+int _firstYear(WidgetTester tester) {
+  final c = tester.widget<BalanceChart>(find.byType(BalanceChart));
+  final w = tester.getSize(find.byType(BalanceChart)).width;
+  final inset = ChartLayout.laneNameWidth(w) * c.visibleDays / w;
+  return dateFromDayCoord((dayCoord(c.viewStart) + inset - 1e-6).ceilToDouble())
+      .year;
+}
+
+DateTime _plus(DateTime x, int days) => DateTime(x.year, x.month, x.day + days);
