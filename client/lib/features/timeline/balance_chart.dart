@@ -1858,13 +1858,17 @@ class _BalanceChartState extends State<BalanceChart>
           child: ColoredBox(color: color.withValues(alpha: 0.14)),
         ),
       ),
-      Positioned(
-        left: cx - 1,
-        top: layout.plot.top,
-        width: 2,
-        height: layout.axis.bottom - layout.plot.top,
-        child: IgnorePointer(child: ColoredBox(color: color)),
-      ),
+      // The guide sits on the day's start (its left edge), like the
+      // selection edges; the band fills the day and the bubble centres on it.
+      if (x0 >= layout.plot.left - 1 && x0 <= layout.plot.right + 1)
+        Positioned(
+          key: const ValueKey('pick-line'),
+          left: x0 - 1,
+          top: layout.plot.top,
+          width: 2,
+          height: layout.axis.bottom - layout.plot.top,
+          child: IgnorePointer(child: ColoredBox(color: color)),
+        ),
       Positioned(
         left: bx,
         top: by,

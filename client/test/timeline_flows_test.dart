@@ -1121,4 +1121,40 @@ void main() {
     expect(x('jump-to-date'), lessThan(x('open-plan-compact')));
     expect(x('open-plan-compact'), lessThan(x('fit-menu')));
   });
+
+  for (final w in const [600.0, 800.0, 1000.0, 1100.0, 1440.0]) {
+    testWidgets('desktop toolbar fits at ${w.toInt()}px (no overflow; '
+        'condensed controls stay reachable)', (tester) async {
+      await _pump(tester, size: Size(w, 900));
+      expect(tester.takeException(), isNull);
+      // The header keeps the name visible next to its actions.
+      final name = tester.getRect(find.byKey(const ValueKey('header-account-picker')));
+      expect(name.width, greaterThan(60));
+      for (final k in [
+        'shift-left',
+        'fit-menu',
+        'jump-to-date',
+        'open-plan',
+        'shortcuts-help',
+      ]) {
+        final r = tester.getRect(find.byKey(ValueKey(k)));
+        expect(r.right, lessThanOrEqualTo(w), reason: k);
+      }
+      // Today / Seed: labelled when wide, icons in between, View menu when
+      // narrow.
+      if (w >= 1060) {
+        expect(find.text('Today'), findsOneWidget);
+      } else if (w >= 760) {
+        expect(find.text('Today'), findsNothing);
+        expect(find.byKey(const ValueKey('go-today')), findsOneWidget);
+        expect(find.byKey(const ValueKey('go-seed')), findsOneWidget);
+      } else {
+        expect(find.byKey(const ValueKey('go-today')), findsNothing);
+        await tester.tap(find.byKey(const ValueKey('fit-menu')));
+        await tester.pumpAndSettle();
+        expect(find.text('Go to today'), findsOneWidget);
+        expect(find.text('Go to seed date'), findsOneWidget);
+      }
+    });
+  }
 }

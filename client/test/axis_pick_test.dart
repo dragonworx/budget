@@ -18,13 +18,15 @@ class _Harness {
   final viewports = <DateTime>[];
 }
 
-Future<_Harness> _pump(WidgetTester tester) async {
+Future<_Harness> _pump(WidgetTester tester) => _pumpZoom(tester, _days);
+
+Future<_Harness> _pumpZoom(WidgetTester tester, double days) async {
   tester.view.physicalSize = const Size(1000, 500);
   tester.view.devicePixelRatio = 1;
   tester.platformDispatcher.textScaleFactorTestValue = 0.75;
   addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
   addTearDown(tester.view.reset);
-  final h = _Harness();
+  final h = _Harness()..visibleDays = days;
   final points = [
     for (var i = -60; i < 120; i++)
       BalancePoint(
@@ -68,6 +70,36 @@ double _x(int dayIndex) =>
 double get _axisY => _layout.axis.center.dy;
 
 void main() {
+  testWidgets('the pick line sits on the day start (left edge) at every zoom; '
+      'the bubble centres on the day', (tester) async {
+    for (final days in [7.0, 30.0, 90.0]) {
+      await tester.pumpWidget(const SizedBox());
+      final hz = await _pumpZoom(tester, days);
+      final layout = ChartLayout.of(_size, days);
+      final dayW = layout.plot.width / days;
+      // Tap in the right part of the 5th day (index 4).
+      final x = layout.plot.left + (4 + 0.8) * dayW;
+      await tester.tapAt(Offset(x, layout.axis.center.dy),
+          kind: PointerDeviceKind.touch);
+      await tester.pump();
+      final line = tester.getRect(find.byKey(const ValueKey('pick-line')));
+      final dayStart = layout.xOf(DateTime(2026, 10, 5), _start, days);
+      expect(line.center.dx, moreOrLessEquals(dayStart, epsilon: 0.01),
+          reason: 'zoom $days');
+      // Same x the selection / dots grid uses for that day's start.
+      expect(dayStart, moreOrLessEquals(layout.plot.left + 4 * dayW,
+          epsilon: 0.01));
+      final bubble = tester.getRect(find.byKey(const ValueKey('pick-bubble')));
+      final dayCentre = dayStart + dayW / 2;
+      if (bubble.left > 4 && bubble.right < _size.width - 4) {
+        expect(bubble.center.dx, moreOrLessEquals(dayCentre, epsilon: 0.5));
+      }
+      expect(hz.created, isEmpty);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+    }
+  });
+
   testWidgets('tap on the axis pins the line + bubble; only "+" creates', (
     tester,
   ) async {

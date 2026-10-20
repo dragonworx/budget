@@ -535,7 +535,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             ? null
             : _closingNear(series.points, DateTime.now());
 
-        final compact = MediaQuery.sizeOf(context).width < 600;
+        final width = MediaQuery.sizeOf(context).width;
+        final compact = width < 600;
+        // Header tiers (desktop body from 600px): the phone-style actions
+        // (Reminders, Transactions, More) below 960px; the insight chips
+        // from 1240px and the Today tile from 960px, else a one-line
+        // summary under the name.
+        final compactActions = width < 960;
         return _withFullPlan(
           context,
           Scaffold(
@@ -555,8 +561,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                     .watch(insightsProvider(widget.accountId))
                     .valueOrNull,
                 compact: compact,
+                showToday: !compactActions,
+                showInsights: width >= 1240,
               ),
-              actions: compact
+              actions: compactActions
                   ? [
                       const RealtimeDot(),
                       IconButton(
@@ -969,62 +977,111 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   // ---------------------------------------------------------------- toolbar
 
+  /// Desktop toolbar. Condenses as the window narrows so nothing overflows
+  /// (≥1060px: labelled buttons; narrower: Today / Seed / Plan become icon
+  /// buttons; <760px: Today / Seed move into the View menu and the date
+  /// range drops the year). The date range ellipsises as a last resort.
   Widget _toolbar(BuildContext context, Account account) {
-    final theme = Theme.of(context);
-    final end = lastVisibleDay(_viewStart, _visibleDays);
-    return Row(
-      children: [
-        _unitGroup(theme, compact: false),
-        const SizedBox(width: 8),
-        _fitMenu(account, compact: false),
-        const SizedBox(width: 8),
-        Tooltip(
-          message: 'Jump to a date',
-          child: OutlinedButton.icon(
-            key: const ValueKey('jump-to-date'),
-            onPressed: () => _jumpToDate(context),
-            icon: const Icon(Icons.calendar_month_rounded, size: 18),
-            label: Text(
-              '${_shortDate(dateOnly(_viewStart))}  →  ${_shortDate(end)}',
+    return LayoutBuilder(
+      builder: (context, box) {
+        final w = box.maxWidth;
+        final full = w >= 1060;
+        final narrow = w < 760;
+        final theme = Theme.of(context);
+        final end = lastVisibleDay(_viewStart, _visibleDays);
+        String fmt(DateTime d) =>
+            narrow ? DateFormat('d MMM').format(d) : _shortDate(d);
+        Widget iconBtn(String key, String tip, IconData icon, VoidCallback f,
+                {Color? color}) =>
+            IconButton.outlined(
+              key: ValueKey(key),
+              tooltip: tip,
+              onPressed: f,
+              icon: Icon(icon, size: 18, color: color),
+            );
+        return Row(
+          children: [
+            _unitGroup(theme, compact: false),
+            const SizedBox(width: 8),
+            _fitMenu(account, compact: narrow),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Tooltip(
+                message: 'Jump to a date',
+                child: OutlinedButton.icon(
+                  key: const ValueKey('jump-to-date'),
+                  onPressed: () => _jumpToDate(context),
+                  icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                  label: Text(
+                    '${fmt(dateOnly(_viewStart))}  →  ${fmt(end)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        OutlinedButton.icon(
-          onPressed: () => _centerOn(DateTime.now()),
-          icon: const Icon(Icons.today_rounded, size: 18),
-          label: const Text('Today'),
-        ),
-        const SizedBox(width: 8),
-        Tooltip(
-          message: 'Go to the seed date (start of the balance)',
-          child: OutlinedButton.icon(
-            onPressed: () => _centerOn(account.seedDate),
-            icon: const Icon(
-              Icons.flag_rounded,
-              size: 18,
-              color: AppTheme.violet,
+            if (full) ...[
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('go-today'),
+                onPressed: () => _centerOn(DateTime.now()),
+                icon: const Icon(Icons.today_rounded, size: 18),
+                label: const Text('Today'),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Go to the seed date (start of the balance)',
+                child: OutlinedButton.icon(
+                  key: const ValueKey('go-seed'),
+                  onPressed: () => _centerOn(account.seedDate),
+                  icon: const Icon(
+                    Icons.flag_rounded,
+                    size: 18,
+                    color: AppTheme.violet,
+                  ),
+                  label: const Text('Seed'),
+                ),
+              ),
+            ] else if (!narrow) ...[
+              const SizedBox(width: 6),
+              iconBtn('go-today', 'Go to today', Icons.today_rounded,
+                  () => _centerOn(DateTime.now())),
+              const SizedBox(width: 4),
+              iconBtn(
+                'go-seed',
+                'Go to the seed date (start of the balance)',
+                Icons.flag_rounded,
+                () => _centerOn(account.seedDate),
+                color: AppTheme.violet,
+              ),
+            ],
+            const Spacer(),
+            if (full)
+              Tooltip(
+                message: 'Plan a payment or a balance goal',
+                child: TextButton.icon(
+                  key: const ValueKey('open-plan'),
+                  onPressed: _openPlan,
+                  icon: const Icon(Icons.calculate_outlined, size: 18),
+                  label: const Text('Plan'),
+                ),
+              )
+            else
+              IconButton(
+                key: const ValueKey('open-plan'),
+                tooltip: 'Plan a payment or a balance goal',
+                onPressed: _openPlan,
+                icon: const Icon(Icons.calculate_outlined),
+              ),
+            IconButton(
+              key: const ValueKey('shortcuts-help'),
+              tooltip: 'Keyboard and mouse shortcuts',
+              onPressed: () => _showShortcuts(context),
+              icon: const Icon(Icons.keyboard_rounded),
             ),
-            label: const Text('Seed'),
-          ),
-        ),
-        const Spacer(),
-        Tooltip(
-          message: 'Plan a payment or a balance goal',
-          child: TextButton.icon(
-            key: const ValueKey('open-plan'),
-            onPressed: _openPlan,
-            icon: const Icon(Icons.calculate_outlined, size: 18),
-            label: const Text('Plan'),
-          ),
-        ),
-        IconButton(
-          key: const ValueKey('shortcuts-help'),
-          tooltip: 'Keyboard and mouse shortcuts',
-          onPressed: () => _showShortcuts(context),
-          icon: const Icon(Icons.keyboard_rounded),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -1505,7 +1562,13 @@ class _AccountHeader extends StatelessWidget {
     required this.todayPoint,
     this.insights,
     this.compact = false,
-  });
+    bool? showToday,
+    bool? showInsights,
+  }) : showToday = showToday ?? !compact,
+       showInsights = showInsights ?? !compact;
+
+  final bool showToday;
+  final bool showInsights;
 
   final Account account;
   final BalancePoint? todayPoint;
@@ -1594,7 +1657,7 @@ class _AccountHeader extends StatelessWidget {
                   ),
                 ),
               ),
-              if (compact && today != null)
+              if (!showToday && today != null)
                 Text(
                   [
                     'Today ${formatMoneyAmount(today.toDouble(), decimalDigits: 2)}',
@@ -1618,7 +1681,7 @@ class _AccountHeader extends StatelessWidget {
             ],
           ),
         ),
-        if (insights != null && !compact) ...[
+        if (insights != null && showInsights) ...[
           const SizedBox(width: 10),
           _InsightChip(
             key: const ValueKey('header-lowest'),
@@ -1647,7 +1710,7 @@ class _AccountHeader extends StatelessWidget {
             warn: insights!.alertDate != null,
           ),
         ],
-        if (today != null && !compact) ...[
+        if (today != null && showToday) ...[
           const SizedBox(width: 16),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

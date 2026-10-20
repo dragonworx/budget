@@ -252,4 +252,53 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('No other accounts you can edit'), findsOneWidget);
   });
+
+  BorderSide ring(WidgetTester tester, String key) {
+    final m = tester.widget<Material>(
+      find
+          .descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    return (m.shape! as OutlinedBorder).side;
+  }
+
+  testWidgets('opened by touch or mouse: first row focused but no outline; '
+      'a key press brings the ring back', (tester) async {
+    await _pump(tester, const Size(390, 844));
+    await tester.tap(find.text('Jump')); // touch
+    await tester.pumpAndSettle();
+    expect(ring(tester, 'nav-account-a'), BorderSide.none);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(ring(tester, 'nav-account-s').width, 2);
+    expect(ring(tester, 'nav-account-a'), BorderSide.none);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(find.text('Jump')));
+    await mouse.down(tester.getCenter(find.text('Jump')));
+    await mouse.up();
+    await tester.pumpAndSettle();
+    await mouse.moveTo(const Offset(5, 830)); // off the menu
+    await tester.pumpAndSettle();
+    expect(ring(tester, 'nav-account-a'), BorderSide.none);
+  });
+
+  testWidgets('opened with the keyboard: the focused first row shows the '
+      'ring', (tester) async {
+    await _pump(tester, const Size(1200, 800), triggerAt: Alignment.topLeft);
+    // Tab to the trigger, Enter opens.
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('nav-account-a')), findsOneWidget);
+    expect(ring(tester, 'nav-account-a').width, 2);
+  });
 }

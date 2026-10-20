@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models.dart';
@@ -72,8 +73,49 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
   final _firstItem = FocusNode(debugLabel: 'account picker first item');
   bool _isOpen = false;
 
+  /// The menu is being driven by the keyboard (opened with Enter / Space /
+  /// ↓, or a key pressed since): only then does the focused row show its
+  /// ring. Opened by touch or mouse, the first row still takes focus (so
+  /// arrows / Esc work at once) but shows no outline.
+  bool _keyboardNav = false;
+
+  static final _openKeys = {
+    LogicalKeyboardKey.enter,
+    LogicalKeyboardKey.numpadEnter,
+    LogicalKeyboardKey.space,
+    LogicalKeyboardKey.arrowDown,
+  };
+
+  bool _onKey(KeyEvent e) {
+    if (e is KeyDownEvent && _isOpen && !_keyboardNav && mounted) {
+      setState(() => _keyboardNav = true);
+    }
+    return false;
+  }
+
+  ButtonStyle get _style => _itemStyle.copyWith(
+    side: WidgetStateProperty.resolveWith(
+      (s) => s.contains(WidgetState.focused) && _keyboardNav
+          ? const BorderSide(color: AppTheme.accent, width: 2)
+          : BorderSide.none,
+    ),
+    overlayColor: WidgetStateProperty.resolveWith((s) {
+      if (s.contains(WidgetState.pressed)) {
+        return AppTheme.text.withValues(alpha: 0.10);
+      }
+      if (s.contains(WidgetState.hovered)) {
+        return AppTheme.text.withValues(alpha: 0.06);
+      }
+      if (s.contains(WidgetState.focused) && _keyboardNav) {
+        return AppTheme.text.withValues(alpha: 0.08);
+      }
+      return Colors.transparent;
+    }),
+  );
+
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
     _firstItem.dispose();
     super.dispose();
   }
@@ -83,6 +125,9 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
       _menu.close();
       return;
     }
+    _keyboardNav = HardwareKeyboard.instance.logicalKeysPressed.any(
+      _openKeys.contains,
+    );
     _menu.open();
   }
 
@@ -109,7 +154,7 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
   Widget _accountItem(Account a, {FocusNode? focus}) => MenuItemButton(
     key: ValueKey('${widget.keyPrefix}-account-${a.id}'),
     focusNode: focus,
-    style: _itemStyle,
+    style: _style,
     leadingIcon: Icon(
       a.id == widget.currentAccountId
           ? Icons.check_rounded
@@ -127,7 +172,7 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
       MenuItemButton(
         key: ValueKey('${widget.keyPrefix}-$key'),
         focusNode: focus,
-        style: _itemStyle,
+        style: _style,
         leadingIcon: Icon(icon, size: 18),
         onPressed: f,
         child: _MenuLabel(label),
@@ -156,7 +201,7 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
       if (choices.isEmpty)
         MenuItemButton(
           key: ValueKey('$p-none'),
-          style: _itemStyle,
+          style: _style,
           onPressed: null,
           child: Text(
             all.isEmpty
@@ -204,14 +249,14 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
       skipLoadingOnReload: true,
       loading: () => <Widget>[
         MenuItemButton(
-          style: _itemStyle,
+          style: _style,
           onPressed: null,
           child: const Text('Loading…'),
         ),
       ],
       error: (e, _) => <Widget>[
         MenuItemButton(
-          style: _itemStyle,
+          style: _style,
           onPressed: null,
           child: const Text('Could not load accounts'),
         ),
@@ -225,10 +270,12 @@ class _AccountPickerState extends ConsumerState<AccountPicker> {
         controller: _menu,
         style: _menuStyle(context),
         onOpen: () {
+          HardwareKeyboard.instance.addHandler(_onKey);
           setState(() => _isOpen = true);
           _focusFirst();
         },
         onClose: () {
+          HardwareKeyboard.instance.removeHandler(_onKey);
           if (mounted) setState(() => _isOpen = false);
         },
         menuChildren: children,
