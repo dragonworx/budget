@@ -1,7 +1,9 @@
 // Transaction labels: no accent bar, left edge flush with the dot's left
-// edge, directly above the dot or (when above has no room) directly below.
+// edge, directly above the dot or (when above has no room) directly below;
+// on a crowded chart, possibly pushed a little further away instead.
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
+import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,18 +67,26 @@ Future<List<(String, Offset, double, Rect)>> _labels(
   return out;
 }
 
-void _expectFlush(List<(String, Offset, double, Rect)> labels, Rect plot) {
+void _expectFlush(
+  List<(String, Offset, double, Rect)> labels,
+  Rect plot, {
+  bool againstDot = true,
+}) {
   for (final (name, c, r, rect) in labels) {
     final ctx = '$name at $c r$r: $rect';
     expect(rect.left, closeTo(c.dx - r, 0.5), reason: 'flush left: $ctx');
     final above = rect.bottom <= c.dy - r;
     final below = rect.top >= c.dy + r;
     expect(above || below, isTrue, reason: 'above or below: $ctx');
-    expect(
-      (above ? c.dy - r - rect.bottom : rect.top - (c.dy + r)),
-      closeTo(3, 0.5),
-      reason: 'directly against the dot: $ctx',
-    );
+    final gap = above ? c.dy - r - rect.bottom : rect.top - (c.dy + r);
+    if (againstDot) {
+      expect(gap, closeTo(3, 0.5), reason: 'directly against the dot: $ctx');
+    } else {
+      // Crowded: right against the dot, or pushed a little further away
+      // (tied to it by a leader line) rather than left unnamed.
+      expect(gap, greaterThanOrEqualTo(2.5), reason: ctx);
+      expect(gap, lessThanOrEqualTo(3.5 + maxVertexLabelOffset), reason: ctx);
+    }
     expect(rect.top, greaterThanOrEqualTo(plot.top), reason: ctx);
     expect(rect.bottom, lessThanOrEqualTo(plot.bottom), reason: ctx);
   }
@@ -142,7 +152,7 @@ void main() {
       (10, -20, 'Snack'),
     ]);
     expect(labels.length, greaterThan(3));
-    _expectFlush(labels, ChartLayout.of(size, 30).plot);
+    _expectFlush(labels, ChartLayout.of(size, 30).plot, againstDot: false);
     for (var i = 0; i < labels.length; i++) {
       for (var j = i + 1; j < labels.length; j++) {
         expect(

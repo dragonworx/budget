@@ -77,9 +77,12 @@ void Function(Rect rect, List<String> lines)? debugVertexLabelLines;
 /// Most transaction names listed under a day's total before "+N more".
 const int maxLabelNames = 6;
 
-/// A label kept from the previous paint: its box relative to the dot and
-/// how many names it listed.
-typedef _LabelSpot = ({Rect rect, int names});
+/// A label kept from the previous paint: its box relative to the dot, how
+/// many names it listed and whether it was the one-line "Name +N more".
+typedef _LabelSpot = ({Rect rect, int names, bool compact});
+
+/// One text line under a label's total: a name, a "+N more", or both.
+typedef _LabelLine = ({String? name, String? more});
 
 /// Test hook: every date-axis label as painted, with its row name
 /// ("Year", "Month", "Week", "Day") and the rect its text occupies.
@@ -4485,70 +4488,130 @@ class _BalanceChartPainter extends CustomPainter {
         color: AppTheme.textMuted,
         fontWeight: FontWeight.w500,
       );
-
-      // The text lines under the total when showing [shownNames] names:
-      // those names, then "+N more" for the rest (a lone name is never
-      // replaced by "+1 more"; it is just dropped).
-      List<(String, TextStyle)> linesFor(int shownNames) => [
-        for (final n in names.take(shownNames)) (n, vertexStyle),
-        if (shownNames < names.length && (names.length > 1 || shownNames > 0))
-          ('+${names.length - shownNames} more', moreStyle),
-      ];
-      List<TextPainter>? layoutLines(
-        List<(String, TextStyle)> lines,
-        double maxWidth,
-      ) {
-        final out = <TextPainter>[];
-        for (final (text, st) in lines) {
-          final painter = TextPainter(
+      // A name is shortened with "…" down to about three letters, no less.
+      final minName = fontSize * 2.4;
+      final widths = <String, double>{};
+      double widthOf(String text, TextStyle st) => widths.putIfAbsent(
+        '${identical(st, moreStyle) ? 'm' : 'n'}$text',
+        () {
+          final tp = TextPainter(
             text: TextSpan(text: text, style: st),
             textDirection: TextDirection.ltr,
             maxLines: 1,
-            ellipsis: '…',
-          )..layout(maxWidth: math.max(1, maxWidth));
-          final readable = painter.didExceedMaxLines
-              ? painter.width >= 16
-              : painter.width >= 4;
-          out.add(painter);
-          if (!readable) {
-            for (final p in out) {
-              p.dispose();
-            }
-            return null;
+          )..layout();
+          final w = tp.width;
+          tp.dispose();
+          return w;
+        },
+      );
+
+      // [text] within [maxWidth], shortened with "…" if need be; null when
+      // not even a readable stub fits.
+      String? fitName(String text, double maxWidth) {
+        if (widthOf(text, vertexStyle) <= maxWidth) return text;
+        final chars = text.characters.toList();
+        if (chars.length < 3 || maxWidth < minName) return null;
+        String stub(int n) => '${chars.take(n).join().trimRight()}…';
+        var lo = 2, hi = chars.length - 1;
+        if (widthOf(stub(lo), vertexStyle) > maxWidth) return null;
+        while (lo < hi) {
+          final mid = (lo + hi + 1) ~/ 2;
+          if (widthOf(stub(mid), vertexStyle) <= maxWidth) {
+            lo = mid;
+          } else {
+            hi = mid - 1;
           }
         }
-        return out;
+        return stub(lo);
       }
 
-      void disposeAll(List<TextPainter>? ps) {
-        for (final p in ps ?? const <TextPainter>[]) {
-          p.dispose();
+      // The lines under the total: [shown] names, then "+N more" for the
+      // rest; [compact]: one line, the first name then "+N more". Always at
+      // least one name, so a label is never the amount alone.
+      List<_LabelLine> linesFor(int shown, {bool compact = false}) {
+        final rest = names.length - shown;
+        if (compact) {
+          return [(name: names.first, more: rest > 0 ? '+$rest more' : null)];
         }
+        return [
+          for (final n in names.take(shown)) (name: n, more: null),
+          if (rest > 0) (name: null, more: '+$rest more'),
+        ];
       }
+
+      final laidOut = <String, List<TextPainter>?>{};
+      // Painters for [spec] at most [maxWidth] wide (names shortened to
+      // fit), or null when a line can't be made readable. Cached: the
+      // painters are disposed after this vertex.
+      List<TextPainter>? layoutLines(
+        String key,
+        List<_LabelLine> spec,
+        double maxWidth,
+      ) => laidOut.putIfAbsent('$key@${maxWidth.floor()}', () {
+        final out = <TextPainter>[];
+        for (final (:name, :more) in spec) {
+          final suffix = more == null ? '' : (name == null ? more : ' $more');
+          final suffixWidth = suffix.isEmpty ? 0.0 : widthOf(suffix, moreStyle);
+          String? text;
+          if (name != null) {
+            text = fitName(name, maxWidth - suffixWidth);
+            if (text == null) return null;
+          } else if (suffixWidth > maxWidth) {
+            return null;
+          }
+          out.add(
+            TextPainter(
+              text: TextSpan(
+                children: [
+                  if (text != null) TextSpan(text: text, style: vertexStyle),
+                  if (suffix.isNotEmpty)
+                    TextSpan(text: suffix, style: moreStyle),
+                ],
+              ),
+              textDirection: TextDirection.ltr,
+              maxLines: 1,
+            )..layout(),
+          );
+        }
+        return out;
+      });
 
       double heightOf(List<TextPainter> lines) =>
           lines.fold(amount.height, (h, p) => h + p.height) + 4;
-      double widthOf(List<TextPainter> lines) =>
+      double boxWidth(List<TextPainter> lines) =>
           lines.fold(amount.width, (w, p) => math.max(w, p.width)) + pad;
-      bool fits(Rect rect) => vertexLabelFits(
-        rect: rect,
-        plot: plot,
-        anchor: vertex.center,
-        radius: vertex.radius,
-        occupied: placed,
-        anchors: anchors,
-      );
-      void draw(Rect rect, List<TextPainter> lines, int shownNames) {
+      void draw(
+        Rect rect,
+        List<TextPainter> lines,
+        int shownNames,
+        bool compact,
+      ) {
+        final leader = vertexLabelLeader(
+          center: vertex.center,
+          radius: vertex.radius,
+          rect: rect,
+        );
+        if (leader != null) {
+          canvas.drawLine(
+            leader.topCenter,
+            leader.bottomCenter,
+            Paint()
+              ..color = AppTheme.border
+              ..strokeWidth = 1,
+          );
+        }
         _drawVertexLabel(canvas, amount, lines, rect);
         debugVertexLabelLines?.call(rect, [
           amount.plainText,
           for (final l in lines) l.plainText,
         ]);
         placed.add(rect);
+        if (leader != null) placed.add(leader);
         labeledAt.add(vertex.center);
         shown[vertex.key] = (
           rect: rect.shift(-vertex.center),
           names: shownNames,
+          compact: compact,
         );
       }
 
@@ -4558,9 +4621,13 @@ class _BalanceChartPainter extends CustomPainter {
       // sides nor blinks while the view moves. It only gives way when that
       // spot now truly overlaps.
       final last = labelMemory[vertex.key];
-      if (last != null && last.names <= names.length) {
+      if (last != null &&
+          last.names >= 1 &&
+          last.names <= names.length &&
+          (!last.compact || names.length > 1)) {
         final lines = layoutLines(
-          linesFor(last.names),
+          'last',
+          linesFor(last.names, compact: last.compact),
           math.max(amount.width, last.rect.width - pad + 0.5),
         );
         if (lines != null) {
@@ -4575,52 +4642,72 @@ class _BalanceChartPainter extends CustomPainter {
                 anchors: anchors,
                 attachReach: 96,
               )) {
-            draw(rect, lines, last.names);
+            draw(rect, lines, last.names, last.compact);
             drawn = true;
           }
         }
-        disposeAll(lines);
       }
-      // Fresh layout: as many names as fit (most first), each count tried
-      // above then below the dot, flush left with it.
+      // Fresh layout. Every option names at least one transaction: as many
+      // names as fit (most first), then, on a busy day, "Name +N more" on a
+      // single line. Each is tried above, then below the dot, flush left
+      // with it, names shortened with "…" to fit the room. Only when none
+      // fits right against the dot is the label pushed a little further
+      // away (with a leader line) before the dot goes unlabelled — never
+      // amount-only.
       final specs = [
-        for (var k = math.min(names.length, maxLabelNames); k >= 0; k--)
-          (k, linesFor(k)),
-        // Last resort for a busy day: the total alone.
-        if (names.length > 1) (0, const <(String, TextStyle)>[]),
+        for (var k = math.min(names.length, maxLabelNames); k >= 1; k--)
+          (k, false, linesFor(k)),
+        if (names.length > 1) (1, true, linesFor(1, compact: true)),
       ];
-      for (final (k, spec) in specs) {
+      search:
+      for (final offset in const [0.0, 6.0, 12.0, 18.0, maxVertexLabelOffset]) {
         if (drawn) break;
-        final height = amount.height + spec.length * lineHeight + 4;
-        for (final side in VertexLabelSide.values) {
-          final budget = vertexLabelTextBudget(
-            plot: plot,
-            center: vertex.center,
-            radius: vertex.radius,
-            side: side,
-            labelHeight: height,
-            maxText: maxText,
-            minText: minText,
-            pad: pad,
-            occupied: placed,
-            anchors: anchors,
-          );
-          if (budget <= 0 || budget < amount.width) continue;
-          final lines = layoutLines(spec, budget);
-          if (lines == null) continue;
-          final rect = vertexLabelRect(
-            center: vertex.center,
-            radius: vertex.radius,
-            side: side,
-            width: widthOf(lines),
-            height: heightOf(lines),
-          );
-          if (fits(rect)) {
-            draw(rect, lines, k);
-            drawn = true;
+        for (final (k, compact, spec) in specs) {
+          final height = amount.height + spec.length * lineHeight + 4;
+          for (final side in VertexLabelSide.values) {
+            final budget = vertexLabelTextBudget(
+              plot: plot,
+              center: vertex.center,
+              radius: vertex.radius,
+              side: side,
+              labelHeight: height,
+              maxText: maxText,
+              minText: minText,
+              pad: pad,
+              occupied: placed,
+              anchors: anchors,
+              offset: offset,
+            );
+            if (budget <= 0 || budget < amount.width) continue;
+            final lines = layoutLines('$k$compact', spec, budget);
+            if (lines == null) continue;
+            final rect = vertexLabelRect(
+              center: vertex.center,
+              radius: vertex.radius,
+              side: side,
+              width: boxWidth(lines),
+              height: heightOf(lines),
+              offset: offset,
+            );
+            if (vertexLabelFits(
+              rect: rect,
+              plot: plot,
+              anchor: vertex.center,
+              radius: vertex.radius,
+              occupied: placed,
+              anchors: anchors,
+              attachReach: offset + 10,
+            )) {
+              draw(rect, lines, k, compact);
+              drawn = true;
+              break search;
+            }
           }
-          disposeAll(lines);
-          if (drawn) break;
+        }
+      }
+      for (final ps in laidOut.values) {
+        for (final p in ps ?? const <TextPainter>[]) {
+          p.dispose();
         }
       }
       amount.dispose();

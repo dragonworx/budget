@@ -341,30 +341,58 @@ enum VertexLabelSide { above, below }
 /// Vertical gap between a dot's edge and its label box.
 const double vertexLabelGap = 3;
 
+/// Furthest a label may be pushed away from its dot (beyond
+/// [vertexLabelGap]) when nothing fits right against it. Such a label stays
+/// flush left with the dot and is tied to it by a short leader line.
+const double maxVertexLabelOffset = 24;
+
 /// Box for a label of [width] by [height] on [side] of the dot at [center]:
-/// left edge at the dot's left edge (`center.dx - radius`).
+/// left edge at the dot's left edge (`center.dx - radius`), [offset] further
+/// away from the dot than the usual [vertexLabelGap].
 Rect vertexLabelRect({
   required Offset center,
   required double radius,
   required VertexLabelSide side,
   required double width,
   required double height,
+  double offset = 0,
 }) {
   final left = center.dx - radius;
+  final gap = vertexLabelGap + offset;
   return switch (side) {
     VertexLabelSide.above => Rect.fromLTWH(
       left,
-      center.dy - radius - vertexLabelGap - height,
+      center.dy - radius - gap - height,
       width,
       height,
     ),
     VertexLabelSide.below => Rect.fromLTWH(
       left,
-      center.dy + radius + vertexLabelGap,
+      center.dy + radius + gap,
       width,
       height,
     ),
   };
+}
+
+/// The leader from the dot at [center] to a label [rect] pushed away from
+/// it (see [maxVertexLabelOffset]): a thin vertical strip at the dot's x, or
+/// null when the label sits right against the dot and needs none.
+Rect? vertexLabelLeader({
+  required Offset center,
+  required double radius,
+  required Rect rect,
+}) {
+  final above = rect.bottom <= center.dy;
+  final from = above ? center.dy - radius : center.dy + radius;
+  final to = above ? rect.bottom : rect.top;
+  if ((to - from).abs() <= vertexLabelGap + 0.5) return null;
+  return Rect.fromLTRB(
+    center.dx - 0.5,
+    math.min(from, to),
+    center.dx + 0.5,
+    math.max(from, to),
+  );
 }
 
 /// Horizontal room, in pixels, for the text of a label on [side] of the dot
@@ -385,6 +413,7 @@ double vertexLabelTextBudget({
   required double pad,
   required List<Rect> occupied,
   required List<Offset> anchors,
+  double offset = 0,
 }) {
   if (maxText < minText || labelHeight <= 0 || pad < 0) return 0;
   final box = vertexLabelRect(
@@ -393,6 +422,7 @@ double vertexLabelTextBudget({
     side: side,
     width: 0,
     height: labelHeight,
+    offset: offset,
   );
   final left = box.left;
   if (box.top < plot.top + 1 || box.bottom > plot.bottom - 1) return 0;
@@ -442,6 +472,19 @@ bool vertexLabelFits({
   }
   final near = Rect.fromCircle(center: anchor, radius: radius + attachReach);
   if (!rect.inflate(2).overlaps(near)) return false;
+  // A label pushed away from its dot: its leader must be clear too.
+  final leader = vertexLabelLeader(center: anchor, radius: radius, rect: rect);
+  if (leader != null) {
+    final strip = leader.inflate(2);
+    for (final other in occupied) {
+      if (strip.overlaps(other)) return false;
+    }
+    for (final point in anchors) {
+      if (point != anchor && strip.inflate(radius).contains(point)) {
+        return false;
+      }
+    }
+  }
   return true;
 }
 
