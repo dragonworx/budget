@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../boot/page_stub.dart'
+    if (dart.library.js_interop) '../../boot/page_web.dart';
 import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../widgets/conflict_dialog.dart';
@@ -122,7 +124,18 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
         MenuAnchor(
           alignmentOffset: const Offset(-120, 4),
           menuChildren: [
-            item('new-option-new', Icons.add_rounded, 'New', () => _open(null)),
+            // MenuItemButton runs onPressed a frame later (after the menu
+            // closes), outside the tap: prime the keyboard on the release.
+            Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerUp: (_) => primeSoftKeyboard(),
+              child: item(
+                'new-option-new',
+                Icons.add_rounded,
+                'New',
+                () => _open(null, primed: true),
+              ),
+            ),
             item(
               'new-option-plan',
               Icons.calculate_outlined,
@@ -176,7 +189,9 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
   final _highlightKey = GlobalKey();
   Timer? _highlightTimer;
 
-  void _open(Transaction? t) {
+  void _open(Transaction? t, {bool primed = false}) {
+    // New: still inside the tap, so phones raise the keyboard for Name.
+    if (t == null && !primed) primeSoftKeyboard();
     // Keep the list's scroll position for when the editor returns.
     final offset = _listScroll.hasClients ? _listScroll.offset : 0.0;
     final old = _listScroll;

@@ -148,14 +148,15 @@ void main() {
       expect(size.width, greaterThanOrEqualTo(44));
       expect(size.height, greaterThanOrEqualTo(44));
     }
-    // Default: every 1 month; − is disabled at 1.
+    // Default: every 1 week; − is disabled at 1.
     expect(_intervalText(tester), '1');
-    expect(find.text('month'), findsWidgets);
+    expect(find.text('week'), findsWidgets);
+    expect(find.text('month'), findsNothing);
     expect(tester.widget<IconButton>(minus).onPressed, isNull);
     await _touch(tester, plus);
     await _touch(tester, plus);
     expect(_intervalText(tester), '3');
-    expect(find.text('months'), findsWidgets);
+    expect(find.text('weeks'), findsWidgets);
     await _touch(tester, minus);
     expect(_intervalText(tester), '2');
     // Typed, capped at two digits; + stops at 99.
@@ -168,10 +169,10 @@ void main() {
     expect(tester.widget<IconButton>(plus).onPressed, isNull);
     await tester.enterText(find.byKey(const ValueKey('editor-interval')), '2');
     await tester.pumpAndSettle();
-    // Unit: weeks.
+    // Unit: months.
     await _touch(tester, find.byKey(const ValueKey('editor-unit')));
-    await _touch(tester, find.byKey(const ValueKey('editor-unit-weeks')).last);
-    expect(find.text('weeks'), findsWidgets);
+    await _touch(tester, find.byKey(const ValueKey('editor-unit-months')).last);
+    expect(find.text('months'), findsWidgets);
     // Once hides the row; Repeats brings it back with the same values.
     await _touch(tester, find.byKey(const ValueKey('editor-repeats-once')));
     expect(find.byKey(const ValueKey('editor-interval')), findsNothing);
@@ -182,6 +183,6 @@ void main() {
     final t = txs.saved.last;
     expect(t.recurrenceMode, RecurrenceMode.every);
     expect(t.interval, 2);
-    expect(t.unit, RecurrenceUnit.weeks);
+    expect(t.unit, RecurrenceUnit.months);
   });
 }

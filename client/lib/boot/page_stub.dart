@@ -19,3 +19,9 @@ void clearLocal() => _local.clear();
 /// Tests: set to simulate the OS "reduce motion" setting.
 bool prefersReducedMotionForTest = false;
 bool get prefersReducedMotion => prefersReducedMotionForTest;
+
+/// Tests: how many times a new-transaction tap primed the soft keyboard.
+int primeSoftKeyboardCalls = 0;
+
+/// Web: focuses a hidden input inside the tap so phones raise the keyboard.
+void primeSoftKeyboard() => primeSoftKeyboardCalls++;

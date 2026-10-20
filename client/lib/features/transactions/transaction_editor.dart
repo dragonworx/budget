@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+
+import '../../boot/page_stub.dart'
+    if (dart.library.js_interop) '../../boot/page_web.dart';
 
 import '../../data/api_client.dart';
 import '../../data/models.dart';
@@ -97,6 +102,9 @@ Future<EditorOutcome?> showTransactionEditor(
   Set<DateTime> skippedDates = const {},
   bool readOnly = false,
 }) {
+  // Still inside the tap: lets iOS / Android web raise the keyboard for
+  // the Name field that focuses once the panel is built.
+  if (existing == null && !readOnly) primeSoftKeyboard();
   return showSidePanel<EditorOutcome>(
     context,
     label: existing == null ? 'New transaction' : 'Edit transaction',
@@ -204,7 +212,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     _recurrenceMode = widget.onceOnly
         ? RecurrenceMode.once
         : (existing?.recurrenceMode ?? RecurrenceMode.every);
-    _unit = existing?.unit ?? RecurrenceUnit.months;
+    // New series default to every 1 week (saved ones keep theirs).
+    _unit = existing?.unit ?? RecurrenceUnit.weeks;
     _endMode = existing?.endMode ?? EndMode.never;
     if (existing == null && _recurrenceMode == RecurrenceMode.once) {
       _endMode = EndMode.never;
@@ -233,7 +242,24 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         _scope.requestFocus();
       }
     });
+    // New: Name again once the panel / sheet has animated in, unless the
+    // user has already moved focus inside the editor. Something closing in
+    // the same frame (the New ▾ menu restoring its focus) or the opening
+    // route can otherwise take it away.
+    if (_isNew) {
+      _refocus = Timer(nameRefocusDelay, () {
+        if (!mounted || _nameFocus.hasFocus) return;
+        final primary = FocusManager.instance.primaryFocus;
+        final inEditor =
+            primary != null &&
+            primary != _scope &&
+            primary.ancestors.contains(_scope);
+        if (!inEditor) _nameFocus.requestFocus();
+      });
+    }
   }
+
+  Timer? _refocus;
 
   final _scope = FocusScopeNode(debugLabel: 'TransactionEditor');
   final _nameFocus = FocusNode(debugLabel: 'editor-name');
@@ -291,6 +317,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     _interval.dispose();
     _count.dispose();
     _scope.dispose();
+    _refocus?.cancel();
     _nameFocus.dispose();
     super.dispose();
   }
@@ -514,7 +541,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                 deleted
                     ? 'Deleted by $who. Close to discard.'
                     : 'Updated by $who. Your edits are kept; saving will ask before overwriting.',
-                style: theme.textTheme.bodySmall?.copyWith(color: AppTheme.text),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppTheme.text,
+                ),
               ),
             ),
           ],
@@ -581,8 +610,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
-  String _signed(Decimal signed) =>
-      formatSignedAmount(signed.toDouble());
+  String _signed(Decimal signed) => formatSignedAmount(signed.toDouble());
 
   Widget _focusBanner(ThemeData theme) {
     final date = _day(widget.focusDate!);
@@ -594,10 +622,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     if (skipped) {
       detail = 'Skipped: it does not affect the balance';
     } else if (override != null) {
-      detail = 'Once-off ${_signed(override.signed)} on this date · '
+      detail =
+          'Once-off ${_signed(override.signed)} on this date · '
           'series ${_signed(existing.signedAmount)}';
     } else if (_offerSaveOptions) {
-      detail = 'Save changes the whole series. The arrow next to Save '
+      detail =
+          'Save changes the whole series. The arrow next to Save '
           'offers this date only, or from now on';
     } else {
       detail = 'Edits below change the whole series';
@@ -616,7 +646,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                override != null ? Icons.edit_calendar_rounded : Icons.event_rounded,
+                override != null
+                    ? Icons.edit_calendar_rounded
+                    : Icons.event_rounded,
                 size: 18,
                 color: AppTheme.accent,
               ),
@@ -898,10 +930,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           ),
           const SizedBox(height: 12),
           _repeatsToggle(),
-          if (repeating) ...[
-            const SizedBox(height: 14),
-            _intervalRow(theme),
-          ],
+          if (repeating) ...[const SizedBox(height: 14), _intervalRow(theme)],
           if (repeating) ...[
             const SizedBox(height: 14),
             Text('Ends', style: theme.textTheme.bodySmall),
@@ -987,8 +1016,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           (_direction == TransactionDirection.credit ? 1 : -1) *
           amount.toDouble() *
           count;
-      total =
-          '${formatSignedAmount(sum)} over $count occurrences';
+      total = '${formatSignedAmount(sum)} over $count occurrences';
     }
     return SectionCard(
       title: 'Occurrences',
@@ -1218,7 +1246,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   String? get _forwardBlock {
     final e = widget.existing!;
     final d = _draft();
-    final keepsFrame = _day(d.startDate) == _day(e.startDate) &&
+    final keepsFrame =
+        _day(d.startDate) == _day(e.startDate) &&
         d.recurrenceMode == RecurrenceMode.every &&
         d.endMode == e.endMode &&
         d.endDate == e.endDate &&
@@ -1306,14 +1335,16 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               icon: Icons.event_available_rounded,
               title: 'Save once-off',
               hint: onceBlock ?? 'Only $date (amount)',
-              onPressed:
-                  onceBlock == null ? () => _saveAs(SaveOption.onceOff) : null,
+              onPressed: onceBlock == null
+                  ? () => _saveAs(SaveOption.onceOff)
+                  : null,
             ),
             item(
               key: 'save-option-forward',
               icon: Icons.east_rounded,
               title: 'From now on',
-              hint: forwardBlock ??
+              hint:
+                  forwardBlock ??
                   (_focusIsFirst
                       ? 'First occurrence: same as Save'
                       : '$date onwards; earlier dates keep the old values'),
@@ -1330,19 +1361,19 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               button: true,
               expanded: controller.isOpen,
               child: FilledButton(
-              key: const ValueKey('editor-save-menu'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(40, 40),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.horizontal(right: radius),
+                key: const ValueKey('editor-save-menu'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(40, 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.horizontal(right: radius),
+                  ),
                 ),
-              ),
-              onPressed: _saving
-                  ? null
-                  : () => controller.isOpen
-                        ? controller.close()
-                        : controller.open(),
+                onPressed: _saving
+                    ? null
+                    : () => controller.isOpen
+                          ? controller.close()
+                          : controller.open(),
                 child: const Icon(Icons.arrow_drop_down_rounded, size: 22),
               ),
             ),
@@ -1369,8 +1400,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     setState(() => _saving = true);
     try {
       // Back to the natural value: that is clearing the override.
-      final natural = amount == existing.amount &&
-          _direction == existing.direction;
+      final natural =
+          amount == existing.amount && _direction == existing.direction;
       Transaction saved = existing;
       final r = await saveWithConflictCheck(
         context,
@@ -1542,8 +1573,8 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                 child: Text(widget.readOnly ? 'Close' : 'Cancel'),
               ),
               if (!widget.readOnly) ...[
-              const SizedBox(width: 8),
-              _saveButton(),
+                const SizedBox(width: 8),
+                _saveButton(),
               ],
             ],
           );
@@ -1682,9 +1713,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
 
     setState(() => _saving = true);
     try {
-      final notifier = ref.read(
-        transactionsProvider(widget.poolId).notifier,
-      );
+      final notifier = ref.read(transactionsProvider(widget.poolId).notifier);
       final Transaction saved;
       if (widget.existing == null) {
         saved = await notifier.create(draft);
@@ -1735,9 +1764,15 @@ class _ViewOnlyNote extends StatelessWidget {
         children: [
           Icon(Icons.visibility_outlined, size: 18, color: AppTheme.textMuted),
           SizedBox(width: 10),
-          Expanded(child: Text('View only: you have viewer access to this pool.')),
+          Expanded(
+            child: Text('View only: you have viewer access to this pool.'),
+          ),
         ],
       ),
     );
   }
 }
+
+/// When a new transaction's editor re-checks that Name has focus (after
+/// the panel's entrance animation).
+const Duration nameRefocusDelay = Duration(milliseconds: 400);

@@ -1,4 +1,8 @@
+import 'dart:async';
+
+import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/api_client.dart';
+import 'package:budget_client/features/transactions/transaction_editor.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/planning/plan_panel.dart';
@@ -1047,6 +1051,120 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.calls, contains('create Rent'));
     await tester.pump(const Duration(seconds: 3));
+  });
+
+  // ── New transaction: Name focused (phones too); new series every 1 week ──
+
+  bool nameFocused(WidgetTester tester) => tester
+      .widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-name')),
+          matching: find.byType(EditableText),
+        ),
+      )
+      .focusNode
+      .hasFocus;
+
+  for (final (label, size, kind, viaMenu) in const [
+    ('phone touch: New', Size(390, 844), PointerDeviceKind.touch, false),
+    ('phone touch: New ▾ › New', Size(390, 844), PointerDeviceKind.touch, true),
+    ('desktop: New', Size(1440, 900), PointerDeviceKind.mouse, false),
+    ('desktop: New ▾ › New', Size(1440, 900), PointerDeviceKind.mouse, true),
+  ]) {
+    testWidgets('$label focuses Name (keyboard primed in the tap) and '
+        'defaults to every 1 week', (tester) async {
+      final store = await _pump(tester, size: size);
+      await tester.tap(
+        find.byKey(const ValueKey('open-transactions')),
+        kind: kind,
+      );
+      await tester.pumpAndSettle();
+      final primed = page.primeSoftKeyboardCalls;
+      if (viaMenu) {
+        await tester.tap(
+          find.byKey(const ValueKey('panel-new-menu')),
+          kind: kind,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('new-option-new')),
+          kind: kind,
+        );
+      } else {
+        await tester.tap(
+          find.byKey(const ValueKey('panel-new-transaction')),
+          kind: kind,
+        );
+      }
+      // Primed synchronously, inside the tap.
+      expect(page.primeSoftKeyboardCalls, primed + 1);
+      await tester.pump();
+      await tester.pump(nameRefocusDelay);
+      await tester.pumpAndSettle();
+      expect(nameFocused(tester), isTrue);
+      // Every 1 week by default.
+      expect(find.text('week'), findsWidgets);
+      expect(find.text('month'), findsNothing);
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-name')),
+          matching: find.byType(TextField),
+        ),
+        'Coffee',
+      );
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-amount')),
+          matching: find.byType(TextField),
+        ),
+        '4.5',
+      );
+      await tester.tap(find.byKey(const ValueKey('editor-save')));
+      await tester.pumpAndSettle();
+      final created = store.txs.values.firstWhere((t) => t.name == 'Coffee');
+      expect(created.unit, RecurrenceUnit.weeks);
+      expect(created.interval, 1);
+      await tester.pump(const Duration(seconds: 6));
+    });
+  }
+
+  testWidgets('editing an existing series does not focus Name or prime the '
+      'keyboard, and keeps its saved frequency', (tester) async {
+    await _pump(
+      tester,
+      size: const Size(390, 844),
+      setup: (store) => store.txs['rent'] = store.txs['rent']!.copyWith(
+        unit: RecurrenceUnit.months,
+        interval: 3,
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('open-transactions')));
+    await tester.pumpAndSettle();
+    final primed = page.primeSoftKeyboardCalls;
+    await tester.tap(find.text('Rent'), kind: PointerDeviceKind.touch);
+    await tester.pump();
+    await tester.pump(nameRefocusDelay);
+    await tester.pumpAndSettle();
+    expect(page.primeSoftKeyboardCalls, primed);
+    expect(nameFocused(tester), isFalse);
+    expect(find.text('months'), findsWidgets);
+    expect(find.text('week'), findsNothing);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('other create paths (showTransactionEditor) focus Name too', (
+    tester,
+  ) async {
+    await _pump(tester, size: const Size(390, 844));
+    final ctx = tester.element(find.byType(BalanceChart));
+    final primed = page.primeSoftKeyboardCalls;
+    unawaited(showTransactionEditor(ctx, poolId: 'p1'));
+    expect(page.primeSoftKeyboardCalls, primed + 1);
+    await tester.pump();
+    await tester.pump(nameRefocusDelay);
+    await tester.pumpAndSettle();
+    expect(nameFocused(tester), isTrue);
+    expect(find.text('week'), findsWidgets);
   });
 
   for (final (name, size, a11y) in const [
