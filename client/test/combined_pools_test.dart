@@ -5,6 +5,7 @@ import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/combined.dart';
+import 'package:budget_client/features/timeline/date_heatmap.dart';
 import 'package:budget_client/features/timeline/fit_ranges.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/state/auth_providers.dart';
@@ -475,6 +476,40 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('date heatmap uses the combined day nets: a transfer between '
+      'ticked pools nets out (neutral), alone it is a loss (red)', (
+    tester,
+  ) async {
+    await _pump(tester);
+    List<Color> cells() =>
+        (tester
+                    .widget<CustomPaint>(
+                      find.byKey(const ValueKey('range-heatmap')),
+                    )
+                    .painter!
+                as HeatmapPainter)
+            .colors;
+    int cellOf(DateTime day) {
+      final c = _chart(tester);
+      final w = tester.getSize(find.byType(BalanceChart)).width;
+      final inset = ChartLayout.laneNameWidth(w) * c.visibleDays / w;
+      final first = (dayCoord(c.viewStart) + inset - 1e-6).ceilToDouble();
+      return (dayCoord(day) - first).round();
+    }
+
+    bool reddish(Color c) => c.r > c.g + 0.05;
+    final transferDay = cellOf(_d(3));
+    expect(transferDay, inInclusiveRange(0, cells().length - 1));
+    expect(reddish(cells()[transferDay]), isTrue, reason: 'Everyday alone');
+    await _toggleByTap(tester, 'b');
+    expect(cells()[transferDay], heatmapNeutral, reason: 'nets out');
+    // Kids' pocket money (a loss) shows once Kids is ticked.
+    final pocket = cellOf(_d(6));
+    expect(cells()[pocket], heatmapNeutral);
+    await _toggleByTap(tester, 'c');
+    expect(reddish(cells()[pocket]), isTrue, reason: 'Kids pocket money');
   });
 
   for (final (name, size) in const [

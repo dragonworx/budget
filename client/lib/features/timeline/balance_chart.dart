@@ -14,6 +14,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
 import 'chart_geometry.dart';
 import 'combined.dart';
+import 'date_heatmap.dart';
 import 'duration_format.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
@@ -2053,13 +2054,15 @@ class _BalanceChartState extends State<BalanceChart>
     final d = DateTime(day.year, day.month, day.day);
     var gains = 0.0, losses = 0.0;
     for (final o in widget.series.occurrences) {
-      if (o.skipped || o.netted) continue;
       if (o.date.year != d.year ||
           o.date.month != d.month ||
           o.date.day != d.day) {
         continue;
       }
-      if (_txOf(o.transactionId)?.enabled == false) continue;
+      // Same rule as the toolbar heatmap's day nets.
+      if (!countsInDayTotals(o, enabled: _txOf(o.transactionId)?.enabled)) {
+        continue;
+      }
       final v = o.signedDelta.toDouble();
       if (v >= 0) {
         gains += v;

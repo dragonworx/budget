@@ -158,13 +158,11 @@ void main() {
       expect(r.bottom, lessThan(bar.bottom));
       // The actions keep their room and stay clear of the logo.
       final first = tester.getRect(
-        find.byKey(const ValueKey('open-transactions')),
+        find.byKey(const ValueKey('open-reminders')),
       );
       expect(first.left - r.right, greaterThan(40));
       final last = tester.getRect(
-        find.byKey(
-          ValueKey(width < 960 ? 'timeline-more' : 'open-transactions'),
-        ),
+        find.byKey(ValueKey(width < 960 ? 'timeline-more' : 'open-reminders')),
       );
       expect(last.right, lessThanOrEqualTo(width));
     });

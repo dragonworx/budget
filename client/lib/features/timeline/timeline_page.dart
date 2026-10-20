@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../brand/brand.dart';
 import '../../app.dart';
@@ -19,7 +18,6 @@ import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/pool_dialog.dart';
 import '../../widgets/pool_picker.dart';
-import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
 import '../transactions/editor_outcome.dart';
 import '../transactions/import_dialog.dart';
@@ -36,13 +34,13 @@ import 'occurrence_info.dart';
 import 'trim.dart';
 import 'chart_geometry.dart';
 import 'combined.dart';
+import 'date_heatmap.dart';
 import 'view_menu.dart';
 import '../../state/auth_providers.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
 import 'view_units.dart';
 import 'zoom_level.dart';
-import '../../data/alert.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
   const TimelinePage({super.key, required this.poolId});
@@ -750,22 +748,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final transactions =
             ref.watch(transactionsProvider(widget.poolId)).valueOrNull ??
             const <Transaction>[];
-        final todayPoint = series == null
-            ? null
-            : _closingNear(series.points, DateTime.now());
+        final transactionsById = {for (final t in transactions) t.id: t};
 
         final width = MediaQuery.sizeOf(context).width;
         final compact = width < 600;
-        // Header tiers (desktop body from 600px): the phone-style actions
-        // (Reminders, Transactions, More) below 960px; the insight chips
-        // from 1240px and the Today tile from 960px, else a one-line
-        // summary under the name.
-        final compactActions = width < 960;
         return _withFullPlan(
           context,
           Scaffold(
             appBar: AppBar(
-              toolbarHeight: compact ? 60 : 68,
+              toolbarHeight: compact ? 56 : 60,
               leading: IconButton(
                 key: const ValueKey('timeline-back'),
                 tooltip: 'All pools',
@@ -776,130 +767,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               title: Row(
                 children: [
                   _HeaderBrand(compact: compact),
-                  Expanded(
-                    child: _PoolHeader(
-                      pool: pool,
-                      todayPoint: todayPoint,
-                      insights: ref
-                          .watch(insightsProvider(widget.poolId))
-                          .valueOrNull,
-                      compact: compact,
-                      showToday: !compactActions,
-                      showInsights: width >= 1240,
-                    ),
+                  Flexible(
+                    child: _PoolHeader(pool: pool, compact: compact),
                   ),
                 ],
               ),
-              actions: compactActions
-                  ? [
-                      const RealtimeDot(),
-                      IconButton(
-                        key: const ValueKey('open-transactions'),
-                        tooltip: 'Transactions (${transactions.length})',
-                        onPressed: () => _openTransactionsPanel(context, pool),
-                        icon: Badge.count(
-                          count: transactions.length,
-                          backgroundColor: AppTheme.accent,
-                          textColor: AppTheme.onAccent,
-                          child: const Icon(Icons.list_alt_rounded),
-                        ),
-                      ),
-                      PopupMenuButton<String>(
-                        key: const ValueKey('timeline-more'),
-                        tooltip: 'More',
-                        icon: const Icon(Icons.more_vert_rounded),
-                        onSelected: (v) {
-                          switch (v) {
-                            case 'import':
-                              _openImport(context, pool);
-                            case 'settings':
-                              _editPool(context, pool);
-                            case 'shortcuts':
-                              _showShortcuts(context);
-                            case 'share':
-                              _share(context, pool);
-                          }
-                        },
-                        // Pool settings first (editors), then sharing.
-                        itemBuilder: (context) => [
-                          if (pool.role.canEdit)
-                            const PopupMenuItem(
-                              key: ValueKey('more-settings'),
-                              value: 'settings',
-                              child: ListTile(
-                                leading: Icon(Icons.tune_rounded),
-                                title: Text('Pool settings'),
-                              ),
-                            ),
-                          if (pool.role.isOwner)
-                            const PopupMenuItem(
-                              value: 'share',
-                              child: ListTile(
-                                leading: Icon(Icons.person_add_alt_1_outlined),
-                                title: Text('Share pool'),
-                              ),
-                            ),
-                          if (pool.role.canEdit) ...const [
-                            PopupMenuItem(
-                              value: 'import',
-                              child: ListTile(
-                                leading: Icon(Icons.file_upload_outlined),
-                                title: Text('Import transactions'),
-                              ),
-                            ),
-                          ],
-                          const PopupMenuItem(
-                            value: 'shortcuts',
-                            child: ListTile(
-                              leading: Icon(Icons.help_outline_rounded),
-                              title: Text('Gestures & shortcuts'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 4),
-                    ]
-                  : [
-                      const RealtimeDot(),
-                      if (!pool.role.canEdit)
-                        const Padding(
-                          padding: EdgeInsets.only(right: 8),
-                          child: Chip(
-                            key: ValueKey('timeline-view-only'),
-                            avatar: Icon(Icons.visibility_outlined, size: 16),
-                            label: Text('View only'),
-                          ),
-                        ),
-                      if (pool.role.isOwner)
-                        IconButton(
-                          key: const ValueKey('pool-share'),
-                          tooltip: 'Share pool',
-                          onPressed: () => _share(context, pool),
-                          icon: const Icon(Icons.person_add_alt_1_outlined),
-                        ),
-                      if (pool.role.canEdit) ...[
-                        IconButton(
-                          tooltip: 'Import transactions (JSON)',
-                          onPressed: () => _openImport(context, pool),
-                          icon: const Icon(Icons.file_upload_outlined),
-                        ),
-                        IconButton(
-                          key: const ValueKey('pool-settings'),
-                          tooltip:
-                              'Pool settings: seed balance, date, threshold',
-                          onPressed: () => _editPool(context, pool),
-                          icon: const Icon(Icons.tune_rounded),
-                        ),
-                      ],
-                      const SizedBox(width: 6),
-                      OutlinedButton.icon(
-                        key: const ValueKey('open-transactions'),
-                        onPressed: () => _openTransactionsPanel(context, pool),
-                        icon: const Icon(Icons.list_alt_rounded, size: 18),
-                        label: Text('Transactions · ${transactions.length}'),
-                      ),
-                      const SizedBox(width: 16),
-                    ],
+              actions: _headerActions(context, pool, width, transactions),
             ),
             body: _withPlanPanel(
               context,
@@ -913,9 +786,24 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                       compact ? 8 : 16,
                       0,
                     ),
-                    child: compact
-                        ? _compactToolbar(context, pool)
-                        : _toolbar(context, pool),
+                    // The second row is the date range heatmap alone,
+                    // full width.
+                    child: DateRangeHeatmap(
+                      from: _firstClearDay,
+                      to: lastVisibleDay(_viewStart, _visibleDays),
+                      today: DateTime.now(),
+                      height: compact ? 44 : 40,
+                      nets: shown == null
+                          ? const {}
+                          : dayNetTotals(
+                              shown,
+                              enabledOf: (id) =>
+                                  (transactionsById[id] ??
+                                          combo?.transactions[id])
+                                      ?.enabled,
+                            ),
+                      onTap: () => _jumpToDate(context),
+                    ),
                   ),
                   Expanded(
                     child: Padding(
@@ -1206,121 +1094,187 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  // ---------------------------------------------------------------- toolbar
+  // ---------------------------------------------------------------- header
 
-  /// Desktop toolbar: reminders, View, the compact date range, Today / Seed.
-  /// Condenses as the window narrows so nothing overflows (≥1060px:
-  /// labelled Today / Seed; narrower: icon buttons; <760px: they move into
-  /// the View menu). The date range ellipsises as a last resort.
-  Widget _toolbar(BuildContext context, Pool pool) {
-    return LayoutBuilder(
-      builder: (context, box) {
-        final w = box.maxWidth;
-        final full = w >= 1060;
-        final narrow = w < 760;
-        final end = lastVisibleDay(_viewStart, _visibleDays);
-        Widget iconBtn(
-          String key,
-          String tip,
-          IconData icon,
-          VoidCallback f, {
-          Color? color,
-        }) => IconButton.outlined(
+  /// Every timeline action lives in the header row, right of the pool
+  /// name; the More (⋮) menu is always last and takes what does not fit:
+  ///
+  /// * ≥1240px: Today, Seed (labelled) · Transactions · View · Share ·
+  ///   Pool settings · Reminders (labelled, prominent) · More (Import,
+  ///   Gestures & shortcuts).
+  /// * 960–1240px: the same with icon-only Today / Seed.
+  /// * 600–960px: Today, Seed (icons) · Transactions · View (icon) ·
+  ///   Reminders (tonal icon) · More (Pool settings, Share, Import,
+  ///   shortcuts).
+  /// * <600px: Transactions · View (with Go to today / seed) · Reminders ·
+  ///   More; below 360px Transactions moves into More too.
+  List<Widget> _headerActions(
+    BuildContext context,
+    Pool pool,
+    double width,
+    List<Transaction> transactions,
+  ) {
+    final desk = width >= 600, mid = width >= 960, wide = width >= 1240;
+    final tiny = width < 360;
+    final canEdit = pool.role.canEdit, owner = pool.role.isOwner;
+    Widget icon(String key, String tip, Widget glyph, VoidCallback f) =>
+        IconButton(
           key: ValueKey(key),
           tooltip: tip,
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           onPressed: f,
-          icon: Icon(icon, size: 18, color: color),
+          icon: glyph,
         );
-        // Left group (shrinks: the range ellipsises last) and shortcuts at
-        // the far right.
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Flexible(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _remindersButton(context, pool, outlined: true),
-                  const SizedBox(width: 6),
-                  _fitMenu(pool, compact: narrow),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Tooltip(
-                      message: 'Jump to a date',
-                      child: OutlinedButton.icon(
-                        key: const ValueKey('jump-to-date'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        onPressed: () => _jumpToDate(context),
-                        icon: const Icon(Icons.date_range_rounded, size: 16),
-                        label: Text(
-                          compactRangeLabel(_firstClearDay, end),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (full) ...[
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      key: const ValueKey('go-today'),
-                      onPressed: () => _showFrom(DateTime.now()),
-                      icon: const Icon(Icons.today_rounded, size: 18),
-                      label: const Text('Today'),
-                    ),
-                    const SizedBox(width: 8),
-                    Tooltip(
-                      message: 'Go to the seed date (start of the balance)',
-                      child: OutlinedButton.icon(
-                        key: const ValueKey('go-seed'),
-                        onPressed: () => _showFrom(pool.seedDate),
-                        icon: const Icon(
-                          Icons.flag_rounded,
-                          size: 18,
-                          color: AppTheme.violet,
-                        ),
-                        label: const Text('Seed'),
-                      ),
-                    ),
-                  ] else if (!narrow) ...[
-                    const SizedBox(width: 6),
-                    iconBtn(
-                      'go-today',
-                      'Go to today',
-                      Icons.today_rounded,
-                      () => _showFrom(DateTime.now()),
-                    ),
-                    const SizedBox(width: 4),
-                    iconBtn(
-                      'go-seed',
-                      'Go to the seed date (start of the balance)',
-                      Icons.flag_rounded,
-                      () => _showFrom(pool.seedDate),
-                      color: AppTheme.violet,
-                    ),
-                  ],
-                ],
-              ),
+    void today() => _showFrom(DateTime.now());
+    void seed() => _showFrom(pool.seedDate);
+    final seedIcon = const Icon(Icons.flag_rounded, color: AppTheme.violet);
+
+    // More, in order: Pool settings first, then whatever overflowed.
+    final more = <PopupMenuEntry<String>>[
+      if (canEdit && !mid)
+        const PopupMenuItem(
+          key: ValueKey('more-settings'),
+          value: 'settings',
+          child: ListTile(
+            leading: Icon(Icons.tune_rounded),
+            title: Text('Pool settings'),
+          ),
+        ),
+      if (tiny)
+        PopupMenuItem(
+          key: const ValueKey('more-transactions'),
+          value: 'transactions',
+          child: ListTile(
+            leading: const Icon(Icons.list_alt_rounded),
+            title: Text('Transactions (${transactions.length})'),
+          ),
+        ),
+      if (owner && !mid)
+        const PopupMenuItem(
+          key: ValueKey('more-share'),
+          value: 'share',
+          child: ListTile(
+            leading: Icon(Icons.person_add_alt_1_outlined),
+            title: Text('Share pool'),
+          ),
+        ),
+      if (canEdit)
+        const PopupMenuItem(
+          key: ValueKey('more-import'),
+          value: 'import',
+          child: ListTile(
+            leading: Icon(Icons.file_upload_outlined),
+            title: Text('Import transactions'),
+          ),
+        ),
+      const PopupMenuItem(
+        key: ValueKey('shortcuts-help'),
+        value: 'shortcuts',
+        child: ListTile(
+          leading: Icon(Icons.keyboard_rounded),
+          title: Text('Gestures & shortcuts'),
+        ),
+      ),
+    ];
+
+    return [
+      const RealtimeDot(),
+      if (wide) ...[
+        OutlinedButton.icon(
+          key: const ValueKey('go-today'),
+          onPressed: today,
+          icon: const Icon(Icons.today_rounded, size: 18),
+          label: const Text('Today'),
+        ),
+        const SizedBox(width: 6),
+        Tooltip(
+          message: 'Go to the seed date (start of the balance)',
+          child: OutlinedButton.icon(
+            key: const ValueKey('go-seed'),
+            onPressed: seed,
+            icon: const Icon(
+              Icons.flag_rounded,
+              size: 18,
+              color: AppTheme.violet,
             ),
-            IconButton(
-              key: const ValueKey('shortcuts-help'),
-              tooltip: 'Keyboard and mouse shortcuts',
-              onPressed: () => _showShortcuts(context),
-              icon: const Icon(Icons.keyboard_rounded),
-            ),
-          ],
-        );
-      },
-    );
+            label: const Text('Seed'),
+          ),
+        ),
+        const SizedBox(width: 4),
+      ] else if (desk) ...[
+        icon('go-today', 'Go to today', const Icon(Icons.today_rounded), today),
+        icon(
+          'go-seed',
+          'Go to the seed date (start of the balance)',
+          seedIcon,
+          seed,
+        ),
+      ],
+      if (!tiny) _transactionsButton(context, pool, count: transactions.length),
+      _fitMenu(pool, compact: !desk, iconOnly: !mid),
+      if (mid && owner)
+        icon(
+          'pool-share',
+          'Share pool',
+          const Icon(Icons.person_add_alt_1_outlined),
+          () => _share(context, pool),
+        ),
+      if (mid && canEdit)
+        icon(
+          'pool-settings',
+          'Pool settings: seed balance, date, threshold',
+          const Icon(Icons.tune_rounded),
+          () => _editPool(context, pool),
+        ),
+      SizedBox(width: mid ? 6 : 2),
+      // The prominent header action: the reminders calendar.
+      if (mid)
+        FilledButton.tonalIcon(
+          key: const ValueKey('open-reminders'),
+          onPressed: () => showReminders(context, pool),
+          icon: const Icon(Icons.calendar_month_rounded, size: 18),
+          label: const Text(
+            'Reminders',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        )
+      else
+        IconButton.filledTonal(
+          key: const ValueKey('open-reminders'),
+          tooltip: 'Reminders calendar',
+          onPressed: () => showReminders(context, pool),
+          icon: const Icon(Icons.calendar_month_rounded),
+        ),
+      // Always the rightmost item.
+      PopupMenuButton<String>(
+        key: const ValueKey('timeline-more'),
+        tooltip: 'More',
+        icon: const Icon(Icons.more_vert_rounded),
+        onSelected: (v) {
+          switch (v) {
+            case 'import':
+              _openImport(context, pool);
+            case 'settings':
+              _editPool(context, pool);
+            case 'transactions':
+              _openTransactionsPanel(context, pool);
+            case 'shortcuts':
+              _showShortcuts(context);
+            case 'share':
+              _share(context, pool);
+          }
+        },
+        itemBuilder: (context) => more,
+      ),
+      SizedBox(width: desk ? 8 : 2),
+    ];
   }
 
   /// View options: Combine with other pools and, on phones, Go to today /
   /// seed date. The fit modes are keyboard-only (F / A / H, listed in the
   /// shortcuts sheet) and never stretch to the alert line.
-  Widget _fitMenu(Pool pool, {required bool compact}) {
+  Widget _fitMenu(Pool pool, {required bool compact, bool? iconOnly}) {
+    final icon = iconOnly ?? compact;
     final others = _otherPools(pool.id);
     final combined = others.where((p) => _combine.contains(p.id)).length;
     final small = Theme.of(context).textTheme.labelSmall;
@@ -1334,7 +1288,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       onToday: () => _showFrom(DateTime.now()),
       onSeed: () => _showFrom(pool.seedDate),
       onTogglePool: _toggleCombine,
-      builder: (context, open) => compact
+      builder: (context, open) => icon
           ? IconButton(
               key: const ValueKey('fit-menu'),
               tooltip: tip,
@@ -1389,61 +1343,19 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// Phone toolbar: date range (tap to jump), reminders and the View menu
-  /// (with Today / Seed). Everything is at least 44px tall.
-  Widget _compactToolbar(BuildContext context, Pool pool) {
-    final end = lastVisibleDay(_viewStart, _visibleDays);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Flexible(
-          child: OutlinedButton(
-            key: const ValueKey('jump-to-date'),
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(0, 44),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-            ),
-            onPressed: () => _jumpToDate(context),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(compactRangeLabel(_firstClearDay, end), maxLines: 1),
-            ),
-          ),
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _remindersButton(context, pool),
-            _fitMenu(pool, compact: true),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// The reminders calendar ("schedule"): sits just left of the View menu.
-  Widget _remindersButton(
+  /// The transactions list: a plain icon button just left of the View
+  /// menu (the count is in its tooltip; Reminders is the prominent one).
+  Widget _transactionsButton(
     BuildContext context,
     Pool pool, {
-    bool outlined = false,
-  }) {
-    const icon = Icon(Icons.calendar_month_rounded);
-    void open() => showReminders(context, pool);
-    return outlined
-        ? IconButton.outlined(
-            key: const ValueKey('open-reminders'),
-            tooltip: 'Reminders calendar',
-            onPressed: open,
-            icon: const Icon(Icons.calendar_month_rounded, size: 18),
-          )
-        : IconButton(
-            key: const ValueKey('open-reminders'),
-            tooltip: 'Reminders calendar',
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-            onPressed: open,
-            icon: icon,
-          );
-  }
+    required int count,
+  }) => IconButton(
+    key: const ValueKey('open-transactions'),
+    tooltip: 'Transactions ($count)',
+    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+    onPressed: () => _openTransactionsPanel(context, pool),
+    icon: const Icon(Icons.list_alt_rounded),
+  );
 
   Future<void> _jumpToDate(BuildContext context) async {
     final picked = await showDatePicker(
@@ -1744,292 +1656,64 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       ),
     );
   }
-
-  BalancePoint? _closingNear(List<BalancePoint> points, DateTime day) {
-    final key = dateOnly(day);
-    for (final point in points) {
-      if (dateOnly(point.date) == key) return point;
-    }
-    if (points.isEmpty) return null;
-    BalancePoint? best;
-    for (final point in points) {
-      if (!dateOnly(point.date).isAfter(key)) {
-        if (best == null || point.date.isAfter(best.date)) best = point;
-      }
-    }
-    return best ?? points.last;
-  }
 }
 
 class _PoolHeader extends StatelessWidget {
-  const _PoolHeader({
-    required this.pool,
-    required this.todayPoint,
-    this.insights,
-    this.compact = false,
-    bool? showToday,
-    bool? showInsights,
-  }) : showToday = showToday ?? !compact,
-       showInsights = showInsights ?? !compact;
-
-  final bool showToday;
-  final bool showInsights;
+  const _PoolHeader({required this.pool, this.compact = false});
 
   final Pool pool;
-  final BalancePoint? todayPoint;
-  final BalanceInsights? insights;
   final bool compact;
 
-  /// Phone header: "alert 19 Feb 27 · low −$2,450 15 Oct 27" (runway
-  /// first: it matters most and the line may be cut off).
-  String? _compactInsights() {
-    final i = insights;
-    if (i == null) return null;
-    final short = DateFormat('d MMM yy');
-    final today = dateOnly(DateTime.now());
-    final alert = i.alertDate;
-    final parts = <String>[
-      alert == null
-          ? 'runway OK'
-          : (!alert.isAfter(today)
-                ? 'below alert'
-                : 'alert ${short.format(alert)}'),
-    ];
-    if (i.lowestBalance != null && i.lowestDate != null) {
-      parts.add(
-        'low ${formatMoneyAmount(i.lowestBalance!)} '
-        '${short.format(i.lowestDate!)}',
-      );
-    }
-    return parts.join(' · ');
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final today = todayPoint?.closingBalance;
-    final loss = today != null && belowAlert(today, pool.lossThreshold);
-    return Row(
-      children: [
-        Flexible(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Pool jump menu (same picker as transfers), with
-              // New pool / Manage pools at the bottom.
-              PoolPicker(
-                keyPrefix: 'nav',
-                title: 'Jump to pool',
-                currentPoolId: pool.id,
-                onSelected: (a) {
-                  if (a.id == pool.id) return;
-                  context.pushReplacement('/pools/${a.id}/timeline');
-                },
-                onNewPool: () async {
-                  final created = await createPool(context);
-                  if (created != null && context.mounted) {
-                    context.go('/pools/${created.id}/timeline');
-                  }
-                },
-                onManagePools: () => context.go(poolsPath),
-                builder: (context, open) => InkWell(
-                  key: const ValueKey('header-pool-picker'),
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: open,
-                  child: Tooltip(
-                    message: 'Jump to another pool',
-                    waitDuration: const Duration(milliseconds: 500),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            pool.name,
-                            style: compact
-                                ? theme.textTheme.titleMedium
-                                : theme.textTheme.titleLarge,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const Icon(
-                          Icons.arrow_drop_down_rounded,
-                          color: AppTheme.textMuted,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              if (!showToday && today != null)
-                Text(
-                  [
-                    'Today ${formatMoneyAmount(today.toDouble(), decimalDigits: 2)}',
-                    ?_compactInsights(),
-                  ].join(' · '),
-                  key: const ValueKey('header-today'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: loss ? AppTheme.debitColor : AppTheme.textMuted,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                )
-              else
-                Text(
-                  'Seed ${formatMoneyAmount(pool.seedBalance.toDouble(), decimalDigits: 2)} on ${DateFormat('d MMM y').format(pool.seedDate)}',
-                  style: theme.textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-            ],
-          ),
-        ),
-        if (insights != null && showInsights) ...[
-          const SizedBox(width: 10),
-          _InsightChip(
-            key: const ValueKey('header-lowest'),
-            label: 'LOWEST · 12 MO',
-            value: insights!.lowestBalance == null
-                ? '—'
-                : formatMoneyAmount(insights!.lowestBalance!),
-            detail: insights!.lowestDate == null
-                ? null
-                : DateFormat('d MMM y').format(insights!.lowestDate!),
-            warn:
-                insights!.lowestBalance != null &&
-                belowAlert(
-                  insights!.lowestBalance!,
-                  pool.lossThreshold.toDouble(),
-                ),
-          ),
-          const SizedBox(width: 8),
-          _InsightChip(
-            key: const ValueKey('header-runway'),
-            label: 'RUNWAY',
-            value: runwayText(insights!, pool),
-            detail: insights!.alertDate == null
-                ? null
-                : 'alert < ${formatMoneyAmount(pool.lossThreshold.toDouble())}',
-            warn: insights!.alertDate != null,
-          ),
-        ],
-        if (today != null && showToday) ...[
-          const SizedBox(width: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: AppTheme.panel(
-              color: loss ? AppTheme.debitSoft : AppTheme.raised,
-              r: 10,
-              edge: loss
-                  ? AppTheme.debitColor.withValues(alpha: 0.4)
-                  : AppTheme.border,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    // Compact: the name truncates and the picker stays narrow so every
+    // action fits in this row (no balance / alert summary here).
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: compact ? 150 : 260),
+      child: PoolPicker(
+        keyPrefix: 'nav',
+        title: 'Jump to pool',
+        currentPoolId: pool.id,
+        onSelected: (a) {
+          if (a.id == pool.id) return;
+          context.pushReplacement('/pools/${a.id}/timeline');
+        },
+        onNewPool: () async {
+          final created = await createPool(context);
+          if (created != null && context.mounted) {
+            context.go('/pools/${created.id}/timeline');
+          }
+        },
+        onManagePools: () => context.go(poolsPath),
+        builder: (context, open) => InkWell(
+          key: const ValueKey('header-pool-picker'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: open,
+          child: Tooltip(
+            message: 'Jump to another pool',
+            waitDuration: const Duration(milliseconds: 500),
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'TODAY',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    letterSpacing: 1,
-                    color: AppTheme.textFaint,
-                    fontWeight: FontWeight.w700,
+                Flexible(
+                  child: Text(
+                    pool.name,
+                    style: compact
+                        ? theme.textTheme.titleMedium
+                        : theme.textTheme.titleLarge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Text(
-                  formatMoneyAmount(today.toDouble(), decimalDigits: 2),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: loss ? AppTheme.debitColor : AppTheme.text,
-                    fontWeight: FontWeight.w700,
-                  ),
+                const Icon(
+                  Icons.arrow_drop_down_rounded,
+                  color: AppTheme.textMuted,
                 ),
               ],
             ),
           ),
-        ],
-      ],
-    );
-  }
-}
-
-/// Runway headline: the first alert date (and the zero date when the
-/// threshold is not zero), or that it holds for the whole horizon.
-String runwayText(BalanceInsights i, Pool pool) {
-  final fmt = DateFormat('d MMM y');
-  final alert = i.alertDate;
-  if (alert == null) {
-    return 'OK ${(i.horizonDays / 365).round()}+ yrs';
-  }
-  final today = dateOnly(DateTime.now());
-  if (!alert.isAfter(today)) return 'Below alert now';
-  final zero = i.zeroDate;
-  if (zero != null && zero != alert && pool.lossThreshold.toDouble() != 0) {
-    return '${fmt.format(alert)} · \$0 ${fmt.format(zero)}';
-  }
-  return fmt.format(alert);
-}
-
-class _InsightChip extends StatelessWidget {
-  const _InsightChip({
-    super.key,
-    required this.label,
-    required this.value,
-    this.detail,
-    this.warn = false,
-  });
-
-  final String label;
-  final String value;
-  final String? detail;
-  final bool warn;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: AppTheme.panel(
-        color: warn ? AppTheme.debitSoft : AppTheme.raised,
-        r: 10,
-        edge: warn
-            ? AppTheme.debitColor.withValues(alpha: 0.4)
-            : AppTheme.border,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              letterSpacing: 1,
-              color: AppTheme.textFaint,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(
-                  text: value,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: warn ? AppTheme.debitColor : AppTheme.text,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (detail != null)
-                  TextSpan(
-                    text: '  $detail',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: AppTheme.textMuted,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -2225,15 +1909,4 @@ class _HeaderBrand extends StatelessWidget {
       ),
     ),
   );
-}
-
-/// Toolbar date range, kept short: "12 Oct – 9 Nov ’26" (one year), or
-/// "28 Dec ’26 – 9 Jan ’27" across a year end.
-@visibleForTesting
-String compactRangeLabel(DateTime from, DateTime to) {
-  final day = DateFormat('d MMM');
-  String yy(DateTime d) => '’${DateFormat('yy').format(d)}';
-  return from.year == to.year
-      ? '${day.format(from)} – ${day.format(to)} ${yy(to)}'
-      : '${day.format(from)} ${yy(from)} – ${day.format(to)} ${yy(to)}';
 }

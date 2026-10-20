@@ -10,10 +10,11 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
+import 'package:budget_client/features/timeline/date_heatmap.dart';
+import 'package:budget_client/theme/app_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final _today = DateTime.now();
@@ -385,7 +386,7 @@ void main() {
     tester,
   ) async {
     final store = await _pump(tester);
-    expect(find.text('Transactions · 2'), findsOneWidget);
+    expect(find.byTooltip('Transactions (2)'), findsOneWidget);
     await _editFromPanel(tester, 'Rent');
     await tester.tap(find.byKey(const ValueKey('editor-delete')));
     await tester.pumpAndSettle();
@@ -400,11 +401,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.calls, contains('delete rent'));
     expect(find.text('Deleted “Rent”'), findsOneWidget);
-    expect(find.text('Transactions · 1'), findsOneWidget);
+    expect(find.byTooltip('Transactions (1)'), findsOneWidget);
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(store.calls, contains('create Rent'));
-    expect(find.text('Transactions · 2'), findsOneWidget);
+    expect(find.byTooltip('Transactions (2)'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
 
@@ -472,7 +473,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.calls, contains('create Coffee'));
     expect(find.text('Created “Coffee”'), findsOneWidget);
-    expect(find.text('Transactions · 3'), findsOneWidget);
+    expect(find.byTooltip('Transactions (3)'), findsOneWidget);
     await tester.pump(const Duration(seconds: 6));
   });
 
@@ -1162,7 +1163,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('No other pools'), findsNothing);
       if (!compact) {
-        // The fit modes stay as keyboard shortcuts, listed in the sheet.
+        // The fit modes stay as keyboard shortcuts, listed in the sheet
+        // (More ▸ Gestures & shortcuts).
+        await tester.tap(find.byKey(const ValueKey('timeline-more')));
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('shortcuts-help')));
         await tester.pumpAndSettle();
         expect(find.text('Fit balance to what is in view'), findsOneWidget);
@@ -1174,73 +1178,207 @@ void main() {
     }
   });
 
-  testWidgets('toolbar order: reminders ("schedule") sits immediately left '
-      'of View; no Plan button anywhere in the toolbar', (tester) async {
-    double x(String key) => tester.getCenter(find.byKey(ValueKey(key))).dx;
-    Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
-    for (final size in const [Size(1440, 900), Size(800, 900)]) {
-      await _pump(tester, size: size);
-      expect(x('open-reminders'), lessThan(x('fit-menu')));
-      expect(r('fit-menu').left - r('open-reminders').right, lessThan(10));
-      expect(x('fit-menu'), lessThan(x('jump-to-date')));
-      // Moved down from the app bar.
-      expect(
-        r('open-reminders').top,
-        greaterThan(tester.getRect(find.byType(AppBar)).bottom - 1),
-      );
-      expect(find.byKey(const ValueKey('open-plan')), findsNothing);
-      // Shortcuts stay at the far right.
-      expect(r('shortcuts-help').right, closeTo(size.width - 16, 1));
-    }
-    await _pump(tester, size: const Size(390, 844));
-    expect(x('jump-to-date'), lessThan(x('open-reminders')));
-    expect(x('open-reminders'), lessThan(x('fit-menu')));
-    expect(r('fit-menu').left - r('open-reminders').right, lessThan(10));
-    expect(find.byKey(const ValueKey('open-plan-compact')), findsNothing);
-    // Reminders + View sit at the right edge, the range at the left.
-    expect(r('fit-menu').right, closeTo(390 - 8, 1));
-    expect(r('jump-to-date').left, closeTo(8, 1));
-    expect(find.byKey(const ValueKey('open-reminders')), findsOneWidget);
-  });
+  // ── Header row: every action, More (⋮) last · heatmap date range ──
 
-  test('compact date range label', () {
-    expect(
-      compactRangeLabel(DateTime(2026, 10, 12), DateTime(2026, 11, 9)),
-      '12 Oct – 9 Nov ’26',
-    );
-    expect(
-      compactRangeLabel(DateTime(2026, 12, 28), DateTime(2027, 1, 9)),
-      '28 Dec ’26 – 9 Jan ’27',
-    );
-  });
-
-  for (final (size, maxW) in const [
-    // (The test font is wider than the app's: ~140px real on phones.)
-    (Size(320, 640), 210.0),
-    (Size(390, 844), 210.0),
-    (Size(800, 900), 240.0),
-    (Size(1440, 900), 240.0),
+  for (final (size, wide, mid, desk, tiny) in const [
+    (Size(320, 640), false, false, false, true),
+    (Size(390, 844), false, false, false, false),
+    (Size(800, 900), false, false, true, false),
+    (Size(1000, 900), false, true, true, false),
+    (Size(1440, 900), true, true, true, false),
   ]) {
-    testWidgets('date range control is compact and readable at '
-        '${size.width.toInt()}px', (tester) async {
+    testWidgets('${size.width.toInt()}px header: every action in the top row, '
+        'More rightmost, Transactions plain just left of View, Reminders '
+        'prominent; the date heatmap alone spans the second row', (
+      tester,
+    ) async {
+      final w = size.width;
       await _pump(tester, size: size);
-      final btn = find.byKey(const ValueKey('jump-to-date'));
-      expect(tester.getSize(btn).width, lessThanOrEqualTo(maxW));
-      final label = find.descendant(
-        of: btn,
-        matching: find.textContaining('’'),
+      expect(tester.takeException(), isNull);
+      final bar = tester.getRect(find.byType(AppBar));
+      Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
+      bool inBar(String key) => find
+          .descendant(
+            of: find.byType(AppBar),
+            matching: find.byKey(ValueKey(key)),
+          )
+          .evaluate()
+          .isNotEmpty;
+      // More is the rightmost item of the header row.
+      final more = r('timeline-more');
+      expect(inBar('timeline-more'), isTrue);
+      for (final e
+          in find
+              .descendant(
+                of: find.byType(AppBar),
+                matching: find.byWidgetPredicate(
+                  (w) => w is ButtonStyleButton || w is IconButton,
+                ),
+              )
+              .evaluate()) {
+        final rect = tester.getRect(find.byWidget(e.widget));
+        expect(rect.right, lessThanOrEqualTo(more.right + 0.5));
+      }
+      expect(more.right, lessThanOrEqualTo(w));
+      expect(more.right, greaterThan(w - 16));
+      // Header row: View, Reminders and (not at 320) Transactions.
+      expect(inBar('fit-menu'), isTrue);
+      expect(inBar('open-reminders'), isTrue);
+      expect(r('open-reminders').left, greaterThan(r('fit-menu').right - 1));
+      expect(
+        r('timeline-more').left,
+        greaterThan(r('open-reminders').right - 1),
       );
-      expect(label, findsOneWidget);
-      final text = tester.widget<Text>(label).data!;
-      expect(text, contains(' – '));
-      // Not cut off, and not shrunk to unreadable.
-      final para = tester.renderObject<RenderParagraph>(
-        find.descendant(of: label, matching: find.byType(RichText)),
+      if (tiny) {
+        expect(find.byKey(const ValueKey('open-transactions')), findsNothing);
+      } else {
+        expect(inBar('open-transactions'), isTrue);
+        expect(r('fit-menu').left - r('open-transactions').right, lessThan(4));
+        expect(
+          tester.widget(find.byKey(const ValueKey('open-transactions'))),
+          isA<IconButton>(),
+        );
+        expect(find.byTooltip('Transactions (2)'), findsOneWidget);
+      }
+      // Reminders: the prominent (filled tonal) one; labelled when wide.
+      expect(find.text('Reminders'), mid ? findsOneWidget : findsNothing);
+      if (mid) {
+        expect(
+          tester.widget(find.byKey(const ValueKey('open-reminders'))),
+          isA<FilledButton>(),
+        );
+      }
+      expect(find.text('Today'), wide ? findsOneWidget : findsNothing);
+      expect(
+        find.byKey(const ValueKey('go-today')),
+        desk ? findsOneWidget : findsNothing,
       );
-      expect(para.didExceedMaxLines, isFalse);
-      final scale =
-          tester.getSize(label).width / para.getMaxIntrinsicWidth(100);
-      expect(scale, greaterThan(0.85));
+      if (desk) expect(inBar('go-seed'), isTrue);
+      expect(
+        find.byKey(const ValueKey('pool-settings')),
+        mid ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('pool-share')),
+        mid ? findsOneWidget : findsNothing,
+      );
+      // No balance / alert summary in the header; the name is compact.
+      for (final gone in ['header-today', 'header-lowest', 'header-runway']) {
+        expect(find.byKey(ValueKey(gone)), findsNothing);
+      }
+      expect(find.textContaining('Seed \$'), findsNothing);
+      final name = r('header-pool-picker');
+      expect(name.width, lessThanOrEqualTo(desk ? 260 : 150));
+      expect(name.width, greaterThan(40));
+      expect(find.byKey(const ValueKey('open-plan')), findsNothing);
+      // Second row: the heatmap alone, the timeline's full width.
+      final heat = r('jump-to-date');
+      final chart = tester.getRect(find.byType(BalanceChart));
+      expect(heat.top, greaterThan(bar.bottom - 1));
+      expect(heat.bottom, lessThan(chart.top));
+      expect(heat.left, closeTo(chart.left - 1, 1.5));
+      expect(heat.right, closeTo(chart.right + 1, 1.5));
+      expect(r('range-start').left, lessThan(r('range-heatmap').left));
+      expect(r('range-end').right, greaterThan(r('range-heatmap').right));
+      expect(r('range-heatmap').width, greaterThan(w * 0.35));
+      // What overflowed is in More (Pool settings first when it is there).
+      await tester.tap(find.byKey(const ValueKey('timeline-more')));
+      await tester.pumpAndSettle();
+      expect(find.text('Pool settings'), mid ? findsNothing : findsOneWidget);
+      expect(find.text('Share pool'), mid ? findsNothing : findsOneWidget);
+      expect(find.text('Import transactions'), findsOneWidget);
+      expect(find.text('Gestures & shortcuts'), findsOneWidget);
+      expect(
+        find.text('Transactions (2)'),
+        tiny ? findsOneWidget : findsNothing,
+      );
+      expect(find.text('Plan a payment'), findsNothing);
+      if (tiny) {
+        await tester.tap(find.text('Transactions (2)'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('panel-new-transaction')),
+          findsOneWidget,
+        );
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  test('heatmap buckets: one cell per day when they fit, else summed runs', () {
+    final a = DateTime(2026, 10, 1);
+    final k = dayCoord(a).round();
+    final nets = {k: 100.0, k + 1: -40.0, k + 29: 5.0};
+    final daily = heatmapBuckets(nets, a, DateTime(2026, 10, 30), 1000);
+    expect(daily.length, 30);
+    expect(daily[0], 100);
+    expect(daily[1], -40);
+    expect(daily[29], 5);
+    final b = heatmapBuckets(nets, a, DateTime(2026, 10, 30), 10);
+    expect(b.length, 10);
+    expect(b[0], 60); // days 1-3 summed
+    expect(b[9], 5);
+    // Colour: gains credit-ish, losses debit-ish, zero neutral, stronger
+    // for bigger magnitudes (sqrt keeps small ones visible).
+    expect(heatmapColor(0, 100), heatmapNeutral);
+    final gain = heatmapColor(100, 100), loss = heatmapColor(-100, 100);
+    expect(gain, AppTheme.creditColor);
+    expect(loss, AppTheme.debitColor);
+    final small = heatmapColor(1, 100);
+    expect(small, isNot(heatmapNeutral));
+    double dist(Color c, Color d) =>
+        (c.r - d.r).abs() + (c.g - d.g).abs() + (c.b - d.b).abs();
+    expect(
+      dist(small, heatmapNeutral),
+      lessThan(dist(heatmapColor(50, 100), heatmapNeutral)),
+    );
+  });
+
+  for (final size in const [Size(390, 844), Size(1440, 900)]) {
+    testWidgets('${size.width.toInt()}px heatmap: a cell per visible day, '
+        'coloured by the day net (Rent red, Salary green), live on zoom; '
+        'tap opens the date picker', (tester) async {
+      await _pump(tester, size: size);
+      HeatmapPainter painter() =>
+          tester
+                  .widget<CustomPaint>(
+                    find.byKey(const ValueKey('range-heatmap')),
+                  )
+                  .painter!
+              as HeatmapPainter;
+      final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
+      final colors = painter().colors;
+      // One cell per day from the first clear day to the last visible one.
+      final start = tester
+          .widget<Text>(find.byKey(const ValueKey('range-start')))
+          .data!;
+      expect(start, isNotEmpty);
+      expect(colors.length, greaterThan(10));
+      expect(colors.length, lessThan(chart.visibleDays + 2));
+      // Exactly the day nets of what the chart shows (footer rule), each
+      // cell gain-green / loss-red / neutral by sign.
+      final nets = dayNetTotals(chart.series);
+      final total = nets.values.fold<double>(0, (a, b) => a + b.abs());
+      expect(total, greaterThan(0));
+      bool greenish(Color c) => c.g > c.r + 0.05;
+      bool reddish(Color c) => c.r > c.g + 0.05;
+      final gains = colors.where(greenish).length;
+      expect(gains, greaterThan(0), reason: 'Salary (net +) days');
+      expect(colors.where(reddish), isEmpty, reason: 'no net-loss days here');
+      expect(colors.where((c) => c == heatmapNeutral), isNotEmpty);
+      // Zooming out changes the cells live.
+      final n0 = colors.length;
+      tester
+          .widget<BalanceChart>(find.byType(BalanceChart))
+          .onViewportChanged(chart.viewStart, chart.visibleDays * 3);
+      await tester.pumpAndSettle();
+      expect(painter().colors.length, isNot(n0));
+      // Tap: the date picker, as before.
+      await tester.tap(find.byKey(const ValueKey('jump-to-date')));
+      await tester.pumpAndSettle();
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
   }
@@ -1353,46 +1491,6 @@ void main() {
     });
   }
 
-  for (final w in const [600.0, 800.0, 1000.0, 1100.0, 1440.0]) {
-    testWidgets('desktop toolbar fits at ${w.toInt()}px (no overflow; '
-        'condensed controls stay reachable)', (tester) async {
-      await _pump(tester, size: Size(w, 900));
-      expect(tester.takeException(), isNull);
-      // The header keeps the name visible next to its actions.
-      final name = tester.getRect(
-        find.byKey(const ValueKey('header-pool-picker')),
-      );
-      expect(name.width, greaterThan(60));
-      // No ◀ ▶ step buttons any more ([ / ] keys still step).
-      expect(find.byKey(const ValueKey('shift-left')), findsNothing);
-      expect(find.byKey(const ValueKey('shift-right')), findsNothing);
-      for (final k in [
-        'fit-menu',
-        'open-reminders',
-        'jump-to-date',
-        'shortcuts-help',
-      ]) {
-        final r = tester.getRect(find.byKey(ValueKey(k)));
-        expect(r.right, lessThanOrEqualTo(w), reason: k);
-      }
-      // Today / Seed: labelled when wide, icons in between, View menu when
-      // narrow.
-      if (w >= 1060) {
-        expect(find.text('Today'), findsOneWidget);
-      } else if (w >= 760) {
-        expect(find.text('Today'), findsNothing);
-        expect(find.byKey(const ValueKey('go-today')), findsOneWidget);
-        expect(find.byKey(const ValueKey('go-seed')), findsOneWidget);
-      } else {
-        expect(find.byKey(const ValueKey('go-today')), findsNothing);
-        await tester.tap(find.byKey(const ValueKey('fit-menu')));
-        await tester.pumpAndSettle();
-        expect(find.text('Go to today'), findsOneWidget);
-        expect(find.text('Go to seed date'), findsOneWidget);
-      }
-    });
-  }
-
   // ── Step buttons removed · left-aligned jumps · header logo · More menu ──
 
   // The seed's calendar day (seedDate is 30×24h back, so across DST it
@@ -1460,10 +1558,7 @@ void main() {
     // Date picker: opens on the first visible day; pick the 15th.
     // The range label now starts on today (the first day clear of the
     // left strip); the picker opens there.
-    expect(
-      find.textContaining('${DateFormat('d MMM').format(_day)} – '),
-      findsWidgets,
-    );
+    expect(_rangeStart(tester), DateFormat('d MMM').format(_day));
     final initial = _day;
     await tester.tap(find.byKey(const ValueKey('jump-to-date')));
     await tester.pumpAndSettle();
@@ -1472,17 +1567,9 @@ void main() {
     await tester.pumpAndSettle();
     expectAtLeft(tester, DateTime(initial.year, initial.month, 15), 'picked');
     // …and the range label starts on it.
-    final label = tester.widget<Text>(
-      find.descendant(
-        of: find.byKey(const ValueKey('jump-to-date')),
-        matching: find.byType(Text),
-      ),
-    );
     expect(
-      label.data,
-      startsWith(
-        '${DateFormat('d MMM').format(DateTime(initial.year, initial.month, 15))} ',
-      ),
+      _rangeStart(tester),
+      DateFormat('d MMM').format(DateTime(initial.year, initial.month, 15)),
     );
   });
 
@@ -1499,13 +1586,7 @@ void main() {
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();
       expectAtLeft(tester, day, label);
-      final range = tester.widget<Text>(
-        find.descendant(
-          of: find.byKey(const ValueKey('jump-to-date')),
-          matching: find.byType(Text),
-        ),
-      );
-      expect(range.data, startsWith('${DateFormat('d MMM').format(day)} '));
+      expect(_rangeStart(tester), DateFormat('d MMM').format(day));
     }
   });
 
@@ -1532,3 +1613,11 @@ void main() {
     expect(find.byType(Dialog), findsOneWidget);
   });
 }
+
+/// The heatmap's start label without any year ("9 Oct").
+String _rangeStart(WidgetTester tester) => tester
+    .widget<Text>(find.byKey(const ValueKey('range-start')))
+    .data!
+    .split(' ')
+    .take(2)
+    .join(' ');
