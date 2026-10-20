@@ -195,7 +195,7 @@ void main() {
     }
   });
 
-  testWidgets('dragging up keeps the totals (no Trim); cancel hides', (
+  testWidgets('dragging up, however far, keeps the totals and the +', (
     tester,
   ) async {
     final created = await _pump(tester, balanceOn5th: 2994);
@@ -211,14 +211,12 @@ void main() {
     expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
     expect(_plain(tester, 'pick-day-totals'), '+\$2,450  ·  −\$406');
     expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: \$2,994');
-    // Well above the footer: cancelling, no totals, no +.
+    // Far up the screen: no cancel state; totals and + stay.
     await g.moveTo(Offset(x, _layout.plot.top + 2));
     await tester.pump();
-    expect(find.text('Release to cancel'), findsOneWidget);
-    expect(find.byKey(const ValueKey('pick-day-totals')), findsNothing);
-    expect(find.byKey(const ValueKey('pick-add')), findsNothing);
-    await g.moveTo(Offset(x, _layout.axis.top - 30));
-    await tester.pump();
+    expect(find.text('Release to cancel'), findsNothing);
+    expect(_plain(tester, 'pick-day-totals'), '+\$2,450  ·  −\$406');
+    expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
     await g.up();
     await tester.pump();
     expect(find.byKey(const ValueKey('pick-day-totals')), findsOneWidget);

@@ -1,35 +1,6 @@
-import 'dart:math' as math;
-
 import '../../data/models.dart';
 import 'occurrence_dates.dart';
 import 'zoom_level.dart';
-
-/// What releasing a date-axis drag does, by where the pointer is. Only
-/// add or discard: a drag never trims (that is the dot popup's ⋮ menu).
-enum PickZone {
-  /// On (or up to the cancel margin above) the date footer: pin the day,
-  /// whose "+" adds a transaction on it.
-  create,
-
-  /// Higher up: release cancels.
-  discard,
-}
-
-/// Pixels above the footer that count as the footer (finger slop).
-const double pickFooterSlop = 16;
-
-/// Zone for a pick at screen [y]: up to [cancelMargin] above the footer
-/// still adds, higher cancels.
-PickZone pickZone({
-  required double y,
-  required double axisTop,
-  double cancelMargin = 56,
-}) {
-  if (y >= axisTop - math.max(pickFooterSlop, cancelMargin)) {
-    return PickZone.create;
-  }
-  return PickZone.discard;
-}
 
 /// Whether [t] can be trimmed to end on [day]: a repeating, enabled series
 /// that started on or before [day] and still runs after it.

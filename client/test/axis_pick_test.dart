@@ -79,16 +79,23 @@ void main() {
       final dayW = layout.plot.width / days;
       // Tap in the right part of the 5th day (index 4).
       final x = layout.plot.left + (4 + 0.8) * dayW;
-      await tester.tapAt(Offset(x, layout.axis.center.dy),
-          kind: PointerDeviceKind.touch);
+      await tester.tapAt(
+        Offset(x, layout.axis.center.dy),
+        kind: PointerDeviceKind.touch,
+      );
       await tester.pump();
       final line = tester.getRect(find.byKey(const ValueKey('pick-line')));
       final dayStart = layout.xOf(DateTime(2026, 10, 5), _start, days);
-      expect(line.center.dx, moreOrLessEquals(dayStart, epsilon: 0.01),
-          reason: 'zoom $days');
+      expect(
+        line.center.dx,
+        moreOrLessEquals(dayStart, epsilon: 0.01),
+        reason: 'zoom $days',
+      );
       // Same x the selection / dots grid uses for that day's start.
-      expect(dayStart, moreOrLessEquals(layout.plot.left + 4 * dayW,
-          epsilon: 0.01));
+      expect(
+        dayStart,
+        moreOrLessEquals(layout.plot.left + 4 * dayW, epsilon: 0.01),
+      );
       final bubble = tester.getRect(find.byKey(const ValueKey('pick-bubble')));
       final dayCentre = dayStart + dayW / 2;
       if (bubble.left > 4 && bubble.right < _size.width - 4) {
@@ -185,7 +192,7 @@ void main() {
     expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
   });
 
-  testWidgets('dragging well above the axis cancels; back down re-arms', (
+  testWidgets('dragging well above the axis never cancels: still pins', (
     tester,
   ) async {
     final h = await _pump(tester);
@@ -195,11 +202,17 @@ void main() {
     );
     await g.moveTo(Offset(_x(3), _layout.axis.top - 120));
     await tester.pump();
-    expect(find.text('Release to cancel'), findsOneWidget);
+    expect(find.text('Release to cancel'), findsNothing);
+    expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
     await g.up();
     await tester.pump();
-    expect(h.created, isEmpty);
+    expect(h.created, isEmpty, reason: 'release never creates');
+    expect(find.byKey(const ValueKey('pick-bubble')), findsOneWidget);
+    // A press elsewhere on the chart dismisses the pinned pick.
+    await tester.tapAt(Offset(_x(12), _layout.plot.top + 20));
+    await tester.pump(const Duration(milliseconds: 400));
     expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
+    expect(h.created, isEmpty);
 
     final g2 = await tester.startGesture(Offset(_x(3), _axisY));
     await g2.moveTo(Offset(_x(3), _layout.axis.top - 120));

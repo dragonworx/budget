@@ -47,10 +47,10 @@ typedef EditOccurrence = void Function(Transaction transaction, DateTime date);
 /// auto-scrolls near the plot edges. The bubble shows the day's "+" from
 /// the press on, following the picked day while dragging. Releasing (or a
 /// plain tap) never acts by itself: the line and bubble stay pinned on
-/// that day; only tapping "+" calls [onCreateOnDay]. The only outcomes are
-/// add or discard: dragging well above the footer, or Esc, cancels. A
-/// pinned line goes on its close button, any press elsewhere on the chart,
-/// Esc, or a view navigation. (Trimming a series lives in the dot popup's
+/// that day; only tapping "+" calls [onCreateOnDay]. Dragging anywhere
+/// (however far up) just keeps tracking the day: there is no drag-to-
+/// cancel. A pinned line goes on its close button, any press elsewhere on
+/// the chart, Esc, or a view navigation (Esc mid-drag drops the pick). (Trimming a series lives in the dot popup's
 /// ⋮ menu, [onTrimOccurrence].)
 /// With focus: arrow keys pan, +/- zoom time, F fits balances.
 /// Test hook: after each paint, every in-plot vertex as (name, x, labelled).
@@ -397,11 +397,9 @@ class _BalanceChartState extends State<BalanceChart>
   PinchAxis _pinchAxis = PinchAxis.time;
   BalanceExtents? _pinchY;
 
-  /// Date picking on the axis: the picked day, where the pointer is, and
-  /// whether it was dragged far enough off the axis to cancel.
+  /// Date picking on the axis: the picked day and where the pointer is.
   DateTime? _pickDay;
   Offset? _pickPos;
-  bool _pickCancelled = false;
   bool _pickTouch = false;
 
   Timer? _autoScroll;
@@ -417,7 +415,6 @@ class _BalanceChartState extends State<BalanceChart>
       _pickPinned = false;
       _pickDay = null;
       _pickPos = null;
-      _pickCancelled = false;
     });
   }
 
@@ -469,9 +466,6 @@ class _BalanceChartState extends State<BalanceChart>
   /// Painted label boxes (see [_LabelHit]); refreshed by every paint.
   final List<_LabelHit> _labelHits = <_LabelHit>[];
   static const Duration _holdDelay = Duration(milliseconds: 450);
-
-  /// How far above the axis a pick drag goes before it counts as cancelled.
-  static const double pickCancelMargin = 56;
   bool _overAdd = false;
 
   /// Pointer is over an occurrence dot (click opens its series).
@@ -707,7 +701,6 @@ class _BalanceChartState extends State<BalanceChart>
       setState(() {
         _mode = _Gesture.pick;
         _pickTouch = touch;
-        _pickCancelled = false;
         _pickPos = event.localPosition;
         _pickDay = _dayAt(event.localPosition.dx);
       });
@@ -988,23 +981,15 @@ class _BalanceChartState extends State<BalanceChart>
     widget.onViewportChanged(view.$1, view.$2);
   }
 
-  /// Add or discard, by how far above the footer [pos] is.
-  PickZone _zoneAt(Offset pos) => pickZone(
-    y: pos.dy,
-    axisTop: _layout.axis.top,
-    cancelMargin: pickCancelMargin,
-  );
-
   void _updatePick(Offset pos) {
     final layout = _layout;
     final day = layout.dateAt(pos.dx, widget.viewStart, widget.visibleDays);
-    final cancelled = _zoneAt(pos) == PickZone.discard;
+    // Anywhere on screen (however far up) it just tracks the day.
     setState(() {
       _pickPos = pos;
-      _pickCancelled = cancelled;
       _pickDay = day;
     });
-    final depth = cancelled ? 0.0 : layout.edgeDepth(pos.dx);
+    final depth = layout.edgeDepth(pos.dx);
     if (depth == 0) {
       _autoScroll?.cancel();
       _autoScroll = null;
@@ -1019,7 +1004,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// One auto-scroll frame while picking near (or past) a plot edge.
   void _autoScrollTick() {
     final pos = _pickPos;
-    if (!mounted || _mode != _Gesture.pick || pos == null || _pickCancelled) {
+    if (!mounted || _mode != _Gesture.pick || pos == null) {
       _autoScroll?.cancel();
       _autoScroll = null;
       return;
@@ -1035,17 +1020,14 @@ class _BalanceChartState extends State<BalanceChart>
     final start = addDays(widget.viewStart, delta);
     widget.onViewportChanged(start, widget.visibleDays);
     final day = layout.dateAt(pos.dx, start, widget.visibleDays);
-    setState(() {
-      _pickDay = day;
-      _pickCancelled = _zoneAt(pos) == PickZone.discard;
-    });
+    setState(() => _pickDay = day);
   }
 
   void _endPick({required bool commit}) {
     _autoScroll?.cancel();
     _autoScroll = null;
     final day = _pickDay;
-    final ok = commit && !_pickCancelled && day != null;
+    final ok = commit && day != null;
     setState(() {
       _mode = _Gesture.none;
       if (ok) {
@@ -1055,7 +1037,6 @@ class _BalanceChartState extends State<BalanceChart>
       }
       _pickDay = null;
       _pickPos = null;
-      _pickCancelled = false;
     });
   }
 
@@ -1819,16 +1800,13 @@ class _BalanceChartState extends State<BalanceChart>
     final left = x0.clamp(layout.plot.left, layout.plot.right).toDouble();
     final right = x1.clamp(layout.plot.left, layout.plot.right).toDouble();
     final cx = (left + right) / 2;
-    final cancelled = _pickCancelled;
-    final color = cancelled ? AppTheme.textFaint : AppTheme.accent;
+    const color = AppTheme.accent;
     final pinned = _pickPinned;
     // The day's totals show from touch-down, live while dragging, and stay
-    // on release; not while cancelling.
-    final stats = cancelled ? null : pickDayStats(day);
+    // on release.
+    final stats = pickDayStats(day);
     const bubbleW = 256.0;
-    final bubbleH = stats == null
-        ? 60.0
-        : (stats.balance == null ? 80.0 : 100.0);
+    final bubbleH = stats.balance == null ? 80.0 : 100.0;
     // Above the finger on touch so it stays visible; just above the cursor
     // otherwise. Clamped inside the chart.
     final lift = _pickTouch ? 84.0 : 56.0;
@@ -1868,13 +1846,7 @@ class _BalanceChartState extends State<BalanceChart>
         child: pinned
             ? KeyedSubtree(key: _pinKey, child: _pickBubble(theme, day, stats))
             : IgnorePointer(
-                child: _pickBubble(
-                  theme,
-                  day,
-                  stats,
-                  interactive: false,
-                  cancelled: cancelled,
-                ),
+                child: _pickBubble(theme, day, stats, interactive: false),
               ),
       ),
     ];
@@ -1917,19 +1889,17 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   /// The pick's bubble: date, the day's money in / out and closing balance
-  /// ([stats]; null while cancelling) and the day's "+" (from the press on;
-  /// not while cancelling). Once released ([interactive]) "+" acts and a
-  /// close button joins it.
+  /// ([stats]) and the day's "+" (from the press on). Once released
+  /// ([interactive]) "+" acts and a close button joins it.
   Widget _pickBubble(
     ThemeData theme,
     DateTime day,
-    PickDayStats? stats, {
+    PickDayStats stats, {
     bool interactive = true,
-    bool cancelled = false,
   }) {
     // A dark card like the dot popup, edged in the action colour, so the
     // day's green / red totals read clearly.
-    final fg = cancelled ? AppTheme.textFaint : AppTheme.accent;
+    const fg = AppTheme.accent;
     final btn = IconButton.styleFrom(
       backgroundColor: fg.withValues(alpha: 0.18),
       foregroundColor: fg,
@@ -1938,7 +1908,7 @@ class _BalanceChartState extends State<BalanceChart>
     final small = theme.textTheme.labelSmall ?? const TextStyle();
     String money(double v) =>
         formatMoneyAmount(v, decimalDigits: v == 0 ? 0 : null);
-    final balance = stats?.balance;
+    final balance = stats.balance;
     final low = balance != null && belowAlert(balance, widget.lossThreshold);
     return Listener(
       onPointerSignal: _onPointerSignal,
@@ -1970,11 +1940,7 @@ class _BalanceChartState extends State<BalanceChart>
                       ),
                     ),
                     Text(
-                      cancelled
-                          ? 'Release to cancel'
-                          : interactive
-                          ? 'Tap + to add here'
-                          : 'Release, then tap +',
+                      interactive ? 'Tap + to add here' : 'Release, then tap +',
                       key: const ValueKey('pick-hint'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1983,41 +1949,39 @@ class _BalanceChartState extends State<BalanceChart>
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    if (stats != null) ...[
-                      const SizedBox(height: 3),
-                      // The day's money in (green) and out (red), overrides
-                      // included (they come from the projected occurrences).
-                      Text.rich(
-                        key: const ValueKey('pick-day-totals'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        TextSpan(
-                          style: small.copyWith(fontWeight: FontWeight.w700),
-                          children: [
-                            TextSpan(
-                              text: '+${money(stats.gains)}',
-                              style: TextStyle(
-                                color: stats.gains > 0
-                                    ? AppTheme.creditColor
-                                    : AppTheme.textFaint,
-                              ),
+                    const SizedBox(height: 3),
+                    // The day's money in (green) and out (red), overrides
+                    // included (they come from the projected occurrences).
+                    Text.rich(
+                      key: const ValueKey('pick-day-totals'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      TextSpan(
+                        style: small.copyWith(fontWeight: FontWeight.w700),
+                        children: [
+                          TextSpan(
+                            text: '+${money(stats.gains)}',
+                            style: TextStyle(
+                              color: stats.gains > 0
+                                  ? AppTheme.creditColor
+                                  : AppTheme.textFaint,
                             ),
-                            const TextSpan(
-                              text: '  ·  ',
-                              style: TextStyle(color: AppTheme.textFaint),
+                          ),
+                          const TextSpan(
+                            text: '  ·  ',
+                            style: TextStyle(color: AppTheme.textFaint),
+                          ),
+                          TextSpan(
+                            text: '−${money(stats.losses)}',
+                            style: TextStyle(
+                              color: stats.losses > 0
+                                  ? AppTheme.debitColor
+                                  : AppTheme.textFaint,
                             ),
-                            TextSpan(
-                              text: '−${money(stats.losses)}',
-                              style: TextStyle(
-                                color: stats.losses > 0
-                                    ? AppTheme.debitColor
-                                    : AppTheme.textFaint,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                     if (balance != null)
                       Text.rich(
                         key: const ValueKey('pick-day-balance'),
@@ -2044,18 +2008,16 @@ class _BalanceChartState extends State<BalanceChart>
               ),
               // The day's "+" shows from the press on (live while dragging,
               // where the pointer is busy, so it only reads as the target);
-              // it acts once the pick is pinned. Not while cancelling.
-              if (!cancelled) ...[
-                const SizedBox(width: 2),
-                IconButton(
-                  key: const ValueKey('pick-add'),
-                  tooltip: 'Add a transaction on ${formatOccurrenceDate(day)}',
-                  style: btn,
-                  icon: const Icon(Icons.add_rounded, size: 22),
-                  // Same look mid-drag (under an IgnorePointer then).
-                  onPressed: _addFromPin,
-                ),
-              ],
+              // it acts once the pick is pinned.
+              const SizedBox(width: 2),
+              IconButton(
+                key: const ValueKey('pick-add'),
+                tooltip: 'Add a transaction on ${formatOccurrenceDate(day)}',
+                style: btn,
+                icon: const Icon(Icons.add_rounded, size: 22),
+                // Same look mid-drag (under an IgnorePointer then).
+                onPressed: _addFromPin,
+              ),
               if (interactive)
                 IconButton(
                   key: const ValueKey('pick-close'),

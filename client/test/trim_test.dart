@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
+import 'package:budget_client/features/timeline/occurrence_info.dart';
 import 'package:budget_client/features/timeline/trim.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
@@ -41,16 +42,6 @@ Occurrence _occ(String id, int day, [int delta = -100]) => Occurrence(
 );
 
 void main() {
-  test('a date drag only adds or discards: 56px slack, then discard', () {
-    PickZone z(double y) => pickZone(y: y, axisTop: 400);
-    expect(z(410), PickZone.create);
-    expect(z(390), PickZone.create, reason: 'finger slop above footer');
-    expect(z(345), PickZone.create);
-    expect(z(343), PickZone.discard);
-    expect(z(150), PickZone.discard);
-    expect(PickZone.values, [PickZone.create, PickZone.discard]);
-  });
-
   final txs = {
     'once': _tx('once', mode: RecurrenceMode.once),
     'ended': _tx(
@@ -110,7 +101,7 @@ void main() {
   });
 
   testWidgets('date drag: "+" from the press on, follows the day, never trims; '
-      'release only pins; above the footer discards', (tester) async {
+      'release only pins (even far up); no drag-to-cancel', (tester) async {
     const size = Size(600, 500);
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -184,15 +175,15 @@ void main() {
         );
         expect(tester.getRect(add).right, lessThanOrEqualTo(bubble().right));
       }
-      // Into the balance fill: no Trim prompt, preview or scissors —
-      // past the 56px slack it is a plain discard.
-      await g.moveTo(Offset(xOf(18), layout.axis.top - 30));
-      await tester.pump();
-      expect(add, findsOneWidget, reason: 'within the slack: still add');
-      await g.moveTo(Offset(xOf(18), layout.axis.top - 120));
-      await tester.pump();
-      expect(find.text('Release to cancel'), findsOneWidget);
-      expect(add, findsNothing, reason: 'discarding: no +');
+      // Into the balance fill and far up: no Trim prompt, preview or
+      // scissors, and no cancel state — the + stays.
+      for (final dy in [30.0, 120.0, layout.axis.top - layout.plot.top - 4]) {
+        await g.moveTo(Offset(xOf(18), layout.axis.top - dy));
+        await tester.pump();
+        expect(add, findsOneWidget, reason: '$kind: + ${dy}px up');
+        expect(find.text('Release, then tap +'), findsOneWidget);
+      }
+      expect(find.text('Release to cancel'), findsNothing);
       for (final k in ['pick-trim', 'trim-preview', 'pick-trim-action']) {
         expect(find.byKey(ValueKey(k)), findsNothing);
       }
@@ -212,7 +203,9 @@ void main() {
       await tester.pump();
       expect(created, [_start.add(const Duration(days: 18))]);
       expect(trimmed, isEmpty);
-      // A drag ending above the footer discards: nothing pinned.
+      // A drag released far up the screen still pins its day (+ and
+      // close), keeps tracking sideways up there, and creates nothing; close
+      // dismisses it.
       final g2 = await tester.startGesture(
         Offset(xOf(5), layout.axis.center.dy),
         kind: kind,
@@ -220,8 +213,21 @@ void main() {
       await tester.pump();
       expect(add, findsOneWidget);
       await g2.moveTo(Offset(xOf(5), layout.plot.top + 4));
+      await g2.moveTo(Offset(xOf(8), layout.plot.top + 4));
       await tester.pump();
+      expect(add, findsOneWidget);
+      expect(bubble().center.dx, closeTo(xOf(8), 1));
       await g2.up();
+      await tester.pump();
+      expect(add, findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
+      expect(find.text('Tap + to add here'), findsOneWidget);
+      expect(
+        find.text(formatOccurrenceDate(_start.add(const Duration(days: 8)))),
+        findsOneWidget,
+      );
+      expect(created, hasLength(1), reason: 'release never creates');
+      await tester.tap(find.byKey(const ValueKey('pick-close')), kind: kind);
       await tester.pump();
       expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
       expect(created, hasLength(1));
