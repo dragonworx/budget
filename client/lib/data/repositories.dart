@@ -1,4 +1,5 @@
 import 'package:decimal/decimal.dart';
+
 import 'api_client.dart';
 import '../features/planning/goal_models.dart';
 import 'models.dart';
@@ -187,11 +188,23 @@ class TransactionRepository {
   }
 
   /// Sends the row version unless [force] (then last write wins).
-  Future<Transaction> update(Transaction transaction, {bool force = false}) async {
+  Future<Transaction> update(
+    Transaction transaction, {
+    bool force = false,
+  }) async {
     final data = await _api.patch(
       '/api/transactions/${transaction.id}',
       body: {
         ...transaction.toCreateJson(),
+        // A patch keeps omitted fields: send the schedule's unset ones as
+        // null so switching end mode (count ↔ date ↔ never) or to once
+        // clears the other field instead of failing validation.
+        'interval': transaction.interval,
+        'unit': transaction.unit?.toJson(),
+        'endDate': transaction.endDate == null
+            ? null
+            : formatDate(transaction.endDate!),
+        'occurrenceCount': transaction.occurrenceCount,
         if (!force && transaction.version != null)
           'version': transaction.version,
       },

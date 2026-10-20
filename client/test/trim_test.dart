@@ -141,6 +141,28 @@ void main() {
     });
   });
 
+  test('popup Trim: only on an occurrence with a later one to drop', () {
+    DateTime w(int n) => _start.add(Duration(days: 7 * n));
+    expect(canTrimAtOccurrence(_tx('n'), w(0)), isTrue, reason: 'first');
+    expect(canTrimAtOccurrence(_tx('n'), w(5)), isTrue);
+    final c = _tx('c', end: EndMode.count, count: 3);
+    expect(canTrimAtOccurrence(c, w(1)), isTrue);
+    expect(canTrimAtOccurrence(c, w(2)), isFalse, reason: 'already last');
+    // Ends mid-week: the last occurrence is before the end date.
+    final u = _tx(
+      'u',
+      end: EndMode.untilDate,
+      endDate: w(3).add(const Duration(days: 3)),
+    );
+    expect(canTrimAtOccurrence(u, w(2)), isTrue);
+    expect(canTrimAtOccurrence(u, w(3)), isFalse, reason: 'already last');
+    expect(
+      canTrimAtOccurrence(_tx('o', mode: RecurrenceMode.once), _start),
+      isFalse,
+    );
+    expect(canTrimAtOccurrence(_tx('d', enabled: false), w(1)), isFalse);
+  });
+
   test('trimmed series ends on the day (inclusive), version kept', () {
     final day = DateTime(2031, 3, 14, 12);
     final t = trimmedTransaction(_tx('c', end: EndMode.count, count: 9), day);

@@ -707,47 +707,28 @@ BalanceExtents includeZero(BalanceExtents range) {
       : BalanceExtents(range.min, pad);
 }
 
-/// Default balance view for a pool's currency scale [unit] (dollars per
-/// grid step): about 10 units tall, always including the origin. When the
-/// data in view ([dataMin]..[dataMax]) fits with zero inside 9 units it is
-/// centred; otherwise the window sits on the side of zero the data is on.
-BalanceExtents currencyScaleRange(
-  double unit,
-  double dataMin,
-  double dataMax, {
-  double? focus,
-}) {
-  final r = _currencyScaleRange(unit, dataMin, dataMax);
-  // When the zero-anchored window would leave [focus] (today's balance) off
-  // screen, centre the 10-unit window on it instead (rounded to a unit).
-  if (focus != null && (focus < r.min || focus > r.max)) {
-    final mid = (focus / unit).roundToDouble() * unit;
-    return BalanceExtents(mid - 5 * unit, mid + 5 * unit);
-  }
-  return r;
-}
+/// Where the default balance view puts the $0 line: this fraction of the
+/// plot height up from the bottom (so 2/3 of the plot is above zero).
+const double zeroAnchorFraction = 1 / 3;
 
-BalanceExtents _currencyScaleRange(
-  double unit,
-  double dataMin,
-  double dataMax,
-) {
-  final lo = math.min(dataMin, 0.0), hi = math.max(dataMax, 0.0);
-  final span = 10 * unit;
-  // One-sided data keeps zero just inside the near edge (more room for it).
-  if (lo >= 0 && hi <= 9.5 * unit) {
-    return BalanceExtents(-0.5 * unit, 9.5 * unit);
-  }
-  if (hi <= 0 && lo >= -9.5 * unit) {
-    return BalanceExtents(-9.5 * unit, 0.5 * unit);
-  }
-  if (hi - lo <= 9 * unit) {
-    final pad = (span - (hi - lo)) / 2;
-    return BalanceExtents(lo - pad, hi + pad);
-  }
-  return hi.abs() >= lo.abs()
-      ? BalanceExtents(-0.5 * unit, 9.5 * unit)
-      : BalanceExtents(-9.5 * unit, 0.5 * unit);
+/// Headroom past the data's furthest balance in the default view.
+const double zeroAnchorHeadroom = 1.2;
+
+/// Default balance view (opening a pool, first data shown, a currency
+/// scale change): zero always sits [zeroAnchorFraction] up the plot.
+///
+/// The span is 10 currency-scale [unit]s when the data in view
+/// ([dataMin]..[dataMax]) fits that way; otherwise it widens (in whole
+/// units) just enough for both the max above and the min below zero to
+/// fit with a little headroom. A [unit] of 0 or less widens freely.
+BalanceExtents currencyScaleRange(double unit, double dataMin, double dataMax) {
+  const f = zeroAnchorFraction;
+  final hi = math.max(dataMax, 0.0), lo = math.min(dataMin, 0.0);
+  final need = math.max(hi / (1 - f), -lo / f) * zeroAnchorHeadroom;
+  var span = unit > 0 ? 10 * unit : 0.0;
+  if (need > span) span = unit > 0 ? (need / unit).ceilToDouble() * unit : need;
+  if (!span.isFinite || span < 1e-9) span = 3;
+  return BalanceExtents(-f * span, (1 - f) * span);
 }
 
 /// Half-size of the opening-balance diamond for a transaction dot [radius]:

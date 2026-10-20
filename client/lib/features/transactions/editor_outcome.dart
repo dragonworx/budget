@@ -52,6 +52,7 @@ String? describeOutcome(EditorOutcome? o) {
       'Cleared ${o.previous?.overrides.length ?? 0} once-off '
           'override${o.previous?.overrides.length == 1 ? '' : 's'} · $name',
     EditorAction.split => 'Changed $name from ${on()} on',
+    EditorAction.trimmed => 'Series trimmed',
   };
 }
 
@@ -135,6 +136,20 @@ void reportEditorOutcome(
           }
           for (final e in previous.overrides.entries) {
             if (!e.key.isBefore(from)) {
+              await notifier.setOverride(
+                previous.id,
+                e.key,
+                direction: e.value.direction,
+                amount: e.value.amount,
+              );
+            }
+          }
+        case EditorAction.trimmed:
+          // Back to the old end, then the once-offs the trim dropped.
+          final previous = o.previous!;
+          await notifier.updateTransaction(previous, force: true);
+          for (final e in previous.overrides.entries) {
+            if (e.key.isAfter(o.date!)) {
               await notifier.setOverride(
                 previous.id,
                 e.key,

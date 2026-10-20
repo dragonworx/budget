@@ -4,6 +4,7 @@ import 'package:budget_client/features/timeline/selection_period.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final _start = DateTime(2026, 10, 1);
@@ -20,7 +21,7 @@ class _H {
 }
 
 /// Balance 1000 until 15 Oct, where a +1000 credit (one dot) lifts it to
-/// 2000. Fitted y range: paddedRange(1000, 2000, include 0) = −240..2240.
+/// 2000. Default y range: currencyScaleRange(0, 1000, 2000) (zero 1/3 up).
 Future<_H> _pump(WidgetTester tester, {bool canAdd = true}) async {
   tester.view.physicalSize = _size;
   tester.view.devicePixelRatio = 1;
@@ -76,7 +77,9 @@ Future<_H> _pump(WidgetTester tester, {bool canAdd = true}) async {
 
 ChartLayout get _l => ChartLayout.of(_size, _days);
 double _x(int i) => _l.plot.left + (i + 0.5) / _days * _l.plot.width;
-double _y(double v) => _l.plot.bottom - (v + 240) / 2480 * _l.plot.height;
+final _yr = currencyScaleRange(0, 1000, 2000);
+double _y(double v) =>
+    _l.plot.bottom - (v - _yr.min) / (_yr.max - _yr.min) * _l.plot.height;
 double get _dayPx => _l.plot.width / _days;
 
 final _card = find.byKey(const ValueKey('selection-card'));

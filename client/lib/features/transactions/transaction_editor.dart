@@ -41,6 +41,9 @@ enum EditorAction {
 
   /// From now on: the series was split at [EditorOutcome.date].
   split,
+
+  /// The dot popup's Trim: the series now ends on [EditorOutcome.date].
+  trimmed,
 }
 
 /// The editor's save choices on a repeating series' occurrence.

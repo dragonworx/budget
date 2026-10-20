@@ -6,29 +6,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('currencyScaleRange', () {
-    test('10 units tall, origin visible, data centred when it fits', () {
+  group('currencyScaleRange: zero a third up the plot', () {
+    double zeroFrac(BalanceExtents r) => (0 - r.min) / (r.max - r.min);
+    test('10 units tall when the data fits', () {
       final r = currencyScaleRange(100, 200, 500);
       expect(r.max - r.min, closeTo(1000, 1e-9));
-      expect(r.min, lessThanOrEqualTo(0));
+      expect(zeroFrac(r), closeTo(1 / 3, 1e-9));
       expect(r.max, greaterThanOrEqualTo(500));
     });
-    test('large positive data: window above zero', () {
+    test('large positive data widens in whole units, zero stays put', () {
       final r = currencyScaleRange(10, 4000, 6000);
-      expect(r.min, -5);
-      expect(r.max, 95);
+      expect(zeroFrac(r), closeTo(1 / 3, 1e-9));
+      expect(r.max, greaterThan(6000));
+      expect((r.max - r.min) % 10, closeTo(0, 1e-6));
     });
-    test('large negative data: window below zero', () {
+    test('large negative data: the min fits below zero', () {
       final r = currencyScaleRange(1000, -50000, -20000);
-      expect(r.min, -9500);
-      expect(r.max, 500);
+      expect(zeroFrac(r), closeTo(1 / 3, 1e-9));
+      expect(r.min, lessThan(-50000));
+    });
+    test('both sides fit; no unit still anchors', () {
+      final r = currencyScaleRange(100, -2000, 9000);
+      expect(zeroFrac(r), closeTo(1 / 3, 1e-9));
+      expect(r.min, lessThan(-2000));
+      expect(r.max, greaterThan(9000));
+      final z = currencyScaleRange(0, 0, 0);
+      expect(zeroFrac(z), closeTo(1 / 3, 1e-9));
+      expect(z.max - z.min, greaterThan(0));
     });
   });
 
   test('Pool json round-trips currencyScale, defaults to 100', () {
     final a = Pool.fromJson({
-      'id': 'a', 'name': 'n', 'currency': 'AUD',
-      'seedBalance': '0', 'seedDate': '2026-10-01',
+      'id': 'a',
+      'name': 'n',
+      'currency': 'AUD',
+      'seedBalance': '0',
+      'seedDate': '2026-10-01',
     });
     expect(a.currencyScale, 100);
     final b = Pool.fromJson({...a.toJson(), 'currencyScale': 1000});
@@ -44,20 +58,24 @@ void main() {
 
   testWidgets('edit dialog changes Currency Scale', (tester) async {
     final existing = Pool(
-      id: 'a1', name: 'Main',
-      seedBalance: Decimal.zero, seedDate: DateTime(2026, 10, 16),
-      lossThreshold: Decimal.zero, currencyScale: 1000,
+      id: 'a1',
+      name: 'Main',
+      seedBalance: Decimal.zero,
+      seedDate: DateTime(2026, 10, 16),
+      lossThreshold: Decimal.zero,
+      currencyScale: 1000,
     );
     late Future<Pool?> result;
-    await tester.pumpWidget(MaterialApp(
-      home: Builder(
-        builder: (c) => TextButton(
-          onPressed: () => result =
-              showPoolDialog(c, existing: existing),
-          child: const Text('open'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (c) => TextButton(
+            onPressed: () => result = showPoolDialog(c, existing: existing),
+            child: const Text('open'),
+          ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.text('Currency Scale'), findsOneWidget);
@@ -79,17 +97,18 @@ void main() {
     expect(Pool.autoCurrencyScale(5e9), 1000000);
   });
 
-  testWidgets('new pool defaults to Hundreds; a pick sticks',
-      (tester) async {
+  testWidgets('new pool defaults to Hundreds; a pick sticks', (tester) async {
     late Future<Pool?> result;
-    await tester.pumpWidget(MaterialApp(
-      home: Builder(
-        builder: (c) => TextButton(
-          onPressed: () => result = showPoolDialog(c),
-          child: const Text('open'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (c) => TextButton(
+            onPressed: () => result = showPoolDialog(c),
+            child: const Text('open'),
+          ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(Pool.defaultCurrencyScale, 100);
@@ -105,17 +124,20 @@ void main() {
     expect((await result)!.toCreateJson()['currencyScale'], 100);
   });
 
-  testWidgets('new pool: an explicit Currency Scale pick is kept',
-      (tester) async {
+  testWidgets('new pool: an explicit Currency Scale pick is kept', (
+    tester,
+  ) async {
     late Future<Pool?> result;
-    await tester.pumpWidget(MaterialApp(
-      home: Builder(
-        builder: (c) => TextButton(
-          onPressed: () => result = showPoolDialog(c),
-          child: const Text('open'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (c) => TextButton(
+            onPressed: () => result = showPoolDialog(c),
+            child: const Text('open'),
+          ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.tap(find.byType(DropdownButtonFormField<int>));

@@ -881,6 +881,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                               removed,
                                             )
                                           : null,
+                                      onTrimOccurrence: pool.role.canEdit
+                                          ? (t, day) => _trimAt(context, t, day)
+                                          : null,
                                       onEditTransaction: pool.role.canEdit
                                           ? (t, date) => _openEditor(
                                               context,
@@ -1616,6 +1619,49 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           ),
         );
       }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
+      }
+    }
+  }
+
+  /// The dot popup's Trim: end the series on [day] (that occurrence is
+  /// now the last). No dialog: the explicit tap is the ask and the 5s
+  /// "Series trimmed" tip has Undo (old end + the once-offs it dropped;
+  /// the server prunes overrides past the new end on the same update).
+  Future<void> _trimAt(
+    BuildContext context,
+    Transaction t,
+    DateTime day,
+  ) async {
+    final current =
+        ref
+            .read(transactionsProvider(widget.poolId))
+            .valueOrNull
+            ?.where((x) => x.id == t.id)
+            .firstOrNull ??
+        t;
+    try {
+      final n = ref.read(transactionsProvider(widget.poolId).notifier);
+      final trimmed = trimmedTransaction(current, day);
+      final r = await saveWithConflictCheck(
+        context,
+        save: (force) => n.updateTransaction(trimmed, force: force),
+        reload: n.refresh,
+      );
+      _invalidateBalance();
+      if (r != SaveResult.saved || !context.mounted) return;
+      _report(
+        context,
+        EditorOutcome(
+          action: EditorAction.trimmed,
+          transaction: trimmed,
+          previous: current,
+          date: dateOnly(day),
+        ),
+      );
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)

@@ -49,6 +49,28 @@ Transaction _tx(String id, String name, {TransactionDirection? dir}) =>
       endMode: EndMode.never,
     );
 
+Transaction _withOverrides(
+  Transaction t,
+  Map<DateTime, OccurrenceOverride> overrides,
+) => Transaction(
+  id: t.id,
+  poolId: t.poolId,
+  name: t.name,
+  direction: t.direction,
+  amount: t.amount,
+  startDate: t.startDate,
+  recurrenceMode: t.recurrenceMode,
+  interval: t.interval,
+  unit: t.unit,
+  endMode: t.endMode,
+  endDate: t.endDate,
+  occurrenceCount: t.occurrenceCount,
+  enabled: t.enabled,
+  transfer: t.transfer,
+  version: t.version,
+  overrides: overrides,
+);
+
 /// In-memory server: transactions, skips and a flat balance.
 class _Store {
   final txs = <String, Transaction>{
@@ -108,7 +130,28 @@ class _TxRepo extends TransactionRepository {
   @override
   Future<Transaction> update(Transaction t, {bool force = false}) async {
     s.calls.add('update ${t.id} ${t.interval} ${t.unit?.name}');
-    return s.txs[t.id] = t;
+    // Like the server: overrides no longer on an occurrence are pruned.
+    final end = t.endMode == EndMode.untilDate ? t.endDate : null;
+    return s.txs[t.id] = _withOverrides(t, {
+      for (final e in t.overrides.entries)
+        if (end == null || !e.key.isAfter(end)) e.key: e.value,
+    });
+  }
+
+  @override
+  Future<Transaction> setOverride(
+    String transactionId,
+    DateTime date, {
+    required TransactionDirection direction,
+    required Decimal amount,
+    int? version,
+  }) async {
+    s.calls.add('override $transactionId');
+    final t = s.txs[transactionId]!;
+    return s.txs[transactionId] = _withOverrides(t, {
+      ...t.overrides,
+      date: OccurrenceOverride(direction: direction, amount: amount),
+    });
   }
 
   @override
@@ -168,7 +211,7 @@ Future<_Store> _pump(
 Future<Offset> _revealTip(WidgetTester tester, PointerDeviceKind kind) async {
   final plot = tester.getRect(find.byType(BalanceChart));
   final tip = find.byKey(const ValueKey('occurrence-tooltip'));
-  for (var fy = 0.1; fy < 0.8; fy += 0.03) {
+  for (var fy = 0.02; fy < 0.98; fy += 0.03) {
     for (var fx = 0.3; fx < 0.98; fx += 0.04) {
       final p = Offset(
         plot.left + plot.width * fx,
@@ -588,7 +631,7 @@ void main() {
     final tip = find.textContaining('Balance end of day');
     // Find a spot where a plain tap shows a dot's info.
     Offset? spot;
-    for (var fy = 0.1; fy < 0.8 && spot == null; fy += 0.03) {
+    for (var fy = 0.02; fy < 0.98 && spot == null; fy += 0.03) {
       for (var fx = 0.3; fx < 0.98 && spot == null; fx += 0.04) {
         final p = Offset(
           plot.left + plot.width * fx,
@@ -631,7 +674,7 @@ void main() {
     final plot = tester.getRect(find.byType(BalanceChart));
     final tip = find.byKey(const ValueKey('occurrence-tooltip'));
     Offset? spot;
-    for (var fy = 0.1; fy < 0.8 && spot == null; fy += 0.03) {
+    for (var fy = 0.02; fy < 0.98 && spot == null; fy += 0.03) {
       for (var fx = 0.3; fx < 0.98 && spot == null; fx += 0.04) {
         final p = Offset(
           plot.left + plot.width * fx,
@@ -683,7 +726,7 @@ void main() {
     final pill = find.byKey(const ValueKey('y-highlight'));
     final line = find.byKey(const ValueKey('y-highlight-line'));
     Future<Offset> reveal() async {
-      for (var fy = 0.1; fy < 0.8; fy += 0.03) {
+      for (var fy = 0.02; fy < 0.98; fy += 0.03) {
         for (var fx = 0.3; fx < 0.98; fx += 0.04) {
           final p = Offset(
             plot.left + plot.width * fx,
@@ -743,7 +786,7 @@ void main() {
       final col = find.byKey(const ValueKey('x-highlight-day'));
       final yPill = find.byKey(const ValueKey('y-highlight'));
       Future<void> reveal() async {
-        for (var fy = 0.1; fy < 0.8; fy += 0.03) {
+        for (var fy = 0.02; fy < 0.98; fy += 0.03) {
           for (var fx = 0.3; fx < 0.98; fx += 0.04) {
             final p = Offset(
               chart.left + chart.width * fx,
@@ -856,7 +899,7 @@ void main() {
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: plot.topLeft);
     Offset? dot;
-    for (var fy = 0.1; fy < 0.8 && dot == null; fy += 0.02) {
+    for (var fy = 0.02; fy < 0.98 && dot == null; fy += 0.02) {
       for (var fx = 0.3; fx < 0.98 && dot == null; fx += 0.02) {
         final p = Offset(
           plot.left + plot.width * fx,
@@ -966,7 +1009,7 @@ void main() {
     final plot = tester.getRect(find.byType(BalanceChart));
     final tip = find.byKey(const ValueKey('occurrence-tooltip'));
     Offset? spot;
-    for (var fy = 0.1; fy < 0.8 && spot == null; fy += 0.03) {
+    for (var fy = 0.02; fy < 0.98 && spot == null; fy += 0.03) {
       for (var fx = 0.3; fx < 0.98 && spot == null; fx += 0.04) {
         final p = Offset(
           plot.left + plot.width * fx,
@@ -1452,6 +1495,36 @@ void main() {
     );
   });
 
+  test('heatmap blend: one gradient stop per cell centre; an active day '
+      'keeps its colour, quiet neighbours get a fading glow', () {
+    final cells = [0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, -50.0, 0.0, 30.0];
+    final c = heatmapBlend(cells);
+    expect(c.length, cells.length);
+    double dist(Color x) =>
+        (x.r - heatmapNeutral.r).abs() +
+        (x.g - heatmapNeutral.g).abs() +
+        (x.b - heatmapNeutral.b).abs();
+    bool greenish(Color x) => x.g > x.r + 0.02;
+    expect(c[3], AppTheme.creditColor, reason: 'active day exact');
+    expect(c[8], heatmapColor(-50, 100));
+    expect(greenish(c[2]) && greenish(c[4]), isTrue);
+    expect(dist(c[4]), lessThan(dist(c[3])));
+    expect(dist(c[5]), lessThan(dist(c[4])));
+    expect(dist(c[5]), greaterThan(0));
+    expect(c[0], heatmapNeutral, reason: '3 cells away: neutral');
+    // Between a loss and a gain the glows cancel towards neutral.
+    expect(dist(c[9]), lessThan(dist(c[7]) * 0.5));
+    final p = HeatmapPainter(colors: c);
+    expect(p.gradient!.colors, c);
+    expect(p.stops.length, c.length);
+    expect(p.stops.first, closeTo(0.5 / c.length, 1e-9));
+    expect(p.stops.last, closeTo(1 - 0.5 / c.length, 1e-9));
+    for (var i = 1; i < p.stops.length; i++) {
+      expect(p.stops[i], greaterThan(p.stops[i - 1]));
+    }
+    expect(HeatmapPainter(colors: [heatmapNeutral]).gradient, isNull);
+  });
+
   for (final size in const [Size(390, 844), Size(1440, 900)]) {
     testWidgets('${size.width.toInt()}px heatmap: a cell per visible day, '
         'coloured by the day net (Rent red, Salary green), live on zoom; '
@@ -1484,6 +1557,12 @@ void main() {
       expect(gains, greaterThan(0), reason: 'Salary (net +) days');
       expect(colors.where(reddish), isEmpty, reason: 'no net-loss days here');
       expect(colors.where((c) => c == heatmapNeutral), isNotEmpty);
+      // One continuous gradient: a stop per day centre, not blocks.
+      final g = painter().gradient!;
+      expect(g.colors, colors);
+      expect(g.stops, painter().stops);
+      expect(g.stops!.length, colors.length);
+      expect(painter().todayFraction, isNotNull, reason: 'today marker');
       // Zooming out changes the cells live.
       final n0 = colors.length;
       tester
@@ -1729,6 +1808,106 @@ void main() {
     await tester.tap(find.text('Pool settings'));
     await tester.pumpAndSettle();
     expect(find.byType(Dialog), findsOneWidget);
+  });
+
+  for (final (size, label) in const [
+    (Size(390, 844), 'phone'),
+    (Size(1440, 900), 'desktop'),
+  ]) {
+    testWidgets('on open the \$0 line sits a third up the plot ($label)', (
+      tester,
+    ) async {
+      final zeros = <(double, Rect)>[];
+      debugZeroLine = (y, plot) => zeros.add((y, plot));
+      addTearDown(() => debugZeroLine = null);
+      await _pump(tester, size: size);
+      expect(zeros, isNotEmpty);
+      final (y, plot) = zeros.last;
+      expect(y, closeTo(plot.top + 2 / 3 * plot.height, 0.5));
+    });
+  }
+
+  testWidgets('popup Trim ends that row\'s series at the tapped occurrence; '
+      'the 5s tip\'s Undo restores the end and once-offs', (tester) async {
+    final far = _day.add(const Duration(days: 70));
+    for (final (size, kind) in const [
+      (Size(390, 844), PointerDeviceKind.touch),
+      (Size(1440, 900), PointerDeviceKind.mouse),
+    ]) {
+      final store = await _pump(
+        tester,
+        size: size,
+        setup: (s) => s.txs['rent'] = _withOverrides(s.txs['rent']!, {
+          far: OccurrenceOverride(
+            direction: TransactionDirection.debit,
+            amount: Decimal.fromInt(99),
+          ),
+        }),
+      );
+      store.calls.clear();
+      await _revealTip(tester, kind);
+      // Rent and Salary share each dot: one Trim per row.
+      final trimRent = find.byKey(const ValueKey('tip-trim-rent'));
+      expect(trimRent, findsOneWidget);
+      expect(find.byKey(const ValueKey('tip-trim-salary')), findsOneWidget);
+      expect(store.calls.where((c) => !c.startsWith('balance')), isEmpty);
+      await tester.tap(trimRent, kind: kind);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      final rent = store.txs['rent']!;
+      expect(rent.endMode, EndMode.untilDate);
+      final end = rent.endDate!;
+      expect(
+        estimateOccurrenceDates(rent, maxCount: 400).last,
+        end,
+        reason: 'the tapped occurrence is the last one',
+      );
+      expect(rent.overrides, isEmpty, reason: 'once-off past the end goes');
+      expect(store.txs['salary']!.endMode, EndMode.never);
+      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+      final tip = find.byKey(const ValueKey('undo-tip'));
+      expect(tip, findsOneWidget);
+      expect(
+        find.descendant(of: tip, matching: find.text('Series trimmed')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Undo'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      final back = store.txs['rent']!;
+      expect(back.endMode, EndMode.never);
+      expect(back.endDate, isNull);
+      expect(back.overrides.keys, [far]);
+      await tester.pump(const Duration(seconds: 6));
+    }
+  });
+
+  testWidgets('popup Trim: none for viewers, nor on a series\' last '
+      'occurrence', (tester) async {
+    await _pump(tester, setup: (s) => s.role = Role.viewer);
+    await _revealTip(tester, PointerDeviceKind.mouse);
+    expect(find.byKey(const ValueKey('tip-trim-rent')), findsNothing);
+    expect(find.byKey(const ValueKey('tip-trim-salary')), findsNothing);
+    // Every dot is Rent's last (and only) occurrence: no Trim for it.
+    await _pump(
+      tester,
+      size: const Size(390, 844),
+      setup: (s) {
+        s.txs['rent'] = s.txs['rent']!.copyWith(
+          endMode: EndMode.count,
+          occurrenceCount: 1,
+          startDate: _day,
+        );
+        s.txs['salary'] = s.txs['salary']!.copyWith(
+          endMode: EndMode.count,
+          occurrenceCount: 1,
+          startDate: _day,
+        );
+      },
+    );
+    await _revealTip(tester, PointerDeviceKind.touch);
+    expect(find.byKey(const ValueKey('tip-trim-rent')), findsNothing);
+    expect(find.byKey(const ValueKey('tip-trim-salary')), findsNothing);
   });
 }
 

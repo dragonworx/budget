@@ -92,6 +92,10 @@ typedef _LabelLine = ({String? name, String? more});
 @visibleForTesting
 void Function(String row, String text, Rect rect)? debugAxisLabel;
 
+/// Test hook: where the $0 line was painted, and the plot it sits in.
+@visibleForTesting
+void Function(double y, Rect plot)? debugZeroLine;
+
 class BalanceChart extends StatefulWidget {
   const BalanceChart({
     super.key,
@@ -121,6 +125,7 @@ class BalanceChart extends StatefulWidget {
     this.onPlanPeriod,
     this.onAddForPeriod,
     this.onTrimOnDay,
+    this.onTrimOccurrence,
     this.onEditTransaction,
     this.lineStart,
     this.combinedPools = const {},
@@ -152,6 +157,11 @@ class BalanceChart extends StatefulWidget {
 
   /// Trim zone release (see the class docs). Null: no Trim (viewers).
   final TrimOnDay? onTrimOnDay;
+
+  /// "Trim" on a recurring row of the dot popup: end that series on the
+  /// tapped occurrence (it becomes the last one). Null: no Trim (viewers).
+  /// Only the current pool's own series get it; only that tap calls it.
+  final EditOccurrence? onTrimOccurrence;
 
   /// "Plan…" in the selection card: opens the goal planner pre-filled with
   /// the selected range. Opens a panel only; never edits data.
@@ -213,8 +223,9 @@ class BalanceChart extends StatefulWidget {
   /// Closing balances below this value are drawn as a loss (equal is not).
   final double lossThreshold;
 
-  /// Pool currency scale (dollars per y grid step). When set, the chart
-  /// opens at [currencyScaleRange] and re-applies it whenever it changes.
+  /// Pool currency scale (dollars per y grid step). The chart opens at
+  /// [currencyScaleRange] (zero a third up the plot) and re-applies it
+  /// whenever the scale changes.
   final double? currencyScale;
 
   final DateTime viewStart;
@@ -520,13 +531,12 @@ class _BalanceChartState extends State<BalanceChart>
     if (_yRange != null) return _yRange;
     final visible = _visible();
     if (visible == null) return null;
-    final unit = widget.currencyScale;
-    if (_scaleDefault && unit != null && unit > 0) {
+    // The default view anchors $0 a third of the way up the plot.
+    if (_scaleDefault) {
       return _yRange = currencyScaleRange(
-        unit,
+        widget.currencyScale ?? 0,
         visible.extents.min,
         visible.extents.max,
-        focus: _todayBalanceInView(),
       );
     }
     // Fits always include the origin, so the zero line is in view.
@@ -538,21 +548,6 @@ class _BalanceChartState extends State<BalanceChart>
         if (widget.seedBalance != null && _seedInView) widget.seedBalance!,
       ],
     );
-  }
-
-  /// Closing balance today when today is in view (for the opening y range).
-  double? _todayBalanceInView() {
-    final today = dateOnly(DateTime.now());
-    final end = addDays(widget.viewStart, widget.visibleDays);
-    if (today.isBefore(dateOnly(widget.viewStart)) || !today.isBefore(end)) {
-      return null;
-    }
-    double? v;
-    for (final p in widget.series.points) {
-      if (p.date.isAfter(today)) break;
-      v = p.closingBalance.toDouble();
-    }
-    return v;
   }
 
   /// Where the line starts: the seed, or the earliest combined seed.
@@ -1315,6 +1310,25 @@ class _BalanceChartState extends State<BalanceChart>
     }
     return seen.values.toList();
   }
+
+  /// The popup row's "Trim": ends [t] on [o]'s day.
+  Widget _trimButton(Transaction t, Occurrence o) => Align(
+    alignment: Alignment.centerRight,
+    child: TextButton.icon(
+      key: ValueKey('tip-trim-${t.id}'),
+      style: TextButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        minimumSize: const Size(64, 34),
+      ),
+      icon: const Icon(Icons.content_cut_rounded, size: 16),
+      label: const Text('Trim'),
+      onPressed: () {
+        _hideTip();
+        widget.onTrimOccurrence?.call(t, dateOnly(o.date));
+      },
+    ),
+  );
 
   String _nameOf(Transaction t) {
     final raw = widget.transactionNames[t.id] ?? t.name;
@@ -2956,6 +2970,7 @@ class _BalanceChartState extends State<BalanceChart>
     final more = entries.length - shown.length;
     final small = theme.textTheme.bodySmall ?? const TextStyle();
     final children = <Widget>[];
+    var trimRows = 0;
     for (final (dot, o) in shown) {
       if (o == null) {
         if (children.isNotEmpty) children.add(const Divider(height: 12));
@@ -3008,6 +3023,14 @@ class _BalanceChartState extends State<BalanceChart>
         if (t != null && t.overrideOn(o.date) != null)
           'Once-off (series ${formatSignedAmount(t.signedAmount.toDouble())})',
       ];
+      // Trim: the current pool's own recurring series only (another pool's
+      // series is edited in that pool).
+      final own = widget.transactions[o.transactionId];
+      final trimmable =
+          widget.onTrimOccurrence != null &&
+          own != null &&
+          canTrimAtOccurrence(own, o.date);
+      if (trimmable) trimRows++;
       if (children.isNotEmpty) children.add(const Divider(height: 12));
       children.add(
         Column(
@@ -3088,6 +3111,7 @@ class _BalanceChartState extends State<BalanceChart>
                   color: AppTheme.warning,
                 ),
               ),
+            if (trimmable) _trimButton(own, o),
           ],
         ),
       );
@@ -3204,6 +3228,7 @@ class _BalanceChartState extends State<BalanceChart>
         30.0 +
         shown.length * 66.0 +
         poolRows * 16 +
+        trimRows * 36 +
         (more > 0 ? 20 : 0) +
         extra;
     // Right of the dot, flipping left / up near the edges.
@@ -3987,6 +4012,7 @@ class _BalanceChartPainter extends CustomPainter {
 
     if (scale.yMin < 0 && scale.yMax > 0) {
       final y = scale.yOf(0);
+      debugZeroLine?.call(y, layout.plot);
       canvas.drawLine(
         Offset(layout.plot.left, y),
         Offset(layout.plot.right, y),

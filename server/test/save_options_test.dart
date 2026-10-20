@@ -80,16 +80,15 @@ void main() {
 
   Future<Map<String, dynamic>> create(
       String who, String a, Map<String, Object?> body) async {
-    final r = await h.call('POST', '/api/pools/$a/transactions',
-        as: who, body: body);
+    final r =
+        await h.call('POST', '/api/pools/$a/transactions', as: who, body: body);
     expect(r.status, 201, reason: '${r.json}');
     return r.json as Map<String, dynamic>;
   }
 
   Future<List<String>> deltas(String who, String a, String to) async {
-    final b = await h.call(
-        'GET', '/api/pools/$a/balance?from=2026-01-01&to=$to',
-        as: who);
+    final b = await h
+        .call('GET', '/api/pools/$a/balance?from=2026-01-01&to=$to', as: who);
     expect(b.status, 200, reason: '${b.json}');
     return [
       for (final o in b.json['occurrences'] as List)
@@ -446,5 +445,55 @@ void main() {
             'SELECT 1 FROM occurrence_overrides WHERE transaction_id = @t::uuid'),
         parameters: {'t': t['id']});
     expect(rows, isEmpty);
+  });
+
+  test(
+      'trim (dot popup): a counted series ends on an occurrence; later '
+      'overrides go; undo restores the count and they can be set again',
+      () async {
+    if (!h.ok) return markTestSkipped('no test DB');
+    final s = await h.seed('o9', 'Trim');
+    final t =
+        await create('o9', s.a, weekly('Gym', endMode: 'count', count: 6));
+    final id = t['id'];
+    for (final d in ['2026-01-12', '2026-01-26']) {
+      final r = await h.call('PUT', '/api/transactions/$id/overrides/$d',
+          as: 'o9', body: {'amount': '7', 'direction': 'debit'});
+      expect(r.status, 200, reason: '${r.json}');
+    }
+    // What the client sends: the full schedule, unset fields as null.
+    final full = {
+      ...weekly('Gym'),
+      'endMode': 'untilDate',
+      'endDate': '2026-01-19',
+      'occurrenceCount': null,
+    };
+    final trim =
+        await h.call('PATCH', '/api/transactions/$id', as: 'o9', body: full);
+    expect(trim.status, 200, reason: '${trim.json}');
+    expect(trim.json['endMode'], 'until_date');
+    expect(trim.json['occurrenceCount'], isNull);
+    expect(trim.json['overrides'], [
+      {'date': '2026-01-12', 'direction': 'debit', 'amount': '7'}
+    ]);
+    final d = await deltas('o9', s.a, '2026-03-01');
+    expect(d.where((x) => !x.startsWith('2026-01-01')),
+        ['2026-01-05 -100', '2026-01-12 -7', '2026-01-19 -100']);
+    // Undo: back to 6 times (endDate cleared), then the dropped once-off.
+    final undo =
+        await h.call('PATCH', '/api/transactions/$id', as: 'o9', body: {
+      ...weekly('Gym'),
+      'endMode': 'count',
+      'endDate': null,
+      'occurrenceCount': 6,
+    });
+    expect(undo.status, 200, reason: '${undo.json}');
+    expect(undo.json['endDate'], isNull);
+    expect(undo.json['occurrenceCount'], 6);
+    final again = await h.call(
+        'PUT', '/api/transactions/$id/overrides/2026-01-26',
+        as: 'o9', body: {'amount': '7', 'direction': 'debit'});
+    expect(again.status, 200);
+    expect((again.json['overrides'] as List).length, 2);
   });
 }

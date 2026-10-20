@@ -2,6 +2,7 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
+import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final _start = DateTime(2026, 10, 1);
@@ -51,8 +52,10 @@ Future<(List<(DateTime, double)>, List<DateTime>, List<DateTime>)> _pump(
 
 ChartLayout get _l => ChartLayout.of(_size, _days);
 double _x(int i) => _l.plot.left + (i + 0.5) / _days * _l.plot.width;
-// Fitted y range: −240..2240 (see selection_mode_test).
-double _y(double v) => _l.plot.bottom - (v + 240) / 2480 * _l.plot.height;
+// Default y range: zero 1/3 up (see selection_mode_test).
+final _yr = currencyScaleRange(0, 1000, 2000);
+double _y(double v) =>
+    _l.plot.bottom - (v - _yr.min) / (_yr.max - _yr.min) * _l.plot.height;
 
 void main() {
   testWidgets('target tool: tap sets the target day and balance', (t) async {

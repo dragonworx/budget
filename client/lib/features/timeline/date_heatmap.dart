@@ -59,14 +59,54 @@ List<double> heatmapBuckets(
 /// Neutral cell (no money moved).
 const Color heatmapNeutral = Color(0xFF222B36);
 
-/// A cell's colour: credit for a net gain, debit for a loss, neutral for 0.
-/// Intensity is sqrt(|v| / maxAbs) so small days still show, from 30% up.
+/// Signed colour mix for a net [v]: + towards credit, − towards debit, 0
+/// neutral. Intensity is sqrt(|v| / maxAbs) so small days still show,
+/// from 30% up.
 @visibleForTesting
-Color heatmapColor(double v, double maxAbs) {
-  if (v.abs() < 0.005 || maxAbs <= 0) return heatmapNeutral;
+double heatmapMix(double v, double maxAbs) {
+  if (v.abs() < 0.005 || maxAbs <= 0) return 0;
   final t = math.sqrt((v.abs() / maxAbs).clamp(0.0, 1.0));
-  final hue = v > 0 ? AppTheme.creditColor : AppTheme.debitColor;
-  return Color.lerp(heatmapNeutral, hue, 0.3 + 0.7 * t)!;
+  return v.sign * (0.3 + 0.7 * t);
+}
+
+/// The colour for a signed [mix] (see [heatmapMix]).
+Color heatmapMixColor(double mix) {
+  if (mix.abs() < 1e-6) return heatmapNeutral;
+  final hue = mix > 0 ? AppTheme.creditColor : AppTheme.debitColor;
+  return Color.lerp(heatmapNeutral, hue, mix.abs().clamp(0.0, 1.0))!;
+}
+
+/// A cell's colour: credit for a net gain, debit for a loss, neutral for 0.
+@visibleForTesting
+Color heatmapColor(double v, double maxAbs) =>
+    heatmapMixColor(heatmapMix(v, maxAbs));
+
+/// Glow an active cell casts on quiet neighbours 1 and 2 cells away (a
+/// slight gaussian, so an isolated day reads as a soft band, not a hairline).
+const List<double> heatmapGlow = [0.4, 0.15];
+
+/// Gradient colour per cell centre for bucket nets [cells]: an active cell
+/// keeps its own colour exactly; a quiet (0) cell takes the summed glow of
+/// active neighbours (gains and losses beside each other cancel).
+@visibleForTesting
+List<Color> heatmapBlend(List<double> cells) {
+  final maxAbs = cells.fold<double>(0, (m, v) => math.max(m, v.abs()));
+  final mix = [for (final v in cells) heatmapMix(v, maxAbs)];
+  return [
+    for (var i = 0; i < mix.length; i++)
+      if (mix[i] != 0)
+        heatmapMixColor(mix[i])
+      else
+        heatmapMixColor(() {
+          var g = 0.0;
+          for (var d = 1; d <= heatmapGlow.length; d++) {
+            for (final j in [i - d, i + d]) {
+              if (j >= 0 && j < mix.length) g += heatmapGlow[d - 1] * mix[j];
+            }
+          }
+          return g.clamp(-1.0, 1.0);
+        }()),
+  ];
 }
 
 /// The date-range control: start date at the left, end date at the right,
@@ -148,10 +188,6 @@ class DateRangeHeatmap extends StatelessWidget {
                               (box.maxWidth / heatmapMinCell).floor(),
                             ),
                           );
-                          final maxAbs = cells.fold<double>(
-                            0,
-                            (m, v) => math.max(m, v.abs()),
-                          );
                           final a = dayCoord(from);
                           final span = dayCoord(to) - a + 1; // inclusive days
                           final t = today == null
@@ -161,9 +197,7 @@ class DateRangeHeatmap extends StatelessWidget {
                             key: const ValueKey('range-heatmap'),
                             size: Size(box.maxWidth, height - 16),
                             painter: HeatmapPainter(
-                              colors: [
-                                for (final v in cells) heatmapColor(v, maxAbs),
-                              ],
+                              colors: heatmapBlend(cells),
                               todayFraction: t != null && t >= 0 && t <= 1
                                   ? t
                                   : null,
@@ -190,33 +224,39 @@ class DateRangeHeatmap extends StatelessWidget {
   }
 }
 
-/// Paints the heatmap cells left to right and a thin today marker.
+/// Paints the heatmap as one continuous horizontal gradient (a stop at each
+/// cell's centre, so adjacent days blend) and a thin today marker.
 class HeatmapPainter extends CustomPainter {
   HeatmapPainter({required this.colors, this.todayFraction});
 
+  /// Colour at each cell centre, left to right.
   final List<Color> colors;
   final double? todayFraction;
+
+  /// Gradient stops: the cell centres as fractions of the width.
+  List<double> get stops => [
+    for (var i = 0; i < colors.length; i++) (i + 0.5) / colors.length,
+  ];
+
+  /// The gradient filling the strip (null: a single solid colour).
+  LinearGradient? get gradient =>
+      colors.length < 2 ? null : LinearGradient(colors: colors, stops: stops);
 
   @override
   void paint(Canvas canvas, Size size) {
     if (colors.isEmpty || size.width <= 0) return;
-    final w = size.width / colors.length;
-    final gap = w >= 5 ? 1.0 : 0.0;
-    final r = Radius.circular(math.min(2, w / 3));
+    final rect = Offset.zero & size;
+    final g = gradient;
     final paint = Paint();
-    for (var i = 0; i < colors.length; i++) {
-      paint.color = colors[i];
-      canvas.drawRRect(
-        RRect.fromLTRBR(
-          i * w + gap / 2,
-          0,
-          (i + 1) * w - gap / 2,
-          size.height,
-          r,
-        ),
-        paint,
-      );
+    if (g == null) {
+      paint.color = colors.first;
+    } else {
+      paint.shader = g.createShader(rect);
     }
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(3)),
+      paint,
+    );
     final t = todayFraction;
     if (t != null) {
       final x = t * size.width;
