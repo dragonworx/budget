@@ -1540,6 +1540,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           // Narrow panels: icon-only delete, no shortcut hint.
           // (the save-options arrow needs a little more room).
           final roomy = c.maxWidth >= (_offerSaveOptions ? 490 : 430);
+          final narrow = c.maxWidth < 320;
           return Row(
             children: [
               if (!_isNew && !widget.readOnly)
@@ -1573,10 +1574,16 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               ],
               TextButton(
                 onPressed: _close,
+                // 320px phones: tighter, so Delete + Cancel + Save ▾ fit.
+                style: narrow
+                    ? TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      )
+                    : null,
                 child: Text(widget.readOnly ? 'Close' : 'Cancel'),
               ),
               if (!widget.readOnly) ...[
-                const SizedBox(width: 8),
+                SizedBox(width: narrow ? 4 : 8),
                 _saveButton(),
               ],
             ],

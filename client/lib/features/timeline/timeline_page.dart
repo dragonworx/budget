@@ -1017,6 +1017,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                       onTrimOccurrence: pool.role.canEdit
                                           ? (t, day) => _trimAt(context, t, day)
                                           : null,
+                                      onNewOnDay: pool.role.canEdit
+                                          ? (day) => _openEditor(
+                                              context,
+                                              pool,
+                                              initialDate: day,
+                                            )
+                                          : null,
                                       onEditTransaction: pool.role.canEdit
                                           ? (t, date) => _openEditor(
                                               context,

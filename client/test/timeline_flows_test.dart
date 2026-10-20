@@ -8,6 +8,7 @@ import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/planning/plan_panel.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/occurrence_dates.dart';
+import 'package:budget_client/features/timeline/occurrence_info.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
@@ -858,12 +859,6 @@ void main() {
       final store = await _pump(tester, size: size, setup: _singles);
       await _revealTip(tester, kind);
       final tip = find.byKey(const ValueKey('occurrence-tooltip'));
-      final edit = find.byKey(const ValueKey('tip-edit'));
-      expect(edit, findsOneWidget);
-      expect(
-        find.descendant(of: edit, matching: find.text('Edit')),
-        findsOneWidget,
-      );
       // Which transaction the popup shows.
       final name = ['Rent', 'Salary'].firstWhere(
         (n) => find
@@ -871,6 +866,12 @@ void main() {
             .evaluate()
             .isNotEmpty,
       );
+      final edit = find.byKey(ValueKey('tip-edit-${name.toLowerCase()}'));
+      expect(edit, findsOneWidget);
+      expect(find.byTooltip('Edit $name'), findsOneWidget);
+      // Same compact icon button as + and Trim; 44px targets on touch.
+      final side = kind == PointerDeviceKind.touch ? 44.0 : 32.0;
+      expect(tester.getSize(edit), Size(side, side));
       // A tap on the card itself (not Edit) does nothing and keeps it up.
       final card = tester.getRect(tip);
       await tester.tapAt(card.topLeft + const Offset(20, 12), kind: kind);
@@ -917,7 +918,13 @@ void main() {
       }
     }
     expect(dot, isNotNull);
-    final target = tester.getCenter(find.byKey(const ValueKey('tip-edit')));
+    final target = tester.getCenter(
+      find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey &&
+            '${(w.key! as ValueKey).value}'.startsWith('tip-edit-'),
+      ),
+    );
     for (var i = 1; i <= 10; i++) {
       await mouse.moveTo(Offset.lerp(dot, target, i / 10)!);
       await tester.pump();
@@ -932,56 +939,42 @@ void main() {
     await mouse.removePointer();
   });
 
-  testWidgets('popup Edit (several) lists them in creation order with name '
-      'and amount; the pick opens that series', (tester) async {
-    for (final (size, kind, salaryFirst) in [
-      (const Size(390, 844), PointerDeviceKind.touch, false),
-      (const Size(1440, 900), PointerDeviceKind.mouse, true),
+  testWidgets('popup with several transactions: each row has its own '
+      'action strip (+, Trim, Edit; same buttons, one line); Edit opens '
+      'that series', (tester) async {
+    for (final (size, kind) in [
+      (const Size(390, 844), PointerDeviceKind.touch),
+      (const Size(1440, 900), PointerDeviceKind.mouse),
+      (const Size(320, 640), PointerDeviceKind.touch),
     ]) {
-      final store = await _pump(
-        tester,
-        size: size,
-        setup: (s) {
-          if (!salaryFirst) return;
-          // Salary created first: the server lists it first.
-          final rent = s.txs.remove('rent')!;
-          s.txs['rent'] = rent;
-        },
-      );
+      final store = await _pump(tester, size: size);
       await _revealTip(tester, kind);
-      final edit = find.byKey(const ValueKey('tip-edit'));
-      expect(
-        find.descendant(of: edit, matching: find.text('Edit…')),
-        findsOneWidget,
-      );
-      await tester.tap(edit, kind: kind);
-      await tester.pumpAndSettle();
-      final rent = find.byKey(const ValueKey('tip-edit-item-rent'));
-      final salary = find.byKey(const ValueKey('tip-edit-item-salary'));
-      expect(rent, findsOneWidget);
-      expect(salary, findsOneWidget);
-      expect(
+      final tip = tester.getRect(
         find.byKey(const ValueKey('occurrence-tooltip')),
-        findsOneWidget,
-        reason: 'popup stays up behind its menu',
       );
-      final rentY = tester.getCenter(rent).dy;
-      final salaryY = tester.getCenter(salary).dy;
-      expect(salaryFirst ? salaryY < rentY : rentY < salaryY, isTrue);
-      expect(
-        find.descendant(of: rent, matching: find.text('Rent')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: rent, matching: find.textContaining('50')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: salary, matching: find.textContaining('4,200')),
-        findsOneWidget,
-      );
+      expect(tip.right, lessThanOrEqualTo(size.width));
+      final side = kind == PointerDeviceKind.touch ? 44.0 : 32.0;
+      for (final id in ['rent', 'salary']) {
+        final row = [
+          find.byKey(ValueKey('tip-new-$id')),
+          find.byKey(ValueKey('tip-trim-$id')),
+          find.byKey(ValueKey('tip-edit-$id')),
+        ];
+        final centres = [for (final f in row) tester.getCenter(f)];
+        for (final (i, f) in row.indexed) {
+          expect(tester.getSize(f), Size(side, side), reason: '$id $i');
+          expect(centres[i].dy, centres.first.dy, reason: 'one line');
+          if (i > 0) expect(centres[i].dx, greaterThan(centres[i - 1].dx));
+          expect(tester.getRect(f).right, lessThanOrEqualTo(tip.right));
+        }
+      }
+      // One date header for the day, not one per row.
+      expect(find.byKey(const ValueKey('tip-date')), findsOneWidget);
       expect(find.byKey(const ValueKey('editor-name')), findsNothing);
-      await tester.tap(salary, kind: kind);
+      await tester.tap(
+        find.byKey(const ValueKey('tip-edit-salary')),
+        kind: kind,
+      );
       await tester.pumpAndSettle();
       final field = tester.widget<TextField>(
         find.descendant(
@@ -999,12 +992,78 @@ void main() {
     }
   });
 
+  testWidgets('popup "+" opens a new transaction on that day (Name focused, '
+      'keyboard primed); never creates by itself; touch and mouse', (
+    tester,
+  ) async {
+    for (final (size, kind) in [
+      (const Size(390, 844), PointerDeviceKind.touch),
+      (const Size(1440, 900), PointerDeviceKind.mouse),
+    ]) {
+      final store = await _pump(tester, size: size, setup: _singles);
+      store.calls.clear();
+      await _revealTip(tester, kind);
+      final plus = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey &&
+            '${(w.key! as ValueKey).value}'.startsWith('tip-new-'),
+      );
+      expect(plus, findsOneWidget);
+      final tipText = tester
+          .widget<Text>(find.byKey(const ValueKey('tip-date')))
+          .data!;
+      final button = tester.widget<IconButton>(plus);
+      expect(button.tooltip, startsWith('New transaction on '));
+      final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
+      final txDay = chart.series.occurrences
+          .map((o) => DateTime(o.date.year, o.date.month, o.date.day))
+          .firstWhere((d) => formatSelectedDate(d) == tipText);
+      final primed = page.primeSoftKeyboardCalls;
+      await tester.tap(plus, kind: kind);
+      await tester.pumpAndSettle();
+      expect(page.primeSoftKeyboardCalls, primed + 1);
+      final name = find.descendant(
+        of: find.byKey(const ValueKey('editor-name')),
+        matching: find.byType(TextField),
+      );
+      expect(name, findsOneWidget);
+      expect(tester.widget<TextField>(name).controller?.text, isEmpty);
+      expect(
+        tester.widget<TextField>(name).focusNode?.hasFocus ?? true,
+        isTrue,
+      );
+      // The editor's date is the dot's day.
+      final editor = tester.widget<TransactionEditor>(
+        find.byType(TransactionEditor),
+      );
+      expect(editor.initialDate, txDay);
+      expect(editor.existing, isNull);
+      expect(
+        store.calls.where(
+          (c) => c.startsWith('create') || c.startsWith('update'),
+        ),
+        isEmpty,
+        reason: 'only Save creates',
+      );
+    }
+  });
+
   testWidgets('viewers get no Edit in the popup', (tester) async {
     for (final kind in [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
       await _pump(tester, setup: (s) => s.role = Role.viewer);
       await _revealTip(tester, kind);
       expect(find.byKey(const ValueKey('occurrence-tooltip')), findsOneWidget);
-      expect(find.byKey(const ValueKey('tip-edit')), findsNothing);
+      for (final p in ['tip-edit-', 'tip-new-', 'tip-trim-']) {
+        expect(
+          find.byWidgetPredicate(
+            (w) =>
+                w.key is ValueKey &&
+                '${(w.key! as ValueKey).value}'.startsWith(p),
+          ),
+          findsNothing,
+          reason: p,
+        );
+      }
     }
   });
 

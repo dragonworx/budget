@@ -466,8 +466,12 @@ void main() {
     expect(find.text('Savings'), findsOneWidget);
     expect(find.textContaining('nets out'), findsNWidgets(2));
     // Savings is mine: its own editor. Kids is view only: no edit.
-    expect(find.text('Edit in Savings'), findsOneWidget);
+    expect(find.byTooltip('Edit in Savings'), findsOneWidget);
     expect(find.byKey(const ValueKey('tip-open-other-snack')), findsNothing);
+    // "+" on every row (Kids' too): it always creates in the current pool.
+    for (final id in ['t-out', 't-in', 'snack']) {
+      expect(find.byKey(ValueKey('tip-new-$id')), findsOneWidget, reason: id);
+    }
     // Net counts only Kids' 5 (the transfer nets out).
     expect(
       find.descendant(
