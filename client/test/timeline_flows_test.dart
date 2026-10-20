@@ -359,12 +359,14 @@ void main() {
     final store = await _pump(tester);
     await _editFromPanel(tester, 'Rent');
     final balanceCalls = store.calls.where((c) => c == 'balance').length;
-    // Rent is weekly: the preset shows; switch to Fortnightly.
-    await tester.tap(find.byKey(const ValueKey('editor-frequency-weekly')));
+    // Rent is weekly: Every [1] week; step up to every 2 weeks.
+    expect(find.text('week'), findsWidgets);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('editor-interval-plus')),
+    );
+    await tester.tap(find.byKey(const ValueKey('editor-interval-plus')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Fortnightly').last);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('editor-interval')), findsNothing);
+    expect(find.text('weeks'), findsWidgets);
     await tester.tap(find.byKey(const ValueKey('editor-save')));
     await tester.pumpAndSettle();
     expect(store.calls, contains('update rent 2 weeks'));

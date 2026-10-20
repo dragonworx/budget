@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/api_client.dart';
-import '../../data/frequency.dart';
 import '../../data/models.dart';
 import '../../widgets/conflict_dialog.dart';
 import '../../state/realtime_providers.dart';
@@ -205,13 +204,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         ? RecurrenceMode.once
         : (existing?.recurrenceMode ?? RecurrenceMode.every);
     _unit = existing?.unit ?? RecurrenceUnit.months;
-    _custom =
-        FrequencyPreset.of(
-          once: _recurrenceMode == RecurrenceMode.once,
-          interval: int.tryParse(_interval.text.trim()) ?? 1,
-          unit: _unit,
-        ) ==
-        FrequencyPreset.custom;
     _endMode = existing?.endMode ?? EndMode.never;
     if (existing == null && _recurrenceMode == RecurrenceMode.once) {
       _endMode = EndMode.never;
@@ -851,43 +843,114 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
-  /// Custom… chosen (or the series matches no preset): show Every N unit.
-  bool _custom = false;
-
-  FrequencyPreset get _preset => _custom
-      ? FrequencyPreset.custom
-      : FrequencyPreset.of(
-          once: _recurrenceMode == RecurrenceMode.once,
-          interval: _intervalValue,
-          unit: _unit,
-        );
-
-  Widget _frequencyDropdown() {
-    return DropdownButtonFormField<FrequencyPreset>(
-      key: ValueKey('editor-frequency-${_preset.name}'),
-      initialValue: _preset,
-      isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Repeats'),
-      dropdownColor: AppTheme.overlay,
-      items: [
-        for (final p in FrequencyPreset.values)
-          DropdownMenuItem(value: p, child: Text(p.label)),
+  /// Once / Repeats: whether the series recurs at all.
+  Widget _repeatsToggle() {
+    return SegmentedButton<bool>(
+      key: const ValueKey('editor-repeats'),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment(
+          value: false,
+          label: Text('Once', key: ValueKey('editor-repeats-once')),
+          icon: Icon(Icons.event_rounded, size: 18),
+        ),
+        ButtonSegment(
+          value: true,
+          label: Text('Repeats', key: ValueKey('editor-repeats-every')),
+          icon: Icon(Icons.event_repeat_rounded, size: 18),
+        ),
       ],
-      onChanged: (p) => setState(() {
-        if (p == null) return;
-        _custom = p == FrequencyPreset.custom;
-        if (p == FrequencyPreset.once) {
+      selected: {_recurrenceMode == RecurrenceMode.every},
+      onSelectionChanged: (v) => setState(() {
+        if (v.first) {
+          _recurrenceMode = RecurrenceMode.every;
+        } else {
           _recurrenceMode = RecurrenceMode.once;
           _endMode = EndMode.never;
           _endDateError = null;
-        } else {
-          _recurrenceMode = RecurrenceMode.every;
-          if (p.repeats) {
-            _interval.text = '${p.interval}';
-            _unit = p.unit!;
-          }
         }
       }),
+    );
+  }
+
+  void _setInterval(int n) =>
+      setState(() => _interval.text = '${n.clamp(1, maxRecurrenceInterval)}');
+
+  /// Every [− N +] [unit ▾]: N from 1 to [maxRecurrenceInterval], typed or
+  /// stepped; the unit reads singular for 1 ("Every 1 week").
+  Widget _intervalRow(ThemeData theme) {
+    final n = _intervalValue;
+    return Row(
+      children: [
+        Text('Every', style: theme.textTheme.bodyMedium),
+        const SizedBox(width: 4),
+        _stepButton(
+          Icons.remove_rounded,
+          'Fewer',
+          n <= 1 ? null : () => _setInterval(n - 1),
+          key: const ValueKey('editor-interval-minus'),
+        ),
+        SizedBox(
+          width: 48,
+          child: TextFormField(
+            key: const ValueKey('editor-interval'),
+            controller: _interval,
+            textAlign: TextAlign.center,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(2),
+            ],
+            decoration: const InputDecoration(
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(vertical: 12),
+            ),
+            onChanged: (_) => setState(() {}),
+            validator: (value) {
+              if (_recurrenceMode != RecurrenceMode.every) return null;
+              final v = int.tryParse(value ?? '');
+              return v == null || v < 1 || v > maxRecurrenceInterval
+                  ? '1–$maxRecurrenceInterval'
+                  : null;
+            },
+          ),
+        ),
+        _stepButton(
+          Icons.add_rounded,
+          'More',
+          n >= maxRecurrenceInterval ? null : () => _setInterval(n + 1),
+          key: const ValueKey('editor-interval-plus'),
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          // Re-keyed by unit so a unit set elsewhere (e.g. applying a
+          // suggestion) shows.
+          child: KeyedSubtree(
+            key: ValueKey('editor-unit-is-${_unit.name}'),
+            child: DropdownButtonFormField<RecurrenceUnit>(
+            key: const ValueKey('editor-unit'),
+            initialValue: _unit,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+            dropdownColor: AppTheme.overlay,
+            items: [
+              for (final unit in RecurrenceUnit.values)
+                DropdownMenuItem(
+                  value: unit,
+                  child: Text(
+                    _unitPlural(unit, n),
+                    key: ValueKey('editor-unit-${unit.name}'),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (u) => setState(() => _unit = u ?? _unit),
+          ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -910,77 +973,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             onPicked: (d) => setState(() => _startDate = d),
           ),
           const SizedBox(height: 12),
-          _frequencyDropdown(),
-          if (repeating && _custom) ...[
+          _repeatsToggle(),
+          if (repeating) ...[
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Text('Every', style: theme.textTheme.bodyMedium),
-                const SizedBox(width: 8),
-                _stepButton(
-                  Icons.remove_rounded,
-                  'Fewer',
-                  _intervalValue <= 1
-                      ? null
-                      : () => setState(
-                          () => _interval.text = '${_intervalValue - 1}',
-                        ),
-                ),
-                SizedBox(
-                  width: 56,
-                  child: TextFormField(
-                    key: const ValueKey('editor-interval'),
-                    controller: _interval,
-                    textAlign: TextAlign.center,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 10),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                    validator: (value) {
-                      if (_recurrenceMode != RecurrenceMode.every) return null;
-                      final n = int.tryParse(value ?? '');
-                      return n == null || n < 1 ? '≥ 1' : null;
-                    },
-                  ),
-                ),
-                _stepButton(
-                  Icons.add_rounded,
-                  'More',
-                  () =>
-                      setState(() => _interval.text = '${_intervalValue + 1}'),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: DropdownButtonFormField<RecurrenceUnit>(
-                    key: const ValueKey('editor-unit'),
-                    initialValue: _unit,
-                    isDense: true,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                    ),
-                    dropdownColor: AppTheme.overlay,
-                    items: [
-                      for (final unit in RecurrenceUnit.values)
-                        DropdownMenuItem(
-                          value: unit,
-                          child: Text(
-                            _unitPlural(unit, _intervalValue),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                    ],
-                    onChanged: (u) => setState(() => _unit = u ?? _unit),
-                  ),
-                ),
-              ],
-            ),
+            _intervalRow(theme),
           ],
           if (repeating) ...[
             const SizedBox(height: 14),
@@ -1041,12 +1037,20 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
-  Widget _stepButton(IconData icon, String tooltip, VoidCallback? onPressed) {
+  /// A touch-sized (44px) − / + button.
+  Widget _stepButton(
+    IconData icon,
+    String tooltip,
+    VoidCallback? onPressed, {
+    Key? key,
+  }) {
     return IconButton(
+      key: key,
       tooltip: tooltip,
       onPressed: onPressed,
-      visualDensity: VisualDensity.compact,
-      icon: Icon(icon, size: 18),
+      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      padding: EdgeInsets.zero,
+      icon: Icon(icon, size: 20),
     );
   }
 
@@ -1725,13 +1729,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       }
       _interval.text = '${transaction.interval ?? 1}';
       _unit = transaction.unit ?? _unit;
-      _custom =
-          FrequencyPreset.of(
-            once: false,
-            interval: transaction.interval,
-            unit: _unit,
-          ) ==
-          FrequencyPreset.custom;
       _endMode = transaction.endMode;
       _endDate = transaction.endDate;
       if (transaction.occurrenceCount != null) {
@@ -1812,6 +1809,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     }
   }
 }
+
+/// Largest "every N" the editor offers.
+const int maxRecurrenceInterval = 99;
 
 String _unitPlural(RecurrenceUnit unit, [int count = 2]) {
   final one = count == 1;
