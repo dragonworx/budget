@@ -1761,7 +1761,6 @@ class _PoolHeader extends StatelessWidget {
             context.go('/pools/${created.id}/timeline');
           }
         },
-        onManagePools: () => context.go(poolsPath),
         builder: (context, open) => InkWell(
           key: const ValueKey('header-pool-picker'),
           borderRadius: BorderRadius.circular(8),

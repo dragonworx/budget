@@ -8,7 +8,7 @@ import '../theme/app_theme.dart';
 
 /// Reusable pool picker: a dropdown anchored to the trigger, with a flat
 /// list of my pools (the current one checked), then a "Shared with me"
-/// section, then optional actions (New pool, Manage pools). Pools
+/// section, then an optional New pool action. Pools
 /// are top level, so there are no submenus.
 ///
 /// Rows are at least 48px tall and the menu is kept on screen (320px+).
@@ -25,7 +25,6 @@ class PoolPicker extends ConsumerStatefulWidget {
     this.currentPoolId,
     this.editableOnly = false,
     this.onNewPool,
-    this.onManagePools,
     this.title = 'Choose a pool',
     this.keyPrefix = 'picker',
   });
@@ -38,9 +37,9 @@ class PoolPicker extends ConsumerStatefulWidget {
   /// Only pools I can edit (transfer destinations).
   final bool editableOnly;
 
-  /// Action rows at the bottom (omitted when null).
+  /// Action row at the bottom (omitted when null). The Pools home is
+  /// reached from the timeline's back arrow, not from this menu.
   final VoidCallback? onNewPool;
-  final VoidCallback? onManagePools;
 
   /// Accessible name of the menu.
   final String title;
@@ -167,16 +166,20 @@ class _PoolPickerState extends ConsumerState<PoolPicker> {
     child: _MenuLabel(a.name),
   );
 
-  Widget _action(String key, IconData icon, String label, VoidCallback f,
-          {FocusNode? focus}) =>
-      MenuItemButton(
-        key: ValueKey('${widget.keyPrefix}-$key'),
-        focusNode: focus,
-        style: _style,
-        leadingIcon: Icon(icon, size: 18),
-        onPressed: f,
-        child: _MenuLabel(label),
-      );
+  Widget _action(
+    String key,
+    IconData icon,
+    String label,
+    VoidCallback f, {
+    FocusNode? focus,
+  }) => MenuItemButton(
+    key: ValueKey('${widget.keyPrefix}-$key'),
+    focusNode: focus,
+    style: _style,
+    leadingIcon: Icon(icon, size: 18),
+    onPressed: f,
+    child: _MenuLabel(label),
+  );
 
   List<Widget> _items(List<Pool> all) {
     final p = widget.keyPrefix;
@@ -186,8 +189,14 @@ class _PoolPickerState extends ConsumerState<PoolPicker> {
             (!widget.editableOnly || a.role.canEdit))
           a,
     ];
-    final mine = [for (final a in choices) if (!a.shared) a];
-    final shared = [for (final a in choices) if (a.shared) a];
+    final mine = [
+      for (final a in choices)
+        if (!a.shared) a,
+    ];
+    final shared = [
+      for (final a in choices)
+        if (a.shared) a,
+    ];
     var focused = false;
     FocusNode? first() {
       if (focused) return null;
@@ -195,8 +204,7 @@ class _PoolPickerState extends ConsumerState<PoolPicker> {
       return _firstItem;
     }
 
-    final hasActions =
-        widget.onNewPool != null || widget.onManagePools != null;
+    final hasActions = widget.onNewPool != null;
     return [
       if (choices.isEmpty)
         MenuItemButton(
@@ -229,14 +237,6 @@ class _PoolPickerState extends ConsumerState<PoolPicker> {
           Icons.add_rounded,
           'New pool',
           widget.onNewPool!,
-          focus: first(),
-        ),
-      if (widget.onManagePools != null)
-        _action(
-          'manage-pools',
-          Icons.view_list_rounded,
-          'Manage pools',
-          widget.onManagePools!,
           focus: first(),
         ),
     ];

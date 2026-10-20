@@ -6,6 +6,7 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -55,7 +56,7 @@ void main() {
     expect(repo.opened, ['a2', 'a1', 'a2']);
   });
 
-  testWidgets('lands once per session: Manage pools stays on the list', (
+  testWidgets('lands once per session: going to the Pools home stays there', (
     tester,
   ) async {
     final repo = FakePoolRepository(
@@ -79,7 +80,13 @@ void main() {
     final repo = FakePoolRepository(
       pools: [
         testPool('a1', 'Everyday'),
-        testPool('b1', 'Joint', shared: true, role: Role.editor, ownerName: 'Sam'),
+        testPool(
+          'b1',
+          'Joint',
+          shared: true,
+          role: Role.editor,
+          ownerName: 'Sam',
+        ),
       ],
       lastPoolId: 'gone',
     );
@@ -108,4 +115,39 @@ void main() {
     expect(repo.created.single.name, 'Everyday');
     expect(_path(c), '/pools/new-1/timeline');
   });
+
+  for (final size in const [Size(390, 844), Size(1440, 900)]) {
+    testWidgets('${size.width.toInt()}px: the header pool menu has no '
+        'Manage pools (mine, shared, New pool stay); the back arrow '
+        '("All pools") opens the Pools home', (tester) async {
+      final repo = FakePoolRepository(
+        pools: [
+          testPool('a1', 'Everyday'),
+          testPool('a2', 'Savings'),
+          testPool('b1', 'Kids', shared: true, role: Role.viewer),
+        ],
+        lastPoolId: 'a1',
+      );
+      final c = await _app(tester, repo, size: size);
+      expect(_path(c), '/pools/a1/timeline');
+      await tester.tap(find.byKey(const ValueKey('header-pool-picker')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('nav-header-mine')), findsOneWidget);
+      expect(find.byKey(const ValueKey('nav-pool-a2')), findsOneWidget);
+      expect(find.byKey(const ValueKey('nav-header-shared')), findsOneWidget);
+      expect(find.byKey(const ValueKey('nav-pool-b1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('nav-new-pool')), findsOneWidget);
+      expect(find.byKey(const ValueKey('nav-manage-pools')), findsNothing);
+      expect(find.text('Manage pools'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      final back = find.byKey(const ValueKey('timeline-back'));
+      expect(back, findsOneWidget);
+      expect(find.byTooltip('All pools'), findsOneWidget);
+      await tester.tap(back);
+      await tester.pumpAndSettle();
+      expect(_path(c), poolsPath);
+      expect(find.byKey(const ValueKey('pool-card-a1')), findsOneWidget);
+    });
+  }
 }

@@ -1,6 +1,6 @@
 // Pool selector (header + transfer): an anchored dropdown with a flat list
 // of my pools (current checked), a "Shared with me" section, then the
-// New pool / Manage pools actions. No submenus. Rows are touch-sized,
+// New pool action (no Manage pools: the back arrow leads home). No submenus. Rows are touch-sized,
 // the menu stays on a 320–390px screen, Esc / outside tap dismiss, and the
 // keyboard works.
 import 'package:budget_client/data/models.dart';
@@ -17,14 +17,19 @@ import 'support/fake_pools.dart';
 final _all = [
   testPool('a', 'Everyday'),
   testPool('s', 'Savings for a very long holiday abroad and more'),
-  testPool('b', 'Joint bills', shared: true, role: Role.editor, ownerName: 'Sam'),
+  testPool(
+    'b',
+    'Joint bills',
+    shared: true,
+    role: Role.editor,
+    ownerName: 'Sam',
+  ),
   testPool('v', 'Kids', shared: true, role: Role.viewer, ownerName: 'Sam'),
 ];
 
 class _Log {
   final picked = <Pool>[];
   int created = 0;
-  int managed = 0;
 }
 
 Future<_Log> _pump(
@@ -58,7 +63,6 @@ Future<_Log> _pump(
               editableOnly: editableOnly,
               onSelected: log.picked.add,
               onNewPool: actions ? () => log.created++ : null,
-              onManagePools: actions ? () => log.managed++ : null,
               builder: (context, open) =>
                   TextButton(onPressed: open, child: const Text('Jump')),
             ),
@@ -108,8 +112,10 @@ void main() {
         'nav-pool-b',
         'nav-pool-v',
         'nav-new-pool',
-        'nav-manage-pools',
       ];
+      // Manage pools was removed (the timeline's back arrow leads home).
+      expect(find.byKey(const ValueKey('nav-manage-pools')), findsNothing);
+      expect(find.text('Manage pools'), findsNothing);
       for (var i = 1; i < order.length; i++) {
         expect(
           _top(tester, order[i]),
@@ -154,11 +160,6 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('nav-new-pool')));
     await tester.pumpAndSettle();
     expect(log.created, 1);
-    await tester.tap(find.text('Jump'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('nav-manage-pools')));
-    await tester.pumpAndSettle();
-    expect(log.managed, 1);
   });
 
   testWidgets('outside tap and Esc dismiss the menu', (tester) async {
