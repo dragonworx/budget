@@ -1347,11 +1347,6 @@ class _BalanceChartState extends State<BalanceChart>
     _hoverDots.value = null;
   }
 
-  String _nameOf(Transaction t) {
-    final raw = widget.transactionNames[t.id] ?? t.name;
-    return raw.trim().isEmpty ? 'Transaction' : raw.trim();
-  }
-
   void _onPointerSignal(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
       GestureBinding.instance.pointerSignalResolver.register(
@@ -1532,6 +1527,8 @@ class _BalanceChartState extends State<BalanceChart>
         onHover: _onHover,
         onExit: (_) {
           _hoverDay.value = null;
+          // A row's ⋮ menu takes the mouse: keep its popup up.
+          if (_rowMenuOpen) return;
           _hoverDots.value = null;
           _tapTip = false;
           if (_overAdd || _overDot) {
@@ -2918,94 +2915,57 @@ class _BalanceChartState extends State<BalanceChart>
     _hoverDots.value = _DotTip(overlapping, overlapping.first.center);
   }
 
-  /// Last press was touch (popup actions get 44px targets) or a mouse.
+  /// Last press was touch (44px popup targets) or a mouse.
   bool _touchUi = false;
 
-  /// One popup action: every action (New, Trim, Edit, Edit in pool) is the
-  /// same compact icon button with a tooltip, in the row's action strip.
-  Widget _tipAction({
-    required Key key,
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-    Color? color,
-  }) {
-    final side = _touchUi ? 44.0 : 32.0;
-    final fg = color ?? AppTheme.accent;
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: IconButton(
-        key: key,
-        tooltip: label,
-        onPressed: onPressed,
-        icon: Icon(icon, size: 18),
-        padding: EdgeInsets.zero,
-        constraints: BoxConstraints.tightFor(width: side, height: side),
-        style: IconButton.styleFrom(
-          foregroundColor: fg,
-          backgroundColor: fg.withValues(alpha: 0.12),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-    );
-  }
+  /// A row's ⋮ menu is open: the popup stays up behind it.
+  bool _rowMenuOpen = false;
 
   /// The day a popup row is about: its occurrence's (or the seed's).
   DateTime _rowDay(Occurrence? o) => dateOnly(o?.date ?? widget.seedDate);
 
-  /// A row's actions, in a fixed order: New (on that day), Trim, Edit /
-  /// Edit in pool. Only an explicit tap on one of these acts.
-  List<Widget> _rowActions(Occurrence? o) {
+  /// A row's ⋮ menu entries, in order: New transaction on that day, Trim
+  /// series here (own recurring series, when trimmable), Edit (own) or
+  /// "Edit in pool" (another pool's row I can edit). Empty: no ⋮.
+  List<_RowAction> _rowActions(Occurrence? o) {
     final day = _rowDay(o);
-    final actions = <Widget>[];
     final id = o?.transactionId ?? 'seed';
+    final actions = <_RowAction>[];
     if (widget.onNewOnDay != null) {
       actions.add(
-        _tipAction(
-          key: ValueKey('tip-new-$id'),
-          icon: Icons.add_rounded,
-          label: 'New transaction on ${DateFormat('EEE d MMM y').format(day)}',
-          onPressed: () {
-            _hideTip();
-            widget.onNewOnDay?.call(day);
-          },
+        _RowAction(
+          'tip-menu-new-$id',
+          Icons.add_rounded,
+          'New transaction on ${DateFormat('EEE d MMM').format(day)}',
+          () => widget.onNewOnDay?.call(day),
         ),
       );
     }
     if (o == null) return actions;
-    // Trim / Edit: the current pool's own transactions only.
     final own = widget.transactions[o.transactionId];
     if (own != null) {
       if (widget.onTrimOccurrence != null && canTrimAtOccurrence(own, o.date)) {
         actions.add(
-          _tipAction(
-            key: ValueKey('tip-trim-${own.id}'),
-            icon: Icons.content_cut_rounded,
-            label: 'Trim: end ${_nameOf(own)} here',
-            onPressed: () {
-              _hideTip();
-              widget.onTrimOccurrence?.call(own, day);
-            },
+          _RowAction(
+            'tip-menu-trim-${own.id}',
+            Icons.content_cut_rounded,
+            'Trim series here',
+            () => widget.onTrimOccurrence?.call(own, day),
           ),
         );
       }
       if (widget.onEditTransaction != null) {
         actions.add(
-          _tipAction(
-            key: ValueKey('tip-edit-${own.id}'),
-            icon: Icons.edit_outlined,
-            label: 'Edit ${_nameOf(own)}',
-            onPressed: () {
-              _hideTip();
-              widget.onEditTransaction?.call(own, day);
-            },
+          _RowAction(
+            'tip-menu-edit-${own.id}',
+            Icons.edit_outlined,
+            'Edit',
+            () => widget.onEditTransaction?.call(own, day),
           ),
         );
       }
       return actions;
     }
-    // Another pool's (combined view): edited in that pool, when I can.
     final pool = widget.combinedPools[o.poolId];
     final other = widget.otherTransactions[o.transactionId];
     if (pool != null &&
@@ -3013,22 +2973,114 @@ class _BalanceChartState extends State<BalanceChart>
         pool.canEdit &&
         widget.onOpenOtherTransaction != null) {
       actions.add(
-        _tipAction(
-          key: ValueKey('tip-open-other-${other.id}'),
-          icon: Icons.open_in_new_rounded,
-          label: 'Edit in ${pool.name}',
-          onPressed: () {
-            _hideTip();
-            widget.onOpenOtherTransaction?.call(pool, other, day);
-          },
+        _RowAction(
+          'tip-menu-open-other-${other.id}',
+          Icons.open_in_new_rounded,
+          'Edit in ${pool.name}',
+          () => widget.onOpenOtherTransaction?.call(pool, other, day),
         ),
       );
     }
     return actions;
   }
 
+  /// Width of the ⋮ button: a 44px touch target, a compact one for mice.
+  double get _menuButtonWidth => _touchUi ? 44 : 28;
+
+  /// The row's ⋮: opens its menu; only a picked item acts.
+  Widget _rowMenuButton(String id, String name, List<_RowAction> actions) {
+    return Builder(
+      builder: (context) => SizedBox(
+        width: _menuButtonWidth,
+        height: _touchUi ? 44 : 28,
+        child: InkResponse(
+          key: ValueKey('tip-menu-$id'),
+          radius: 18,
+          containedInkWell: false,
+          onTap: () => _openRowMenu(context, actions),
+          child: Semantics(
+            button: true,
+            label: 'Actions for $name',
+            child: const Center(
+              child: Icon(
+                Icons.more_vert_rounded,
+                size: 18,
+                color: AppTheme.textMuted,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRowMenu(
+    BuildContext context,
+    List<_RowAction> actions,
+  ) async {
+    final box = context.findRenderObject()! as RenderBox;
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final r = Rect.fromPoints(
+      box.localToGlobal(Offset.zero, ancestor: overlay),
+      box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay),
+    );
+    // Keep the popup up while its menu is open (mouse leaving for the
+    // menu, the tap-tip timeout).
+    _rowMenuOpen = true;
+    _tapTipTimer?.cancel();
+    final picked = await showMenu<int>(
+      context: context,
+      position: RelativeRect.fromRect(r, Offset.zero & overlay.size),
+      color: AppTheme.overlay,
+      items: [
+        for (final (i, a) in actions.indexed)
+          PopupMenuItem<int>(
+            key: ValueKey(a.key),
+            value: i,
+            height: _touchUi ? 44 : 36,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(a.icon, size: 18, color: AppTheme.accent),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    a.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (!mounted) return;
+    _rowMenuOpen = false;
+    if (picked == null) {
+      // Dismissed: the popup stays; a mouse-pinned one times out as usual.
+      if (_tapTip && !_touchDown) _armTapTipTimer();
+      return;
+    }
+    _hideTip();
+    actions[picked].run();
+  }
+
+  double _textWidth(String text, TextStyle? style) {
+    final p = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final w = p.width;
+    p.dispose();
+    return w;
+  }
+
   Widget _tooltip(ThemeData theme, _DotTip tip) {
-    final width = math.min(280.0, _size.width - 8);
+    final maxWidth = math.min(280.0, _size.width - 8);
     // One row per transaction on the vertex's day (seed: one row).
     final entries = <(_Dot, Occurrence?)>[
       for (final d in tip.dots)
@@ -3037,83 +3089,75 @@ class _BalanceChartState extends State<BalanceChart>
     const maxRows = 12;
     final shown = entries.take(maxRows).toList();
     final more = entries.length - shown.length;
-    final small = theme.textTheme.bodySmall ?? const TextStyle();
-    final meta = small.copyWith(color: AppTheme.textMuted);
-    final strong = theme.textTheme.labelLarge?.copyWith(
-      fontWeight: FontWeight.w700,
+    final small = (theme.textTheme.bodySmall ?? const TextStyle()).copyWith(
+      height: 1.2,
     );
-    final actionSide = _touchUi ? 44.0 : 32.0;
+    final meta = small.copyWith(color: AppTheme.textMuted, fontSize: 11);
+    final nameStyle = theme.textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.w600,
+      height: 1.2,
+    );
+    final amountStyle = nameStyle?.copyWith(fontWeight: FontWeight.w800);
     // Same-day rows (the usual case) share one date header; dots of
     // different days merged at a far zoom date each row instead.
     final days = {for (final (_, o) in shown) _rowDay(o)};
     final oneDay = days.length == 1;
+    final rowMin = _touchUi ? 44.0 : 28.0;
     final rows = <Widget>[];
     var rowsHeight = 0.0;
+    var contentWidth = 0.0;
     var anyActions = false;
+    final seen = <String, int>{};
     for (final (dot, o) in shown) {
       final actions = _rowActions(o);
+      // Unique per row: one series can show twice in a merged far-zoom dot.
+      final baseId = o?.transactionId ?? 'seed';
+      final n = seen[baseId] = (seen[baseId] ?? 0) + 1;
+      final rowId = n == 1 ? baseId : '$baseId@$n';
       anyActions |= actions.isNotEmpty;
       final t = o == null ? null : _txOf(o.transactionId);
       final otherPool = o?.poolId == null
           ? null
           : widget.combinedPools[o!.poolId];
       final String name;
-      final double? amount;
+      final String amountText;
+      final Color amountColor;
+      final skipped = o?.skipped ?? false;
       if (o == null) {
         name = 'Opening balance';
-        amount = null;
+        amountText = formatMoneyAmount(dot.balanceAfter);
+        amountColor = AppTheme.accent;
       } else {
         final raw = widget.transactionNames[o.transactionId] ?? t?.name;
         name = raw == null || raw.trim().isEmpty ? 'Transaction' : raw.trim();
-        amount = o.signedDelta.toDouble();
+        final amount = o.signedDelta.toDouble();
+        amountText = formatSignedAmount(amount);
+        amountColor = skipped
+            ? AppTheme.textFaint
+            : (amount < 0 ? AppTheme.debitColor : AppTheme.creditColor);
       }
-      final metaLines = <Widget>[
-        if (!oneDay)
-          Text(
-            formatSelectedDate(_rowDay(o)),
-            key: const ValueKey('tip-date'),
-            style: meta,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+      // Secondary line only when it says something: the other pool,
+      // a repeat (not "One-off"), a status, or the date of a mixed popup.
+      final metaSpans = <TextSpan>[
+        if (!oneDay) TextSpan(text: formatSelectedDate(_rowDay(o))),
         if (otherPool != null)
-          Row(
-            key: ValueKey('tip-pool-${otherPool.id}'),
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: otherPool.color,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  otherPool.canEdit
-                      ? otherPool.name
-                      : '${otherPool.name} · view only',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: small.copyWith(
-                    color: otherPool.color,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
+          TextSpan(
+            text: otherPool.canEdit
+                ? otherPool.name
+                : '${otherPool.name} · view only',
+            style: TextStyle(
+              color: otherPool.color,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        if (o == null)
-          Text('Start of the balance line', style: meta)
-        else if (t != null)
-          Text(
-            [describeRecurrence(t), ?occurrenceOrdinal(t, o.date)].join(' · '),
-            style: meta,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+        if (o != null && t != null && t.recurrenceMode != RecurrenceMode.once)
+          TextSpan(
+            text: [
+              describeRecurrence(t),
+              ?occurrenceOrdinal(t, o.date),
+            ].join(' · '),
           ),
-        if (o != null) ...[
+        if (o != null)
           for (final s in [
             if (o.netted) 'Transfer between combined pools: nets out',
             if (o.skipped) 'Skipped',
@@ -3121,113 +3165,141 @@ class _BalanceChartState extends State<BalanceChart>
             if (t != null && t.overrideOn(o.date) != null)
               'Once-off (series ${formatSignedAmount(t.signedAmount.toDouble())})',
           ])
-            Text(
-              s,
-              style: small.copyWith(
+            TextSpan(
+              text: s,
+              style: const TextStyle(
                 fontWeight: FontWeight.w700,
                 color: AppTheme.warning,
               ),
             ),
-        ],
       ];
-      final debit = (amount ?? 0) < 0;
-      final skipped = o?.skipped ?? false;
-      final amountColor = o == null
-          ? AppTheme.accent
-          : skipped
-          ? AppTheme.textFaint
-          : (debit ? AppTheme.debitColor : AppTheme.creditColor);
-      final metaHeight = metaLines.length * 16.0;
-      rowsHeight +=
-          (rows.isEmpty ? 0 : 13) +
-          20 +
-          math.max(metaHeight + 2, actions.isEmpty ? 0 : actionSide + 4);
-      if (rows.isNotEmpty) {
-        rows.add(const Divider(height: 13, color: AppTheme.border));
+      final metaParts = <InlineSpan>[];
+      for (final (i, s) in metaSpans.indexed) {
+        if (i > 0) metaParts.add(const TextSpan(text: ' · '));
+        metaParts.add(s);
       }
+      final menuW = actions.isEmpty ? 0.0 : _menuButtonWidth;
+      final dotW = otherPool == null ? 0.0 : 14.0;
+      contentWidth = math.max(
+        contentWidth,
+        dotW +
+            _textWidth(name, nameStyle) +
+            12 +
+            _textWidth(amountText, amountStyle) +
+            menuW,
+      );
+      if (metaParts.isNotEmpty) {
+        contentWidth = math.max(
+          contentWidth,
+          _textWidth(TextSpan(children: metaParts).toPlainText(), meta) + menuW,
+        );
+      }
+      final lineH = metaParts.isEmpty ? 18.0 : 32.0;
+      rowsHeight += math.max(rowMin, lineH + 6);
       rows.add(
-        Column(
-          key: o == null ? const ValueKey('seed-tooltip') : null,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Name + amount: what the row is about, most prominent.
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: strong,
+        ConstrainedBox(
+          key: ValueKey(o == null ? 'seed-tooltip' : 'tip-row-$rowId'),
+          constraints: BoxConstraints(minHeight: rowMin),
+          child: Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Name (ellipsis) · amount, then the row's ⋮.
+                      Row(
+                        children: [
+                          if (otherPool != null)
+                            Padding(
+                              key: ValueKey('tip-pool-${otherPool.id}'),
+                              padding: const EdgeInsets.only(right: 6),
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: otherPool.color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          Expanded(
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: nameStyle,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            amountText,
+                            style: amountStyle?.copyWith(
+                              color: amountColor,
+                              decoration: skipped
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (metaParts.isNotEmpty)
+                        Text.rich(
+                          TextSpan(children: metaParts),
+                          key: oneDay ? null : const ValueKey('tip-date'),
+                          style: meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  o == null
-                      ? formatMoneyAmount(dot.balanceAfter)
-                      : formatSignedAmount(amount!),
-                  style: strong?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: amountColor,
-                    decoration: skipped ? TextDecoration.lineThrough : null,
-                  ),
-                ),
-              ],
-            ),
-            // Secondary details left, the row's actions right.
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: metaLines,
-                    ),
-                  ),
-                  ...actions,
-                ],
               ),
-            ),
-          ],
+              if (actions.isNotEmpty) _rowMenuButton(rowId, name, actions),
+            ],
+          ),
         ),
       );
     }
     if (more > 0) {
-      rowsHeight += 20;
-      rows.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Text('+$more more on this day', style: meta),
-        ),
-      );
+      rowsHeight += 18;
+      rows.add(Text('+$more more on this day', style: meta));
     }
     final children = <Widget>[];
     var extra = 0.0;
     if (oneDay) {
-      extra += 22;
+      final header = formatSelectedDate(days.single);
+      final headerStyle = meta.copyWith(fontWeight: FontWeight.w700);
+      contentWidth = math.max(contentWidth, _textWidth(header, headerStyle));
+      extra += 18;
       children.add(
         Padding(
-          padding: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.only(bottom: 2),
           child: Text(
-            formatSelectedDate(days.single),
+            header,
             key: const ValueKey('tip-date'),
-            style: small.copyWith(
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textMuted,
-            ),
-            maxLines: 2,
+            style: headerStyle,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ),
       );
     }
     // Many rows scroll inside the card instead of running off the chart.
-    final maxRowsHeight = math.max(120.0, math.min(320.0, _size.height * 0.5));
-    final scrolls = rowsHeight > maxRowsHeight;
+    final maxRowsHeight = math.max(
+      2 * rowMin,
+      math.min(_touchUi ? 300.0 : 260.0, _size.height * 0.5),
+    );
+    final scrolls = rowsHeight > maxRowsHeight + 1;
+    final rowsColumn = Column(
+      key: const ValueKey('tip-rows'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: rows,
+    );
     children.add(
       scrolls
           ? ConstrainedBox(
@@ -3235,83 +3307,97 @@ class _BalanceChartState extends State<BalanceChart>
               child: Scrollbar(
                 thumbVisibility: true,
                 child: SingleChildScrollView(
-                  key: const ValueKey('tip-rows'),
                   padding: const EdgeInsets.only(right: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: rows,
-                  ),
+                  child: rowsColumn,
                 ),
               ),
             )
-          : Column(
-              key: const ValueKey('tip-rows'),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: rows,
-            ),
+          : rowsColumn,
     );
-    // Net for the day (2+ counted) and the end-of-day balance.
+    // One footer line: the day's net (2+ counted) and the end-of-day
+    // balance.
     final day = tip.dots.firstWhere(
       (d) => !d.isSeed,
       orElse: () => tip.dots.first,
     );
     if (!day.isSeed) {
       final g = DayGroup(dateOnly(day.occurrences.first.date), day.occurrences);
-      children.add(const Divider(height: 13, color: AppTheme.borderStrong));
-      extra += 13;
-      if (day.occurrences.length >= 2) {
-        extra += 20;
-        children.add(
-          Row(
-            key: const ValueKey('day-net'),
-            children: [
-              Expanded(
-                child: Text(
-                  'Net · ${g.count} transaction${g.count == 1 ? '' : 's'}',
-                  style: strong,
-                ),
-              ),
-              Text(
-                formatSignedAmount(g.net),
-                style: strong?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: g.allSkipped
-                      ? AppTheme.textFaint
-                      : (g.net < 0
-                            ? AppTheme.debitColor
-                            : AppTheme.creditColor),
-                ),
-              ),
-            ],
-          ),
-        );
-      }
-      extra += 18;
-      // Balance after the day's transactions: bold, green at or above the
-      // alert threshold (0 when the pool has none), red below it.
       final low = belowAlert(day.balanceAfter, widget.lossThreshold);
+      final netLabel = 'Net · ${g.count}';
+      final netText = formatSignedAmount(g.net);
+      final balLabel = 'End of day ';
+      final balText = formatMoneyAmount(day.balanceAfter);
+      final footBold = small.copyWith(fontWeight: FontWeight.w800);
+      contentWidth = math.max(
+        contentWidth,
+        (day.occurrences.length >= 2
+                ? _textWidth('$netLabel ', small) +
+                      _textWidth(netText, footBold) +
+                      12
+                : 0) +
+            _textWidth(balLabel, small) +
+            _textWidth(balText, footBold),
+      );
+      extra += 25;
+      children.add(const Divider(height: 7, color: AppTheme.border));
       children.add(
-        Text.rich(
-          key: const ValueKey('tip-balance'),
-          TextSpan(
-            text: 'Balance end of day: ',
-            style: small.copyWith(color: AppTheme.textFaint),
-            children: [
-              TextSpan(
-                text: formatMoneyAmount(day.balanceAfter),
-                style: small.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: low ? AppTheme.debitColor : AppTheme.creditColor,
-                ),
+        Row(
+          children: [
+            if (day.occurrences.length >= 2) ...[
+              Row(
+                key: const ValueKey('day-net'),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$netLabel ',
+                    style: small.copyWith(color: AppTheme.textFaint),
+                  ),
+                  Text(
+                    netText,
+                    style: footBold.copyWith(
+                      color: g.allSkipped
+                          ? AppTheme.textFaint
+                          : (g.net < 0
+                                ? AppTheme.debitColor
+                                : AppTheme.creditColor),
+                    ),
+                  ),
+                ],
               ),
+              const SizedBox(width: 12),
             ],
-          ),
+            // Balance after the day's transactions: bold, green at or
+            // above the alert threshold (0 when none), red below it.
+            // Takes all the room left (a Spacer would halve it).
+            Expanded(
+              child: Text.rich(
+                textAlign: TextAlign.end,
+                key: const ValueKey('tip-balance'),
+                TextSpan(
+                  text: balLabel,
+                  style: small.copyWith(color: AppTheme.textFaint),
+                  children: [
+                    TextSpan(
+                      text: balText,
+                      style: footBold.copyWith(
+                        color: low ? AppTheme.debitColor : AppTheme.creditColor,
+                      ),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       );
     }
-    final estHeight = 20.0 + math.min(rowsHeight, maxRowsHeight) + extra;
+    // The card hugs its content, up to [maxWidth].
+    final width = (contentWidth + 20 + (scrolls ? 10 : 0) + 2)
+        .clamp(math.min(150.0, maxWidth), maxWidth)
+        .toDouble();
+    final estHeight = 14.0 + math.min(rowsHeight, maxRowsHeight) + extra;
     // Right of the dot, flipping left / up near the edges.
     var left = tip.anchor.dx + 14;
     if (left + width > _size.width - 4) left = tip.anchor.dx - 14 - width;
@@ -3390,7 +3476,7 @@ class _BalanceChartState extends State<BalanceChart>
         side: const BorderSide(color: AppTheme.borderStrong),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        padding: const EdgeInsets.fromLTRB(10, 7, 10, 7),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5132,6 +5218,15 @@ class _Dot {
 
   /// Pool balance right after this occurrence applied.
   final double balanceAfter;
+}
+
+/// One entry of a popup row's ⋮ menu.
+class _RowAction {
+  const _RowAction(this.key, this.icon, this.label, this.run);
+  final String key;
+  final IconData icon;
+  final String label;
+  final VoidCallback run;
 }
 
 class _DotTip {

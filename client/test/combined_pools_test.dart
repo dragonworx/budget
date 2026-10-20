@@ -462,16 +462,38 @@ void main() {
 
     expect(await reveal(const ValueKey('tip-pool-c')), isTrue);
     expect(find.byKey(const ValueKey('tip-pool-b')), findsOneWidget);
-    expect(find.text('Kids · view only'), findsOneWidget);
-    expect(find.text('Savings'), findsOneWidget);
+    expect(find.textContaining('Kids · view only'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^Savings')), findsOneWidget);
     expect(find.textContaining('nets out'), findsNWidgets(2));
     // Savings is mine: its own editor. Kids is view only: no edit.
-    expect(find.byTooltip('Edit in Savings'), findsOneWidget);
-    expect(find.byKey(const ValueKey('tip-open-other-snack')), findsNothing);
-    // "+" on every row (Kids' too): it always creates in the current pool.
-    for (final id in ['t-out', 't-in', 'snack']) {
-      expect(find.byKey(ValueKey('tip-new-$id')), findsOneWidget, reason: id);
-    }
+    // Each row's ⋮: Savings' row edits in Savings; Kids (view only) has
+    // only + (which always creates in the current pool).
+    await tester.tap(
+      find.byKey(const ValueKey('tip-menu-t-in')),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('tip-menu-open-other-t-in')),
+      findsOneWidget,
+    );
+    expect(find.text('Edit in Savings'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tip-menu-new-t-in')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('tip-menu-snack')),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tip-menu-new-snack')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('tip-menu-open-other-snack')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('tip-menu-edit-snack')), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
     // Net counts only Kids' 5 (the transfer nets out).
     expect(
       find.descendant(

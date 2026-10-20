@@ -235,6 +235,21 @@ void _singles(_Store s) {
   );
 }
 
+/// Opens the ⋮ menu of the popup row for transaction [id].
+Future<void> _openRowMenu(
+  WidgetTester tester,
+  String id,
+  PointerDeviceKind kind,
+) async {
+  await tester.tap(find.byKey(ValueKey('tip-menu-$id')), kind: kind);
+  await tester.pumpAndSettle();
+}
+
+Finder _keyStarts(String prefix) => find.byWidgetPredicate(
+  (w) =>
+      w.key is ValueKey && '${(w.key! as ValueKey).value}'.startsWith(prefix),
+);
+
 /// Opens [name]'s series in the editor through the Transactions panel
 /// (the only edit path: taps on the chart just show info).
 Future<void> _editFromPanel(WidgetTester tester, String name) async {
@@ -245,6 +260,7 @@ Future<void> _editFromPanel(WidgetTester tester, String name) async {
 }
 
 void main() {
+  popupSizeProbe();
   testWidgets('Trim release asks first, then ends the series on that day', (
     tester,
   ) async {
@@ -630,7 +646,7 @@ void main() {
   ) async {
     await _pump(tester, size: const Size(412, 839));
     final plot = tester.getRect(find.byType(BalanceChart));
-    final tip = find.textContaining('Balance end of day');
+    final tip = find.byKey(const ValueKey('tip-balance'));
     // Find a spot where a plain tap shows a dot's info.
     Offset? spot;
     for (var fy = 0.02; fy < 0.98 && spot == null; fy += 0.03) {
@@ -850,8 +866,10 @@ void main() {
     }
   });
 
-  testWidgets('popup Edit (one transaction) opens its editor; touch and '
-      'mouse', (tester) async {
+  testWidgets('popup ⋮ → Edit (one transaction) opens its editor; the ⋮ '
+      'sits after the amount on the name line; touch and mouse', (
+    tester,
+  ) async {
     for (final (size, kind) in [
       (const Size(390, 844), PointerDeviceKind.touch),
       (const Size(1440, 900), PointerDeviceKind.mouse),
@@ -859,26 +877,59 @@ void main() {
       final store = await _pump(tester, size: size, setup: _singles);
       await _revealTip(tester, kind);
       final tip = find.byKey(const ValueKey('occurrence-tooltip'));
-      // Which transaction the popup shows.
       final name = ['Rent', 'Salary'].firstWhere(
         (n) => find
             .descendant(of: tip, matching: find.text(n))
             .evaluate()
             .isNotEmpty,
       );
-      final edit = find.byKey(ValueKey('tip-edit-${name.toLowerCase()}'));
-      expect(edit, findsOneWidget);
-      expect(find.byTooltip('Edit $name'), findsOneWidget);
-      // Same compact icon button as + and Trim; 44px targets on touch.
-      final side = kind == PointerDeviceKind.touch ? 44.0 : 32.0;
-      expect(tester.getSize(edit), Size(side, side));
-      // A tap on the card itself (not Edit) does nothing and keeps it up.
+      final id = name.toLowerCase();
+      final menu = find.byKey(ValueKey('tip-menu-$id'));
+      expect(menu, findsOneWidget);
+      // No action strip any more: just the ⋮.
+      expect(_keyStarts('tip-edit-'), findsNothing);
+      expect(_keyStarts('tip-new-'), findsNothing);
+      // ⋮ right after the amount, same line as the name; 44px wide target
+      // on touch, compact for a mouse; the row stays compact.
+      final m = tester.getRect(menu);
+      final nameRect = tester.getRect(
+        find.descendant(of: tip, matching: find.text(name)),
+      );
+      expect(m.left, greaterThan(nameRect.right));
+      expect(m.top, lessThanOrEqualTo(nameRect.center.dy));
+      expect(m.bottom, greaterThanOrEqualTo(nameRect.center.dy));
+      final touch = kind == PointerDeviceKind.touch;
+      expect(m.width, touch ? 44 : 28);
+      expect(m.height, touch ? 44 : 28);
+      // A tap on the card itself (not ⋮) does nothing and keeps it up.
       final card = tester.getRect(tip);
       await tester.tapAt(card.topLeft + const Offset(20, 12), kind: kind);
       await tester.pump(const Duration(milliseconds: 400));
       expect(tip, findsOneWidget);
+      // Opening the menu keeps the popup; nothing opens yet.
+      await _openRowMenu(tester, id, kind);
+      expect(tip, findsOneWidget, reason: 'popup stays behind its menu');
       expect(find.byKey(const ValueKey('editor-name')), findsNothing);
-      await tester.tap(edit, kind: kind);
+      final items = [
+        find.byKey(ValueKey('tip-menu-new-$id')),
+        find.byKey(ValueKey('tip-menu-trim-$id')),
+        find.byKey(ValueKey('tip-menu-edit-$id')),
+      ];
+      for (final f in items) {
+        expect(f, findsOneWidget);
+      }
+      // In order: New, Trim, Edit.
+      expect(
+        tester.getCenter(items[0]).dy,
+        lessThan(tester.getCenter(items[1]).dy),
+      );
+      expect(
+        tester.getCenter(items[1]).dy,
+        lessThan(tester.getCenter(items[2]).dy),
+      );
+      expect(find.text('Trim series here'), findsOneWidget);
+      expect(find.textContaining('New transaction on '), findsOneWidget);
+      await tester.tap(items[2], kind: kind);
       await tester.pumpAndSettle();
       final field = tester.widget<TextField>(
         find.descendant(
@@ -897,7 +948,35 @@ void main() {
     }
   });
 
-  testWidgets('mouse: moving from the dot onto Edit keeps the hover popup', (
+  testWidgets('popup ⋮ menu dismissed: the popup stays, nothing happens', (
+    tester,
+  ) async {
+    for (final (size, kind) in [
+      (const Size(390, 844), PointerDeviceKind.touch),
+      (const Size(1440, 900), PointerDeviceKind.mouse),
+    ]) {
+      final store = await _pump(tester, size: size, setup: _singles);
+      store.calls.clear();
+      await _revealTip(tester, kind);
+      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      final id = find.byKey(const ValueKey('tip-menu-rent')).evaluate().isEmpty
+          ? 'salary'
+          : 'rent';
+      await _openRowMenu(tester, id, kind);
+      // Waiting past the tap-tip timeout with the menu open keeps it.
+      await tester.pump(const Duration(seconds: 8));
+      expect(tip, findsOneWidget);
+      await tester.tapAt(const Offset(2, 2), kind: kind); // dismiss menu
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('tip-menu-edit-$id')), findsNothing);
+      expect(tip, findsOneWidget, reason: 'dismissing the menu keeps it');
+      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(store.calls.where((c) => !c.startsWith('balance')), isEmpty);
+      await tester.pump(const Duration(seconds: 8));
+    }
+  });
+
+  testWidgets('mouse: moving from the dot onto ⋮ keeps the hover popup', (
     tester,
   ) async {
     await _pump(tester, setup: _singles);
@@ -918,13 +997,7 @@ void main() {
       }
     }
     expect(dot, isNotNull);
-    final target = tester.getCenter(
-      find.byWidgetPredicate(
-        (w) =>
-            w.key is ValueKey &&
-            '${(w.key! as ValueKey).value}'.startsWith('tip-edit-'),
-      ),
-    );
+    final target = tester.getCenter(_keyStarts('tip-menu-'));
     for (var i = 1; i <= 10; i++) {
       await mouse.moveTo(Offset.lerp(dot, target, i / 10)!);
       await tester.pump();
@@ -935,13 +1008,18 @@ void main() {
     await mouse.down(target);
     await mouse.up();
     await tester.pumpAndSettle();
+    expect(tip, findsOneWidget, reason: 'menu open, popup kept');
+    await tester.tap(
+      _keyStarts('tip-menu-edit-'),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
     await mouse.removePointer();
   });
 
-  testWidgets('popup with several transactions: each row has its own '
-      'action strip (+, Trim, Edit; same buttons, one line); Edit opens '
-      'that series', (tester) async {
+  testWidgets('popup with several transactions: one compact line each '
+      '(name, amount, ⋮); ⋮ → Edit opens that series', (tester) async {
     for (final (size, kind) in [
       (const Size(390, 844), PointerDeviceKind.touch),
       (const Size(1440, 900), PointerDeviceKind.mouse),
@@ -949,30 +1027,42 @@ void main() {
     ]) {
       final store = await _pump(tester, size: size);
       await _revealTip(tester, kind);
-      final tip = tester.getRect(
-        find.byKey(const ValueKey('occurrence-tooltip')),
-      );
+      final tipF = find.byKey(const ValueKey('occurrence-tooltip'));
+      final tip = tester.getRect(tipF);
       expect(tip.right, lessThanOrEqualTo(size.width));
-      final side = kind == PointerDeviceKind.touch ? 44.0 : 32.0;
-      for (final id in ['rent', 'salary']) {
-        final row = [
-          find.byKey(ValueKey('tip-new-$id')),
-          find.byKey(ValueKey('tip-trim-$id')),
-          find.byKey(ValueKey('tip-edit-$id')),
-        ];
-        final centres = [for (final f in row) tester.getCenter(f)];
-        for (final (i, f) in row.indexed) {
-          expect(tester.getSize(f), Size(side, side), reason: '$id $i');
-          expect(centres[i].dy, centres.first.dy, reason: 'one line');
-          if (i > 0) expect(centres[i].dx, greaterThan(centres[i - 1].dx));
-          expect(tester.getRect(f).right, lessThanOrEqualTo(tip.right));
-        }
+      expect(tip.width, lessThanOrEqualTo(280));
+      final rows = [
+        for (final id in ['rent', 'salary'])
+          tester.getRect(find.byKey(ValueKey('tip-row-$id'))),
+      ];
+      final rowH = kind == PointerDeviceKind.touch ? 44.0 : 28.0;
+      for (final (i, r) in rows.indexed) {
+        final id = ['rent', 'salary'][i];
+        final menu = tester.getRect(find.byKey(ValueKey('tip-menu-$id')));
+        expect(r.right, lessThanOrEqualTo(tip.right));
+        // At least the touch/mouse target; at most name + one meta line.
+        expect(r.height, greaterThanOrEqualTo(rowH - 0.01));
+        expect(r.height, lessThanOrEqualTo(44.01));
+        expect(menu.height, closeTo(rowH, 0.01));
+        expect(menu.width, kind == PointerDeviceKind.touch ? 44 : 28);
+        // The ⋮ is inside its row, at the end.
+        expect(menu.top, greaterThanOrEqualTo(r.top - 0.5));
+        expect(menu.bottom, lessThanOrEqualTo(r.bottom + 0.5));
+        expect(menu.right, closeTo(r.right, 0.5));
       }
+      // Stacked, no gaps or dividers between them.
+      expect(rows[1].top, closeTo(rows[0].bottom, 0.5));
       // One date header for the day, not one per row.
       expect(find.byKey(const ValueKey('tip-date')), findsOneWidget);
-      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      // The footer's end-of-day balance takes all the room the net
+      // leaves (a Spacer used to halve it and ellipsise the balance).
+      final netR = tester.getRect(find.byKey(const ValueKey('day-net')));
+      final balR = tester.getRect(find.byKey(const ValueKey('tip-balance')));
+      expect(balR.left, closeTo(netR.right + 12, 1));
+      expect(balR.right, closeTo(tip.right - 11, 1.5));
+      await _openRowMenu(tester, 'salary', kind);
       await tester.tap(
-        find.byKey(const ValueKey('tip-edit-salary')),
+        find.byKey(const ValueKey('tip-menu-edit-salary')),
         kind: kind,
       );
       await tester.pumpAndSettle();
@@ -1003,17 +1093,22 @@ void main() {
       final store = await _pump(tester, size: size, setup: _singles);
       store.calls.clear();
       await _revealTip(tester, kind);
-      final plus = find.byWidgetPredicate(
-        (w) =>
-            w.key is ValueKey &&
-            '${(w.key! as ValueKey).value}'.startsWith('tip-new-'),
-      );
-      expect(plus, findsOneWidget);
       final tipText = tester
           .widget<Text>(find.byKey(const ValueKey('tip-date')))
           .data!;
-      final button = tester.widget<IconButton>(plus);
-      expect(button.tooltip, startsWith('New transaction on '));
+      final menu = _keyStarts('tip-menu-');
+      expect(menu, findsOneWidget);
+      await tester.tap(menu, kind: kind);
+      await tester.pumpAndSettle();
+      final plus = _keyStarts('tip-menu-new-');
+      expect(plus, findsOneWidget);
+      expect(
+        find.descendant(
+          of: plus,
+          matching: find.textContaining('New transaction on '),
+        ),
+        findsOneWidget,
+      );
       final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
       final txDay = chart.series.occurrences
           .map((o) => DateTime(o.date.year, o.date.month, o.date.day))
@@ -1053,17 +1148,7 @@ void main() {
       await _pump(tester, setup: (s) => s.role = Role.viewer);
       await _revealTip(tester, kind);
       expect(find.byKey(const ValueKey('occurrence-tooltip')), findsOneWidget);
-      for (final p in ['tip-edit-', 'tip-new-', 'tip-trim-']) {
-        expect(
-          find.byWidgetPredicate(
-            (w) =>
-                w.key is ValueKey &&
-                '${(w.key! as ValueKey).value}'.startsWith(p),
-          ),
-          findsNothing,
-          reason: p,
-        );
-      }
+      expect(_keyStarts('tip-menu-'), findsNothing, reason: 'no ⋮');
     }
   });
 
@@ -1911,10 +1996,17 @@ void main() {
       );
       store.calls.clear();
       await _revealTip(tester, kind);
-      // Rent and Salary share each dot: one Trim per row.
-      final trimRent = find.byKey(const ValueKey('tip-trim-rent'));
+      // Rent and Salary share each dot: each row's ⋮ has its own Trim.
+      await _openRowMenu(tester, 'salary', kind);
+      expect(
+        find.byKey(const ValueKey('tip-menu-trim-salary')),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await _openRowMenu(tester, 'rent', kind);
+      final trimRent = find.byKey(const ValueKey('tip-menu-trim-rent'));
       expect(trimRent, findsOneWidget);
-      expect(find.byKey(const ValueKey('tip-trim-salary')), findsOneWidget);
       expect(store.calls.where((c) => !c.startsWith('balance')), isEmpty);
       await tester.tap(trimRent, kind: kind);
       await tester.pump();
@@ -1951,8 +2043,7 @@ void main() {
       'occurrence', (tester) async {
     await _pump(tester, setup: (s) => s.role = Role.viewer);
     await _revealTip(tester, PointerDeviceKind.mouse);
-    expect(find.byKey(const ValueKey('tip-trim-rent')), findsNothing);
-    expect(find.byKey(const ValueKey('tip-trim-salary')), findsNothing);
+    expect(_keyStarts('tip-menu'), findsNothing);
     // Every dot is Rent's last (and only) occurrence: no Trim for it.
     await _pump(
       tester,
@@ -1971,8 +2062,14 @@ void main() {
       },
     );
     await _revealTip(tester, PointerDeviceKind.touch);
-    expect(find.byKey(const ValueKey('tip-trim-rent')), findsNothing);
-    expect(find.byKey(const ValueKey('tip-trim-salary')), findsNothing);
+    for (final id in ['rent', 'salary']) {
+      await _openRowMenu(tester, id, PointerDeviceKind.touch);
+      expect(find.byKey(ValueKey('tip-menu-trim-$id')), findsNothing);
+      expect(find.byKey(ValueKey('tip-menu-edit-$id')), findsOneWidget);
+      expect(find.byKey(ValueKey('tip-menu-new-$id')), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    }
   });
 
   test('viewForRange: picked first day clear of the strip, picked last day '
@@ -2244,3 +2341,47 @@ int _firstYear(WidgetTester tester) {
 }
 
 DateTime _plus(DateTime x, int days) => DateTime(x.year, x.month, x.day + days);
+
+void _three(_Store s) {
+  final r = s.txs['rent']!;
+  s.txs['gym'] = Transaction(
+    id: 'gym',
+    poolId: r.poolId,
+    name: 'Gym',
+    direction: TransactionDirection.debit,
+    amount: Decimal.fromInt(25),
+    startDate: r.startDate,
+    recurrenceMode: RecurrenceMode.once,
+    endMode: EndMode.never,
+  );
+}
+
+/// Popup compactness: 1-row and 3-row cards stay well under the old
+/// stacked layout (280x124 / 280x228 on touch, 280x112 / 280x204 mouse).
+void popupSizeProbe() {
+  for (final (size, kind) in [
+    (const Size(390, 844), PointerDeviceKind.touch),
+    (const Size(1440, 900), PointerDeviceKind.mouse),
+    (const Size(320, 640), PointerDeviceKind.touch),
+  ]) {
+    final touch = kind == PointerDeviceKind.touch;
+    for (final (rows, setup, maxH) in [
+      (1, _singles, touch ? 96.0 : 80.0),
+      (3, _three, touch ? 140.0 : 110.0),
+    ]) {
+      testWidgets('popup is compact: ${size.width.toInt()} ${kind.name} '
+          '$rows row(s)', (tester) async {
+        await _pump(tester, size: size, setup: setup);
+        await _revealTip(tester, kind);
+        final r = tester.getRect(
+          find.byKey(const ValueKey('occurrence-tooltip')),
+        );
+        expect(r.width, lessThanOrEqualTo(280));
+        expect(r.height, lessThanOrEqualTo(maxH));
+        expect(r.left, greaterThanOrEqualTo(0));
+        expect(r.right, lessThanOrEqualTo(size.width));
+        if (rows == 1) expect(r.width, lessThan(280), reason: 'hugs content');
+      });
+    }
+  }
+}
