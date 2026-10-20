@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
-import '../../data/frequency.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/recurrence_interval_field.dart';
 
 /// Opens the transaction planner. Any values in [initial] are treated as known.
 ///
@@ -128,11 +128,6 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     _rounding = i.rounding;
     _startDate = i.startDate;
     _endDate = i.endDate;
-    final typed = int.tryParse(_interval.text.trim());
-    _freqCustom =
-        typed != null &&
-        FrequencyPreset.of(once: false, interval: typed, unit: _unit) ==
-            FrequencyPreset.custom;
     _scheduleSolve(immediate: true);
   }
 
@@ -262,70 +257,30 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     cb(t?.copyWith(accountId: widget.accountId, direction: _direction));
   }
 
-  /// Custom… chosen: show the unit + Every inputs.
-  bool _freqCustom = false;
-
-  /// Frequency presets; a blank Every is auto (✦) and shows the matching
-  /// preset for the calculated / assumed spacing.
-  Widget _frequencyField(int? autoInterval) {
+  /// Every [− N +] [unit ▾] (shared with the transaction editor). A blank
+  /// N is calculated (✦) and shows as a hint.
+  Widget _frequencyField(int? calculated) {
+    final auto = _isSolved(SolveVar.interval) ? calculated : null;
     final typed = _parseInt(_interval);
-    final FrequencyPreset? value = _freqCustom
-        ? FrequencyPreset.custom
-        : (typed == null
-              ? null
-              : FrequencyPreset.of(once: false, interval: typed, unit: _unit));
-    final auto = _isSolved(SolveVar.interval) ? autoInterval : null;
-    final autoPreset = auto == null
-        ? null
-        : FrequencyPreset.of(once: false, interval: auto, unit: _unit);
-    final autoLabel = autoPreset == null
-        ? null
-        : (autoPreset == FrequencyPreset.custom
-              ? 'Every $auto ${unitLabel(_unit, auto!)}'
-              : autoPreset.label);
-    final scheme = Theme.of(context).colorScheme;
-    return DropdownButtonFormField<FrequencyPreset>(
-      key: ValueKey('plan-frequency-${value?.name}-$autoLabel'),
-      initialValue: value,
-      isExpanded: true,
-      hint: autoLabel == null
-          ? null
-          : Text(
-              autoLabel,
-              style: TextStyle(
-                color: scheme.primary,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-      decoration: _decoration(
-        context,
-        label: 'Frequency',
-        hasValue: value != null,
-        wanted: _isWanted(SolveVar.interval),
-        hint: autoLabel,
-        helper: _helperFor(
-          hasValue: value != null,
-          wanted: _isWanted(SolveVar.interval),
-          help: 'Clear to have the spacing calculated',
-          calculated: autoLabel,
-        ),
-        onClear: () {
-          _freqCustom = false;
-          _interval.clear();
-          _changed();
-        },
-      ).copyWith(hintText: null),
-      items: [
-        for (final p in [...FrequencyPreset.repeating, FrequencyPreset.custom])
-          DropdownMenuItem(value: p, child: Text(p.label)),
-      ],
-      onChanged: (p) {
-        if (p == null) return;
-        _freqCustom = p == FrequencyPreset.custom;
-        if (p.repeats) {
-          _interval.text = '${p.interval}';
-          _unit = p.unit!;
-        }
+    return RecurrenceIntervalField(
+      keyPrefix: 'plan',
+      caption: 'Frequency',
+      controller: _interval,
+      unit: _unit,
+      autoInterval: auto,
+      allowBlank: true,
+      highlight: _isWanted(SolveVar.interval),
+      errorText: _intError(_interval),
+      helperText: typed == null && auto != null
+          ? '✦ Calculated: every $auto ${unitLabel(_unit, auto)}'
+          : 'Leave the number blank to find the spacing that fits',
+      onChanged: _changed,
+      onUnitChanged: (u) {
+        _unit = u;
+        _changed();
+      },
+      onClear: () {
+        _interval.clear();
         _changed();
       },
     );
@@ -463,51 +418,6 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
             ),
             const SizedBox(height: 16),
             _frequencyField(values?.interval),
-            if (_freqCustom) ...[
-              const SizedBox(height: 12),
-              SegmentedButton<RecurrenceUnit>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(
-                    value: RecurrenceUnit.days,
-                    label: Text('Daily'),
-                  ),
-                  ButtonSegment(
-                    value: RecurrenceUnit.weeks,
-                    label: Text('Weekly'),
-                  ),
-                  ButtonSegment(
-                    value: RecurrenceUnit.months,
-                    label: Text('Monthly'),
-                  ),
-                  ButtonSegment(
-                    value: RecurrenceUnit.years,
-                    label: Text('Yearly'),
-                  ),
-                ],
-                selected: {_unit},
-                onSelectionChanged: (value) {
-                  _unit = value.first;
-                  _changed();
-                },
-              ),
-              const SizedBox(height: 12),
-              _IntField(
-                controller: _interval,
-                label: 'Every',
-                suffix: unitLabel(
-                  _unit,
-                  _parseInt(_interval) ?? values?.interval ?? 1,
-                ),
-                help: 'Leave blank to find the spacing that fits',
-                calculated: _isSolved(SolveVar.interval)
-                    ? values?.interval
-                    : null,
-                wanted: _isWanted(SolveVar.interval),
-                error: _intError(_interval),
-                onChanged: _changed,
-              ),
-            ],
             const SizedBox(height: 12),
             _IntField(
               controller: _count,

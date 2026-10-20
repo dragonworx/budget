@@ -13,6 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/account_picker.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/money_text.dart';
+import '../../widgets/recurrence_interval_field.dart';
 import '../../widgets/ui.dart';
 import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
@@ -873,86 +874,20 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
-  void _setInterval(int n) =>
-      setState(() => _interval.text = '${n.clamp(1, maxRecurrenceInterval)}');
-
-  /// Every [− N +] [unit ▾]: N from 1 to [maxRecurrenceInterval], typed or
-  /// stepped; the unit reads singular for 1 ("Every 1 week").
-  Widget _intervalRow(ThemeData theme) {
-    final n = _intervalValue;
-    return Row(
-      children: [
-        Text('Every', style: theme.textTheme.bodyMedium),
-        const SizedBox(width: 4),
-        _stepButton(
-          Icons.remove_rounded,
-          'Fewer',
-          n <= 1 ? null : () => _setInterval(n - 1),
-          key: const ValueKey('editor-interval-minus'),
-        ),
-        SizedBox(
-          width: 48,
-          child: TextFormField(
-            key: const ValueKey('editor-interval'),
-            controller: _interval,
-            textAlign: TextAlign.center,
-            keyboardType: TextInputType.number,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(2),
-            ],
-            decoration: const InputDecoration(
-              isDense: true,
-              contentPadding: EdgeInsets.symmetric(vertical: 12),
-            ),
-            onChanged: (_) => setState(() {}),
-            validator: (value) {
-              if (_recurrenceMode != RecurrenceMode.every) return null;
-              final v = int.tryParse(value ?? '');
-              return v == null || v < 1 || v > maxRecurrenceInterval
-                  ? '1–$maxRecurrenceInterval'
-                  : null;
-            },
-          ),
-        ),
-        _stepButton(
-          Icons.add_rounded,
-          'More',
-          n >= maxRecurrenceInterval ? null : () => _setInterval(n + 1),
-          key: const ValueKey('editor-interval-plus'),
-        ),
-        const SizedBox(width: 4),
-        Expanded(
-          // Re-keyed by unit so a unit set elsewhere (e.g. applying a
-          // suggestion) shows.
-          child: KeyedSubtree(
-            key: ValueKey('editor-unit-is-${_unit.name}'),
-            child: DropdownButtonFormField<RecurrenceUnit>(
-            key: const ValueKey('editor-unit'),
-            initialValue: _unit,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            ),
-            dropdownColor: AppTheme.overlay,
-            items: [
-              for (final unit in RecurrenceUnit.values)
-                DropdownMenuItem(
-                  value: unit,
-                  child: Text(
-                    _unitPlural(unit, n),
-                    key: ValueKey('editor-unit-${unit.name}'),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            onChanged: (u) => setState(() => _unit = u ?? _unit),
-          ),
-          ),
-        ),
-      ],
-    );
-  }
+  /// Every [− N +] [unit ▾] (shared with the Plan panels).
+  Widget _intervalRow(ThemeData theme) => RecurrenceIntervalField(
+    controller: _interval,
+    unit: _unit,
+    onChanged: () => setState(() {}),
+    onUnitChanged: (u) => setState(() => _unit = u),
+    validator: (value) {
+      if (_recurrenceMode != RecurrenceMode.every) return null;
+      final v = int.tryParse(value ?? '');
+      return v == null || v < 1 || v > maxRecurrenceInterval
+          ? '1–$maxRecurrenceInterval'
+          : null;
+    },
+  );
 
   Widget _scheduleSection(ThemeData theme) {
     final repeating = _recurrenceMode == RecurrenceMode.every;
@@ -1034,23 +969,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           ],
         ],
       ),
-    );
-  }
-
-  /// A touch-sized (44px) − / + button.
-  Widget _stepButton(
-    IconData icon,
-    String tooltip,
-    VoidCallback? onPressed, {
-    Key? key,
-  }) {
-    return IconButton(
-      key: key,
-      tooltip: tooltip,
-      onPressed: onPressed,
-      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-      padding: EdgeInsets.zero,
-      icon: Icon(icon, size: 20),
     );
   }
 
@@ -1808,19 +1726,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       if (mounted) setState(() => _saving = false);
     }
   }
-}
-
-/// Largest "every N" the editor offers.
-const int maxRecurrenceInterval = 99;
-
-String _unitPlural(RecurrenceUnit unit, [int count = 2]) {
-  final one = count == 1;
-  return switch (unit) {
-    RecurrenceUnit.days => one ? 'day' : 'days',
-    RecurrenceUnit.weeks => one ? 'week' : 'weeks',
-    RecurrenceUnit.months => one ? 'month' : 'months',
-    RecurrenceUnit.years => one ? 'year' : 'years',
-  };
 }
 
 enum _Kind { credit, debit, transfer }

@@ -10,6 +10,7 @@ import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
+import '../../widgets/recurrence_interval_field.dart';
 import '../timeline/duration_format.dart';
 import 'goal_models.dart';
 
@@ -67,6 +68,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     GoalVar.rate: TextEditingController(),
   };
   final _count = TextEditingController();
+  final _intervalText = TextEditingController(text: '1');
 
   Timer? _debounce;
   int _seq = 0;
@@ -88,6 +90,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
       c.dispose();
     }
     _count.dispose();
+    _intervalText.dispose();
     super.dispose();
   }
 
@@ -97,6 +100,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     _mode = r.mode;
     _unit = r.unit;
     _interval = r.interval ?? 1;
+    _intervalText.text = '$_interval';
     _startDate = r.startDate;
     _endDate = r.endDate;
     String m(double? v) => v == null ? '' : _plain(v);
@@ -227,6 +231,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
         _endDate = value as DateTime;
       case GoalVar.interval:
         _interval = value as int;
+        _intervalText.text = '$_interval';
       case GoalVar.count:
         _count.text = '$value';
       default:
@@ -536,43 +541,22 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     );
   }
 
-  Widget _frequencyField(BuildContext context) {
-    final preset = FrequencyPreset.of(
-      once: false,
-      interval: _interval,
-      unit: _unit,
-    );
-    final items = [
-      ...FrequencyPreset.repeating,
-      if (preset == FrequencyPreset.custom) FrequencyPreset.custom,
-    ];
-    return DropdownButtonFormField<FrequencyPreset>(
-      key: ValueKey('goal-field-interval-${preset.name}-$_interval'),
-      initialValue: preset,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: GoalVar.interval.label,
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-      ),
-      items: [
-        for (final p in items)
-          DropdownMenuItem(
-            value: p,
-            child: Text(
-              p == FrequencyPreset.custom
-                  ? 'Every $_interval ${_unitWord(_unit, _interval)}'
-                  : p.label,
-            ),
-          ),
-      ],
-      onChanged: (p) {
-        if (p == null || !p.repeats) return;
-        _interval = p.interval!;
-        _unit = p.unit!;
-        _changed();
-      },
-    );
-  }
+  /// Every [− N +] [unit ▾] (shared with the transaction editor).
+  Widget _frequencyField(BuildContext context) => RecurrenceIntervalField(
+    keyPrefix: 'goal-field-interval',
+    caption: GoalVar.interval.label,
+    controller: _intervalText,
+    unit: _unit,
+    onChanged: () {
+      final n = int.tryParse(_intervalText.text.trim());
+      if (n != null && n >= 1) _interval = n;
+      _changed();
+    },
+    onUnitChanged: (u) {
+      _unit = u;
+      _changed();
+    },
+  );
 
   Widget _status(BuildContext context) {
     final theme = Theme.of(context);
