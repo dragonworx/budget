@@ -478,6 +478,47 @@ void main() {
     );
   });
 
+  testWidgets('combined: clicking another pool\'s transaction label shows '
+      'that day\'s popup with the pool named', (tester) async {
+    final labels = <(Offset, Rect)>[];
+    final lines = <(Rect, List<String>)>[];
+    debugVertexLabelRect = (n, c, r, rect) => labels.add((c, rect));
+    debugVertexLabelLines = (rect, l) => lines.add((rect, l));
+    addTearDown(() {
+      debugVertexLabelRect = null;
+      debugVertexLabelLines = null;
+    });
+    await _pump(tester);
+    await _toggleByTap(tester, 'c');
+    _chart(tester).onFitRequested!(FitMode.all);
+    await tester.pumpAndSettle();
+    // Kids' day 6 in the middle of the view.
+    _chart(tester).onViewportChanged(_d(-8), 30);
+    await tester.pumpAndSettle();
+    final origin = tester.getTopLeft(find.byType(BalanceChart));
+    // Kids' "pocket" label (latest paint) and the dot it names.
+    final (rect, _) = lines.lastWhere(
+      (e) => e.$2.any((l) => l.contains('pocket')),
+    );
+    final (dot, _) = labels.lastWhere((e) => e.$2.overlaps(rect));
+    final dots = {for (final (c, _) in labels) c};
+    Offset? spot;
+    for (var fx = 0.95; fx > 0.05 && spot == null; fx -= 0.05) {
+      final p = Offset(rect.left + rect.width * fx, rect.center.dy);
+      if (dots.every((d) => (d - p).distance > mouseVertexHitRadius + 1)) {
+        spot = p;
+      }
+    }
+    expect(spot, isNotNull);
+    expect(find.byKey(const ValueKey('tip-pool-c')), findsNothing);
+    await tester.tapAt(origin + spot!, kind: PointerDeviceKind.mouse);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('occurrence-tooltip')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tip-pool-c')), findsOneWidget);
+    expect(dot, isNotNull);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
   testWidgets('date heatmap uses the combined day nets: a transfer between '
       'ticked pools nets out (neutral), alone it is a loss (red)', (
     tester,

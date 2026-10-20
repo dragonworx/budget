@@ -543,6 +543,10 @@ double vertexHitRadius(PointerDeviceKind kind) => switch (kind) {
   _ => touchVertexHitRadius,
 };
 
+/// Extra reach (logical px) around a painted transaction label that still
+/// counts as a tap / hover on it.
+const double labelHitSlop = 2;
+
 /// While scrubbing, a finger farther than this from every dot keeps the
 /// last tooltip rather than jumping to a distant one.
 const double scrubMaxDistance = 96;

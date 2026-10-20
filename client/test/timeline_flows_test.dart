@@ -2046,6 +2046,99 @@ void main() {
       );
     });
   }
+
+  for (final (size, kind) in const [
+    (Size(390, 844), PointerDeviceKind.touch),
+    (Size(1440, 900), PointerDeviceKind.mouse),
+  ]) {
+    testWidgets('${size.width.toInt()}px ${kind.name}: tapping a transaction '
+        'label shows its dot\'s popup (same day, same place); never creates', (
+      tester,
+    ) async {
+      final labels = <(Offset, Rect)>[];
+      debugVertexLabelRect = (name, c, r, rect) => labels.add((c, rect));
+      addTearDown(() => debugVertexLabelRect = null);
+      final store = await _pump(tester, size: size);
+      store.calls.clear();
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      final plot = ChartLayout.of(
+        tester.getSize(find.byType(BalanceChart)),
+        tester.widget<BalanceChart>(find.byType(BalanceChart)).visibleDays,
+      ).plot;
+      final painted = {for (final (c, r) in labels) c: r};
+      final dots = painted.keys.toList();
+      final radius = vertexHitRadius(kind);
+      // A point on a label beyond every dot's hit radius (so only the label
+      // hit test can find it).
+      Offset? spot;
+      Offset? dot;
+      for (final MapEntry(key: c, value: r) in painted.entries) {
+        if (!plot.contains(c)) continue;
+        for (var fx = 0.95; fx > 0.05 && spot == null; fx -= 0.05) {
+          for (final fy in [0.5, 0.2, 0.8]) {
+            final p = Offset(r.left + r.width * fx, r.top + r.height * fy);
+            if (!plot.contains(p)) continue;
+            if (dots.every((d) => (d - p).distance > radius + 1)) {
+              spot = p;
+              dot = c;
+              break;
+            }
+          }
+        }
+        if (spot != null) break;
+      }
+      expect(spot, isNotNull, reason: 'a label reaches past the hit radius');
+      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      List<String> texts() => [
+        for (final t in tester.widgetList<Text>(
+          find.descendant(of: tip, matching: find.byType(Text)),
+        ))
+          t.data ?? '',
+      ];
+      Future<void> settle() =>
+          tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 50));
+      if (kind == PointerDeviceKind.mouse) {
+        // Hovering the label shows it too, as hovering the dot does.
+        final mouse = await tester.createGesture(kind: kind);
+        await mouse.addPointer(location: origin + spot!);
+        await mouse.moveTo(origin + spot + const Offset(0.5, 0));
+        await tester.pump();
+        expect(tip, findsOneWidget, reason: 'hover on the label');
+        await mouse.moveTo(origin + plot.topLeft + const Offset(4, 4));
+        await tester.pump();
+        await mouse.removePointer();
+        await tester.pump();
+      }
+      await tester.tapAt(origin + spot!, kind: kind);
+      await tester.pump();
+      expect(tip, findsOneWidget, reason: 'tap on the label');
+      final byLabel = texts();
+      final rectByLabel = tester.getRect(tip);
+      await settle();
+      // Dismiss, then tap the dot itself: the same popup in the same place.
+      await tester.tapAt(
+        origin + plot.topLeft + const Offset(4, 4),
+        kind: kind,
+      );
+      await tester.pump();
+      await settle();
+      expect(tip, findsNothing);
+      await tester.tapAt(origin + dot!, kind: kind);
+      await tester.pump();
+      expect(tip, findsOneWidget);
+      expect(texts(), byLabel);
+      expect(tester.getRect(tip), rectByLabel);
+      await settle();
+      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(
+        store.calls.where(
+          (c) => c.startsWith('create') || c.startsWith('update'),
+        ),
+        isEmpty,
+      );
+      await tester.pump(const Duration(seconds: 6));
+    });
+  }
 }
 
 /// The heatmap's start label without any year ("9 Oct").

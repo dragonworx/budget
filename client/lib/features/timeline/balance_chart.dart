@@ -84,6 +84,10 @@ const int maxLabelNames = 6;
 /// many names it listed and whether it was the one-line "Name +N more".
 typedef _LabelSpot = ({Rect rect, int names, bool compact});
 
+/// A transaction label as painted last frame (chart coords) and the centre
+/// of the dot it names; taps / hover on it act as on that dot.
+typedef _LabelHit = ({Rect rect, Offset dot});
+
 /// One text line under a label's total: a name, a "+N more", or both.
 typedef _LabelLine = ({String? name, String? more});
 
@@ -464,6 +468,9 @@ class _BalanceChartState extends State<BalanceChart>
 
   /// Vertex keys labelled last paint; see [_BalanceChartPainter.labelMemory].
   final Map<int, _LabelSpot> _labelMemory = <int, _LabelSpot>{};
+
+  /// Painted label boxes (see [_LabelHit]); refreshed by every paint.
+  final List<_LabelHit> _labelHits = <_LabelHit>[];
   static const Duration _holdDelay = Duration(milliseconds: 450);
 
   /// How far above the axis a pick drag goes before it counts as cancelled.
@@ -682,7 +689,7 @@ class _BalanceChartState extends State<BalanceChart>
       final pos = _downPos;
       if (pos == null || !_layout.plot.contains(pos)) return;
       final layout = _layout;
-      final near = _nearestDot(layout, pos, vertexHitRadius(event.kind));
+      final near = _dotAt(layout, pos, vertexHitRadius(event.kind));
       final lineTol = touch ? touchLineHitTolerance : mouseLineHitTolerance;
       if (near == null && _distanceToLine(layout, pos) <= lineTol) {
         return; // on the balance line: no selection (and nothing else)
@@ -1203,7 +1210,7 @@ class _BalanceChartState extends State<BalanceChart>
     _tapTipTimer?.cancel();
     final layout = _layout;
     final nearest = layout.plot.contains(pos)
-        ? _nearestDot(layout, pos, hitRadius)
+        ? _dotAt(layout, pos, hitRadius)
         : null;
     if (nearest == null) {
       _tapTip = false;
@@ -1630,6 +1637,7 @@ class _BalanceChartState extends State<BalanceChart>
                       builder: (context, tip, _) => CustomPaint(
                         painter: _BalanceChartPainter(
                           labelMemory: _labelMemory,
+                          labelHits: _labelHits,
                           series: widget.series,
                           seedDate: widget.seedDate,
                           lineStart: _lineStart,
@@ -2892,6 +2900,24 @@ class _BalanceChartState extends State<BalanceChart>
     return _dotsMemo = dots;
   }
 
+  /// The dot at [pos]: the nearest within [maxDistance], else the dot whose
+  /// painted label (amount + names, pushed or "+N more") is under [pos].
+  /// Priority: dot > label > the chart itself.
+  _Dot? _dotAt(ChartLayout layout, Offset pos, double maxDistance) =>
+      _nearestDot(layout, pos, maxDistance) ?? _labelDotAt(layout, pos);
+
+  /// The dot whose painted label contains [pos] (topmost / last painted).
+  _Dot? _labelDotAt(ChartLayout layout, Offset pos) {
+    if (!layout.plot.contains(pos)) return null;
+    for (final hit in _labelHits.reversed) {
+      if (!hit.rect.inflate(labelHitSlop).contains(pos)) continue;
+      for (final d in _dots(layout)) {
+        if ((d.center - hit.dot).distance < 1.5) return d;
+      }
+    }
+    return null;
+  }
+
   /// Nearest dot to [pos] within [maxDistance], by 2D distance.
   _Dot? _nearestDot(ChartLayout layout, Offset pos, double maxDistance) {
     if (!layout.plot.inflate(maxDistance).contains(pos)) return null;
@@ -2930,7 +2956,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// Mouse hover: same nearest-dot logic and popup as touch, at the 18px
   /// mouse hit radius; same-day grouped dots list all their transactions.
   void _updateDotHover(ChartLayout layout, Offset pos) {
-    final nearest = _nearestDot(
+    final nearest = _dotAt(
       layout,
       pos,
       vertexHitRadius(PointerDeviceKind.mouse),
@@ -3522,6 +3548,7 @@ Color _dayColor(int weekday) => _dayColors[(weekday - 1).clamp(0, 6)];
 class _BalanceChartPainter extends CustomPainter {
   _BalanceChartPainter({
     required this.labelMemory,
+    required this.labelHits,
     required this.series,
     required this.seedDate,
     DateTime? lineStart,
@@ -3570,6 +3597,9 @@ class _BalanceChartPainter extends CustomPainter {
   /// shown label keeps its spot while the view moves (hysteresis), instead
   /// of a dot entering at the edge reshuffling the greedy placement.
   final Map<int, _LabelSpot> labelMemory;
+
+  /// Output: the labels painted this frame, for hit-testing taps on them.
+  final List<_LabelHit> labelHits;
   final TextStyle strongStyle;
   final TextStyle laneStyle;
   final Map<String, String> transactionNames;
@@ -4857,6 +4887,13 @@ class _BalanceChartPainter extends CustomPainter {
     labelMemory
       ..clear()
       ..addAll(shown);
+    labelHits
+      ..clear()
+      ..addAll([
+        for (final v in vertices)
+          if (shown[v.key] case final spot? when view.contains(v.center))
+            (rect: spot.rect.shift(v.center), dot: v.center),
+      ]);
     final rectHook = debugVertexLabelRect;
     if (rectHook != null) {
       for (final v in vertices) {
