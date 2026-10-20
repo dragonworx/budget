@@ -16,7 +16,11 @@
     var url = new URL(mainPath, document.baseURI).toString();
     return fetch(url).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + mainPath);
-      var total = +r.headers.get('Content-Length') || 0;
+      // Content-Length is the wire size: with a (pre)compressed response it
+      // is smaller than the bytes the reader yields, so only trust it when
+      // the body is not encoded.
+      var enc = (r.headers.get('Content-Encoding') || '').toLowerCase();
+      var total = (!enc || enc === 'identity') ? (+r.headers.get('Content-Length') || 0) : 0;
       if (!r.body || !r.body.getReader) return r.blob();
       if (!total) L.progress('main', null);
       var reader = r.body.getReader(), chunks = [], got = 0;

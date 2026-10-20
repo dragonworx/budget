@@ -52,6 +52,10 @@
 		@html path / /index.html /flutter_bootstrap.js /flutter_service_worker.js /version.json /build.json /main.dart.js
 		header @html Cache-Control "no-cache"
 		try_files {path} /index.html
-		file_server
+		# .br/.zst/.gz siblings are made at image build (client/Dockerfile);
+		# anything without one falls back to `encode` above.
+		file_server {
+			precompressed br zstd gzip
+		}
 	}
 }
