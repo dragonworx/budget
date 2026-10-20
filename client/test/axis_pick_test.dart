@@ -129,12 +129,12 @@ void main() {
   });
 
   testWidgets('one bubble: pressed, dragging, released and tapped look the '
-      'same (+ and close throughout)', (tester) async {
+      'same (+ only, no close)', (tester) async {
     for (final kind in [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
       final h = await _pump(tester);
       final bubbleF = find.byKey(const ValueKey('pick-bubble'));
       // Everything about the bubble: its size, its texts and where + /
-      // close / date sit inside it.
+      // date sit inside it.
       (Size, List<String>, List<Offset>) look() {
         final b = tester.getRect(bubbleF);
         final texts = [
@@ -147,7 +147,7 @@ void main() {
           b.size,
           texts,
           [
-            for (final k in ['pick-add', 'pick-close', 'pick-date'])
+            for (final k in ['pick-add', 'pick-date'])
               tester.getRect(find.byKey(ValueKey(k))).topLeft - b.topLeft,
           ],
         );
@@ -166,15 +166,27 @@ void main() {
       final g = await tester.startGesture(Offset(_x(4), _axisY), kind: kind);
       await tester.pump();
       final pressed = look();
-      for (final k in ['pick-add', 'pick-close']) {
-        expect(find.byKey(ValueKey(k)), findsOneWidget, reason: '$kind $k');
+      expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
+      // + is the only button, in every state.
+      void onlyAdd(String why) {
+        expect(
+          find.descendant(of: bubbleF, matching: find.byType(IconButton)),
+          findsOneWidget,
+          reason: '$kind $why',
+        );
+        expect(find.byKey(const ValueKey('pick-close')), findsNothing);
+        expect(find.byTooltip('Close'), findsNothing);
       }
+
+      onlyAdd('pressed');
       await g.moveTo(Offset(_x(8), _axisY));
       await tester.pump();
       final dragging = look();
+      onlyAdd('dragging');
       await g.up();
       await tester.pump();
       final released = look();
+      onlyAdd('released');
       same(dragging, released, 'dragging vs released');
       expect(pressed.$1, released.$1, reason: '$kind pressed: same size');
       expect(pressed.$3, released.$3, reason: '$kind pressed: same layout');
@@ -182,34 +194,41 @@ void main() {
         expect(find.text(gone), findsNothing);
       }
       expect(h.created, isEmpty, reason: 'release never creates');
-      // A quick tap on the same day shows that same bubble.
-      await tester.tap(find.byKey(const ValueKey('pick-close')), kind: kind);
-      await tester.pump();
-      expect(bubbleF, findsNothing);
+      // Tapping elsewhere on the chart dismisses it; a quick tap on the
+      // same day then shows that same bubble.
+      await tester.tapAt(const Offset(40, 40), kind: kind);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(bubbleF, findsNothing, reason: '$kind tap elsewhere');
+      expect(h.created, isEmpty);
       await tester.tapAt(Offset(_x(8), _axisY), kind: kind);
       await tester.pump(const Duration(seconds: 1));
       same(look(), released, 'tap vs released');
+      onlyAdd('tap');
       expect(h.created, isEmpty, reason: 'a tap never creates');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
     }
   });
 
-  testWidgets('a pinned line goes on close, tap-away, Esc or navigation', (
-    tester,
-  ) async {
+  testWidgets('a pinned line goes on tap-away (touch and mouse), Esc or '
+      'navigation; it has no close button', (tester) async {
     final h = await _pump(tester);
     final bubble = find.byKey(const ValueKey('pick-bubble'));
     Future<void> pin() async {
       await tester.tapAt(Offset(_x(6), _axisY), kind: PointerDeviceKind.touch);
       await tester.pump();
       expect(bubble, findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-close')), findsNothing);
     }
 
     await pin();
-    await tester.tap(find.byKey(const ValueKey('pick-close')));
-    await tester.pump();
-    expect(bubble, findsNothing);
+    // Mouse click elsewhere (in the plot) dismisses too.
+    await tester.tapAt(
+      Offset(_x(20), _layout.plot.center.dy),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(bubble, findsNothing, reason: 'mouse click-away');
     await pin();
     await tester.tapAt(const Offset(40, 40), kind: PointerDeviceKind.touch);
     await tester.pump();
@@ -285,7 +304,7 @@ void main() {
     await g2.moveTo(Offset(_x(3), _layout.axis.top - 120));
     await g2.moveTo(Offset(_x(6), _axisY));
     await tester.pump();
-    expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pick-close')), findsNothing);
     await g2.up();
     await tester.pump();
     expect(h.created, isEmpty);

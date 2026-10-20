@@ -162,7 +162,7 @@ void main() {
       await tester.pump();
       // On press: the day's "+" is already there.
       expect(add, findsOneWidget, reason: '$kind: + on press');
-      expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-close')), findsNothing);
       // It follows the picked day while dragging along the footer.
       for (final day in [12, 15, 18]) {
         await g.moveTo(Offset(xOf(day), layout.axis.center.dy));
@@ -181,7 +181,7 @@ void main() {
         await g.moveTo(Offset(xOf(18), layout.axis.top - dy));
         await tester.pump();
         expect(add, findsOneWidget, reason: '$kind: + ${dy}px up');
-        expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
+        expect(find.byKey(const ValueKey('pick-close')), findsNothing);
       }
       expect(find.text('Release to cancel'), findsNothing);
       for (final k in ['pick-trim', 'trim-preview', 'pick-trim-action']) {
@@ -197,7 +197,7 @@ void main() {
       expect(created, isEmpty, reason: 'release never acts');
       expect(trimmed, isEmpty, reason: 'a drag never trims');
       expect(add, findsOneWidget);
-      expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-close')), findsNothing);
       expect(bubble().center.dx, closeTo(xOf(18), 1));
       await tester.tap(add, kind: kind);
       await tester.pump();
@@ -220,14 +220,15 @@ void main() {
       await g2.up();
       await tester.pump();
       expect(add, findsOneWidget);
-      expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-close')), findsNothing);
       expect(
         find.text(formatOccurrenceDate(_start.add(const Duration(days: 8)))),
         findsOneWidget,
       );
       expect(created, hasLength(1), reason: 'release never creates');
-      await tester.tap(find.byKey(const ValueKey('pick-close')), kind: kind);
-      await tester.pump();
+      // No close button: a tap elsewhere on the chart dismisses it.
+      await tester.tapAt(Offset(xOf(25), layout.plot.top + 20), kind: kind);
+      await tester.pump(const Duration(milliseconds: 400));
       expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
       expect(created, hasLength(1));
       await tester.pump(const Duration(seconds: 1));
