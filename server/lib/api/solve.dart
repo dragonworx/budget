@@ -9,6 +9,7 @@ import '../engine/balance_projection.dart';
 import '../engine/solver.dart';
 import '../repo/pool_repo.dart';
 import '../repo/transaction_repo.dart';
+import 'balance.dart' show checkBalanceRange;
 import 'json_helpers.dart';
 
 /// Registers `POST /<poolId>/solve` on [router].
@@ -40,6 +41,7 @@ void attachSolveRoutes(Router router, Session conn) {
               'Set an end date to plan towards a target balance');
         }
         final end = parseDate(endRaw);
+        checkBalanceRange(end, end, seed: pool.seedDate);
         final projected = BalanceProjection.closeOn(
           pool: pool,
           transactions: await transactionRepo.listByPool(poolId),
@@ -93,8 +95,7 @@ void attachSolveRoutes(Router router, Session conn) {
       if (balanceTarget != null) json['balanceTarget'] = balanceTarget;
       final transaction = result.transaction;
       if (transaction != null) {
-        json['transaction'] =
-            transaction.copyWith(poolId: poolId).toJson();
+        json['transaction'] = transaction.copyWith(poolId: poolId).toJson();
       }
       return jsonOk(json);
     } on FormatException catch (e) {

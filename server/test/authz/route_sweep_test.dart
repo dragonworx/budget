@@ -132,15 +132,15 @@ void main() {
       // Unknown routes are denied even when signed in.
       expect((await h.call('GET', '/api/secret-debug', as: 'outsider')).status,
           404);
-      expect((await h.call('DELETE', '/api/pools', as: 'outsider')).status,
-          404);
+      expect(
+          (await h.call('DELETE', '/api/pools', as: 'outsider')).status, 404);
       // Projects are gone: tabs on an old build get 410 "please reload"
       // (shown as is by old builds), signed in or not.
       for (final r in [
         await h.call('GET', '/api/projects', as: 'outsider'),
         await h.call('GET', '/api/projects/x/pools', as: 'outsider'),
-        await h.call('POST', '/api/projects',
-            as: 'outsider', body: {'name': 'x'}),
+        await h
+            .call('POST', '/api/projects', as: 'outsider', body: {'name': 'x'}),
         await h.call('GET', '/api/projects'),
         // Accounts were renamed to pools.
         await h.call('GET', '/api/accounts', as: 'outsider'),
@@ -154,6 +154,66 @@ void main() {
       // Not a prefix match on other names.
       expect(
           (await h.call('GET', '/api/projectsX', as: 'outsider')).status, 404);
+    });
+
+    test(
+        'viewers -> 403 on every write that needs editor; editors -> 403 '
+        'on owner-only ones; nothing changes', () async {
+      if (!h.ok) return markTestSkipped('no test DB');
+      final s = await h.seed('rowner', 'RoleSweep');
+      await h.login('rviewer');
+      await h.login('reditor');
+      await h.call('POST', '/api/pools/${s.a}/invites',
+          as: 'rowner', body: {'email': h.email('rviewer')});
+      await h.call('POST', '/api/pools/${s.a}/invites',
+          as: 'rowner', body: {'email': h.email('reditor'), 'role': 'editor'});
+      final sc = await h
+          .call('POST', '/api/pools/${s.a}/scenarios', as: 'rowner', body: {
+        'name': 'S',
+        'request': {'solveFor': 'amount'}
+      });
+      final inv = await h.call('POST', '/api/pools/${s.a}/invites',
+          as: 'rowner', body: {'email': h.email('rpending')});
+      final ids = {
+        'a': s.a,
+        't': s.t,
+        's': sc.json['id'] as String,
+        'u': await h.userId('rviewer'),
+        'i': inv.json['id'] as String,
+        'd': '2026-01-01',
+      };
+      final before =
+          (await h.call('GET', '/api/pools/${s.a}/transactions', as: 'rowner'))
+              .json;
+      var checked = 0;
+      for (final p in policies) {
+        if (p.scope != Scope.pool &&
+            p.scope != Scope.transaction &&
+            p.scope != Scope.invite) {
+          continue;
+        }
+        final path =
+            '/api/${p.path.split('/').map((x) => x.startsWith(':') ? ids[x.substring(1)]! : x).join('/')}';
+        final body = p.method == 'GET' || p.method == 'DELETE'
+            ? null
+            : <String, Object?>{};
+        for (final (who, role) in [
+          ('rviewer', Role.viewer),
+          ('reditor', Role.editor),
+        ]) {
+          if (role.atLeast(p.min)) continue;
+          final r = await h.call(p.method, path, as: who, body: body);
+          expect(r.status, 403, reason: '$who ${p.method} $path -> ${r.json}');
+          checked++;
+        }
+      }
+      expect(checked, greaterThan(20));
+      final after =
+          (await h.call('GET', '/api/pools/${s.a}/transactions', as: 'rowner'))
+              .json;
+      expect(after, before, reason: 'denied writes change nothing');
+      expect(
+          (await h.call('GET', '/api/pools/${s.a}', as: 'rowner')).status, 200);
     });
   });
 }

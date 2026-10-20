@@ -231,7 +231,14 @@ class PoolRepo {
       String id, List<String> transactionIds) async {
     final rows = await _conn.execute(
       Sql.named('''
-        UPDATE pools SET transaction_order = @transactionOrder
+        UPDATE pools SET transaction_order = COALESCE((
+          -- Only this pool's own transactions, first mention wins.
+          SELECT array_agg(x.id ORDER BY x.ord) FROM (
+            SELECT DISTINCT ON (t.id) t.id, u.ord
+            FROM unnest(@transactionOrder::text[]) WITH ORDINALITY u(v, ord)
+            JOIN transactions t
+              ON t.id::text = lower(u.v) AND t.pool_id = pools.id
+            ORDER BY t.id, u.ord) x), '{}')
         WHERE id = @id
         RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, transaction_order, currency_scale, version

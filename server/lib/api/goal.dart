@@ -10,6 +10,7 @@ import '../engine/goal_solver.dart';
 import '../engine/solver.dart' show SolverException;
 import '../repo/pool_repo.dart';
 import '../repo/transaction_repo.dart';
+import 'balance.dart' show checkBalanceRange;
 import 'json_helpers.dart';
 
 double? _optDouble(Map<String, dynamic> body, String key) {
@@ -62,6 +63,7 @@ GoalBaseline goalBaseline({
       : CalendarMath.dateOnly(request.endDate!);
   final end = CalendarMath.compare(to, from) < 0 ? from : to;
   final dayBefore = from.subtract(const Duration(days: 1));
+  checkBalanceRange(dayBefore, end, seed: pool.seedDate);
   final series = BalanceEngine.compute(
     seedBalance: pool.seedBalance,
     seedDate: pool.seedDate,

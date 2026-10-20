@@ -10,6 +10,24 @@ import '../repo/transaction_repo.dart';
 import 'json_helpers.dart';
 import 'transactions.dart' show parseTransactionBody;
 
+/// Longest span (~200 years, seed included) a balance, projection, goal or
+/// insights request may walk; pickers allow 1970..2100 and the widest view
+/// is 20 years. Unbounded ranges let any viewer make the server compute
+/// and encode millions of daily points (year 1..9999 took ~12 s).
+const maxBalanceRangeDays = 73050;
+
+/// Throws a [FormatException] (400) when [to] is before [from] or the span
+/// exceeds [maxBalanceRangeDays]. The engine walks from the pool's [seed]
+/// (opening balances), so the span is measured from the earlier of the two.
+void checkBalanceRange(DateTime from, DateTime to, {DateTime? seed}) {
+  if (to.isBefore(from)) throw FormatException('to must not be before from');
+  final start = seed != null && seed.isBefore(from) ? seed : from;
+  if (to.difference(start).inDays > maxBalanceRangeDays) {
+    throw FormatException(
+        'range too long: at most $maxBalanceRangeDays days per request');
+  }
+}
+
 /// Registers `GET /<id>/balance` on [router].
 void attachBalanceRoutes(Router router, Session conn) {
   final pools = PoolRepo(conn);
@@ -29,6 +47,7 @@ void attachBalanceRoutes(Router router, Session conn) {
       }
       final from = parseDate(fromRaw);
       final to = parseDate(toRaw);
+      checkBalanceRange(from, to, seed: pool.seedDate);
 
       final transactionList = await transactions.listByPool(id);
       final skipped = await transactions.skipsForPool(id);
@@ -63,6 +82,7 @@ void attachBalanceRoutes(Router router, Session conn) {
       final body = await readJsonObject(request);
       final from = parseDate(requireString(body, 'from'));
       final to = parseDate(requireString(body, 'to'));
+      checkBalanceRange(from, to, seed: pool.seedDate);
       final raw = body['transactions'];
       if (raw is! List) {
         return jsonError(400, 'transactions must be an array');
@@ -128,6 +148,7 @@ void attachBalanceRoutes(Router router, Session conn) {
       }
       final start = DateTime.utc(from.year, from.month, from.day);
       final end = start.add(Duration(days: horizon > days ? horizon : days));
+      checkBalanceRange(start, end, seed: pool.seedDate);
       final series = BalanceEngine.compute(
         seedBalance: pool.seedBalance,
         seedDate: pool.seedDate,
