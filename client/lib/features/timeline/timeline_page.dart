@@ -677,19 +677,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     }
   }
 
-  (DateTime, DateTime) _dataWindowFor(DateTime start, double days) {
-    final viewEnd = addDays(start, days);
-    var from = _dataFrom;
-    var to = _dataTo;
-    final bufferDays = math.min(365, math.max(14, days.ceil()));
-    if (!dateOnly(start).isAfter(addCalendarDays(from, bufferDays))) {
-      from = addCalendarDays(start, -bufferDays * 2);
-    }
-    if (!dateOnly(viewEnd).isBefore(addCalendarDays(to, -bufferDays))) {
-      to = addCalendarDays(viewEnd, bufferDays * 2);
-    }
-    return (from, to);
-  }
+  (DateTime, DateTime) _dataWindowFor(DateTime start, double days) =>
+      nextDataWindow(_dataFrom, _dataTo, start, days);
 
   void _applyViewport(DateTime start, double visibleDays) {
     final days = visibleDays.clamp(minVisibleDays, maxVisibleDays).toDouble();

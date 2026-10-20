@@ -3848,16 +3848,8 @@ class _BalanceChartPainter extends CustomPainter {
       height: 1.1,
       fontWeight: FontWeight.w700,
     );
-    double w(String t, TextStyle st) {
-      final tp = TextPainter(
-        text: TextSpan(text: t, style: st),
-        textDirection: TextDirection.ltr,
-        textScaler: textScaler,
-      )..layout();
-      final width = tp.width;
-      tp.dispose();
-      return width;
-    }
+    double w(String t, TextStyle st) =>
+        _axisText.get(t, st, scaler: textScaler).width;
 
     final cell = layout.plot.width / visibleDays;
     final plan = dayLabelPlan(
@@ -3885,21 +3877,17 @@ class _BalanceChartPainter extends CustomPainter {
         if (weekday != null) (weekday, dowStyle),
         (numeral, numStyle),
       ];
+      // Cached across frames: never disposed here.
       final painters = [
         for (final (t, st) in lines)
-          TextPainter(
-            text: TextSpan(text: t, style: st),
-            textDirection: TextDirection.ltr,
-            textScaler: textScaler,
-            maxLines: 1,
-          )..layout(),
+          _axisText.get(t, st, scaler: textScaler, maxLines: 1),
       ];
       // Keep the text wholly inside the Day row: drop the weekday line when
       // both don't fit its height, and skip a label that would run under
       // the row-name chip or past the plot edge rather than clip it.
       if (painters.length > 1 &&
           painters.fold<double>(0, (a, p) => a + p.height) > band.height) {
-        painters.removeAt(0).dispose();
+        painters.removeAt(0);
       }
       final total = painters.fold<double>(0, (a, p) => a + p.height);
       final textW = painters.fold<double>(0, (a, p) => math.max(a, p.width));
@@ -3915,7 +3903,6 @@ class _BalanceChartPainter extends CustomPainter {
           debugAxisLabel?.call('Day', p.plainText, at & p.size);
         }
         y += p.height;
-        p.dispose();
       }
     }
     canvas.restore();
@@ -3970,20 +3957,17 @@ class _BalanceChartPainter extends CustomPainter {
       }
     }
     // Row name, right-aligned in a small chip at the left edge.
-    final namePainter = TextPainter(
-      text: TextSpan(
-        text: laneName,
-        style: laneStyle.copyWith(
-          color: const Color(0xFF8592A3),
-          fontSize: (laneStyle.fontSize ?? 11) - 2,
-          fontWeight: FontWeight.w600,
-          height: 1,
-        ),
+    final namePainter = _axisText.get(
+      laneName,
+      laneStyle.copyWith(
+        color: const Color(0xFF8592A3),
+        fontSize: (laneStyle.fontSize ?? 11) - 2,
+        fontWeight: FontWeight.w600,
+        height: 1,
       ),
-      textDirection: TextDirection.ltr,
-      textScaler: textScaler,
+      scaler: textScaler,
       maxLines: 1,
-    )..layout();
+    );
     canvas.drawRect(
       Rect.fromLTWH(band.left, band.top, nameW, band.height - 1),
       Paint()..color = const Color(0xE610151C),
@@ -3995,21 +3979,12 @@ class _BalanceChartPainter extends CustomPainter {
         band.center.dy - namePainter.height / 2,
       ),
     );
-    namePainter.dispose();
     canvas.restore();
   }
 
   /// Width of [text] in the lane label style, as _paintCentered lays it out.
-  double _laneTextWidth(String text) {
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: laneStyle.copyWith(height: 1.05)),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
-    final w = tp.width;
-    tp.dispose();
-    return w;
-  }
+  double _laneTextWidth(String text) =>
+      _axisText.get(text, laneStyle.copyWith(height: 1.05), maxLines: 1).width;
 
   double _laneNameWidth(ChartLayout layout) =>
       ChartLayout.laneNameWidth(layout.size.width);
@@ -4409,12 +4384,8 @@ class _BalanceChartPainter extends CustomPainter {
     DateTime viewEnd,
     DateTime seed,
   ) {
-    final closes = <int, double>{};
-    for (final point in series.points) {
-      final day = dateOnly(point.date);
-      if (day.isBefore(seed)) continue;
-      closes[day.millisecondsSinceEpoch] = point.closingBalance.toDouble();
-    }
+    // Days before the seed are skipped below, so no seed filter here.
+    final closes = pointIndexOf(series.points).closeByDayMs;
     final dayPx = layout.plot.width / math.max(visibleDays, 0.001);
     final radius = dayPx > 28
         ? 4.5
@@ -4629,14 +4600,9 @@ class _BalanceChartPainter extends CustomPainter {
       fontWeight: FontWeight.w600,
       color: AppTheme.text,
     );
-    final probe = TextPainter(
-      text: TextSpan(text: 'Mg', style: style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    final lineHeight = probe.height;
+    final lineHeight = _axisText.get('Mg', style).height;
     // Total + one name: the typical label, for the neighbour check below.
     final labelHeight = lineHeight * 2 + 4;
-    probe.dispose();
 
     canvas.save();
     canvas.clipRect(view);
@@ -4684,16 +4650,8 @@ class _BalanceChartPainter extends CustomPainter {
       final widths = <String, double>{};
       double widthOf(String text, TextStyle st) => widths.putIfAbsent(
         '${identical(st, moreStyle) ? 'm' : 'n'}$text',
-        () {
-          final tp = TextPainter(
-            text: TextSpan(text: text, style: st),
-            textDirection: TextDirection.ltr,
-            maxLines: 1,
-          )..layout();
-          final w = tp.width;
-          tp.dispose();
-          return w;
-        },
+        // Shortening probes many stubs per name; they recur every frame.
+        () => _axisText.get(text, st, maxLines: 1).width,
       );
 
       // [text] within [maxWidth], shortened with "…" if need be; null when
@@ -5008,17 +4966,16 @@ class _BalanceChartPainter extends CustomPainter {
   }) {
     if (rect.width < 8 || rect.height < 8 || text.isEmpty) return null;
     final maxLines = text.contains('\n') ? 2 : 1;
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-      textAlign: TextAlign.center,
+    // Cached across frames: never disposed here.
+    final painter = _axisText.get(
+      text,
+      style,
+      align: TextAlign.center,
       maxLines: maxLines,
       ellipsis: maxLines == 1 ? '…' : null,
-    )..layout(maxWidth: math.max(1, rect.width - 2));
-    if (painter.height > rect.height + 1) {
-      painter.dispose();
-      return null;
-    }
+      maxWidth: math.max(1, rect.width - 2),
+    );
+    if (painter.height > rect.height + 1) return null;
     final at = Offset(
       rect.center.dx - painter.width / 2,
       rect.center.dy - painter.height / 2,
@@ -5033,7 +4990,6 @@ class _BalanceChartPainter extends CustomPainter {
       );
     }
     painter.paint(canvas, at);
-    painter.dispose();
     return painted;
   }
 
@@ -5250,3 +5206,64 @@ class PickDayStats {
 String? offscreenHint(BalanceExtents extents, double yMin) => extents.min < yMin
     ? '▼ down to ${formatMoneyAmount(extents.min)} below'
     : null;
+
+/// Laid-out chart axis text reused across frames: pan and zoom repaint the
+/// chart every frame and the same labels (days, months, row names) recur,
+/// so laying each out again dominated paint. The cache owns its painters
+/// (callers must not dispose them); least recently used ones are dropped
+/// past [capacity], and everything is dropped when fonts change (a web
+/// font finishing loading changes metrics).
+class _TextCache {
+  _TextCache(this.capacity);
+
+  final int capacity;
+  final _painters = <Object, TextPainter>{};
+  bool _listening = false;
+
+  TextPainter get(
+    String text,
+    TextStyle style, {
+    TextScaler scaler = TextScaler.noScaling,
+    int? maxLines,
+    String? ellipsis,
+    TextAlign align = TextAlign.start,
+    double maxWidth = double.infinity,
+  }) {
+    if (!_listening) {
+      _listening = true;
+      PaintingBinding.instance.systemFonts.addListener(clear);
+    }
+    final key = (text, style, scaler, maxLines, ellipsis, align, maxWidth);
+    final hit = _painters.remove(key);
+    if (hit != null) return _painters[key] = hit;
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      textAlign: align,
+      maxLines: maxLines,
+      ellipsis: ellipsis,
+    )..layout(maxWidth: maxWidth);
+    _painters[key] = painter;
+    if (_painters.length > capacity) {
+      _painters.remove(_painters.keys.first)!.dispose();
+    }
+    return painter;
+  }
+
+  void clear() {
+    for (final p in _painters.values) {
+      p.dispose();
+    }
+    _painters.clear();
+  }
+
+  @visibleForTesting
+  int get length => _painters.length;
+}
+
+final _axisText = _TextCache(1500);
+
+/// Test hook: how many axis labels are cached.
+@visibleForTesting
+int get debugAxisTextCacheLength => _axisText.length;

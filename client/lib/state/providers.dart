@@ -234,7 +234,9 @@ class TransactionsNotifier
         .read(poolRepositoryProvider)
         .reorderTransactions(arg, transactionIds);
     ref.invalidate(poolProvider(arg));
-    final byId = {for (final s in state.valueOrNull ?? []) s.id: s};
+    final byId = {
+      for (final s in state.valueOrNull ?? const <Transaction>[]) s.id: s,
+    };
     state = AsyncData([
       for (final id in pool.transactionOrder)
         if (byId.containsKey(id)) byId.remove(id)!,

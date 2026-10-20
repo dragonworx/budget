@@ -100,35 +100,98 @@ VisibleBalance? visibleBalance({
   required DateTime seedDate,
 }) {
   if (!viewStart.isBefore(viewEnd) || points.isEmpty) return null;
-  final seed = dateOnly(seedDate);
-  final sorted = [...points]..sort((a, b) => a.date.compareTo(b.date));
-
-  BalancePoint? carry;
-  final inWindow = <BalancePoint>[];
-  for (final point in sorted) {
-    final day = dateOnly(point.date);
-    if (day.isBefore(seed)) continue;
-    if (!day.isAfter(viewStart)) {
-      carry = point;
-    } else if (!day.isAfter(viewEnd)) {
-      inWindow.add(point);
-    } else {
-      break;
-    }
-  }
-
-  final samples = <BalancePoint>[?carry, ...inWindow];
-  if (samples.isEmpty) return null;
-
-  var minV = samples.first.closingBalance.toDouble();
+  final ix = pointIndexOf(points);
+  // First point on/after the seed, then the last one on/before viewStart
+  // (the carry) and those in (viewStart, viewEnd].
+  final from = ix.lowerBound(dateOnly(seedDate).microsecondsSinceEpoch);
+  final startUs = viewStart.microsecondsSinceEpoch;
+  final endUs = viewEnd.microsecondsSinceEpoch;
+  final firstIn = math.max(from, ix.upperBound(startUs));
+  final lo = firstIn > from ? firstIn - 1 : firstIn;
+  final hi = ix.upperBound(endUs);
+  if (hi <= lo) return null;
+  var minV = ix.values[lo];
   var maxV = minV;
-  for (final sample in samples.skip(1)) {
-    final value = sample.closingBalance.toDouble();
+  for (var i = lo + 1; i < hi; i++) {
+    final value = ix.values[i];
     if (value < minV) minV = value;
     if (value > maxV) maxV = value;
   }
-  return VisibleBalance(samples: samples, extents: BalanceExtents(minV, maxV));
+  return VisibleBalance(
+    samples: ix.sorted.sublist(lo, hi),
+    extents: BalanceExtents(minV, maxV),
+  );
 }
+
+/// Points sorted by day with their days (µs since epoch, local midnight)
+/// and closes as doubles, computed once per points list (the painter used
+/// to re-sort and convert every Decimal on every frame). Lists are not
+/// mutated once a series is built, so identity is the cache key.
+class PointIndex {
+  PointIndex(List<BalancePoint> points)
+    : sorted = [...points]..sort((a, b) => a.date.compareTo(b.date)) {
+    days = [for (final p in sorted) dateOnly(p.date).microsecondsSinceEpoch];
+    values = [for (final p in sorted) p.closingBalance.toDouble()];
+  }
+
+  final List<BalancePoint> sorted;
+  late final List<int> days;
+  late final List<double> values;
+
+  /// Close by local day (`dateOnly(d).millisecondsSinceEpoch`), last wins.
+  late final Map<int, double> closeByDayMs = {
+    for (var i = 0; i < days.length; i++) days[i] ~/ 1000: values[i],
+  };
+
+  final _extentsFrom = <int, BalanceExtents?>{};
+
+  /// First index whose day is >= [us].
+  int lowerBound(int us) {
+    var lo = 0, hi = days.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (days[mid] < us) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  /// First index whose day is > [us].
+  int upperBound(int us) {
+    var lo = 0, hi = days.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (days[mid] <= us) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  BalanceExtents? extentsFrom(DateTime seedDate) {
+    final key = dateOnly(seedDate).microsecondsSinceEpoch;
+    return _extentsFrom.putIfAbsent(key, () {
+      double? minV, maxV;
+      for (var i = lowerBound(key); i < values.length; i++) {
+        final v = values[i];
+        if (minV == null || v < minV) minV = v;
+        if (maxV == null || v > maxV) maxV = v;
+      }
+      return minV == null ? null : BalanceExtents(minV, maxV!);
+    });
+  }
+}
+
+final _pointIndexes = Expando<PointIndex>('PointIndex');
+
+/// The cached [PointIndex] of [points].
+PointIndex pointIndexOf(List<BalancePoint> points) =>
+    _pointIndexes[points] ??= PointIndex(points);
 
 /// Headroom around a scale that always includes zero.
 ///
@@ -597,17 +660,7 @@ Offset touchTooltipOrigin({
 BalanceExtents? balanceExtentsFrom(
   List<BalancePoint> points,
   DateTime seedDate,
-) {
-  final seed = dateOnly(seedDate);
-  double? minV, maxV;
-  for (final p in points) {
-    if (dateOnly(p.date).isBefore(seed)) continue;
-    final v = p.closingBalance.toDouble();
-    if (minV == null || v < minV) minV = v;
-    if (maxV == null || v > maxV) maxV = v;
-  }
-  return minV == null ? null : BalanceExtents(minV, maxV!);
-}
+) => points.isEmpty ? null : pointIndexOf(points).extentsFrom(seedDate);
 
 /// Height of the day lane when day labels show: two horizontal lines
 /// (weekday over numeral).
@@ -801,6 +854,16 @@ class DayGroup {
 /// Groups occurrences by calendar day (DST-safe), keeping first-seen order
 /// within a day; days ascending.
 List<DayGroup> groupByDay(Iterable<Occurrence> occurrences) {
+  if (occurrences is List<Occurrence>) {
+    return _dayGroups[occurrences] ??= _groupByDay(occurrences);
+  }
+  return _groupByDay(occurrences);
+}
+
+/// [groupByDay] per occurrences list (the chart groups on every frame).
+final _dayGroups = Expando<List<DayGroup>>('DayGroups');
+
+List<DayGroup> _groupByDay(Iterable<Occurrence> occurrences) {
   final byDay = <DateTime, List<Occurrence>>{};
   for (final o in occurrences) {
     byDay.putIfAbsent(dateOnly(o.date), () => []).add(o);
@@ -908,4 +971,33 @@ double wheelZoomFactor(double dy) => math.exp(dy.clamp(-240.0, 240.0) * 0.0018);
     days: next,
     y: BalanceExtents(balance - span / 2, balance + span / 2),
   );
+}
+
+/// Widest balance window the timeline keeps loaded (3x the widest view).
+const int maxDataWindowDays = 3 * 7300;
+
+/// The loaded balance window `[from, to]` after viewing [days] from
+/// [start]: grows by a buffer when the view nears an edge. The window only
+/// grows while panning and every growth refetches all of it, so past
+/// [maxDataWindowDays] it starts over around the view (the server also
+/// rejects spans over ~200 years).
+(DateTime, DateTime) nextDataWindow(
+  DateTime from,
+  DateTime to,
+  DateTime start,
+  double days,
+) {
+  final viewEnd = addDays(start, days);
+  final bufferDays = math.min(365, math.max(14, days.ceil()));
+  if (!dateOnly(start).isAfter(addCalendarDays(from, bufferDays))) {
+    from = addCalendarDays(start, -bufferDays * 2);
+  }
+  if (!dateOnly(viewEnd).isBefore(addCalendarDays(to, -bufferDays))) {
+    to = addCalendarDays(viewEnd, bufferDays * 2);
+  }
+  if (to.difference(from).inDays > maxDataWindowDays) {
+    from = addCalendarDays(start, -bufferDays * 2);
+    to = addCalendarDays(viewEnd, bufferDays * 2);
+  }
+  return (from, to);
 }
