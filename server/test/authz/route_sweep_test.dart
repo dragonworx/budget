@@ -134,14 +134,22 @@ void main() {
           404);
       expect((await h.call('DELETE', '/api/accounts', as: 'outsider')).status,
           404);
-      // Projects are gone.
+      // Projects are gone: tabs on an old build get 410 "please reload"
+      // (shown as is by old builds), signed in or not.
+      for (final r in [
+        await h.call('GET', '/api/projects', as: 'outsider'),
+        await h.call('GET', '/api/projects/x/accounts', as: 'outsider'),
+        await h.call('POST', '/api/projects',
+            as: 'outsider', body: {'name': 'x'}),
+        await h.call('GET', '/api/projects'),
+      ]) {
+        expect(r.status, 410);
+        expect(r.json['error'], contains('reload'));
+        expect(r.json['details']['code'], 'client_outdated');
+      }
+      // Not a prefix match on other names.
       expect(
-          (await h.call('GET', '/api/projects', as: 'outsider')).status, 404);
-      expect(
-          (await h.call('POST', '/api/projects',
-                  as: 'outsider', body: {'name': 'x'}))
-              .status,
-          404);
+          (await h.call('GET', '/api/projectsX', as: 'outsider')).status, 404);
     });
   });
 }

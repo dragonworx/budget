@@ -102,6 +102,7 @@ Handler buildHandler(Session base, Config config,
           auth: RateLimiter(config.rateLimitAuthPerMinute),
           general: RateLimiter(config.rateLimitPerMinute)))
       .addMiddleware(csrfMiddleware(config))
+      .addMiddleware(removedApi(removedApiPrefixes))
       .addMiddleware(authMiddleware(sessions))
       .addMiddleware(authzMiddleware(conn))
       .addHandler(root.call);
@@ -126,6 +127,23 @@ Middleware _errorMiddleware(Log log) {
         return jsonError(500, 'internal server error',
             details: {'requestId': id});
       }
+    };
+  };
+}
+
+/// API route families that no longer exist. A browser tab still running an
+/// older client build calls them; it gets 410 with a "please reload" message
+/// (which old builds show as is) instead of a bare 404.
+const removedApiPrefixes = ['/api/projects'];
+
+Middleware removedApi(List<String> prefixes) {
+  return (Handler inner) {
+    return (Request request) {
+      final path = '/${request.url.path}';
+      final gone = prefixes.any((p) => path == p || path.startsWith('$p/'));
+      if (!gone) return inner(request);
+      return jsonError(410, 'Budget was updated. Please reload the page.',
+          details: {'code': 'client_outdated'});
     };
   };
 }

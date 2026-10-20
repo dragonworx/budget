@@ -40,7 +40,7 @@
 		root * /srv/web
 		@immutable path /assets/* /canvaskit/* *.wasm
 		header @immutable Cache-Control "public, max-age=31536000, immutable"
-		@html path / /index.html /flutter_bootstrap.js /flutter_service_worker.js /version.json /main.dart.js
+		@html path / /index.html /flutter_bootstrap.js /flutter_service_worker.js /version.json /build.json /main.dart.js
 		header @html Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server

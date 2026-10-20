@@ -49,6 +49,19 @@ class ApiClient {
   /// expired). The auth state registers this to route to sign-in.
   static void Function()? onUnauthorized;
 
+  /// Called when a response suggests this tab runs an outdated build (a
+  /// removed route, or HTML where JSON was expected). The version check
+  /// then reloads into the new build if one is live.
+  static void Function()? onOutdatedSuspected;
+
+  static const outdatedMessage =
+      'Budget was updated. Please reload the page.';
+
+  static bool _looksLikeHtml(String body) {
+    final t = body.trimLeft().toLowerCase();
+    return t.startsWith('<!doctype') || t.startsWith('<html');
+  }
+
   /// Per-tab id, echoed by the server in realtime events.
   static final String clientId = _randomId();
 
@@ -144,7 +157,21 @@ class ApiClient {
         if (allowEmpty) return null;
         return null;
       }
-      return jsonDecode(body);
+      try {
+        return jsonDecode(body);
+      } on FormatException {
+        if (_looksLikeHtml(body)) {
+          onOutdatedSuspected?.call();
+          throw ApiException(outdatedMessage, statusCode: status, body: body);
+        }
+        rethrow;
+      }
+    }
+    if (status == 404 || status == 410 || _looksLikeHtml(body)) {
+      onOutdatedSuspected?.call();
+    }
+    if (_looksLikeHtml(body)) {
+      throw ApiException(outdatedMessage, statusCode: status, body: body);
     }
 
     String message = 'Request failed ($status)';

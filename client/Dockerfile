@@ -17,9 +17,16 @@ COPY client/ ./
 # API is same-origin behind Caddy, so API_BASE_URL is empty.
 # GOOGLE_CLIENT_ID is optional here: the server's /api/auth/config supplies it.
 ARG GOOGLE_CLIENT_ID=
-RUN flutter build web --release \
+# BUILD_ID (e.g. the commit sha; defaults to the build time) is compiled in and
+# written to /build.json: a tab still running an older build sees the
+# mismatch and reloads (lib/boot/app_version.dart).
+ARG BUILD_ID=
+RUN B="${BUILD_ID:-$(date -u +%Y%m%d%H%M%S)}" \
+ && flutter build web --release \
       --dart-define=API_BASE_URL= \
-      --dart-define=GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      --dart-define=GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID} \
+      --dart-define=BUILD_ID=$B \
+ && printf '{"build":"%s"}\n' "$B" > build/web/build.json
 
 FROM caddy:2-alpine
 COPY --from=build /src/client/build/web /srv/web
