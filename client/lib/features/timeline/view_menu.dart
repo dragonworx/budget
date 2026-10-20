@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 import '../../theme/app_theme.dart';
 import 'combined.dart';
 
-/// The timeline's View (eye) menu: the alert-line fit option, on phones
-/// Go to today / seed, and "Combine with" (other pools as checkboxes; the
+/// The timeline's View (eye) menu: on phones Go to today / seed, and
+/// "Combine with" (other pools as checkboxes; the
 /// menu stays open so several can be ticked).
 ///
 /// Keyboard: Enter / Space / ↓ on the trigger opens it with the first row
@@ -15,25 +15,19 @@ class ViewMenu extends StatefulWidget {
   const ViewMenu({
     super.key,
     required this.compact,
-    required this.keepThreshold,
-    required this.thresholdLabel,
     required this.pools,
     required this.combined,
     required this.onToday,
     required this.onSeed,
-    required this.onToggleThreshold,
     required this.onTogglePool,
     required this.builder,
   });
 
   final bool compact;
-  final bool keepThreshold;
-  final String thresholdLabel;
   final List<CombinedPool> pools;
   final Set<String> combined;
   final VoidCallback onToday;
   final VoidCallback onSeed;
-  final VoidCallback onToggleThreshold;
   final ValueChanged<String> onTogglePool;
 
   /// The trigger; call `open` to toggle the menu.
@@ -147,19 +141,6 @@ class _ViewMenuState extends State<ViewMenu> {
         ),
         const Divider(height: 8),
       ],
-      // Keys on a wrapper: CheckboxMenuButton hands its key to its inner
-      // MenuItemButton too.
-      KeyedSubtree(
-        key: const ValueKey('fit-threshold'),
-        child: CheckboxMenuButton(
-          focusNode: widget.compact ? null : _first,
-          style: _style,
-          value: widget.keepThreshold,
-          onChanged: (_) => widget.onToggleThreshold(),
-          child: Text(widget.thresholdLabel),
-        ),
-      ),
-      const Divider(height: 8),
       Padding(
         key: const ValueKey('combine-heading'),
         padding: const EdgeInsets.fromLTRB(14, 6, 14, 4),
@@ -178,10 +159,14 @@ class _ViewMenuState extends State<ViewMenu> {
           onPressed: null,
           child: const Text('No other pools'),
         ),
-      for (final p in widget.pools)
+      // Keys on a wrapper: CheckboxMenuButton hands its key to its inner
+      // MenuItemButton too.
+      for (final (i, p) in widget.pools.indexed)
         KeyedSubtree(
           key: ValueKey('combine-${p.id}'),
           child: CheckboxMenuButton(
+            // Desktop: the first pool row takes focus on open.
+            focusNode: !widget.compact && i == 0 ? _first : null,
             style: _style,
             closeOnActivate: false,
             value: widget.combined.contains(p.id),

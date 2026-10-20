@@ -335,10 +335,8 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('fit-menu')));
     await tester.pumpAndSettle();
-    expect(focusedOn('fit-threshold'), isTrue); // first row takes focus
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
-    expect(focusedOn('combine-b'), isTrue); // the heading is skipped
+    // First pool row takes focus (no alert-line option any more).
+    expect(focusedOn('combine-b'), isTrue);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('combine-c')), findsOneWidget); // open

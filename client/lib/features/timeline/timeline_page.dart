@@ -122,9 +122,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   int _fitToken = 0;
   int _zeroToken = 0;
 
-  /// Balance fits also stretch to the loss-threshold line.
-  bool _fitThreshold = false;
-
   /// Docked planner (non-blocking) and its live preview line.
   bool _planOpen = false;
 
@@ -1017,7 +1014,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           .toDouble(),
                                       currencyScale: pool.currencyScale
                                           .toDouble(),
-                                      fitIncludesThreshold: _fitThreshold,
                                       viewStart: _viewStart,
                                       visibleDays: _visibleDays,
                                       onViewportChanged: _onChartViewport,
@@ -1360,9 +1356,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// View options. The fit modes themselves are keyboard-only (F / A / H,
-  /// listed in the shortcuts sheet); this menu keeps the alert-line option
-  /// for those fits and, on phones, Go to today / seed date.
+  /// View options: Combine with other pools and, on phones, Go to today /
+  /// seed date. The fit modes are keyboard-only (F / A / H, listed in the
+  /// shortcuts sheet) and never stretch to the alert line.
   Widget _fitMenu(Pool pool, {required bool compact}) {
     final others = _otherPools(pool.id);
     final combined = others.where((p) => _combine.contains(p.id)).length;
@@ -1372,17 +1368,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         : 'View options';
     return ViewMenu(
       compact: compact,
-      keepThreshold: _fitThreshold,
-      thresholdLabel:
-          'Keep alert line (${formatMoneyAmount(pool.lossThreshold.toDouble())}) in fits',
       pools: others,
       combined: _combine,
       onToday: () => _showFrom(DateTime.now()),
       onSeed: () => _showFrom(pool.seedDate),
-      onToggleThreshold: () => setState(() {
-        _fitThreshold = !_fitThreshold;
-        _fitToken++;
-      }),
       onTogglePool: _toggleCombine,
       builder: (context, open) => compact
           ? IconButton(

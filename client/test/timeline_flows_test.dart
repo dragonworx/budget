@@ -1076,7 +1076,10 @@ void main() {
       for (final gone in ['Fit all', 'Fit vertical', 'Fit horizontal']) {
         expect(find.text(gone), findsNothing, reason: gone);
       }
-      expect(find.byKey(const ValueKey('fit-threshold')), findsOneWidget);
+      // No "Keep alert line" option any more (fits never stretch to it).
+      expect(find.byKey(const ValueKey('fit-threshold')), findsNothing);
+      expect(find.textContaining('Keep alert line'), findsNothing);
+      expect(find.byType(CheckboxMenuButton), findsNothing); // 1 pool only
       expect(find.text('Go to today'), compact ? findsOneWidget : findsNothing);
       expect(
         find.text('Go to seed date'),
@@ -1095,10 +1098,9 @@ void main() {
       expect(entries.first, isNot(isA<Divider>()));
       expect(entries.last, isNot(isA<Divider>()));
       if (!compact) expect(find.text('View'), findsOneWidget);
-      // Toggling the alert option still works.
-      await tester.tap(find.byKey(const ValueKey('fit-threshold')));
+      await tester.tap(find.byKey(const ValueKey('fit-menu'))); // closes
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('fit-threshold')), findsNothing);
+      expect(find.text('No other pools'), findsNothing);
       if (!compact) {
         // The fit modes stay as keyboard shortcuts, listed in the sheet.
         await tester.tap(find.byKey(const ValueKey('shortcuts-help')));

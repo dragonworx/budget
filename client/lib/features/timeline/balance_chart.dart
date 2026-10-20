@@ -98,7 +98,6 @@ class BalanceChart extends StatefulWidget {
     this.seedBalance,
     this.lossThreshold = 0,
     this.currencyScale,
-    this.fitIncludesThreshold = false,
     required this.viewStart,
     required this.visibleDays,
     required this.onViewportChanged,
@@ -210,8 +209,6 @@ class BalanceChart extends StatefulWidget {
   /// opens at [currencyScaleRange] and re-applies it whenever it changes.
   final double? currencyScale;
 
-  /// Whether balance fits stretch to include the loss threshold line.
-  final bool fitIncludesThreshold;
   final DateTime viewStart;
   final double visibleDays;
   final ViewportChanged onViewportChanged;
@@ -451,7 +448,6 @@ class _BalanceChartState extends State<BalanceChart>
       visible.extents.max,
       include: [
         0,
-        if (widget.fitIncludesThreshold) widget.lossThreshold,
         if (widget.seedBalance != null && _seedInView) widget.seedBalance!,
       ],
     );
@@ -1520,7 +1516,6 @@ class _BalanceChartState extends State<BalanceChart>
                           },
                           seedBalance: widget.seedBalance,
                           lossThreshold: widget.lossThreshold,
-                          fitIncludesThreshold: widget.fitIncludesThreshold,
                           viewStart: widget.viewStart,
                           visibleDays: widget.visibleDays,
                           labelStyle:
@@ -3397,7 +3392,6 @@ class _BalanceChartPainter extends CustomPainter {
     this.poolColors = const {},
     this.seedBalance,
     required this.lossThreshold,
-    this.fitIncludesThreshold = false,
     required this.viewStart,
     required this.visibleDays,
     required this.labelStyle,
@@ -3431,7 +3425,6 @@ class _BalanceChartPainter extends CustomPainter {
 
   /// Opening balance on [seedDate]; drawn as the initial vertex. Null: none.
   final double? seedBalance;
-  final bool fitIncludesThreshold;
   final double lossThreshold;
   final DateTime viewStart;
   final double visibleDays;
@@ -3480,12 +3473,7 @@ class _BalanceChartPainter extends CustomPainter {
     }
 
     final range =
-        yRange ??
-        paddedRange(
-          visible.extents.min,
-          visible.extents.max,
-          include: fitIncludesThreshold ? [lossThreshold] : const [],
-        );
+        yRange ?? paddedRange(visible.extents.min, visible.extents.max);
     final scale = _YScale(range.min, range.max, layout.plot);
     // Min / max markers refer to the whole loaded series (from the seed),
     // drawn at their absolute heights; not just what is in view.
@@ -5000,7 +4988,6 @@ class _BalanceChartPainter extends CustomPainter {
         !mapEquals(oldDelegate.poolColors, poolColors) ||
         oldDelegate.seedBalance != seedBalance ||
         oldDelegate.lossThreshold != lossThreshold ||
-        oldDelegate.fitIncludesThreshold != fitIncludesThreshold ||
         oldDelegate.viewStart != viewStart ||
         oldDelegate.visibleDays != visibleDays ||
         oldDelegate.labelStyle != labelStyle ||
