@@ -120,6 +120,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Bumped by "Fit" to refit the chart's balance range to the data in view.
   int _fitToken = 0;
+
+  /// Bumped when the combined selection's line has loaded: the balance
+  /// range eases to it; the date window stays exactly where it is.
+  int _smoothFitToken = 0;
   int _zeroToken = 0;
 
   /// Docked planner (non-blocking) and its live preview line.
@@ -471,7 +475,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// The selection the balance range was last fitted for. Checking or
   /// unchecking a pool changes the line's scale, so once the new combined
-  /// line has loaded the balance range refits (once).
+  /// line has loaded the balance range eases to a refit (once); the date
+  /// window is left exactly as it was.
   String _fittedSelection = '';
 
   void _refitOnCombineChange(_Combined? combo) {
@@ -482,7 +487,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     if (sel == _fittedSelection) return;
     _fittedSelection = sel;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _fitToken++);
+      if (mounted) setState(() => _smoothFitToken++);
     });
   }
 
@@ -989,6 +994,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                     BalanceChart(
                                       key: ValueKey(pool.id),
                                       fitToken: _fitToken,
+                                      smoothFitToken: _smoothFitToken,
                                       zeroToken: _zeroToken,
                                       onFitRequested: (mode) =>
                                           _fit(mode, pool),

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
@@ -463,4 +465,60 @@ void main() {
       findsOneWidget,
     );
   });
+
+  for (final (name, size) in const [
+    ('desktop', Size(1440, 900)),
+    ('phone', Size(390, 844)),
+  ]) {
+    testWidgets('$name: ticking / unticking pools keeps the visible date '
+        'window exactly still', (tester) async {
+      await _pump(tester, size: size);
+      // Somewhere other than the opening view: panned 9.3 days back and
+      // zoomed to 45 days.
+      _chart(tester).onViewportChanged(_d(-20), 45);
+      await tester.pumpAndSettle();
+      final start = _chart(tester).viewStart;
+      final days = _chart(tester).visibleDays;
+      void still(String why) {
+        expect(_chart(tester).viewStart, start, reason: why);
+        expect(_chart(tester).visibleDays, days, reason: why);
+      }
+
+      final state = tester.state(find.byType(BalanceChart)) as dynamic;
+      BalanceExtents y() => state.debugYRange as BalanceExtents;
+      for (final (id, why) in [
+        ('b', 'tick Savings'),
+        ('c', 'tick Kids'),
+        ('b', 'untick Savings'),
+        ('c', 'untick Kids'),
+      ]) {
+        await tester.tap(find.byKey(const ValueKey('fit-menu')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('combine-$id')));
+        final y0 = y();
+        final seen = <double>[];
+        // Every frame while the other pool loads and the scale refits.
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 30));
+          still('$why, frame $i');
+          seen.add(y().max);
+        }
+        await tester.pumpAndSettle();
+        still(why);
+        // The balance scale eased (in-between ranges), not a one-frame snap.
+        final y1 = y();
+        if ((y1.max - y0.max).abs() > 1) {
+          final lo = math.min(y0.max, y1.max), hi = math.max(y0.max, y1.max);
+          expect(
+            seen.where((v) => v > lo + 0.5 && v < hi - 0.5),
+            isNotEmpty,
+            reason: '$why: eased refit',
+          );
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        still('$why, menu closed');
+      }
+    });
+  }
 }

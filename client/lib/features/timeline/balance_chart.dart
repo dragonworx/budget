@@ -106,6 +106,7 @@ class BalanceChart extends StatefulWidget {
     this.dataFrom,
     this.dataThrough,
     this.fitToken = 0,
+    this.smoothFitToken = 0,
     this.zeroToken = 0,
     this.onFitRequested,
     this.onZoomStep,
@@ -188,6 +189,11 @@ class BalanceChart extends StatefulWidget {
   /// Changing this refits the balance range to the data in view.
   final int fitToken;
 
+  /// Like [fitToken], but the balance range eases to its new fit (~450ms)
+  /// instead of snapping: used when the line itself changes under a still
+  /// view (combining pools). The date window is never touched.
+  final int smoothFitToken;
+
   /// Bumped to widen the current balance range to include 0 without a full
   /// vertical refit (Fit horizontal).
   final int zeroToken;
@@ -236,6 +242,51 @@ class _BalanceChartState extends State<BalanceChart>
   static const double _wheelTau = 0.04;
 
   bool get _wheelActive => _wheelTicker.isActive;
+
+  /// Smooth balance refit ([BalanceChart.smoothFitToken]): [_yRange] eases
+  /// from [_yAnimFrom] to [_yAnimTo], so every reader (painter, gestures,
+  /// hit tests) sees the in-between range.
+  late final AnimationController _yAnim = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 450),
+  )..addListener(_tickY);
+  BalanceExtents? _yAnimFrom;
+  BalanceExtents? _yAnimTo;
+
+  void _tickY() {
+    final from = _yAnimFrom, to = _yAnimTo;
+    if (from == null || to == null || !mounted) return;
+    final k = Curves.easeInOutCubic.transform(_yAnim.value);
+    setState(
+      () => _yRange = BalanceExtents(
+        from.min + (to.min - from.min) * k,
+        from.max + (to.max - from.max) * k,
+      ),
+    );
+  }
+
+  /// Tests: the balance range currently shown.
+  @visibleForTesting
+  BalanceExtents? get debugYRange => _yRange;
+
+  void _stopYAnim() {
+    if (_yAnim.isAnimating) _yAnim.stop();
+    _yAnimFrom = _yAnimTo = null;
+  }
+
+  /// Eases the balance range to a fresh fit of what is now in view.
+  void _smoothRefit() {
+    final from = _yRange;
+    _stopYAnim();
+    _yRange = null;
+    _scaleDefault = false;
+    final to = _ensureYRange();
+    if (from == null || to == null) return; // nothing to ease from: snap
+    _yRange = from;
+    _yAnimFrom = from;
+    _yAnimTo = to;
+    _yAnim.forward(from: 0);
+  }
 
   void _stopWheel() {
     if (_wheelTicker.isActive) _wheelTicker.stop();
@@ -410,7 +461,12 @@ class _BalanceChartState extends State<BalanceChart>
       _clearTip();
       if (_mode != _Gesture.pick) _clearPin();
     }
-    final y = _yRange;
+    if (oldWidget.fitToken != widget.fitToken ||
+        oldWidget.zeroToken != widget.zeroToken ||
+        oldWidget.currencyScale != widget.currencyScale) {
+      _stopYAnim();
+    }
+    final y = _yAnimTo ?? _yRange;
     if (oldWidget.zeroToken != widget.zeroToken && y != null) {
       _yRange = includeZero(y);
     }
@@ -425,6 +481,10 @@ class _BalanceChartState extends State<BalanceChart>
     } else if (_fitAwaitingData && _dataCoversView) {
       _yRange = null;
       _fitAwaitingData = false;
+    }
+    if (oldWidget.smoothFitToken != widget.smoothFitToken) {
+      _clearTip();
+      _smoothRefit();
     }
   }
 
@@ -492,17 +552,20 @@ class _BalanceChartState extends State<BalanceChart>
   void _setYRange(BalanceExtents range) {
     if (!range.min.isFinite || !range.max.isFinite) return;
     _clearTip();
+    _stopYAnim();
     setState(() => _yRange = range);
   }
 
   void _fitY() {
     _clearTip();
+    _stopYAnim();
     setState(() => _yRange = null);
   }
 
   @override
   void dispose() {
     _wheelTicker.dispose();
+    _yAnim.dispose();
     _holdTimer?.cancel();
     _autoScroll?.cancel();
     _tapTipTimer?.cancel();
@@ -3475,8 +3538,8 @@ class _BalanceChartPainter extends CustomPainter {
     final range =
         yRange ?? paddedRange(visible.extents.min, visible.extents.max);
     final scale = _YScale(range.min, range.max, layout.plot);
-    // Min / max markers refer to the whole loaded series (from the seed),
-    // drawn at their absolute heights; not just what is in view.
+    // Axis label precision follows the whole loaded series (from the
+    // seed), not just what is in view, so labels don't reformat on pan.
     final global = balanceExtentsFrom(series.points, seed) ?? visible.extents;
     final gridLabels = _paintGrid(canvas, layout, scale, global);
     _paintMarkers(canvas, layout, viewEnd, dateOnly(seedDate));
@@ -3486,7 +3549,6 @@ class _BalanceChartPainter extends CustomPainter {
     for (final (y, text) in gridLabels) {
       _paintYText(canvas, layout, y, text, labelStyle);
     }
-    _paintYLabels(canvas, layout, scale, global);
     _paintOffscreenHints(canvas, layout, scale, visible.extents);
   }
 
@@ -3864,19 +3926,9 @@ class _BalanceChartPainter extends CustomPainter {
       ..color = _gridColor
       ..strokeWidth = 1;
     final digits = moneyDigitsForSpan(extents.min, extents.max);
-    // Off-plot extents are labelled pinned to the plot edge, so keep
-    // gridline labels clear of where that pinned label sits.
-    double pinned(double y) => y < layout.plot.top
-        ? layout.plot.top + 7
-        : y > layout.plot.bottom
-        ? layout.plot.bottom - 7
-        : y;
-    final minY = pinned(scale.yOf(extents.min));
-    final maxY = pinned(scale.yOf(extents.max));
     for (final value in niceGridlines(scale.yMin, scale.yMax)) {
       if (value.abs() < 1e-9) continue;
       final y = scale.yOf(value);
-      if ((y - minY).abs() < 22 || (y - maxY).abs() < 22) continue;
       canvas.drawLine(
         Offset(layout.plot.left, y),
         Offset(layout.plot.right, y),
@@ -3894,123 +3946,9 @@ class _BalanceChartPainter extends CustomPainter {
           ..color = const Color(0xFF4A5868)
           ..strokeWidth = 1,
       );
-      if ((y - minY).abs() >= 22 && (y - maxY).abs() >= 22) {
-        labels.add((y, _axisMoney(0, digits, _absMax(extents))));
-      }
-    }
-
-    final extentPaint = Paint()
-      ..color = AppTheme.accent.withValues(alpha: 0.35)
-      ..strokeWidth = 1;
-    bool onPlot(double y) => y >= layout.plot.top && y <= layout.plot.bottom;
-    final rawMaxY = scale.yOf(extents.max);
-    final rawMinY = scale.yOf(extents.min);
-    if (onPlot(rawMaxY)) {
-      canvas.drawLine(
-        Offset(layout.plot.left, rawMaxY),
-        Offset(layout.plot.right, rawMaxY),
-        extentPaint,
-      );
-    }
-    if (!extents.isFlat && onPlot(rawMinY)) {
-      canvas.drawLine(
-        Offset(layout.plot.left, rawMinY),
-        Offset(layout.plot.right, rawMinY),
-        extentPaint,
-      );
+      labels.add((y, _axisMoney(0, digits, _absMax(extents))));
     }
     return labels;
-  }
-
-  void _paintYLabels(
-    Canvas canvas,
-    ChartLayout layout,
-    _YScale scale,
-    BalanceExtents extents,
-  ) {
-    final digits = moneyDigitsForSpan(extents.min, extents.max);
-    final maxLabel = 'max ${_axisMoney(extents.max, digits, _absMax(extents))}';
-    final maxY = scale.yOf(extents.max);
-    bool onPlot(double y) => y >= layout.plot.top && y <= layout.plot.bottom;
-    if (extents.isFlat) {
-      if (onPlot(maxY)) {
-        _paintYText(
-          canvas,
-          layout,
-          maxY,
-          maxLabel,
-          strongStyle,
-          emphasize: true,
-        );
-      }
-      return;
-    }
-    final minLabel = 'min ${_axisMoney(extents.min, digits, _absMax(extents))}';
-    final minY = scale.yOf(extents.min);
-    // Off-plot extents get a faint label pinned to that edge with an arrow
-    // (it points at the absolute height rather than claiming the edge).
-    if (!onPlot(maxY) || !onPlot(minY)) {
-      if (!onPlot(maxY)) {
-        _paintYText(
-          canvas,
-          layout,
-          maxY < layout.plot.top ? layout.plot.top : layout.plot.bottom,
-          '${maxY < layout.plot.top ? '▲' : '▼'} $maxLabel',
-          labelStyle,
-        );
-      }
-      if (!onPlot(minY)) {
-        _paintYText(
-          canvas,
-          layout,
-          minY > layout.plot.bottom ? layout.plot.bottom : layout.plot.top,
-          '${minY > layout.plot.bottom ? '▼' : '▲'} $minLabel',
-          labelStyle,
-        );
-      }
-      if (onPlot(maxY)) {
-        _paintYText(
-          canvas,
-          layout,
-          maxY,
-          maxLabel,
-          strongStyle,
-          emphasize: true,
-        );
-      }
-      if (onPlot(minY)) {
-        _paintYText(
-          canvas,
-          layout,
-          minY,
-          minLabel,
-          strongStyle,
-          emphasize: true,
-        );
-      }
-      return;
-    }
-    if ((maxY - minY).abs() < 28) {
-      _paintYText(
-        canvas,
-        layout,
-        layout.plot.top + 8,
-        maxLabel,
-        strongStyle,
-        emphasize: true,
-      );
-      _paintYText(
-        canvas,
-        layout,
-        layout.plot.bottom - 8,
-        minLabel,
-        strongStyle,
-        emphasize: true,
-      );
-      return;
-    }
-    _paintYText(canvas, layout, maxY, maxLabel, strongStyle, emphasize: true);
-    _paintYText(canvas, layout, minY, minLabel, strongStyle, emphasize: true);
   }
 
   void _paintYText(
@@ -4018,9 +3956,8 @@ class _BalanceChartPainter extends CustomPainter {
     ChartLayout layout,
     double y,
     String text,
-    TextStyle style, {
-    bool emphasize = false,
-  }) {
+    TextStyle style,
+  ) {
     final hy = highlightY;
     if (hy != null && (y - hy).abs() < 18) return;
     final painter = TextPainter(
@@ -4038,13 +3975,7 @@ class _BalanceChartPainter extends CustomPainter {
       Rect.fromLTWH(left - 3, top - 1, painter.width + 6, painter.height + 2),
       const Radius.circular(4),
     );
-    canvas.drawRRect(
-      bg,
-      Paint()
-        ..color = emphasize
-            ? AppTheme.raised.withValues(alpha: 0.92)
-            : _plotBg.withValues(alpha: 0.72),
-    );
+    canvas.drawRRect(bg, Paint()..color = _plotBg.withValues(alpha: 0.72));
     painter.paint(canvas, Offset(left, top));
     painter.dispose();
   }
@@ -4304,44 +4235,39 @@ class _BalanceChartPainter extends CustomPainter {
 
   bool _isLoss(double value) => belowAlert(value, lossThreshold);
 
-  /// Chips at the top / bottom edge when balances in view lie beyond the
-  /// vertical range, so clipped data is noticed (drag or Shift+wheel to it).
+  /// A chip at the bottom edge when balances in view dip below the
+  /// vertical range, so a clipped low (or overdraft) is noticed (drag or
+  /// Shift+wheel to it). Clipped highs get no chip (removed with the
+  /// "max" / "min" axis labels).
   void _paintOffscreenHints(
     Canvas canvas,
     ChartLayout layout,
     _YScale scale,
     BalanceExtents extents,
   ) {
-    void chip(String text, bool top) {
-      final painter = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: strongStyle.copyWith(fontSize: 11, color: AppTheme.onAccent),
-        ),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-      )..layout();
-      final w = painter.width + 16;
-      final h = painter.height + 6;
-      final left = layout.plot.center.dx - w / 2;
-      final y = top ? layout.plot.top + 4 : layout.plot.bottom - h - 4;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(left, y, w, h),
-          Radius.circular(h / 2),
-        ),
-        Paint()..color = AppTheme.accent.withValues(alpha: 0.9),
-      );
-      painter.paint(canvas, Offset(left + 8, y + 3));
-      painter.dispose();
-    }
-
-    if (extents.max > scale.yMax) {
-      chip('▲ up to ${formatMoneyAmount(extents.max)} above', true);
-    }
-    if (extents.min < scale.yMin) {
-      chip('▼ down to ${formatMoneyAmount(extents.min)} below', false);
-    }
+    final text = offscreenHint(extents, scale.yMin);
+    if (text == null) return;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: strongStyle.copyWith(fontSize: 11, color: AppTheme.onAccent),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    final w = painter.width + 16;
+    final h = painter.height + 6;
+    final left = layout.plot.center.dx - w / 2;
+    final y = layout.plot.bottom - h - 4;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, y, w, h),
+        Radius.circular(h / 2),
+      ),
+      Paint()..color = AppTheme.accent.withValues(alpha: 0.9),
+    );
+    painter.paint(canvas, Offset(left + 8, y + 3));
+    painter.dispose();
   }
 
   double _absMax(BalanceExtents extents) =>
@@ -5185,3 +5111,11 @@ class PickDayStats {
   final double losses;
   final double? balance;
 }
+
+/// The off-range chip under the plot: only when balances in view go below
+/// the vertical range. Balances above it get none (the old "▲ up to … above"
+/// chip was removed).
+@visibleForTesting
+String? offscreenHint(BalanceExtents extents, double yMin) => extents.min < yMin
+    ? '▼ down to ${formatMoneyAmount(extents.min)} below'
+    : null;
