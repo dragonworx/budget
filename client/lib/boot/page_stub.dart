@@ -15,3 +15,7 @@ void localSet(String key, String value) => _local[key] = value;
 
 /// Tests: forget everything saved with [localSet].
 void clearLocal() => _local.clear();
+
+/// Tests: set to simulate the OS "reduce motion" setting.
+bool prefersReducedMotionForTest = false;
+bool get prefersReducedMotion => prefersReducedMotionForTest;

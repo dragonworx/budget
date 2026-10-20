@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../brand/brand.dart';
 import '../../app.dart';
 import '../pools/pools_page.dart';
 
@@ -855,7 +856,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                           ),
                         ],
                       ),
-                      const SizedBox(width: 4),
+                      _HeaderBrand(compact: compact),
                     ]
                   : [
                       const RealtimeDot(),
@@ -902,7 +903,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                         icon: const Icon(Icons.list_alt_rounded, size: 18),
                         label: Text('Transactions · ${transactions.length}'),
                       ),
-                      const SizedBox(width: 16),
+                      _HeaderBrand(compact: compact),
                     ],
             ),
             body: _withPlanPanel(
@@ -2224,4 +2225,30 @@ class _CombinedLegend extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The Budgie icon (rounded tile, no wordmark) at the top right of the
+/// timeline header: sized to the header row, a little smaller on phones so
+/// the action buttons keep their room at 320px. The landing intro glides
+/// into it.
+class _HeaderBrand extends StatelessWidget {
+  const _HeaderBrand({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsetsDirectional.only(
+      start: compact ? 2 : 14,
+      end: compact ? 10 : 18,
+    ),
+    child: Semantics(
+      label: 'Budgie',
+      image: true,
+      child: BrandAnchor(
+        key: const ValueKey('timeline-brand'),
+        child: BudgieIcon(size: compact ? 26 : 32),
+      ),
+    ),
+  );
 }

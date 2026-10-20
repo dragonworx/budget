@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'brand/landing_intro.dart';
 import 'features/admin/admin_page.dart';
 import 'features/auth/invite_page.dart';
 import 'features/auth/sign_in_page.dart';
@@ -75,10 +76,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/',
         builder: (context, state) => const PoolsPage(landing: true),
       ),
-      GoRoute(
-        path: poolsPath,
-        builder: (context, state) => const PoolsPage(),
-      ),
+      GoRoute(path: poolsPath, builder: (context, state) => const PoolsPage()),
       GoRoute(
         path: signInPath,
         builder: (context, state) => const SignInPage(),
@@ -123,7 +121,7 @@ class BudgetApp extends ConsumerWidget {
     ref.watch(realtimeControllerProvider);
     return MaterialApp.router(
       scaffoldMessengerKey: scaffoldMessengerKey,
-      title: 'Budget Tool',
+      title: 'Budgie',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
       themeMode: ThemeMode.dark,
@@ -131,10 +129,10 @@ class BudgetApp extends ConsumerWidget {
       // Until we know who is signed in, don't build pages (they would fetch).
       builder: (context, child) {
         final auth = ref.watch(authProvider);
-        if (auth.isLoading && !auth.hasValue && !auth.hasError) {
-          return const ColoredBox(color: AppTheme.bg);
-        }
-        return child ?? const SizedBox.shrink();
+        final Widget page = auth.isLoading && !auth.hasValue && !auth.hasError
+            ? const ColoredBox(color: AppTheme.bg)
+            : child ?? const SizedBox.shrink();
+        return LandingIntroOverlay(child: page);
       },
       // Australian English: dd/MM/yyyy in date pickers and inputs.
       locale: const Locale('en', 'AU'),

@@ -89,7 +89,7 @@ void main() {
         () async {
       final a = api(
         (_) => http.Response(
-          '{"error":"Budget was updated. Please reload the page.",'
+          '{"error":"Budgie was updated. Please reload the page.",'
           '"details":{"code":"client_outdated"}}',
           410,
         ),

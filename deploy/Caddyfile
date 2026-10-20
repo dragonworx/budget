@@ -38,8 +38,17 @@
 
 	handle {
 		root * /srv/web
-		@immutable path /assets/* /canvaskit/* *.wasm
+		@immutable path /canvaskit/* *.wasm
 		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		# Flutter asset names are not content-hashed (brand SVGs, fonts,
+		# manifests): revalidate each load (cheap 304s) so a new build's
+		# assets show at once.
+		@assets path /assets/*
+		header @assets Cache-Control "no-cache"
+		# Favicons / app icons / manifest: a day at most (index.html also
+		# links them with ?v=, bumped when they change).
+		@icons path /favicon.ico /favicon-32.png /apple-touch-icon-180.png /icons/* /manifest.json
+		header @icons Cache-Control "public, max-age=86400"
 		@html path / /index.html /flutter_bootstrap.js /flutter_service_worker.js /version.json /build.json /main.dart.js
 		header @html Cache-Control "no-cache"
 		try_files {path} /index.html

@@ -2,9 +2,9 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../brand/brand.dart';
 import '../../data/api_client.dart';
 import '../../state/auth_providers.dart';
-import '../../theme/app_theme.dart';
 import 'google_button.dart';
 
 class SignInPage extends ConsumerStatefulWidget {
@@ -49,10 +49,8 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     final shownError = _error ?? returnedError;
 
     final children = <Widget>[
-      const Icon(Icons.timeline_rounded, color: AppTheme.accent, size: 44),
-      const SizedBox(height: 12),
-      Text('Budget', style: theme.textTheme.headlineMedium),
-      const SizedBox(height: 6),
+      const BudgieStackedLockup(width: 200),
+      const SizedBox(height: 20),
       Text(
         (GoRouterState.of(context).uri.queryParameters['from'] ?? '')
                 .startsWith('/invite/')

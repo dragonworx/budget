@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'app.dart';
 import 'boot/app_version.dart';
 import 'boot/boot_loader.dart';
+import 'brand/brand.dart';
 import 'data/api_client.dart';
 import 'state/auth_providers.dart';
 import 'state/realtime_providers.dart';
@@ -15,6 +17,12 @@ void main() {
   // so reload and browser back behave.
   GoRouter.optionURLReflectsImperativeAPIs = true;
   _watchForUpdates();
+  Brand.precache();
+  // Landing intro: once per page load, as the boot loader fades.
+  if (kIsWeb) {
+    LandingIntro.arm();
+    BootLoader.onFinished = LandingIntro.play;
+  }
   final container = ProviderContainer();
   runApp(
     UncontrolledProviderScope(container: container, child: const BudgetApp()),
@@ -39,7 +47,7 @@ void _watchForUpdates() {
     scaffoldMessengerKey.currentState?.showSnackBar(
       SnackBar(
         key: const ValueKey('update-available'),
-        content: const Text('Budget was updated.'),
+        content: const Text('Budgie was updated.'),
         duration: const Duration(days: 1),
         action: SnackBarAction(label: 'Reload', onPressed: reloadPage),
       ),

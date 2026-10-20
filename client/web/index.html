@@ -18,26 +18,31 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Budgie: tweet your budget right. Plan each pool's balance over time.">
+  <meta name="theme-color" content="#0A2C5E">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="budget_client">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <meta name="apple-mobile-web-app-title" content="Budgie">
+  <!-- ?v= busts long-lived favicon caches when the icons change (bump it). -->
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-180.png?v=budgie1">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" href="favicon.ico?v=budgie1" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=budgie1">
 
-  <title>budget_client</title>
-  <link rel="manifest" href="manifest.json">
+  <title>Budgie</title>
+  <link rel="manifest" href="manifest.json?v=budgie1">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <style id="bl-style">
     html,body{margin:0;background:#0D1117}
     #bl{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#0D1117;color:#E6EBF2;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;transition:opacity .35s ease;padding:16px;box-sizing:border-box}
     #bl.out{opacity:0;pointer-events:none}
     #bl .card{width:100%;max-width:360px;background:#141A22;border:1px solid #2A3441;border-radius:14px;padding:20px 18px}
-    #bl h1{margin:0 0 2px;font-size:17px;font-weight:600}
+    #bl h1{margin:0 0 2px;font-size:17px;font-weight:600;display:flex;align-items:center;gap:10px}
+    #bl h1 img{width:32px;height:32px;flex:none;border-radius:7px}
+    @media (prefers-reduced-motion:reduce){#bl{transition:none}}
     #bl .lbl{color:#A2ADBC;font-size:13px;min-height:18px;margin-bottom:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #bl .bar{height:6px;border-radius:3px;background:#222B37;overflow:hidden;position:relative}
     #bl .fill{height:100%;width:0;background:#3DD6B5;border-radius:3px;transition:width .2s ease}
@@ -60,7 +65,7 @@
 </head>
 <body>
   <div id="bl" role="status" aria-live="polite"><div class="card">
-    <h1>Budget</h1><div class="lbl" id="bl-lbl">Starting…</div>
+    <h1><img src="favicon-32.png?v=budgie1" srcset="favicon-32.png?v=budgie1 1x, apple-touch-icon-180.png?v=budgie1 2x" alt="" width="32" height="32">Budgie</h1><div class="lbl" id="bl-lbl">Starting…</div>
     <div class="bar" id="bl-bar"><div class="fill" id="bl-fill"></div></div>
     <div class="pct"><span id="bl-pct">0%</span><span id="bl-time">0.0s</span></div>
     <ul id="bl-list"></ul>

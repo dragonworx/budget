@@ -1,5 +1,5 @@
 name: budget_client
-description: Budget Tool Flutter web client
+description: Budgie (budget planner) Flutter web client
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -21,6 +21,7 @@ dependencies:
   fl_chart: ^0.71.0
   google_fonts: ^6.2.1
   web: ^1.1.1
+  flutter_svg: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -29,3 +30,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/brand/

@@ -24,3 +24,7 @@ void sessionSet(String key, String value) =>
 String? localGet(String key) => web.window.localStorage.getItem(key);
 void localSet(String key, String value) =>
     web.window.localStorage.setItem(key, value);
+
+/// The OS "reduce motion" setting (prefers-reduced-motion).
+bool get prefersReducedMotion =>
+    web.window.matchMedia('(prefers-reduced-motion: reduce)').matches;

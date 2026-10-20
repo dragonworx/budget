@@ -55,7 +55,7 @@ class ApiClient {
   static void Function()? onOutdatedSuspected;
 
   static const outdatedMessage =
-      'Budget was updated. Please reload the page.';
+      'Budgie was updated. Please reload the page.';
 
   static bool _looksLikeHtml(String body) {
     final t = body.trimLeft().toLowerCase();

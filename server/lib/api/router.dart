@@ -142,7 +142,7 @@ Middleware removedApi(List<String> prefixes) {
       final path = '/${request.url.path}';
       final gone = prefixes.any((p) => path == p || path.startsWith('$p/'));
       if (!gone) return inner(request);
-      return jsonError(410, 'Budget was updated. Please reload the page.',
+      return jsonError(410, 'Budgie was updated. Please reload the page.',
           details: {'code': 'client_outdated'});
     };
   };

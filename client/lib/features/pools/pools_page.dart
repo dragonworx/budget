@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../brand/brand.dart';
 import '../../data/alert.dart';
 import '../../data/api_client.dart';
 import '../../data/models.dart';
@@ -70,12 +71,9 @@ class _PoolsPageState extends ConsumerState<PoolsPage> {
     final count = pools?.length;
     return Scaffold(
       appBar: AppBar(
-        title: const Row(
-          children: [
-            Icon(Icons.timeline_rounded, color: AppTheme.accent),
-            SizedBox(width: 10),
-            Text('Budget'),
-          ],
+        title: const Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: BudgieNavbarLockup(height: 32),
         ),
         actions: [
           IconButton(
@@ -141,8 +139,7 @@ class _PoolsPageState extends ConsumerState<PoolsPage> {
                 key: const ValueKey('pools-empty'),
                 icon: Icons.account_balance_wallet_rounded,
                 title: 'No pools yet',
-                message:
-                    'Create a pool with a starting (seed) balance, then plan its transactions on the timeline. Pools others share with you show up here too.',
+                message: 'Create a pool with a starting (seed) balance, then plan its transactions on the timeline. Pools others share with you show up here too.',
                 action: FilledButton.icon(
                   key: const ValueKey('new-pool'),
                   onPressed: () => _create(context),
@@ -153,8 +150,14 @@ class _PoolsPageState extends ConsumerState<PoolsPage> {
             ],
           );
         }
-        final mine = [for (final a in pools) if (!a.shared) a];
-        final shared = [for (final a in pools) if (a.shared) a];
+        final mine = [
+          for (final a in pools)
+            if (!a.shared) a,
+        ];
+        final shared = [
+          for (final a in pools)
+            if (a.shared) a,
+        ];
         return LayoutBuilder(
           builder: (context, c) {
             final cols = c.maxWidth >= 900
@@ -179,8 +182,7 @@ class _PoolsPageState extends ConsumerState<PoolsPage> {
                         context,
                         ShareTarget.pool(pool.id, pool.name),
                       ),
-                      onOpen: () =>
-                          context.go('/pools/${pool.id}/timeline'),
+                      onOpen: () => context.go('/pools/${pool.id}/timeline'),
                       onEdit: () => _edit(context, pool),
                       onDelete: () => _delete(context, pool),
                     ),
@@ -192,9 +194,8 @@ class _PoolsPageState extends ConsumerState<PoolsPage> {
               padding: const EdgeInsets.fromLTRB(2, 14, 0, 8),
               child: Text(
                 t,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: AppTheme.textMuted,
-                ),
+                style: Theme.of(context).textTheme.labelLarge
+                    ?.copyWith(color: AppTheme.textMuted),
               ),
             );
             return SingleChildScrollView(
@@ -242,9 +243,8 @@ class _PoolsPageState extends ConsumerState<PoolsPage> {
       );
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
       }
     }
   }
@@ -260,9 +260,8 @@ class _PoolsPageState extends ConsumerState<PoolsPage> {
       await ref.read(poolsProvider.notifier).delete(pool.id);
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(friendlyError(error))));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
       }
     }
   }
@@ -295,8 +294,7 @@ class _PoolCard extends ConsumerWidget {
     final today = ref.watch(todayBalanceProvider(pool.id));
     final value = today.valueOrNull;
     final low = value != null && belowAlert(value, pool.lossThreshold);
-    String money(num v) =>
-        formatMoneyAmount(v, decimalDigits: 2);
+    String money(num v) => formatMoneyAmount(v, decimalDigits: 2);
     return Material(
       color: AppTheme.surface,
       shape: RoundedRectangleBorder(
@@ -345,46 +343,46 @@ class _PoolCard extends ConsumerWidget {
                     const SizedBox(width: 6),
                   ],
                   if (pool.role.canEdit || canShare)
-                  PopupMenuButton<_PoolAction>(
-                    tooltip: 'Pool actions',
-                    padding: EdgeInsets.zero,
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    iconSize: 20,
-                    icon: const Icon(Icons.more_vert_rounded),
-                    onSelected: (action) => switch (action) {
-                      _PoolAction.edit => onEdit(),
-                      _PoolAction.delete => onDelete(),
-                      _PoolAction.share => onShare(),
-                    },
-                    itemBuilder: (context) => [
-                      if (canShare)
-                        const PopupMenuItem(
-                          value: _PoolAction.share,
-                          child: ListTile(
-                            leading: Icon(Icons.person_add_alt_1_outlined),
-                            title: Text('Share pool…'),
+                    PopupMenuButton<_PoolAction>(
+                      tooltip: 'Pool actions',
+                      padding: EdgeInsets.zero,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      iconSize: 20,
+                      icon: const Icon(Icons.more_vert_rounded),
+                      onSelected: (action) => switch (action) {
+                        _PoolAction.edit => onEdit(),
+                        _PoolAction.delete => onDelete(),
+                        _PoolAction.share => onShare(),
+                      },
+                      itemBuilder: (context) => [
+                        if (canShare)
+                          const PopupMenuItem(
+                            value: _PoolAction.share,
+                            child: ListTile(
+                              leading: Icon(Icons.person_add_alt_1_outlined),
+                              title: Text('Share pool…'),
+                            ),
                           ),
-                        ),
-                      if (pool.role.canEdit)
-                      const PopupMenuItem(
-                        value: _PoolAction.edit,
-                        child: ListTile(
-                          leading: Icon(Icons.tune_rounded),
-                          title: Text('Pool settings'),
-                        ),
-                      ),
-                      if (canDelete)
-                      const PopupMenuItem(
-                        value: _PoolAction.delete,
-                        child: ListTile(
-                          leading: Icon(Icons.delete_outline_rounded),
-                          title: Text('Delete pool'),
-                        ),
-                      ),
-                    ],
-                  ),
+                        if (pool.role.canEdit)
+                          const PopupMenuItem(
+                            value: _PoolAction.edit,
+                            child: ListTile(
+                              leading: Icon(Icons.tune_rounded),
+                              title: Text('Pool settings'),
+                            ),
+                          ),
+                        if (canDelete)
+                          const PopupMenuItem(
+                            value: _PoolAction.delete,
+                            child: ListTile(
+                              leading: Icon(Icons.delete_outline_rounded),
+                              title: Text('Delete pool'),
+                            ),
+                          ),
+                      ],
+                    ),
                 ],
               ),
               if (pool.shared && pool.owner != null) ...[
@@ -529,4 +527,3 @@ class _PendingInviteTile extends StatelessWidget {
     );
   }
 }
-

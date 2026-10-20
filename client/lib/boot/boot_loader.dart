@@ -12,11 +12,17 @@ import 'boot_loader_stub.dart'
 class BootLoader {
   static bool _finished = false;
 
+  /// Called once, as the HTML loader starts fading out (or fails).
+  static void Function()? onFinished;
+
   static void stage(String name, [String? label]) => impl.stage(name, label);
   static void progress(String name, double? fraction, [String? label]) =>
       impl.progress(name, fraction, label);
   static void done([String? name]) => impl.done(name);
-  static void error(String message) => impl.error(message);
+  static void error(String message) {
+    impl.error(message);
+    onFinished?.call();
+  }
 
   /// After the first frame, waits for the initial API requests to settle,
   /// then dismisses the loader. Call once, right after runApp.
@@ -86,7 +92,10 @@ class BootLoader {
     if (_finished) return;
     _finished = true;
     // Wait one more frame so the data is painted before the overlay fades.
-    WidgetsBinding.instance.addPostFrameCallback((_) => done());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      done();
+      onFinished?.call();
+    });
     WidgetsBinding.instance.scheduleFrame();
   }
 }
