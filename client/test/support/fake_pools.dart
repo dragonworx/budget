@@ -1,6 +1,7 @@
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
+import 'package:budget_client/features/timeline/saved_view.dart';
 import 'package:decimal/decimal.dart';
 
 /// A pool for tests (owned by me unless [shared]).
@@ -57,6 +58,23 @@ class FakePoolRepository extends PoolRepository {
   }
 
   final opened = <String>[];
+
+  /// Server-side saved views by pool id, and every save made.
+  final views = <String, SavedView>{};
+  final viewSaves = <(String, SavedView, bool)>[];
+
+  @override
+  Future<SavedView?> loadView(String id) async => views[id];
+
+  @override
+  Future<void> saveView(
+    String id,
+    SavedView view, {
+    bool keepalive = false,
+  }) async {
+    viewSaves.add((id, view, keepalive));
+    views[id] = view;
+  }
 
   @override
   Future<void> markOpened(String id) async {

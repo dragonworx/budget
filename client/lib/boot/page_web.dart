@@ -17,6 +17,50 @@ void onPageVisible(void Function() f) {
   );
 }
 
+/// [f] runs whenever the page is hidden or unloaded (tab switch, app
+/// switch, close, navigation away). Returns a handle for [offPageHidden].
+Object onPageHidden(void Function() f) {
+  final vis = ((web.Event _) {
+    if (!pageVisible) f();
+  }).toJS;
+  final hide = ((web.Event _) => f()).toJS;
+  web.document.addEventListener('visibilitychange', vis);
+  web.window.addEventListener('pagehide', hide);
+  return (vis, hide);
+}
+
+void offPageHidden(Object handle) {
+  final (vis, hide) = handle as (JSFunction, JSFunction);
+  web.document.removeEventListener('visibilitychange', vis);
+  web.window.removeEventListener('pagehide', hide);
+}
+
+/// A request that outlives the page (fetch keepalive), for last-moment
+/// saves on hide/unload. Fire and forget. Returns false where unsupported.
+bool keepaliveRequest(
+  String method,
+  String url,
+  Map<String, String> headers,
+  String body,
+) {
+  final h = web.Headers();
+  headers.forEach((k, v) => h.set(k, v));
+  web.window
+      .fetch(
+        url.toJS,
+        web.RequestInit(
+          method: method,
+          headers: h,
+          body: body.toJS,
+          keepalive: true,
+          credentials: 'include',
+        ),
+      )
+      .toDart
+      .then((_) {}, onError: (Object _) {});
+  return true;
+}
+
 String? sessionGet(String key) => web.window.sessionStorage.getItem(key);
 void sessionSet(String key, String value) =>
     web.window.sessionStorage.setItem(key, value);

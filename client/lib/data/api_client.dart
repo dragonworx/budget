@@ -4,6 +4,9 @@ import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
+import '../boot/page_stub.dart'
+    if (dart.library.js_interop) '../boot/page_web.dart'
+    as page;
 import '../config.dart';
 import 'http_client_stub.dart'
     if (dart.library.js_interop) 'http_client_web.dart'
@@ -123,6 +126,19 @@ class ApiClient {
       ),
     );
     return _decode(response, path: path);
+  }
+
+  /// PUT that still completes if the page is being hidden or unloaded
+  /// (fetch keepalive); a normal PUT where that is unavailable. Fire and
+  /// forget: errors are swallowed.
+  void putKeepalive(String path, Object body) {
+    final sent = page.keepaliveRequest(
+      'PUT',
+      _uri(path).toString(),
+      _headers(),
+      jsonEncode(body),
+    );
+    if (!sent) put(path, body: body).catchError((Object _) => null);
   }
 
   Future<void> delete(String path) async {

@@ -101,6 +101,9 @@ const policies = <Policy>[
   Policy('GET', 'pools/:a', Scope.pool),
   // Remember the last-opened pool (landing after sign-in). No event.
   Policy('POST', 'pools/:a/opened', Scope.pool),
+  // The caller's own saved timeline view (no event: not audited/broadcast).
+  Policy('GET', 'pools/:a/view', Scope.pool),
+  Policy('PUT', 'pools/:a/view', Scope.pool),
   Policy('PATCH', 'pools/:a', Scope.pool,
       min: _e, event: 'pool.updated', versioned: 'pools'),
   Policy('DELETE', 'pools/:a', Scope.pool,

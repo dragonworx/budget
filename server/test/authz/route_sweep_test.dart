@@ -13,6 +13,7 @@ const _mounts = {
   'pools.dart': {'buildPoolsApi': 'pools'},
   'balance.dart': {'attachBalanceRoutes': 'pools'},
   'goal.dart': {'attachGoalRoutes': 'pools'},
+  'pool_view.dart': {'attachPoolViewRoutes': 'pools'},
   'solve.dart': {'attachSolveRoutes': 'pools'},
   'scenarios.dart': {'attachScenarioRoutes': 'pools'},
   'transactions.dart': {'transactionsRouter': 'transactions'},
@@ -78,7 +79,9 @@ void main() {
           p.path.endsWith('/goal') ||
           p.path.startsWith('invites/preview') ||
           // A per-user preference (landing pool), not shared data.
-          p.path.endsWith('/opened');
+          p.path.endsWith('/opened') ||
+          // Each member's own saved timeline view, likewise.
+          p.path.endsWith('/view');
       if (mutating && !computeOnly) {
         expect(p.event, isNotNull, reason: '${p.method} ${p.path}');
       }

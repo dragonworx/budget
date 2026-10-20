@@ -13,6 +13,7 @@ import '../repo/transaction_repo.dart';
 import 'balance.dart';
 import 'json_helpers.dart';
 import 'goal.dart';
+import 'pool_view.dart';
 import 'scenarios.dart';
 import 'solve.dart';
 import 'transactions.dart' show parseTransactionBody;
@@ -174,6 +175,7 @@ Router buildPoolsApi(Session conn) {
   attachBalanceRoutes(router, conn);
   attachSolveRoutes(router, conn);
   attachGoalRoutes(router, conn);
+  attachPoolViewRoutes(router, conn);
   attachScenarioRoutes(router, conn);
 
   router.patch('/<id>/reorder-transactions',

@@ -1,15 +1,20 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../boot/page_stub.dart'
+    if (dart.library.js_interop) '../../boot/page_web.dart'
+    as page;
 import '../../brand/brand.dart';
 import '../../app.dart';
 import '../pools/pools_page.dart';
 
 import '../../data/api_client.dart';
 import '../../data/models.dart';
+import '../../data/repositories.dart' show PoolRepository;
 import '../../widgets/conflict_dialog.dart';
 import '../../data/sharing.dart';
 import '../sharing/share_dialog.dart';
@@ -39,6 +44,7 @@ import 'view_menu.dart';
 import '../../state/auth_providers.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
+import 'saved_view.dart';
 import 'view_units.dart';
 import 'zoom_level.dart';
 
@@ -65,8 +71,119 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   @override
   void dispose() {
+    _flushView(keepalive: true);
+    final h = _hiddenHandle;
+    if (h != null) page.offPageHidden(h);
     _viewAnim.dispose();
     super.dispose();
+  }
+
+  // ---- Saved view: each member's last view of each pool (server, per
+  // user per pool; cached in local storage for an instant restore). ----
+
+  static const _viewStore = SavedViewStore();
+
+  /// How long the view must stay still before it is saved.
+  static const viewSaveDelay = Duration(seconds: 1);
+
+  late final PoolRepository _viewRepo;
+  Object? _hiddenHandle;
+  Timer? _viewSaveTimer;
+
+  /// The pool / user the view state below belongs to.
+  String? _viewPoolId;
+  String? _viewUid;
+
+  /// Last view saved or restored (or the untouched default): a view equal
+  /// to it is not saved again.
+  SavedView? _viewSaved;
+
+  /// The view was moved since this pool opened (a late server copy no
+  /// longer replaces it).
+  bool _viewTouched = false;
+
+  /// Latest balance range the chart reported.
+  BalanceExtents? _chartY;
+
+  /// Saved balance range for the chart, applied when [_yRestoreToken] bumps.
+  BalanceExtents? _restoreY;
+  int _yRestoreToken = 0;
+
+  SavedView get _currentView => SavedView(
+    start: dayCoord(_viewStart),
+    days: _visibleDays,
+    unit: _unit,
+    yMin: _chartY?.min,
+    yMax: _chartY?.max,
+  );
+
+  /// The view changed: save it once it has been still for [viewSaveDelay]
+  /// (a drag / pinch / ease keeps pushing the save back; never per frame).
+  void _viewChanged() {
+    if (_viewPoolId == null) return;
+    _viewSaveTimer?.cancel();
+    if (_currentView.sameAs(_viewSaved)) return;
+    _viewSaveTimer = Timer(viewSaveDelay, () => _flushView());
+  }
+
+  /// Saves the current view now if it changed. [keepalive]: the page is
+  /// being hidden / left, so the request must outlive it.
+  void _flushView({bool keepalive = false}) {
+    _viewSaveTimer?.cancel();
+    _viewSaveTimer = null;
+    final poolId = _viewPoolId, uid = _viewUid;
+    if (poolId == null) return;
+    final view = _currentView;
+    if (view.sameAs(_viewSaved)) return;
+    _viewSaved = view;
+    if (uid != null) _viewStore.save(uid, poolId, view);
+    _viewRepo
+        .saveView(poolId, view, keepalive: keepalive)
+        .catchError((Object _) {});
+  }
+
+  void _onChartY(BalanceExtents y) {
+    _chartY = y;
+    // The first fit of an untouched default view is not a change: a pool
+    // never moved keeps opening on today.
+    if (_viewSaved == null && !_viewTouched) {
+      _viewSaved = _currentView;
+      return;
+    }
+    if (!_currentView.sameAs(_viewSaved)) _viewTouched = true;
+    _viewChanged();
+  }
+
+  /// Shows [v] (a saved view) instead of the default.
+  void _applySavedView(SavedView v) {
+    _viewStart = v.startDate;
+    _visibleDays = v.days;
+    _unit = v.unit ?? ViewUnit.nearest(v.days);
+    final (from, to) = _dataWindowFor(_viewStart, _visibleDays);
+    _dataFrom = from;
+    _dataTo = to;
+    _restoreY = v.yRange;
+    _chartY = v.yRange;
+    _yRestoreToken++;
+    _viewSaved = v;
+  }
+
+  /// The server's copy (another device may have moved it since this
+  /// browser's copy). Replaces the view only while it is untouched.
+  Future<void> _fetchSavedView(String poolId) async {
+    try {
+      final v = await _viewRepo.loadView(poolId);
+      if (!mounted || v == null || _viewPoolId != poolId || _viewTouched) {
+        return;
+      }
+      if (v.sameAs(_viewSaved)) return;
+      final uid = _viewUid;
+      if (uid != null) _viewStore.save(uid, poolId, v);
+      _viewAnim.stop();
+      setState(() => _applySavedView(v));
+    } catch (_) {
+      // Offline or failed: keep the local / default view.
+    }
   }
 
   void _tickView() {
@@ -313,6 +430,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   @override
   void initState() {
     super.initState();
+    _viewRepo = ref.read(poolRepositoryProvider);
+    _hiddenHandle = page.onPageHidden(() => _flushView(keepalive: true));
     final today = dateOnly(DateTime.now());
     _viewStart = addCalendarDays(today, -7);
     _dataFrom = addCalendarDays(_viewStart, -30);
@@ -515,16 +634,32 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _viewAnim.stop();
     _seriesCache = null;
     _seriesCacheQuery = null;
-    // Every open starts on today at the default unit (never the last view,
-    // a fit or the seed); Fit / Seed / Today stay explicit actions.
-    final today = dateOnly(DateTime.now());
-    _unit = ViewUnit.month;
-    final v = initialView(today, _unit);
-    _viewStart = v.start;
-    _visibleDays = v.days;
-    _dataFrom = addCalendarDays(_viewStart, -30);
-    final horizon = math.max(120, _visibleDays.ceil());
-    _dataTo = addCalendarDays(today, horizon);
+    // Leaving another pool: save where it was left first.
+    _flushView();
+    _viewPoolId = pool.id;
+    _viewUid = _userId;
+    _viewSaved = null;
+    _viewTouched = false;
+    _chartY = null;
+    _restoreY = null;
+    // Reopening restores my last view of this pool (this browser's copy
+    // now, the server's when it arrives). Otherwise: today at the default
+    // unit, $0 a third of the way up.
+    final uid = _viewUid;
+    final cached = uid == null ? null : _viewStore.load(uid, pool.id);
+    if (cached != null) {
+      _applySavedView(cached);
+    } else {
+      final today = dateOnly(DateTime.now());
+      _unit = ViewUnit.month;
+      final v = initialView(today, _unit);
+      _viewStart = v.start;
+      _visibleDays = v.days;
+      _dataFrom = addCalendarDays(_viewStart, -30);
+      final horizon = math.max(120, _visibleDays.ceil());
+      _dataTo = addCalendarDays(today, horizon);
+    }
+    _fetchSavedView(pool.id);
   }
 
   BalanceQuery get _query =>
@@ -689,6 +824,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       _dataFrom = from;
       _dataTo = to;
     });
+    _viewTouched = true;
+    _viewChanged();
   }
 
   @override
@@ -863,6 +1000,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                       viewStart: _viewStart,
                                       visibleDays: _visibleDays,
                                       onViewportChanged: _onChartViewport,
+                                      restoreYRange: _restoreY,
+                                      yRestoreToken: _yRestoreToken,
+                                      onYRangeChanged: _onChartY,
                                       onCreateOnDay: (day) => pool.role.canEdit
                                           ? _createOnceOnDay(context, day)
                                           : _viewOnlyToast(context),

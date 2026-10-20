@@ -118,6 +118,9 @@ class BalanceChart extends StatefulWidget {
     this.fitToken = 0,
     this.combineKey = '',
     this.zeroToken = 0,
+    this.restoreYRange,
+    this.yRestoreToken = 0,
+    this.onYRangeChanged,
     this.onFitRequested,
     this.onZoomStep,
     this.onShift,
@@ -213,6 +216,15 @@ class BalanceChart extends StatefulWidget {
   /// Bumped to widen the current balance range to include 0 without a full
   /// vertical refit (Fit horizontal).
   final int zeroToken;
+
+  /// A saved balance range to show instead of the default fit: applied when
+  /// the chart is created and whenever [yRestoreToken] changes.
+  final BalanceExtents? restoreYRange;
+  final int yRestoreToken;
+
+  /// The visible balance range changed (pan, pinch, fits, restore). Called
+  /// after the frame, at most once per frame; never per pointer event.
+  final ValueChanged<BalanceExtents>? onYRangeChanged;
 
   /// First and last day [series] was computed for. The line is not drawn
   /// past them, so a stale series never shows a flat, made-up balance while
@@ -484,6 +496,45 @@ class _BalanceChartState extends State<BalanceChart>
   static const double _addButtonSize = 28;
 
   @override
+  void initState() {
+    super.initState();
+    _restoreY();
+  }
+
+  /// Shows [BalanceChart.restoreYRange] (a saved view), skipping the fit.
+  void _restoreY() {
+    final y = widget.restoreYRange;
+    if (y == null || !y.min.isFinite || !y.max.isFinite || !(y.min < y.max)) {
+      return;
+    }
+    _yRange = y;
+    _scaleDefault = false;
+    _fitAwaitingData = false;
+  }
+
+  BalanceExtents? _reportedY;
+  bool _reportQueued = false;
+
+  /// Tells the owner about a new balance range once the frame is done.
+  void _queueYReport() {
+    if (widget.onYRangeChanged == null || _reportQueued) return;
+    final y = _yRange;
+    if (y == null) return;
+    final r = _reportedY;
+    if (r != null && r.min == y.min && r.max == y.max) return;
+    _reportQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reportQueued = false;
+      final now = _yRange;
+      if (!mounted || now == null) return;
+      final last = _reportedY;
+      if (last != null && last.min == now.min && last.max == now.max) return;
+      _reportedY = now;
+      widget.onYRangeChanged?.call(now);
+    });
+  }
+
+  @override
   void didUpdateWidget(covariant BalanceChart oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Someone else moved the view (pan, buttons, fit): drop the wheel ease.
@@ -530,6 +581,10 @@ class _BalanceChartState extends State<BalanceChart>
     } else if (_fitAwaitingData && _dataCoversView) {
       _yRange = null;
       _fitAwaitingData = false;
+    }
+    if (oldWidget.yRestoreToken != widget.yRestoreToken) {
+      _stopDoubleTap();
+      _restoreY();
     }
   }
 
@@ -1621,6 +1676,7 @@ class _BalanceChartState extends State<BalanceChart>
           builder: (context, constraints) {
             _size = Size(constraints.maxWidth, constraints.maxHeight);
             final yRange = _ensureYRange();
+            _queueYReport();
             return Stack(
               children: [
                 Listener(

@@ -2,6 +2,7 @@ import 'package:decimal/decimal.dart';
 
 import 'api_client.dart';
 import '../features/planning/goal_models.dart';
+import '../features/timeline/saved_view.dart';
 import 'models.dart';
 
 /// `GET /api/pools`: accessible pools (mine first, then shared).
@@ -35,6 +36,26 @@ class PoolRepository {
   /// Remember [id] as my last-opened pool (the next sign-in lands there).
   Future<void> markOpened(String id) async {
     await _api.post('/api/pools/$id/opened');
+  }
+
+  /// My saved timeline view of pool [id] (null: none saved yet).
+  Future<SavedView?> loadView(String id) async {
+    final data = await _api.get('/api/pools/$id/view');
+    return data is Map ? SavedView.fromJson(data['view']) : null;
+  }
+
+  /// Saves my timeline view of pool [id]. [keepalive]: the page may be
+  /// going away (hide / unload), so the request must outlive it.
+  Future<void> saveView(
+    String id,
+    SavedView view, {
+    bool keepalive = false,
+  }) async {
+    if (keepalive) {
+      _api.putKeepalive('/api/pools/$id/view', view.toJson());
+      return;
+    }
+    await _api.put('/api/pools/$id/view', body: view.toJson());
   }
 
   Future<Pool> create(Pool draft) async {
