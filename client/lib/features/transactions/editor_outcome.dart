@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -88,7 +90,9 @@ void reportEditorOutcome(
             ]);
           }
         case EditorAction.saved:
-          if (o.previous != null) await notifier.updateTransaction(o.previous!, force: true);
+          if (o.previous != null) {
+            await notifier.updateTransaction(o.previous!, force: true);
+          }
           continue skips;
         case EditorAction.overridden:
         case EditorAction.overrideCleared:
@@ -105,8 +109,9 @@ void reportEditorOutcome(
             );
           }
         case EditorAction.overridesCleared:
-          for (final e in o.previous?.overrides.entries ?? const <
-              MapEntry<DateTime, OccurrenceOverride>>[]) {
+          for (final e
+              in o.previous?.overrides.entries ??
+                  const <MapEntry<DateTime, OccurrenceOverride>>[]) {
             await notifier.setOverride(
               id,
               e.key,
@@ -158,11 +163,34 @@ void reportEditorOutcome(
   }
 
   messenger.hideCurrentSnackBar();
-  messenger.showSnackBar(
+  final tip = messenger.showSnackBar(
     SnackBar(
+      key: const ValueKey('undo-tip'),
       content: Text(text),
-      duration: const Duration(seconds: 6),
+      duration: undoTipDuration,
+      // A SnackBar with an action persists by default (and under
+      // accessible navigation): the undo tip always times out.
+      persist: false,
       action: SnackBarAction(label: 'Undo', onPressed: undo),
     ),
   );
+  // Backstop: the messenger's own timer only runs while its route is on
+  // top (and starts after the entrance animation), so also hide it 5s after
+  // it was shown, whatever is open.
+  var closed = false;
+  final backstop = Timer(
+    undoTipDuration + const Duration(milliseconds: 300),
+    () {
+      if (!closed) {
+        messenger.hideCurrentSnackBar(reason: SnackBarClosedReason.timeout);
+      }
+    },
+  );
+  tip.closed.whenComplete(() {
+    closed = true;
+    backstop.cancel();
+  });
 }
+
+/// How long the floating Undo tip stays up (Undo works until it hides).
+const undoTipDuration = Duration(seconds: 5);

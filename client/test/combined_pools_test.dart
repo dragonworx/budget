@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
@@ -7,6 +5,7 @@ import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/combined.dart';
+import 'package:budget_client/features/timeline/fit_ranges.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
@@ -411,6 +410,8 @@ void main() {
     tester,
   ) async {
     final (w, c) = await _pump(tester);
+    final state = tester.state(find.byType(BalanceChart)) as dynamic;
+    final y0 = state.debugYRange as BalanceExtents;
     await _toggleByTap(tester, 'b');
     expect(_close(_chart(tester), _today), 1500);
     w.pools['b'] = _p('b', 'Savings', 800, -10);
@@ -418,6 +419,9 @@ void main() {
     c.invalidate(balanceProvider);
     await tester.pumpAndSettle();
     expect(_close(_chart(tester), _today), 1800);
+    // Neither the toggle nor the refetch of the combined pool refits.
+    final y1 = state.debugYRange as BalanceExtents;
+    expect((y1.min, y1.max), (y0.min, y0.max));
   });
 
   testWidgets('popups name the other pool; edit only with edit rights', (
@@ -433,6 +437,10 @@ void main() {
     await tester.pumpAndSettle();
     await _toggleByTap(tester, 'b');
     await _toggleByTap(tester, 'c');
+    // Combining keeps the old scale (the summed line may sit off-range):
+    // an explicit fit brings it into view.
+    _chart(tester).onFitRequested!(FitMode.all);
+    await tester.pumpAndSettle();
     final plot = tester.getRect(find.byType(BalanceChart));
     Future<bool> reveal(Key key) async {
       for (var fy = 0.05; fy < 0.85; fy += 0.025) {
@@ -470,8 +478,10 @@ void main() {
     ('desktop', Size(1440, 900)),
     ('phone', Size(390, 844)),
   ]) {
-    testWidgets('$name: ticking / unticking pools keeps the visible date '
-        'window exactly still', (tester) async {
+    testWidgets('$name: ticking / unticking pools never moves the view: '
+        'date window and balance min/max identical every frame', (
+      tester,
+    ) async {
       await _pump(tester, size: size);
       // Somewhere other than the opening view: panned 9.3 days back and
       // zoomed to 45 days.
@@ -479,13 +489,17 @@ void main() {
       await tester.pumpAndSettle();
       final start = _chart(tester).viewStart;
       final days = _chart(tester).visibleDays;
+      final state = tester.state(find.byType(BalanceChart)) as dynamic;
+      BalanceExtents y() => state.debugYRange as BalanceExtents;
+      final y0 = y();
       void still(String why) {
         expect(_chart(tester).viewStart, start, reason: why);
         expect(_chart(tester).visibleDays, days, reason: why);
+        expect(y().min, y0.min, reason: '$why: balance min');
+        expect(y().max, y0.max, reason: '$why: balance max');
       }
 
-      final state = tester.state(find.byType(BalanceChart)) as dynamic;
-      BalanceExtents y() => state.debugYRange as BalanceExtents;
+      final lines = <double>{};
       for (final (id, why) in [
         ('b', 'tick Savings'),
         ('c', 'tick Kids'),
@@ -494,31 +508,22 @@ void main() {
       ]) {
         await tester.tap(find.byKey(const ValueKey('fit-menu')));
         await tester.pumpAndSettle();
+        still('$why, menu open');
         await tester.tap(find.byKey(ValueKey('combine-$id')));
-        final y0 = y();
-        final seen = <double>[];
-        // Every frame while the other pool loads and the scale refits.
-        for (var i = 0; i < 20; i++) {
+        // Every frame while the other pools load and the line redraws.
+        for (var i = 0; i < 30; i++) {
           await tester.pump(const Duration(milliseconds: 30));
           still('$why, frame $i');
-          seen.add(y().max);
         }
         await tester.pumpAndSettle();
         still(why);
-        // The balance scale eased (in-between ranges), not a one-frame snap.
-        final y1 = y();
-        if ((y1.max - y0.max).abs() > 1) {
-          final lo = math.min(y0.max, y1.max), hi = math.max(y0.max, y1.max);
-          expect(
-            seen.where((v) => v > lo + 0.5 && v < hi - 0.5),
-            isNotEmpty,
-            reason: '$why: eased refit',
-          );
-        }
+        lines.add(_chart(tester).series.points.last.closingBalance.toDouble());
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
         still('$why, menu closed');
       }
+      // The line itself did change (combined sums), only the view didn't.
+      expect(lines.length, greaterThan(1));
     });
   }
 }

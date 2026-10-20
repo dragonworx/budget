@@ -121,9 +121,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// Bumped by "Fit" to refit the chart's balance range to the data in view.
   int _fitToken = 0;
 
-  /// Bumped when the combined selection's line has loaded: the balance
-  /// range eases to it; the date window stays exactly where it is.
-  int _smoothFitToken = 0;
   int _zeroToken = 0;
 
   /// Docked planner (non-blocking) and its live preview line.
@@ -341,7 +338,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _combine = uid == null ? {} : _combineStore.load(uid, poolId);
     _combinedCache = null;
     _combinedCacheKey = null;
-    _fittedSelection = '';
   }
 
   void _toggleCombine(String otherId) {
@@ -472,24 +468,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   (List<Object>, _Combined)? _comboMemo;
-
-  /// The selection the balance range was last fitted for. Checking or
-  /// unchecking a pool changes the line's scale, so once the new combined
-  /// line has loaded the balance range eases to a refit (once); the date
-  /// window is left exactly as it was.
-  String _fittedSelection = '';
-
-  void _refitOnCombineChange(_Combined? combo) {
-    if (combo != null && combo.loading) return;
-    final sel = combo == null
-        ? ''
-        : (combo.pools.keys.toList()..sort()).join(',');
-    if (sel == _fittedSelection) return;
-    _fittedSelection = sel;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _smoothFitToken++);
-    });
-  }
 
   /// "Edit in `pool`" from a combined dot (only offered with edit rights).
   Future<void> _openOther(
@@ -759,7 +737,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final series = _seriesCache;
         final combo = _combined(pool, series);
         final shown = combo?.series ?? series;
-        _refitOnCombineChange(combo);
         // Transaction names label the occurrence dots on the chart.
         final transactionNames = {
           for (final t in combo?.transactions.values ?? const <Transaction>[])
@@ -994,7 +971,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                     BalanceChart(
                                       key: ValueKey(pool.id),
                                       fitToken: _fitToken,
-                                      smoothFitToken: _smoothFitToken,
+                                      combineKey: combo == null
+                                          ? ''
+                                          : (combo.pools.keys.toList()..sort())
+                                                .join(','),
                                       zeroToken: _zeroToken,
                                       onFitRequested: (mode) =>
                                           _fit(mode, pool),

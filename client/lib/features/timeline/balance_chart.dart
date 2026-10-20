@@ -106,7 +106,7 @@ class BalanceChart extends StatefulWidget {
     this.dataFrom,
     this.dataThrough,
     this.fitToken = 0,
-    this.smoothFitToken = 0,
+    this.combineKey = '',
     this.zeroToken = 0,
     this.onFitRequested,
     this.onZoomStep,
@@ -189,10 +189,10 @@ class BalanceChart extends StatefulWidget {
   /// Changing this refits the balance range to the data in view.
   final int fitToken;
 
-  /// Like [fitToken], but the balance range eases to its new fit (~450ms)
-  /// instead of snapping: used when the line itself changes under a still
-  /// view (combining pools). The date window is never touched.
-  final int smoothFitToken;
+  /// Which pools are combined into [series]. A change never refits or
+  /// moves anything: the balance range stays exactly as it was and the
+  /// line redraws in it (it may run off-range).
+  final String combineKey;
 
   /// Bumped to widen the current balance range to include 0 without a full
   /// vertical refit (Fit horizontal).
@@ -243,50 +243,9 @@ class _BalanceChartState extends State<BalanceChart>
 
   bool get _wheelActive => _wheelTicker.isActive;
 
-  /// Smooth balance refit ([BalanceChart.smoothFitToken]): [_yRange] eases
-  /// from [_yAnimFrom] to [_yAnimTo], so every reader (painter, gestures,
-  /// hit tests) sees the in-between range.
-  late final AnimationController _yAnim = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 450),
-  )..addListener(_tickY);
-  BalanceExtents? _yAnimFrom;
-  BalanceExtents? _yAnimTo;
-
-  void _tickY() {
-    final from = _yAnimFrom, to = _yAnimTo;
-    if (from == null || to == null || !mounted) return;
-    final k = Curves.easeInOutCubic.transform(_yAnim.value);
-    setState(
-      () => _yRange = BalanceExtents(
-        from.min + (to.min - from.min) * k,
-        from.max + (to.max - from.max) * k,
-      ),
-    );
-  }
-
   /// Tests: the balance range currently shown.
   @visibleForTesting
   BalanceExtents? get debugYRange => _yRange;
-
-  void _stopYAnim() {
-    if (_yAnim.isAnimating) _yAnim.stop();
-    _yAnimFrom = _yAnimTo = null;
-  }
-
-  /// Eases the balance range to a fresh fit of what is now in view.
-  void _smoothRefit() {
-    final from = _yRange;
-    _stopYAnim();
-    _yRange = null;
-    _scaleDefault = false;
-    final to = _ensureYRange();
-    if (from == null || to == null) return; // nothing to ease from: snap
-    _yRange = from;
-    _yAnimFrom = from;
-    _yAnimTo = to;
-    _yAnim.forward(from: 0);
-  }
 
   void _stopWheel() {
     if (_wheelTicker.isActive) _wheelTicker.stop();
@@ -461,15 +420,14 @@ class _BalanceChartState extends State<BalanceChart>
       _clearTip();
       if (_mode != _Gesture.pick) _clearPin();
     }
-    if (oldWidget.fitToken != widget.fitToken ||
-        oldWidget.zeroToken != widget.zeroToken ||
-        oldWidget.currencyScale != widget.currencyScale) {
-      _stopYAnim();
-    }
-    final y = _yAnimTo ?? _yRange;
+    final y = _yRange;
     if (oldWidget.zeroToken != widget.zeroToken && y != null) {
       _yRange = includeZero(y);
     }
+    // Combining / uncombining pools never moves the view: no refit, not
+    // even one still waiting for its data (the combined refetch would
+    // otherwise complete it). The line just redraws in the same scale.
+    if (oldWidget.combineKey != widget.combineKey) _fitAwaitingData = false;
     if (oldWidget.currencyScale != widget.currencyScale) {
       _yRange = null;
       _scaleDefault = true;
@@ -481,10 +439,6 @@ class _BalanceChartState extends State<BalanceChart>
     } else if (_fitAwaitingData && _dataCoversView) {
       _yRange = null;
       _fitAwaitingData = false;
-    }
-    if (oldWidget.smoothFitToken != widget.smoothFitToken) {
-      _clearTip();
-      _smoothRefit();
     }
   }
 
@@ -552,20 +506,17 @@ class _BalanceChartState extends State<BalanceChart>
   void _setYRange(BalanceExtents range) {
     if (!range.min.isFinite || !range.max.isFinite) return;
     _clearTip();
-    _stopYAnim();
     setState(() => _yRange = range);
   }
 
   void _fitY() {
     _clearTip();
-    _stopYAnim();
     setState(() => _yRange = null);
   }
 
   @override
   void dispose() {
     _wheelTicker.dispose();
-    _yAnim.dispose();
     _holdTimer?.cancel();
     _autoScroll?.cancel();
     _tapTipTimer?.cancel();

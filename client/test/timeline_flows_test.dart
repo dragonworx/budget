@@ -376,7 +376,7 @@ void main() {
       greaterThan(balanceCalls),
     );
     expect(find.byKey(const ValueKey('focus-banner')), findsNothing);
-    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(seconds: 6));
   });
 
   testWidgets('delete asks to confirm, updates the count, and can be undone', (
@@ -471,7 +471,7 @@ void main() {
     expect(store.calls, contains('create Coffee'));
     expect(find.text('Created “Coffee”'), findsOneWidget);
     expect(find.text('Transactions · 3'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 6));
   });
 
   for (final size in const [Size(360, 740), Size(375, 812), Size(412, 839)]) {
@@ -514,7 +514,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(store.calls, contains('create Tea'));
       expect(tester.takeException(), isNull);
-      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 6));
     });
   }
 
@@ -1046,6 +1046,64 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
+  for (final (name, size, a11y) in const [
+    ('desktop', Size(1440, 900), false),
+    ('phone', Size(390, 844), false),
+    ('phone, accessible navigation', Size(390, 844), true),
+  ]) {
+    testWidgets('$name: the Undo tip hides itself after 5s; Undo works until '
+        'then', (tester) async {
+      if (a11y) {
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            const FakeAccessibilityFeatures(accessibleNavigation: true);
+        addTearDown(
+          tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
+      }
+      final store = await _pump(tester, size: size);
+      await tester.tap(find.byKey(const ValueKey('open-transactions')));
+      await tester.pumpAndSettle();
+      Future<void> delete(String id) async {
+        // Phones swipe a row left; desktop has a trash button.
+        if (size.width < 600) {
+          await tester.drag(
+            find.byKey(ValueKey('dismiss-$id')),
+            const Offset(-300, 0),
+          );
+          // Let the dismiss slide/resize finish until the tip shows.
+          for (var i = 0; i < 20 && find.text('Undo').evaluate().isEmpty; i++) {
+            await tester.pump(const Duration(milliseconds: 50));
+          }
+        } else {
+          await tester.tap(find.byKey(ValueKey('row-delete-$id')));
+          await tester.pump(); // shown (entrance starts)
+        }
+      }
+
+      final tip = find.byKey(const ValueKey('undo-tip'));
+      await delete('rent');
+      expect(tip, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 4800));
+      expect(tip, findsOneWidget, reason: 'still up just before 5s');
+      // Undo inside the window still restores it.
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(store.calls, contains('create Rent'));
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      // Untouched, it is gone at 5s (plus the exit animation).
+      await delete('salary');
+      expect(tip, findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 5000));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pumpAndSettle();
+      expect(tip, findsNothing, reason: 'hidden after 5s');
+      expect(find.text('Undo'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('phone: swipe left deletes; a short swipe does not', (
     tester,
   ) async {
@@ -1064,7 +1122,7 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
-  testWidgets('View menu has no fit modes; keeps alert option (+ go-tos on '
+  testWidgets('View menu has no fit modes and no alert option (+ go-tos on '
       'phones) and starts without a divider', (tester) async {
     for (final (size, compact) in [
       (const Size(390, 844), true),
