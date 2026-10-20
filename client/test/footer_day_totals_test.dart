@@ -175,7 +175,7 @@ void main() {
       expect(find.byKey(const ValueKey('pick-bubble')), findsOneWidget);
       expect(_plain(tester, 'pick-day-totals'), '+\$2,450  ·  −\$406');
       expect(_plain(tester, 'pick-day-balance'), 'Balance end of day: \$2,994');
-      expect(find.text('Release, then tap +'), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
       // The day's + is there from the press on (it acts once released).
       expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
       // Drag onto a quiet day, then onto the 12th (−$180): updates live.

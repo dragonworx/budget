@@ -162,7 +162,7 @@ void main() {
       await tester.pump();
       // On press: the day's "+" is already there.
       expect(add, findsOneWidget, reason: '$kind: + on press');
-      expect(find.text('Release, then tap +'), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
       // It follows the picked day while dragging along the footer.
       for (final day in [12, 15, 18]) {
         await g.moveTo(Offset(xOf(day), layout.axis.center.dy));
@@ -181,7 +181,7 @@ void main() {
         await g.moveTo(Offset(xOf(18), layout.axis.top - dy));
         await tester.pump();
         expect(add, findsOneWidget, reason: '$kind: + ${dy}px up');
-        expect(find.text('Release, then tap +'), findsOneWidget);
+        expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
       }
       expect(find.text('Release to cancel'), findsNothing);
       for (final k in ['pick-trim', 'trim-preview', 'pick-trim-action']) {
@@ -197,7 +197,7 @@ void main() {
       expect(created, isEmpty, reason: 'release never acts');
       expect(trimmed, isEmpty, reason: 'a drag never trims');
       expect(add, findsOneWidget);
-      expect(find.text('Tap + to add here'), findsOneWidget);
+      expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
       expect(bubble().center.dx, closeTo(xOf(18), 1));
       await tester.tap(add, kind: kind);
       await tester.pump();
@@ -221,7 +221,6 @@ void main() {
       await tester.pump();
       expect(add, findsOneWidget);
       expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
-      expect(find.text('Tap + to add here'), findsOneWidget);
       expect(
         find.text(formatOccurrenceDate(_start.add(const Duration(days: 8)))),
         findsOneWidget,

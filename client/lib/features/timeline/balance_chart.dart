@@ -1806,7 +1806,7 @@ class _BalanceChartState extends State<BalanceChart>
     // on release.
     final stats = pickDayStats(day);
     const bubbleW = 256.0;
-    final bubbleH = stats.balance == null ? 80.0 : 100.0;
+    final bubbleH = stats.balance == null ? 64.0 : 84.0;
     // Above the finger on touch so it stays visible; just above the cursor
     // otherwise. Clamped inside the chart.
     final lift = _pickTouch ? 84.0 : 56.0;
@@ -1843,11 +1843,16 @@ class _BalanceChartState extends State<BalanceChart>
         top: by,
         width: bubbleW,
         height: bubbleH,
-        child: pinned
-            ? KeyedSubtree(key: _pinKey, child: _pickBubble(theme, day, stats))
-            : IgnorePointer(
-                child: _pickBubble(theme, day, stats, interactive: false),
-              ),
+        // One bubble for pressed, dragging and released (and a tap): same
+        // content, + and close throughout. While the pointer is still down
+        // it ignores pointers (they belong to the drag).
+        child: KeyedSubtree(
+          key: _pinKey,
+          child: IgnorePointer(
+            ignoring: !pinned,
+            child: _pickBubble(theme, day, stats),
+          ),
+        ),
       ),
     ];
   }
@@ -1889,14 +1894,9 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   /// The pick's bubble: date, the day's money in / out and closing balance
-  /// ([stats]) and the day's "+" (from the press on). Once released
-  /// ([interactive]) "+" acts and a close button joins it.
-  Widget _pickBubble(
-    ThemeData theme,
-    DateTime day,
-    PickDayStats stats, {
-    bool interactive = true,
-  }) {
+  /// ([stats]), the day's "+" and close. Identical while pressed, dragging
+  /// and released; they act once the pick is pinned.
+  Widget _pickBubble(ThemeData theme, DateTime day, PickDayStats stats) {
     // A dark card like the dot popup, edged in the action colour, so the
     // day's green / red totals read clearly.
     const fg = AppTheme.accent;
@@ -1937,16 +1937,6 @@ class _BalanceChartState extends State<BalanceChart>
                       style: theme.textTheme.titleSmall?.copyWith(
                         color: fg,
                         fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Text(
-                      interactive ? 'Tap + to add here' : 'Release, then tap +',
-                      key: const ValueKey('pick-hint'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: small.copyWith(
-                        color: AppTheme.textMuted,
-                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 3),
@@ -2006,27 +1996,24 @@ class _BalanceChartState extends State<BalanceChart>
                   ],
                 ),
               ),
-              // The day's "+" shows from the press on (live while dragging,
-              // where the pointer is busy, so it only reads as the target);
-              // it acts once the pick is pinned.
+              // + and close show from the press on (while dragging the
+              // pointer is busy, so they act once the pick is pinned).
               const SizedBox(width: 2),
               IconButton(
                 key: const ValueKey('pick-add'),
                 tooltip: 'Add a transaction on ${formatOccurrenceDate(day)}',
                 style: btn,
                 icon: const Icon(Icons.add_rounded, size: 22),
-                // Same look mid-drag (under an IgnorePointer then).
                 onPressed: _addFromPin,
               ),
-              if (interactive)
-                IconButton(
-                  key: const ValueKey('pick-close'),
-                  tooltip: 'Close',
-                  color: AppTheme.textMuted,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  onPressed: _clearPin,
-                ),
+              IconButton(
+                key: const ValueKey('pick-close'),
+                tooltip: 'Close',
+                color: AppTheme.textMuted,
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close_rounded, size: 18),
+                onPressed: _clearPin,
+              ),
             ],
           ),
         ),

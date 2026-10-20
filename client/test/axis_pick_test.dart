@@ -128,6 +128,73 @@ void main() {
     }
   });
 
+  testWidgets('one bubble: pressed, dragging, released and tapped look the '
+      'same (+ and close throughout)', (tester) async {
+    for (final kind in [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
+      final h = await _pump(tester);
+      final bubbleF = find.byKey(const ValueKey('pick-bubble'));
+      // Everything about the bubble: its size, its texts and where + /
+      // close / date sit inside it.
+      (Size, List<String>, List<Offset>) look() {
+        final b = tester.getRect(bubbleF);
+        final texts = [
+          for (final t in tester.widgetList<RichText>(
+            find.descendant(of: bubbleF, matching: find.byType(RichText)),
+          ))
+            t.text.toPlainText(),
+        ];
+        return (
+          b.size,
+          texts,
+          [
+            for (final k in ['pick-add', 'pick-close', 'pick-date'])
+              tester.getRect(find.byKey(ValueKey(k))).topLeft - b.topLeft,
+          ],
+        );
+      }
+
+      void same(
+        (Size, List<String>, List<Offset>) a,
+        (Size, List<String>, List<Offset>) b,
+        String why,
+      ) {
+        expect(a.$1, b.$1, reason: '$kind $why: size');
+        expect(a.$2, b.$2, reason: '$kind $why: content');
+        expect(a.$3, b.$3, reason: '$kind $why: layout');
+      }
+
+      final g = await tester.startGesture(Offset(_x(4), _axisY), kind: kind);
+      await tester.pump();
+      final pressed = look();
+      for (final k in ['pick-add', 'pick-close']) {
+        expect(find.byKey(ValueKey(k)), findsOneWidget, reason: '$kind $k');
+      }
+      await g.moveTo(Offset(_x(8), _axisY));
+      await tester.pump();
+      final dragging = look();
+      await g.up();
+      await tester.pump();
+      final released = look();
+      same(dragging, released, 'dragging vs released');
+      expect(pressed.$1, released.$1, reason: '$kind pressed: same size');
+      expect(pressed.$3, released.$3, reason: '$kind pressed: same layout');
+      for (final gone in ['Release, then tap +', 'Tap + to add here']) {
+        expect(find.text(gone), findsNothing);
+      }
+      expect(h.created, isEmpty, reason: 'release never creates');
+      // A quick tap on the same day shows that same bubble.
+      await tester.tap(find.byKey(const ValueKey('pick-close')), kind: kind);
+      await tester.pump();
+      expect(bubbleF, findsNothing);
+      await tester.tapAt(Offset(_x(8), _axisY), kind: kind);
+      await tester.pump(const Duration(seconds: 1));
+      same(look(), released, 'tap vs released');
+      expect(h.created, isEmpty, reason: 'a tap never creates');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+    }
+  });
+
   testWidgets('a pinned line goes on close, tap-away, Esc or navigation', (
     tester,
   ) async {
@@ -218,7 +285,7 @@ void main() {
     await g2.moveTo(Offset(_x(3), _layout.axis.top - 120));
     await g2.moveTo(Offset(_x(6), _axisY));
     await tester.pump();
-    expect(find.text('Release, then tap +'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pick-close')), findsOneWidget);
     await g2.up();
     await tester.pump();
     expect(h.created, isEmpty);
