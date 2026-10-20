@@ -814,7 +814,12 @@ void main() {
         find.descendant(of: pill, matching: find.byType(Text)),
       );
       expect(text.style?.fontWeight, FontWeight.w800);
-      expect(text.data, matches(RegExp(r'^\w{3} \d{1,2} \w{3}$')));
+      expect(
+        text.data,
+        matches(
+          RegExp(r'^[A-Z][a-z]+day \d{1,2}(st|nd|rd|th) [A-Z][a-z]+( \d{4})?$'),
+        ),
+      );
       expect(
         find.descendant(of: tip, matching: find.textContaining(text.data!)),
         findsWidgets,
@@ -2139,6 +2144,27 @@ void main() {
       await tester.pump(const Duration(seconds: 6));
     });
   }
+
+  testWidgets('320px phone: the long ordinal date fits the pill and popup', (
+    tester,
+  ) async {
+    await _pump(tester, size: const Size(320, 640));
+    await _revealTip(tester, PointerDeviceKind.touch);
+    final chart = tester.getRect(find.byType(BalanceChart));
+    final pill = tester.getRect(find.byKey(const ValueKey('x-highlight')));
+    expect(pill.left, greaterThanOrEqualTo(chart.left));
+    expect(pill.right, lessThanOrEqualTo(chart.right));
+    final date = tester
+        .widgetList<Text>(find.byKey(const ValueKey('tip-date')))
+        .first;
+    expect(date.data, matches(RegExp(r'day \d{1,2}(st|nd|rd|th) ')));
+    expect(date.overflow, TextOverflow.ellipsis);
+    final tip = tester.getRect(
+      find.byKey(const ValueKey('occurrence-tooltip')),
+    );
+    expect(tip.right, lessThanOrEqualTo(320));
+    expect(tester.takeException(), isNull);
+  });
 }
 
 /// The heatmap's start label without any year ("9 Oct").

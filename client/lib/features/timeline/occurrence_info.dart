@@ -8,6 +8,33 @@ import 'zoom_level.dart';
 String formatOccurrenceDate(DateTime date) =>
     DateFormat('EEE d MMM y').format(date);
 
+/// English ordinal suffix for a day of the month: 1st, 2nd, 3rd, 4th …
+/// 11th, 12th, 13th … 21st, 22nd, 23rd … 31st.
+String ordinalSuffix(int n) {
+  final h = n % 100;
+  if (h >= 11 && h <= 13) return 'th';
+  return switch (n % 10) {
+    1 => 'st',
+    2 => 'nd',
+    3 => 'rd',
+    _ => 'th',
+  };
+}
+
+/// [n] with its ordinal suffix ("14th").
+String ordinal(int n) => '$n${ordinalSuffix(n)}';
+
+/// The selected dot's date: long weekday, ordinal day, long month, and the
+/// year only outside the current year ([now], default today):
+/// "Wednesday 14th October", "Friday 1st January 2027".
+String formatSelectedDate(DateTime date, {DateTime? now}) {
+  final year = (now ?? DateTime.now()).year;
+  final base =
+      '${DateFormat('EEEE').format(date)} ${ordinal(date.day)} '
+      '${DateFormat('MMMM').format(date)}';
+  return date.year == year ? base : '$base ${date.year}';
+}
+
 /// Human recurrence summary: "One-off", "Every 2 weeks, ends 30 Jun 2027",
 /// "Every month, 12 times".
 String describeRecurrence(Transaction t) {

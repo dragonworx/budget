@@ -26,6 +26,80 @@ Transaction tx({
 );
 
 void main() {
+  test('ordinal suffixes 1..31 (11-13 take th)', () {
+    const want = {
+      1: '1st',
+      2: '2nd',
+      3: '3rd',
+      4: '4th',
+      5: '5th',
+      9: '9th',
+      10: '10th',
+      11: '11th',
+      12: '12th',
+      13: '13th',
+      14: '14th',
+      20: '20th',
+      21: '21st',
+      22: '22nd',
+      23: '23rd',
+      24: '24th',
+      29: '29th',
+      30: '30th',
+      31: '31st',
+    };
+    for (var n = 1; n <= 31; n++) {
+      final o = ordinal(n);
+      expect(o, startsWith('$n'));
+      if (want[n] != null) expect(o, want[n], reason: '$n');
+      final teen = n >= 11 && n <= 13;
+      final suffix = teen
+          ? 'th'
+          : switch (n % 10) {
+              1 => 'st',
+              2 => 'nd',
+              3 => 'rd',
+              _ => 'th',
+            };
+      expect(ordinalSuffix(n), suffix, reason: '$n');
+    }
+    expect(ordinal(111), '111th');
+    expect(ordinal(101), '101st');
+  });
+
+  test('selected date: long weekday, ordinal day, long month; year only '
+      'outside the current year', () {
+    final now = DateTime(2026, 10, 20);
+    expect(
+      formatSelectedDate(DateTime(2026, 10, 14), now: now),
+      'Wednesday 14th October',
+    );
+    expect(
+      formatSelectedDate(DateTime(2026, 10, 1), now: now),
+      'Thursday 1st October',
+    );
+    expect(
+      formatSelectedDate(DateTime(2026, 10, 22), now: now),
+      'Thursday 22nd October',
+    );
+    expect(
+      formatSelectedDate(DateTime(2026, 10, 23), now: now),
+      'Friday 23rd October',
+    );
+    expect(
+      formatSelectedDate(DateTime(2026, 9, 11), now: now),
+      'Friday 11th September',
+    );
+    expect(
+      formatSelectedDate(DateTime(2027, 1, 1), now: now),
+      'Friday 1st January 2027',
+    );
+    expect(
+      formatSelectedDate(DateTime(2025, 12, 31), now: now),
+      'Wednesday 31st December 2025',
+    );
+  });
+
   test('formats occurrence dates', () {
     expect(formatOccurrenceDate(DateTime(2026, 1, 12)), 'Mon 12 Jan 2026');
   });

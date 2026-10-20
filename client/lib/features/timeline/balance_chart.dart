@@ -1889,13 +1889,14 @@ class _BalanceChartState extends State<BalanceChart>
     final pillTop = (band.center.dy - pillH / 2)
         .clamp(axis.top, math.max(axis.top, axis.bottom - pillH))
         .toDouble();
-    final label = DateFormat('EEE d MMM').format(day);
+    final label = formatSelectedDate(day);
     final textW = (TextPainter(
       text: TextSpan(text: label, style: style),
       textDirection: TextDirection.ltr,
       textScaler: MediaQuery.textScalerOf(context),
     )..layout()).width;
-    final pillW = textW + 16;
+    // Never wider than the axis (a 320px phone): long dates ellipsize.
+    final pillW = math.min(textW + 16, math.max(40.0, axis.width - 2));
     final pillLeft = (x - pillW / 2)
         .clamp(axis.left + 1, math.max(axis.left + 1, axis.right - pillW - 1))
         .toDouble();
@@ -1942,7 +1943,14 @@ class _BalanceChartState extends State<BalanceChart>
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: color, width: 1.2),
             ),
-            child: Text(label, style: style, maxLines: 1, softWrap: false),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Text(
+              label,
+              style: style,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       ),
@@ -3026,7 +3034,13 @@ class _BalanceChartState extends State<BalanceChart>
                 ],
               ),
               const SizedBox(height: 2),
-              Text(formatOccurrenceDate(widget.seedDate), style: small),
+              Text(
+                formatSelectedDate(widget.seedDate),
+                key: const ValueKey('tip-date'),
+                style: small,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         );
@@ -3120,7 +3134,13 @@ class _BalanceChartState extends State<BalanceChart>
                 ),
               ),
             const SizedBox(height: 2),
-            Text(formatOccurrenceDate(o.date), style: small),
+            Text(
+              formatSelectedDate(o.date),
+              key: const ValueKey('tip-date'),
+              style: small,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
             if (t != null)
               Text(
                 [
