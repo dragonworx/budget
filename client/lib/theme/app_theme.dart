@@ -43,6 +43,16 @@ class AppTheme {
     Color(0xFFFF6FA5),
   ];
 
+  /// Other pools in a combined timeline, in my pools order.
+  static const List<Color> poolColors = [
+    Color(0xFF6FB7FF),
+    Color(0xFFE38BFF),
+    Color(0xFFFF9F68),
+    Color(0xFFF5D76E),
+    Color(0xFF7FE3F0),
+    Color(0xFFFF6FA5),
+  ];
+
   static Color get debitColor => _debit;
   static Color get creditColor => _credit;
   static Color get mint => accent;

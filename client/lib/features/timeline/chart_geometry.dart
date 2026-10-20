@@ -795,13 +795,19 @@ class DayGroup {
   int get count => allSkipped ? all.length : active.length;
 
   /// Net of the counted occurrences (skipped ones when all are skipped).
+  /// Transfers between combined pools ([Occurrence.netted]) net out.
   double get net => (allSkipped ? all : active).fold(
     0.0,
-    (sum, o) => sum + o.signedDelta.toDouble(),
+    (sum, o) => o.netted ? sum : sum + o.signedDelta.toDouble(),
   );
 
-  bool get hasCredit => active.any((o) => o.signedDelta.toDouble() > 0);
-  bool get hasDebit => active.any((o) => o.signedDelta.toDouble() < 0);
+  bool get hasCredit =>
+      active.any((o) => !o.netted && o.signedDelta.toDouble() > 0);
+  bool get hasDebit =>
+      active.any((o) => !o.netted && o.signedDelta.toDouble() < 0);
+
+  /// The other pools (combined view) with occurrences on this day.
+  Set<String> get otherPools => {for (final o in all) ?o.poolId};
 
   /// Both money in and out that day.
   bool get mixed => hasCredit && hasDebit;

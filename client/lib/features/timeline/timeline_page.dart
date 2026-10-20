@@ -34,6 +34,9 @@ import 'balance_chart.dart';
 import 'occurrence_info.dart';
 import 'trim.dart';
 import 'chart_geometry.dart';
+import 'combined.dart';
+import 'view_menu.dart';
+import '../../state/auth_providers.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
 import 'view_units.dart';
@@ -102,6 +105,17 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Window [_seriesCache] was fetched for; shown while a wider one loads.
   BalanceQuery? _seriesCacheQuery;
+
+  /// Other pools combined into this timeline (View menu), remembered per
+  /// user per pool by [CombineStore].
+  Set<String> _combine = {};
+  String? _combineLoadedFor;
+  static const _combineStore = CombineStore();
+
+  /// Last complete combined view and the selection + window it was built
+  /// for: kept on screen while a pan / zoom refetches the other pools.
+  _Combined? _combinedCache;
+  String? _combinedCacheKey;
 
   /// Bumped by "Fit" to refit the chart's balance range to the data in view.
   int _fitToken = 0;
@@ -313,13 +327,209 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   void _markOpened(String id) {
     final notifier = ref.read(poolsProvider.notifier);
     notifier.lastPoolId = id;
-    ref
-        .read(poolRepositoryProvider)
-        .markOpened(id)
-        .catchError((Object _) {});
+    ref.read(poolRepositoryProvider).markOpened(id).catchError((Object _) {});
+  }
+
+  String? get _userId => ref.read(authProvider).valueOrNull?.user?.id;
+
+  void _loadCombine(String poolId) {
+    if (_combineLoadedFor == poolId) return;
+    _combineLoadedFor = poolId;
+    final uid = _userId;
+    _combine = uid == null ? {} : _combineStore.load(uid, poolId);
+    _combinedCache = null;
+    _combinedCacheKey = null;
+    _fittedSelection = '';
+  }
+
+  void _toggleCombine(String otherId) {
+    setState(() {
+      _combine = {..._combine};
+      if (!_combine.remove(otherId)) _combine.add(otherId);
+    });
+    final uid = _userId;
+    if (uid != null) _combineStore.save(uid, widget.poolId, _combine);
+  }
+
+  /// Every pool I can open other than this one, in my pools order, each
+  /// with its stable tint.
+  List<CombinedPool> _otherPools(String currentId) {
+    final all = ref.watch(poolsProvider).valueOrNull ?? const <Pool>[];
+    final others = [
+      for (final p in all)
+        if (p.id != currentId) p,
+    ];
+    return [
+      for (final (i, p) in others.indexed)
+        CombinedPool(
+          id: p.id,
+          name: p.name,
+          color: combinedPoolColor(i),
+          canEdit: p.role.canEdit,
+        ),
+    ];
+  }
+
+  /// The combined view for the checked pools, or null when none are
+  /// checked (or the current series has not loaded). Pools whose data is
+  /// still loading are waited for (the last complete view stays up).
+  _Combined? _combined(Pool pool, BalanceSeries? series) {
+    final q = _seriesCacheQuery;
+    if (series == null || q == null || _combine.isEmpty) return null;
+    final picked = [
+      for (final p in _otherPools(pool.id))
+        if (_combine.contains(p.id)) p,
+    ];
+    if (picked.isEmpty) return null;
+    final current = CombinedPart(
+      poolId: pool.id,
+      seedDate: pool.seedDate,
+      series: series,
+      transactions:
+          ref.watch(transactionsProvider(pool.id)).valueOrNull ??
+          const <Transaction>[],
+    );
+    final parts = <CombinedPart>[];
+    final used = <CombinedPool>[];
+    var loading = false;
+    for (final p in picked) {
+      final b = ref.watch(
+        balanceProvider(BalanceQuery(poolId: p.id, from: q.from, to: q.to)),
+      );
+      final txs = ref.watch(transactionsProvider(p.id));
+      final full = ref.watch(poolProvider(p.id));
+      if (b.hasError || txs.hasError || full.hasError) continue; // lost access
+      final bv = b.valueOrNull, tv = txs.valueOrNull, pv = full.valueOrNull;
+      if (bv == null || tv == null || pv == null || b.isLoading) {
+        loading = true;
+        continue;
+      }
+      used.add(p);
+      parts.add(
+        CombinedPart(
+          poolId: p.id,
+          seedDate: pv.seedDate,
+          series: bv,
+          transactions: tv,
+        ),
+      );
+    }
+    final selKey = (picked.map((p) => p.id).toList()..sort()).join(',');
+    if (loading) {
+      final cached = _combinedCache;
+      if (cached != null && _combinedCacheKey == selKey) {
+        return cached.copyWith(loading: true);
+      }
+      if (parts.isEmpty) {
+        return _Combined.waiting(series, pool.seedDate, picked.length + 1);
+      }
+    }
+    // Same inputs (by identity) as last time: reuse, so pans and zooms
+    // don't re-sum every frame.
+    final inputs = <Object>[
+      current.series,
+      current.transactions,
+      for (final part in parts) ...[
+        part.series,
+        part.transactions,
+        part.seedDate,
+      ],
+      for (final p in used) p,
+    ];
+    final memo = _comboMemo;
+    if (memo != null &&
+        memo.$1.length == inputs.length &&
+        [
+          for (var i = 0; i < inputs.length; i++)
+            identical(memo.$1[i], inputs[i]) || memo.$1[i] == inputs[i],
+        ].every((b) => b)) {
+      final c = memo.$2.copyWith(loading: loading);
+      if (!loading) {
+        _combinedCache = c;
+        _combinedCacheKey = selKey;
+      }
+      return c;
+    }
+    final c = _Combined(
+      series: combineSeries(current, parts),
+      lineStart: combinedLineStart(current, parts),
+      pools: {for (final p in used) p.id: p},
+      transactions: {
+        for (final part in parts)
+          for (final t in part.transactions) t.id: t,
+      },
+      count: picked.length + 1,
+      loading: loading,
+    );
+    _comboMemo = (inputs, c);
+    if (!loading) {
+      _combinedCache = c;
+      _combinedCacheKey = selKey;
+    }
+    return c;
+  }
+
+  (List<Object>, _Combined)? _comboMemo;
+
+  /// The selection the balance range was last fitted for. Checking or
+  /// unchecking a pool changes the line's scale, so once the new combined
+  /// line has loaded the balance range refits (once).
+  String _fittedSelection = '';
+
+  void _refitOnCombineChange(_Combined? combo) {
+    if (combo != null && combo.loading) return;
+    final sel = combo == null
+        ? ''
+        : (combo.pools.keys.toList()..sort()).join(',');
+    if (sel == _fittedSelection) return;
+    _fittedSelection = sel;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _fitToken++);
+    });
+  }
+
+  /// "Edit in `pool`" from a combined dot (only offered with edit rights).
+  Future<void> _openOther(
+    BuildContext context,
+    CombinedPool other,
+    Transaction t,
+    DateTime date,
+  ) async {
+    final q = _seriesCacheQuery;
+    final otherSeries = q == null
+        ? null
+        : ref
+              .read(
+                balanceProvider(
+                  BalanceQuery(poolId: other.id, from: q.from, to: q.to),
+                ),
+              )
+              .valueOrNull;
+    final result = await showTransactionEditor(
+      context,
+      poolId: other.id,
+      existing: t,
+      focusDate: date,
+      skippedDates: {
+        for (final o in otherSeries?.occurrences ?? const <Occurrence>[])
+          if (o.transactionId == t.id && o.skipped) dateOnly(o.date),
+      },
+    );
+    ref.invalidate(balanceProvider);
+    ref.invalidate(todayBalanceProvider(other.id));
+    ref.invalidate(insightsProvider(other.id));
+    if (!context.mounted) return;
+    reportEditorOutcome(
+      context,
+      ref,
+      poolId: other.id,
+      outcome: result,
+      onChanged: () => ref.invalidate(balanceProvider),
+    );
   }
 
   void _ensureWindow(Pool pool) {
+    _loadCombine(pool.id);
     if (_windowPoolId == pool.id) return;
     _windowPoolId = pool.id;
     _markOpened(pool.id);
@@ -517,13 +727,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           _seriesCacheQuery = _query;
         }
         final series = _seriesCache;
+        final combo = _combined(pool, series);
+        final shown = combo?.series ?? series;
+        _refitOnCombineChange(combo);
         // Transaction names label the occurrence dots on the chart.
         final transactionNames = {
+          for (final t in combo?.transactions.values ?? const <Transaction>[])
+            t.id: transactionLabel(t),
           for (final transaction
-              in ref
-                      .watch(transactionsProvider(widget.poolId))
-                      .asData
-                      ?.value ??
+              in ref.watch(transactionsProvider(widget.poolId)).asData?.value ??
                   const <Transaction>[])
             transaction.id: transactionLabel(transaction),
         };
@@ -576,8 +788,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                       IconButton(
                         key: const ValueKey('open-transactions'),
                         tooltip: 'Transactions (${transactions.length})',
-                        onPressed: () =>
-                            _openTransactionsPanel(context, pool),
+                        onPressed: () => _openTransactionsPanel(context, pool),
                         icon: Badge.count(
                           count: transactions.length,
                           backgroundColor: AppTheme.accent,
@@ -687,8 +898,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                       const SizedBox(width: 6),
                       OutlinedButton.icon(
                         key: const ValueKey('open-transactions'),
-                        onPressed: () =>
-                            _openTransactionsPanel(context, pool),
+                        onPressed: () => _openTransactionsPanel(context, pool),
                         icon: const Icon(Icons.list_alt_rounded, size: 18),
                         label: Text('Transactions · ${transactions.length}'),
                       ),
@@ -748,10 +958,22 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           _fit(mode, pool),
                                       onZoomStep: _zoomStep,
                                       onShift: _shift,
-                                      series: series,
+                                      series: shown!,
                                       seedDate: pool.seedDate,
-                                      seedBalance: pool.seedBalance
-                                          .toDouble(),
+                                      // Combined: no opening diamond (the
+                                      // line is a sum, not this seed).
+                                      seedBalance: combo != null
+                                          ? null
+                                          : pool.seedBalance.toDouble(),
+                                      lineStart: combo?.lineStart,
+                                      combinedPools: combo?.pools ?? const {},
+                                      otherTransactions:
+                                          combo?.transactions ?? const {},
+                                      onOpenOtherTransaction: (
+                                        other,
+                                        t,
+                                        date,
+                                      ) => _openOther(context, other, t, date),
                                       lossThreshold: pool.lossThreshold
                                           .toDouble(),
                                       currencyScale: pool.currencyScale
@@ -760,8 +982,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                       viewStart: _viewStart,
                                       visibleDays: _visibleDays,
                                       onViewportChanged: _onChartViewport,
-                                      onCreateOnDay: (day) =>
-                                          pool.role.canEdit
+                                      onCreateOnDay: (day) => pool.role.canEdit
                                           ? _createOnceOnDay(context, day)
                                           : _viewOnlyToast(context),
                                       onTrimOnDay: pool.role.canEdit
@@ -805,7 +1026,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                     ),
                                     if (_goalActive)
                                       Positioned(
-                                        top: 8,
+                                        top: combo != null ? 44 : 8,
                                         right: 8,
                                         child: FilterChip(
                                           key: const ValueKey('target-tool'),
@@ -824,7 +1045,17 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                               setState(() => _targetMode = on),
                                         ),
                                       ),
-                                    if (balanceAsync.isLoading)
+                                    if (combo != null)
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: _CombinedLegend(
+                                          combo: combo,
+                                          poolName: pool.name,
+                                        ),
+                                      ),
+                                    if (balanceAsync.isLoading ||
+                                        (combo?.loading ?? false))
                                       const Positioned(
                                         top: 0,
                                         left: 0,
@@ -991,14 +1222,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final end = lastVisibleDay(_viewStart, _visibleDays);
         String fmt(DateTime d) =>
             narrow ? DateFormat('d MMM').format(d) : _shortDate(d);
-        Widget iconBtn(String key, String tip, IconData icon, VoidCallback f,
-                {Color? color}) =>
-            IconButton.outlined(
-              key: ValueKey(key),
-              tooltip: tip,
-              onPressed: f,
-              icon: Icon(icon, size: 18, color: color),
-            );
+        Widget iconBtn(
+          String key,
+          String tip,
+          IconData icon,
+          VoidCallback f, {
+          Color? color,
+        }) => IconButton.outlined(
+          key: ValueKey(key),
+          tooltip: tip,
+          onPressed: f,
+          icon: Icon(icon, size: 18, color: color),
+        );
         return Row(
           children: [
             _unitGroup(theme, compact: false),
@@ -1044,8 +1279,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               ),
             ] else if (!narrow) ...[
               const SizedBox(width: 6),
-              iconBtn('go-today', 'Go to today', Icons.today_rounded,
-                  () => _centerOn(DateTime.now())),
+              iconBtn(
+                'go-today',
+                'Go to today',
+                Icons.today_rounded,
+                () => _centerOn(DateTime.now()),
+              ),
               const SizedBox(width: 4),
               iconBtn(
                 'go-seed',
@@ -1116,84 +1355,74 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// listed in the shortcuts sheet); this menu keeps the alert-line option
   /// for those fits and, on phones, Go to today / seed date.
   Widget _fitMenu(Pool pool, {required bool compact}) {
-    return PopupMenuButton<Object>(
-      key: const ValueKey('fit-menu'),
-      tooltip: 'View options',
-      onSelected: (choice) {
-        if (choice == 'today') {
-          _centerOn(DateTime.now());
-        } else if (choice == 'seed') {
-          _centerOn(pool.seedDate);
-        } else {
-          setState(() {
-            _fitThreshold = !_fitThreshold;
-            _fitToken++;
-          });
-        }
-      },
-      position: PopupMenuPosition.under,
-      itemBuilder: (context) => [
-        if (compact) ...[
-          const PopupMenuItem<Object>(
-            value: 'today',
-            child: Row(
-              children: [
-                Icon(Icons.today_rounded, size: 18),
-                SizedBox(width: 10),
-                Text('Go to today'),
-              ],
-            ),
-          ),
-          const PopupMenuItem<Object>(
-            value: 'seed',
-            child: Row(
-              children: [
-                Icon(Icons.flag_rounded, size: 18, color: AppTheme.violet),
-                SizedBox(width: 10),
-                Text('Go to seed date'),
-              ],
-            ),
-          ),
-          const PopupMenuDivider(),
-        ],
-        PopupMenuItem<Object>(
-          key: const ValueKey('fit-threshold'),
-          value: 'threshold',
-          child: Row(
-            children: [
-              Icon(
-                _fitThreshold
-                    ? Icons.check_box_rounded
-                    : Icons.check_box_outline_blank_rounded,
-                size: 18,
-                color: _fitThreshold ? AppTheme.accent : null,
+    final others = _otherPools(pool.id);
+    final combined = others.where((p) => _combine.contains(p.id)).length;
+    final small = Theme.of(context).textTheme.labelSmall;
+    final tip = combined > 0
+        ? 'View options · combined with $combined other pool${combined == 1 ? '' : 's'}'
+        : 'View options';
+    return ViewMenu(
+      compact: compact,
+      keepThreshold: _fitThreshold,
+      thresholdLabel:
+          'Keep alert line (${formatMoneyAmount(pool.lossThreshold.toDouble())}) in fits',
+      pools: others,
+      combined: _combine,
+      onToday: () => _centerOn(DateTime.now()),
+      onSeed: () => _centerOn(pool.seedDate),
+      onToggleThreshold: () => setState(() {
+        _fitThreshold = !_fitThreshold;
+        _fitToken++;
+      }),
+      onTogglePool: _toggleCombine,
+      builder: (context, open) => compact
+          ? IconButton(
+              key: const ValueKey('fit-menu'),
+              tooltip: tip,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              onPressed: open,
+              icon: Badge(
+                key: const ValueKey('combine-badge'),
+                isLabelVisible: combined > 0,
+                label: Text('${combined + 1}'),
+                backgroundColor: AppTheme.accent,
+                textColor: AppTheme.onAccent,
+                child: const Icon(Icons.visibility_outlined),
               ),
-              const SizedBox(width: 10),
-              Flexible(
-                child: Text(
-                  'Keep alert line (${formatMoneyAmount(pool.lossThreshold.toDouble())}) in fits',
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-      child: compact
-          ? const SizedBox(
-              width: 44,
-              height: 44,
-              child: Icon(Icons.visibility_outlined),
             )
-          : IgnorePointer(
+          : Tooltip(
+              message: tip,
               child: OutlinedButton.icon(
-                onPressed: () {},
+                key: const ValueKey('fit-menu'),
+                onPressed: open,
                 icon: const Icon(Icons.visibility_outlined, size: 18),
-                label: const Row(
+                label: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('View'),
-                    SizedBox(width: 2),
-                    Icon(Icons.expand_more_rounded, size: 18),
+                    const Text('View'),
+                    if (combined > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        key: const ValueKey('combine-badge'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${combined + 1}',
+                          style: small?.copyWith(
+                            color: AppTheme.onAccent,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 2),
+                    const Icon(Icons.expand_more_rounded, size: 18),
                   ],
                 ),
               ),
@@ -1517,10 +1746,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     await _openEditor(context, pool, initialDate: day, onceOnly: true);
   }
 
-  Future<void> _openTransactionsPanel(
-    BuildContext context,
-    Pool pool,
-  ) async {
+  Future<void> _openTransactionsPanel(BuildContext context, Pool pool) async {
     await showSidePanel<void>(
       context,
       width: 520,
@@ -1868,38 +2094,42 @@ class _TipsBar extends StatelessWidget {
         ],
       ),
     );
+    final tips = [
+      if (compact) ...[
+        tip(Icons.ads_click_rounded, 'Tap near a dot for details'),
+        tip(Icons.add_circle_outline_rounded, 'Tap or drag the dates to add'),
+        tip(Icons.touch_app_outlined, 'Drag near dots for details'),
+        tip(Icons.chevron_right_rounded, '◀ ▶ step one unit'),
+        tip(Icons.pinch_outlined, 'Pinch to zoom'),
+      ] else ...[
+        tip(Icons.ads_click_rounded, 'Click or tap a dot for details'),
+        tip(Icons.swipe_right_alt_rounded, 'Drag or tap the dates to add'),
+        tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
+        tip(Icons.view_week_rounded, 'Pinch or − / + change unit, ◀ ▶ step'),
+        tip(Icons.mouse_outlined, 'Scroll or pinch to zoom'),
+        tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
+      ],
+    ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            if (compact) ...[
-              tip(Icons.ads_click_rounded, 'Tap near a dot for details'),
-              tip(
-                Icons.add_circle_outline_rounded,
-                'Tap or drag the dates to add',
+      child: compact
+          ? SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: tips),
+            )
+          // Desktop: one line of whole tips; those that don't fit wrap onto
+          // a clipped second line (hidden) instead of being cut mid-word.
+          : SizedBox(
+              key: const ValueKey('tips-bar'),
+              height: 18,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topLeft,
+                  maxHeight: double.infinity,
+                  child: Wrap(children: tips),
+                ),
               ),
-              tip(Icons.touch_app_outlined, 'Drag near dots for details'),
-              tip(Icons.chevron_right_rounded, '◀ ▶ step one unit'),
-              tip(Icons.pinch_outlined, 'Pinch to zoom'),
-            ] else ...[
-              tip(Icons.ads_click_rounded, 'Click or tap a dot for details'),
-              tip(
-                Icons.swipe_right_alt_rounded,
-                'Drag or tap the dates to add',
-              ),
-              tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
-              tip(
-                Icons.view_week_rounded,
-                'Pinch or − / + change unit, ◀ ▶ step',
-              ),
-              tip(Icons.mouse_outlined, 'Scroll or pinch to zoom'),
-              tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
-            ],
-          ],
-        ),
-      ),
+            ),
     );
   }
 }
@@ -1908,4 +2138,90 @@ class _TipsBar extends StatelessWidget {
 ({DateTime start, double days}) initialView(DateTime today, ViewUnit unit) {
   final days = unit.spanContaining(today).days.toDouble();
   return (start: addDays(dateOnly(today), 0.5 - days / 2), days: days);
+}
+
+/// The timeline's combined view (see [combineSeries]).
+class _Combined {
+  const _Combined({
+    required this.series,
+    required this.lineStart,
+    required this.pools,
+    required this.transactions,
+    required this.count,
+    this.loading = false,
+  });
+
+  /// Nothing loaded yet for the checked pools: the current pool alone,
+  /// with the indicator and a progress bar.
+  _Combined.waiting(this.series, DateTime seedDate, this.count)
+    : lineStart = seedDate,
+      pools = const {},
+      transactions = const {},
+      loading = true;
+
+  final BalanceSeries series;
+  final DateTime lineStart;
+  final Map<String, CombinedPool> pools;
+  final Map<String, Transaction> transactions;
+
+  /// Pools in the view, this one included ("Combined: 3 pools").
+  final int count;
+  final bool loading;
+
+  _Combined copyWith({required bool loading}) => _Combined(
+    series: series,
+    lineStart: lineStart,
+    pools: pools,
+    transactions: transactions,
+    count: count,
+    loading: loading,
+  );
+}
+
+/// "Combined: N pools" over the chart, with each pool's tint (legend).
+class _CombinedLegend extends StatelessWidget {
+  const _CombinedLegend({required this.combo, required this.poolName});
+
+  final _Combined combo;
+  final String poolName;
+
+  @override
+  Widget build(BuildContext context) {
+    final small = Theme.of(context).textTheme.labelSmall ?? const TextStyle();
+    Widget dot(Color c) => Container(
+      width: 8,
+      height: 8,
+      margin: const EdgeInsets.only(right: 4),
+      decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+    );
+    final names = [poolName, for (final p in combo.pools.values) p.name];
+    return Tooltip(
+      message:
+          'Balance line is the sum of: ${names.join(', ')}.\n'
+          'Transfers between them net out. + and Trim add to $poolName.',
+      child: Container(
+        key: const ValueKey('combined-indicator'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: AppTheme.panel(color: AppTheme.overlay, r: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.stacked_line_chart_rounded,
+              size: 14,
+              color: AppTheme.accent,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Combined: ${combo.count} pools',
+              style: small.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(width: 8),
+            dot(AppTheme.accent),
+            for (final p in combo.pools.values) dot(p.color),
+          ],
+        ),
+      ),
+    );
+  }
 }

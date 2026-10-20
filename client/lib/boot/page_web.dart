@@ -19,3 +19,8 @@ void onPageVisible(void Function() f) {
 String? sessionGet(String key) => web.window.sessionStorage.getItem(key);
 void sessionSet(String key, String value) =>
     web.window.sessionStorage.setItem(key, value);
+
+/// Survives reloads and new tabs (per browser profile).
+String? localGet(String key) => web.window.localStorage.getItem(key);
+void localSet(String key, String value) =>
+    web.window.localStorage.setItem(key, value);

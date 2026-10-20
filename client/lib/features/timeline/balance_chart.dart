@@ -12,6 +12,7 @@ import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
 import 'chart_geometry.dart';
+import 'combined.dart';
 import 'duration_format.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
@@ -119,7 +120,28 @@ class BalanceChart extends StatefulWidget {
     this.onAddForPeriod,
     this.onTrimOnDay,
     this.onEditTransaction,
+    this.lineStart,
+    this.combinedPools = const {},
+    this.otherTransactions = const {},
+    this.onOpenOtherTransaction,
   });
+
+  /// Combined view: where the (summed) line starts, the earliest seed of
+  /// the included pools. Null: [seedDate].
+  final DateTime? lineStart;
+
+  /// Combined view: the other pools folded into [series], by id. Their
+  /// occurrences carry [Occurrence.poolId] and get that pool's tint.
+  final Map<String, CombinedPool> combinedPools;
+
+  /// Combined view: the other pools' transactions by id (popups only; Trim
+  /// and Edit only ever use [transactions], the current pool's).
+  final Map<String, Transaction> otherTransactions;
+
+  /// "Open in `pool`" in a dot popup, for another pool's transaction when I
+  /// can edit that pool. Opens its editor only.
+  final void Function(CombinedPool pool, Transaction t, DateTime date)?
+  onOpenOtherTransaction;
 
   /// "Edit" in the dot popup (a menu, in creation order, when the dot has
   /// several transactions). Null: no Edit (viewers). Only an explicit tap on
@@ -450,6 +472,12 @@ class _BalanceChartState extends State<BalanceChart>
     return v;
   }
 
+  /// Where the line starts: the seed, or the earliest combined seed.
+  DateTime get _lineStart => dateOnly(widget.lineStart ?? widget.seedDate);
+
+  Transaction? _txOf(String id) =>
+      widget.transactions[id] ?? widget.otherTransactions[id];
+
   bool get _seedInView {
     final seed = dateOnly(widget.seedDate);
     final end = addDays(widget.viewStart, widget.visibleDays);
@@ -637,7 +665,7 @@ class _BalanceChartState extends State<BalanceChart>
     final visible = _visible();
     if (range == null || visible == null) return double.infinity;
     final scale = _YScale(range.min, range.max, layout.plot);
-    final seed = dateOnly(widget.seedDate);
+    final seed = _lineStart;
     final viewEnd = addDays(widget.viewStart, widget.visibleDays);
     var drawStart = widget.viewStart.isBefore(seed) ? seed : widget.viewStart;
     final from = widget.dataFrom;
@@ -1168,6 +1196,21 @@ class _BalanceChartState extends State<BalanceChart>
       ..sort((a, b) => order[a.$1.id]!.compareTo(order[b.$1.id]!));
   }
 
+  /// Other pools' transactions in [tip] that I may edit (combined view).
+  List<(CombinedPool, Transaction, Occurrence)> _otherTargets(_DotTip tip) {
+    if (widget.onOpenOtherTransaction == null) return const [];
+    final seen = <String, (CombinedPool, Transaction, Occurrence)>{};
+    for (final d in tip.dots) {
+      for (final o in d.occurrences) {
+        final pool = widget.combinedPools[o.poolId];
+        final t = widget.otherTransactions[o.transactionId];
+        if (pool == null || t == null || !pool.canEdit) continue;
+        seen.putIfAbsent(t.id, () => (pool, t, o));
+      }
+    }
+    return seen.values.toList();
+  }
+
   String _nameOf(Transaction t) {
     final raw = widget.transactionNames[t.id] ?? t.name;
     return raw.trim().isEmpty ? 'Transaction' : raw.trim();
@@ -1470,6 +1513,11 @@ class _BalanceChartState extends State<BalanceChart>
                           labelMemory: _labelMemory,
                           series: widget.series,
                           seedDate: widget.seedDate,
+                          lineStart: _lineStart,
+                          poolColors: {
+                            for (final p in widget.combinedPools.values)
+                              p.id: p.color,
+                          },
                           seedBalance: widget.seedBalance,
                           lossThreshold: widget.lossThreshold,
                           fitIncludesThreshold: widget.fitIncludesThreshold,
@@ -1902,13 +1950,13 @@ class _BalanceChartState extends State<BalanceChart>
     final d = DateTime(day.year, day.month, day.day);
     var gains = 0.0, losses = 0.0;
     for (final o in widget.series.occurrences) {
-      if (o.skipped) continue;
+      if (o.skipped || o.netted) continue;
       if (o.date.year != d.year ||
           o.date.month != d.month ||
           o.date.day != d.day) {
         continue;
       }
-      if (widget.transactions[o.transactionId]?.enabled == false) continue;
+      if (_txOf(o.transactionId)?.enabled == false) continue;
       final v = o.signedDelta.toDouble();
       if (v >= 0) {
         gains += v;
@@ -2117,7 +2165,7 @@ class _BalanceChartState extends State<BalanceChart>
       series: widget.series,
       start: s,
       end: e,
-      seedDate: widget.seedDate,
+      seedDate: _lineStart,
       seedBalance: widget.seedBalance,
       threshold: widget.lossThreshold,
     );
@@ -2625,7 +2673,7 @@ class _BalanceChartState extends State<BalanceChart>
       widget.series,
       widget.viewStart,
       widget.visibleDays,
-      widget.seedDate,
+      _lineStart,
     );
     if (_visibleMemoKey != key) {
       _visibleMemoKey = key;
@@ -2633,7 +2681,7 @@ class _BalanceChartState extends State<BalanceChart>
         points: widget.series.points,
         viewStart: widget.viewStart,
         viewEnd: addDays(widget.viewStart, widget.visibleDays),
-        seedDate: widget.seedDate,
+        seedDate: _lineStart,
       );
     }
     return _visibleMemo;
@@ -2677,6 +2725,7 @@ class _BalanceChartState extends State<BalanceChart>
       layout.plot,
       widget.seedDate,
       widget.seedBalance,
+      _lineStart,
     );
     if (_dotsKey == key && _dotsMemo != null) return _dotsMemo!;
     _dotsKey = key;
@@ -2684,6 +2733,7 @@ class _BalanceChartState extends State<BalanceChart>
     if (range == null) return _dotsMemo = dots;
     final scale = _YScale(range.min, range.max, layout.plot);
     final seed = dateOnly(widget.seedDate);
+    final lineStart = _lineStart;
     final viewEnd = addDays(widget.viewStart, widget.visibleDays);
     final closes = <DateTime, double>{
       for (final p in widget.series.points)
@@ -2705,7 +2755,7 @@ class _BalanceChartState extends State<BalanceChart>
     }
     for (final g in groupByDay(widget.series.occurrences)) {
       final day = g.day;
-      if (day.isBefore(seed) ||
+      if (day.isBefore(lineStart) ||
           !addCalendarDays(day, 1).isAfter(widget.viewStart) ||
           day.isAfter(viewEnd)) {
         continue;
@@ -2835,7 +2885,10 @@ class _BalanceChartState extends State<BalanceChart>
         );
         continue;
       }
-      final t = widget.transactions[o.transactionId];
+      final t = _txOf(o.transactionId);
+      final otherPool = o.poolId == null
+          ? null
+          : widget.combinedPools[o.poolId];
       final rawName = widget.transactionNames[o.transactionId] ?? t?.name;
       final name = rawName == null || rawName.trim().isEmpty
           ? 'Transaction'
@@ -2843,6 +2896,7 @@ class _BalanceChartState extends State<BalanceChart>
       final amount = o.signedDelta.toDouble();
       final debit = amount < 0;
       final status = [
+        if (o.netted) 'Transfer between combined pools: nets out',
         if (o.skipped) 'Skipped',
         if (t != null && !t.enabled) 'Disabled',
         if (t != null && t.overrideOn(o.date) != null)
@@ -2879,6 +2933,37 @@ class _BalanceChartState extends State<BalanceChart>
                 ),
               ],
             ),
+            if (otherPool != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Row(
+                  key: ValueKey('tip-pool-${otherPool.id}'),
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: otherPool.color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        otherPool.canEdit
+                            ? otherPool.name
+                            : '${otherPool.name} · view only',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: small.copyWith(
+                          color: otherPool.color,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 2),
             Text(formatOccurrenceDate(o.date), style: small),
             if (t != null)
@@ -2978,7 +3063,43 @@ class _BalanceChartState extends State<BalanceChart>
       children.add(const SizedBox(height: 4));
       children.add(_editLink(theme, editTargets));
     }
-    final estHeight = 30.0 + shown.length * 66.0 + (more > 0 ? 20 : 0) + extra;
+    // Other pools' transactions open in their own editor, and only when I
+    // can edit that pool; otherwise the popup is read-only for them.
+    final otherTargets = _otherTargets(tip);
+    for (final (pool, t, o) in otherTargets.take(2)) {
+      extra += 36;
+      children.add(
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            key: ValueKey('tip-open-other-${t.id}'),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: pool.color,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(64, 34),
+            ),
+            icon: const Icon(Icons.open_in_new_rounded, size: 16),
+            label: Text(
+              'Edit in ${pool.name}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onPressed: () {
+              _hideTip();
+              widget.onOpenOtherTransaction?.call(pool, t, dateOnly(o.date));
+            },
+          ),
+        ),
+      );
+    }
+    final poolRows = shown.where((e) => e.$2?.poolId != null).length;
+    final estHeight =
+        30.0 +
+        shown.length * 66.0 +
+        poolRows * 16 +
+        (more > 0 ? 20 : 0) +
+        extra;
     // Right of the dot, flipping left / up near the edges.
     var left = tip.anchor.dx + 14;
     if (left + width > _size.width - 4) left = tip.anchor.dx - 14 - width;
@@ -3268,6 +3389,8 @@ class _BalanceChartPainter extends CustomPainter {
     required this.labelMemory,
     required this.series,
     required this.seedDate,
+    DateTime? lineStart,
+    this.poolColors = const {},
     this.seedBalance,
     required this.lossThreshold,
     this.fitIncludesThreshold = false,
@@ -3283,7 +3406,7 @@ class _BalanceChartPainter extends CustomPainter {
     this.dataThrough,
     this.yRange,
     this.highlightY,
-  });
+  }) : lineStart = dateOnly(lineStart ?? seedDate);
 
   /// Balance range shown top to bottom. Null falls back to fitting the view.
   final BalanceExtents? yRange;
@@ -3295,6 +3418,12 @@ class _BalanceChartPainter extends CustomPainter {
   final DateTime? dataThrough;
   final BalanceSeries series;
   final DateTime seedDate;
+
+  /// Where the line starts (the earliest combined seed; else [seedDate]).
+  final DateTime lineStart;
+
+  /// Combined view: tint per other pool id (their dots get a ring).
+  final Map<String, Color> poolColors;
 
   /// Opening balance on [seedDate]; drawn as the initial vertex. Null: none.
   final double? seedBalance;
@@ -3322,7 +3451,7 @@ class _BalanceChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final layout = ChartLayout.of(size, visibleDays);
-    final seed = dateOnly(seedDate);
+    final seed = lineStart;
     final viewEnd = _viewEnd;
     final visible = visibleBalance(
       points: series.points,
@@ -3358,7 +3487,7 @@ class _BalanceChartPainter extends CustomPainter {
     // drawn at their absolute heights; not just what is in view.
     final global = balanceExtentsFrom(series.points, seed) ?? visible.extents;
     final gridLabels = _paintGrid(canvas, layout, scale, global);
-    _paintMarkers(canvas, layout, viewEnd, seed);
+    _paintMarkers(canvas, layout, viewEnd, dateOnly(seedDate));
     _paintSeries(canvas, layout, scale, visible, seed, viewEnd);
     _paintOccurrences(canvas, layout, scale, viewEnd, seed);
     // Axis values float over the plot: drawn after the line and dots.
@@ -4302,6 +4431,22 @@ class _BalanceChartPainter extends CustomPainter {
             ..strokeWidth = 1.5,
         );
       }
+      // Combined view: another pool's money that day gets its tint as a
+      // ring (split into arcs when several other pools share the day).
+      final others = [for (final id in g.otherPools) ?poolColors[id]];
+      for (final (i, c) in others.indexed) {
+        final sweep = 2 * math.pi / others.length;
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: radius + 2.2),
+          -math.pi / 2 + i * sweep,
+          sweep,
+          false,
+          Paint()
+            ..color = c
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+      }
       vertices.add(
         _ChartVertex(
           center: center,
@@ -4317,7 +4462,7 @@ class _BalanceChartPainter extends CustomPainter {
     final seedBal = seedBalance;
     if (seedBal != null) {
       final c = Offset(
-        layout.xOf(seed, viewStart, visibleDays),
+        layout.xOf(dateOnly(seedDate), viewStart, visibleDays),
         scale.yOf(seedBal),
       );
       if (layout.plot.inflate(2).contains(c) ||
@@ -4847,6 +4992,8 @@ class _BalanceChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _BalanceChartPainter oldDelegate) {
     return oldDelegate.series != series ||
         oldDelegate.seedDate != seedDate ||
+        oldDelegate.lineStart != lineStart ||
+        !mapEquals(oldDelegate.poolColors, poolColors) ||
         oldDelegate.seedBalance != seedBalance ||
         oldDelegate.lossThreshold != lossThreshold ||
         oldDelegate.fitIncludesThreshold != fitIncludesThreshold ||

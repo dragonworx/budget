@@ -1084,12 +1084,15 @@ void main() {
       final entries = tester
           .widgetList(
             find.byWidgetPredicate(
-              (w) => w is PopupMenuItem || w is PopupMenuDivider,
+              (w) =>
+                  w is MenuItemButton ||
+                  w is CheckboxMenuButton ||
+                  w is Divider,
             ),
           )
           .toList();
-      expect(entries.first, isNot(isA<PopupMenuDivider>()));
-      expect(entries.last, isA<PopupMenuItem>());
+      expect(entries.first, isNot(isA<Divider>()));
+      expect(entries.last, isNot(isA<Divider>()));
       if (!compact) expect(find.text('View'), findsOneWidget);
       // Toggling the alert option still works.
       await tester.tap(find.byKey(const ValueKey('fit-threshold')));

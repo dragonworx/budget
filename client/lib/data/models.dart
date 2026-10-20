@@ -51,7 +51,12 @@ enum Role {
 
 /// A user as embedded in sharing payloads.
 class UserRef {
-  const UserRef({required this.id, required this.email, this.name, this.pictureUrl});
+  const UserRef({
+    required this.id,
+    required this.email,
+    this.name,
+    this.pictureUrl,
+  });
 
   final String id;
   final String email;
@@ -584,9 +589,8 @@ class TransferLink {
     'peerReadable': peerReadable,
   };
 
-  String get poolLabel => !peerReadable
-      ? 'Private pool'
-      : (peerPoolName ?? 'another pool');
+  String get poolLabel =>
+      !peerReadable ? 'Private pool' : (peerPoolName ?? 'another pool');
 }
 
 /// The other pool of a transfer, from this side: "From: Everyday"
@@ -633,12 +637,31 @@ class Occurrence {
     required this.date,
     required this.signedDelta,
     this.skipped = false,
+    this.poolId,
+    this.netted = false,
   });
 
   final String transactionId;
   final DateTime date;
   final Decimal signedDelta;
   final bool skipped;
+
+  /// Combined view: the other pool this occurrence belongs to (null: the
+  /// pool being viewed).
+  final String? poolId;
+
+  /// Combined view: a transfer between two included pools. It still shows,
+  /// but nets out of the day's money in / out.
+  final bool netted;
+
+  Occurrence tagged({String? poolId, bool netted = false}) => Occurrence(
+    transactionId: transactionId,
+    date: date,
+    signedDelta: signedDelta,
+    skipped: skipped,
+    poolId: poolId,
+    netted: netted,
+  );
 
   factory Occurrence.fromJson(Map<String, dynamic> json) {
     return Occurrence(
