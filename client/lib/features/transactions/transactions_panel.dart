@@ -580,8 +580,7 @@ class _TxRow extends StatelessWidget {
                         ),
                         if (t.isTransfer)
                           Text(
-                            transferPhrase(t)[0].toUpperCase() +
-                                transferPhrase(t).substring(1),
+                            transferPhrase(t),
                             key: ValueKey('row-transfer-${t.id}'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

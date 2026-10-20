@@ -77,10 +77,20 @@ void main() {
     expect(t.isTransfer, isTrue);
     expect(t.transfer!.peerAccountName, 'Ops');
     expect(t.toCreateJson()['transferToAccountId'], 'b');
-    expect(transactionLabel(t), 'Save → Ops');
+    expect(transactionLabel(t), 'Save · To: Ops');
     expect(
       transactionLabel(_transfer(TransactionDirection.credit, 'Ops')),
-      'Save ← Ops',
+      'Save · From: Ops',
+    );
+    expect(transferPhrase(_transfer(TransactionDirection.credit, 'Ops')),
+        'From: Ops');
+    expect(transferPhrase(t), 'To: Ops');
+    // An unnamed incoming transfer reads just "From: <account>".
+    expect(
+      transactionLabel(
+        _transfer(TransactionDirection.credit, 'Ops').copyWith(name: ''),
+      ),
+      'From: Ops',
     );
     // A plain series explicitly sends null (unlinks on patch).
     final plain = t.copyWith(clearTransfer: true);
@@ -160,30 +170,39 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('transfer-account-b')));
     await tester.pumpAndSettle();
-    expect(find.text('Ops'), findsOneWidget);
+    expect(find.text('To: Ops'), findsOneWidget);
     await tester.tap(find.text('Create'));
     await tester.pumpAndSettle();
     expect(txs.created.single['transferToAccountId'], 'b');
     expect(txs.created.single['direction'], 'debit');
   });
 
-  testWidgets('phone: the picker drills down projects then accounts', (
-    tester,
-  ) async {
+  testWidgets('phone: the transfer picker is a dropdown; tapping a project '
+      'opens its accounts below it', (tester) async {
     await pumpEditor(tester, const Size(390, 1600));
     await tester.tap(find.byKey(const ValueKey('editor-transfer-account')));
     await tester.pumpAndSettle();
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
     expect(find.text('Projects:'), findsOneWidget);
-    expect(find.text('Accounts:'), findsNothing);
+    expect(find.byKey(const ValueKey('transfer-account-b')), findsNothing);
+    final row = tester.getRect(
+      find.byKey(const ValueKey('transfer-project-p2')),
+    );
     await tester.tap(find.byKey(const ValueKey('transfer-project-p2')));
     await tester.pumpAndSettle();
-    expect(find.text('Projects:'), findsNothing);
-    expect(find.text('Accounts:'), findsOneWidget);
+    // The source account itself is not offered.
+    expect(find.byKey(const ValueKey('transfer-account-a')), findsNothing);
+    final item = tester.getRect(
+      find.byKey(const ValueKey('transfer-account-b')),
+    );
+    // Opens below its project row (not off the side of a narrow screen).
+    expect(item.top, greaterThanOrEqualTo(row.bottom - 1));
+    expect(item.right, lessThanOrEqualTo(390));
     await tester.tap(find.byKey(const ValueKey('transfer-account-b')));
     await tester.pumpAndSettle();
-    expect(find.byType(BottomSheet), findsNothing);
-    expect(find.textContaining('Ops'), findsWidgets);
+    expect(find.text('Projects:'), findsNothing);
+    expect(find.text('To: Ops'), findsOneWidget);
+    expect(find.textContaining('(Business)'), findsOneWidget);
   });
 
   testWidgets('AccountPicker marks the current account', (tester) async {

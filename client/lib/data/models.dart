@@ -636,24 +636,23 @@ class TransferLink {
       : (peerAccountName ?? 'another account');
 }
 
-/// "to Savings" / "from Savings" for one side of a transfer.
+/// The other account of a transfer, from this side: "From: Everyday"
+/// (money in) / "To: Savings" (money out).
 String transferPhrase(Transaction t) {
   final link = t.transfer;
   if (link == null) return '';
-  final dir = t.direction == TransactionDirection.debit ? 'to' : 'from';
-  return '$dir ${link.accountLabel}';
+  final dir = t.direction == TransactionDirection.debit ? 'To' : 'From';
+  return '$dir: ${link.accountLabel}';
 }
 
-/// Timeline / popup label: transfers show their direction and the other
-/// account, e.g. "Savings → Joint" (out) / "Savings ← Everyday" (in).
-/// (Plain arrows: the chart font has no ⇄ glyph.)
+/// Timeline / popup label: transfers add the other account, e.g.
+/// "Top up · From: Everyday" (in) / "Top up · To: Savings" (out); an
+/// unnamed transfer is just "From: Everyday".
 String transactionLabel(Transaction t) {
-  final link = t.transfer;
-  if (link == null) return t.name;
-  final arrow = t.direction == TransactionDirection.debit ? '→' : '←';
+  if (t.transfer == null) return t.name;
   final name = t.name.trim();
-  final tail = '$arrow ${link.accountLabel}';
-  return name.isEmpty ? 'Transfer $tail' : '$name $tail';
+  final tail = transferPhrase(t);
+  return name.isEmpty ? tail : '$name · $tail';
 }
 
 class BalancePoint {
