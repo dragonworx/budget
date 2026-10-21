@@ -47,6 +47,7 @@ import 'ghost_line.dart';
 import 'saved_view.dart';
 import 'view_units.dart';
 import 'zoom_level.dart';
+import 'occurrence_info.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
   const TimelinePage({super.key, required this.poolId});
@@ -769,8 +770,25 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   BalanceQuery get _query =>
       BalanceQuery(poolId: widget.poolId, from: _dataFrom, to: _dataTo);
 
+  /// The day selected on the date lane (pinned pick bubble): the date root
+  /// imports count their day offsets from. Null when none is selected.
+  DateTime? _pinnedDay;
+
+  void _onPinnedDay(DateTime? day) {
+    if (!mounted || day == _pinnedDay) return;
+    setState(() => _pinnedDay = day);
+  }
+
+  /// Import needs a selected day (the root of its day offsets); without one
+  /// it only explains how to select one.
   Future<void> _openImport(BuildContext context, Pool pool) async {
-    final result = await showImportDialog(context, poolId: pool.id);
+    final root = _pinnedDay;
+    if (root == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text(importNeedsDayHint)));
+      return;
+    }
+    final result = await showImportDialog(context, poolId: pool.id, root: root);
     if (result == null || !context.mounted) return;
     ref.invalidate(transactionsProvider(widget.poolId));
     ref.invalidate(poolProvider(widget.poolId));
@@ -1116,6 +1134,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                         restoreYRange: _restoreY,
                                         yRestoreToken: _yRestoreToken,
                                         onYRangeChanged: _onChartY,
+                                        onPinnedDayChanged: _onPinnedDay,
                                         onCreateOnDay: (day) =>
                                             pool.role.canEdit
                                             ? _createOnceOnDay(context, day)
@@ -1407,12 +1426,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           ),
         ),
       if (canEdit)
-        const PopupMenuItem(
-          key: ValueKey('more-import'),
+        PopupMenuItem(
+          key: const ValueKey('more-import'),
           value: 'import',
+          enabled: _pinnedDay != null,
           child: ListTile(
-            leading: Icon(Icons.file_upload_outlined),
-            title: Text('Import transactions'),
+            enabled: _pinnedDay != null,
+            leading: const Icon(Icons.file_upload_outlined),
+            title: const Text('Import transactions'),
+            subtitle: _pinnedDay == null
+                ? const Text(
+                    importNeedsDayHint,
+                    key: ValueKey('more-import-hint'),
+                  )
+                : Text('Dates count from ${formatOccurrenceDate(_pinnedDay!)}'),
           ),
         ),
       const PopupMenuItem(

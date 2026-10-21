@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/api_client.dart';
+import 'package:budget_client/features/transactions/import_dialog.dart';
 import 'package:budget_client/features/transactions/transaction_editor.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/widgets/ui.dart' show SectionCard;
@@ -163,6 +164,32 @@ class _TxRepo extends TransactionRepository {
   Future<Transaction> create(String poolId, Transaction draft) async {
     s.calls.add('create ${draft.name}');
     return s.txs[draft.id] = draft;
+  }
+
+  @override
+  Future<Map<String, dynamic>> import(
+    String poolId,
+    String raw, {
+    required DateTime root,
+    bool dryRun = false,
+  }) async {
+    s.calls.add('import ${importRootParam(root)} dryRun=$dryRun');
+    return dryRun
+        ? {
+            'items': [
+              {
+                'name': 'Bonus',
+                'direction': 'credit',
+                'amount': '5',
+                'startDate': importRootParam(root),
+                'recurrenceMode': 'once',
+                'skippedDates': <String>[],
+              },
+            ],
+            'toCreate': 1,
+            'toSkip': 0,
+          }
+        : {'created': 1, 'skipped': 0};
   }
 
   @override
@@ -2538,6 +2565,152 @@ void main() {
     );
     expect(tip.right, lessThanOrEqualTo(320));
     expect(tester.takeException(), isNull);
+  });
+
+  group('import needs a selected day', () {
+    /// Taps up the date lane (bottom of the chart) until a day pins.
+    Future<void> pinDay(WidgetTester tester) async {
+      final r = tester.getRect(find.byType(BalanceChart));
+      for (var y = r.bottom - 4; y > r.bottom - 80; y -= 4) {
+        await tester.tapAt(
+          Offset(r.center.dx, y),
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+        if (find.byKey(const ValueKey('pick-bubble')).evaluate().isNotEmpty) {
+          await tester.pumpAndSettle();
+          return;
+        }
+      }
+      fail('a tap on the date lane should pin a day');
+    }
+
+    for (final size in const [Size(1440, 900), Size(402, 681)]) {
+      testWidgets('${size.width.toInt()}px: blocked with a hint, then the '
+          'pinned day is the root', (tester) async {
+        final store = await _pump(tester, size: size);
+        await tester.tap(find.byKey(const ValueKey('timeline-more')));
+        await tester.pumpAndSettle();
+        final item = tester.widget<PopupMenuItem<String>>(
+          find.byKey(const ValueKey('more-import')),
+        );
+        expect(item.enabled, isFalse);
+        expect(find.byKey(const ValueKey('more-import-hint')), findsOneWidget);
+        expect(find.text(importNeedsDayHint), findsOneWidget);
+        await tester.tap(find.text('Import transactions'), warnIfMissed: false);
+        await tester.pumpAndSettle();
+        expect(find.text('Paste a JSON array'), findsNothing);
+        expect(find.byKey(const ValueKey('import-paste')), findsNothing);
+        expect(store.calls.where((c) => c.startsWith('import')), isEmpty);
+        await tester.tapAt(const Offset(5, 400));
+        await tester.pumpAndSettle();
+
+        await pinDay(tester);
+        final bubble = find.byKey(const ValueKey('pick-bubble'));
+        final dateText = tester
+            .widgetList<Text>(
+              find.descendant(of: bubble, matching: find.byType(Text)),
+            )
+            .map((t) => t.data ?? '')
+            .firstWhere((t) => RegExp(r'\d{4}$').hasMatch(t));
+        final day = DateFormat('EEE d MMM y').parse(dateText);
+
+        await tester.tap(find.byKey(const ValueKey('timeline-more')));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<PopupMenuItem<String>>(
+                find.byKey(const ValueKey('more-import')),
+              )
+              .enabled,
+          isTrue,
+        );
+        expect(find.text('Dates count from $dateText'), findsOneWidget);
+        await tester.tap(find.text('Import transactions'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('import-paste')), findsOneWidget);
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('import-root')))
+              .textSpan!
+              .toPlainText(),
+          'Dates count from $dateText (the selected day).',
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('import-paste')),
+          '[{"name":"Bonus","direction":"credit","amount":5,'
+          '"startOffset":0,"recurrence":{"mode":"once"}}]',
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+        expect(
+          store.calls,
+          contains('import ${importRootParam(day)} dryRun=true'),
+        );
+        await tester.tap(find.text('Import 1'));
+        await tester.pumpAndSettle();
+        expect(
+          store.calls,
+          contains('import ${importRootParam(day)} dryRun=false'),
+        );
+        expect(find.textContaining('Imported 1 transaction'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('dismissing the selected day blocks import again', (
+      tester,
+    ) async {
+      await _pump(tester);
+      await pinDay(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      if (find.byKey(const ValueKey('pick-bubble')).evaluate().isNotEmpty) {
+        final r = tester.getRect(find.byType(BalanceChart));
+        await tester.tapAt(Offset(r.center.dx, r.top + 30));
+        await tester.pumpAndSettle();
+      }
+      expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('timeline-more')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<PopupMenuItem<String>>(
+              find.byKey(const ValueKey('more-import')),
+            )
+            .enabled,
+        isFalse,
+      );
+      expect(find.text(importNeedsDayHint), findsOneWidget);
+    });
+  });
+
+  test('importRootParam keeps the calendar date across Sydney DST days', () {
+    // DST starts Sun 4 Oct 2026 and ends Sun 5 Apr 2026 (local midnights).
+    for (final d in [
+      DateTime(2026, 10, 4),
+      DateTime(2026, 10, 3, 23, 59),
+      DateTime(2026, 4, 5),
+      DateTime(2027, 4, 4),
+      DateTime(2026, 12, 31),
+      DateTime(2028, 2, 29),
+      DateTime(2026, 1, 31),
+    ]) {
+      expect(
+        importRootParam(d),
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}',
+      );
+    }
+    expect(importRootParam(DateTime(2026, 10, 4)), '2026-10-04');
+    expect(
+      importRootParam(DateTime(2026, 10, 3).add(const Duration(days: 1))),
+      '2026-10-04',
+    );
+    expect(
+      importRootParam(DateTime(2026, 4, 4, 0).add(const Duration(days: 1))),
+      '2026-04-05',
+    );
   });
 }
 

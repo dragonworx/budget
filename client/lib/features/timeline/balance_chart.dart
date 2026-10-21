@@ -104,6 +104,7 @@ class BalanceChart extends StatefulWidget {
     required this.visibleDays,
     required this.onViewportChanged,
     required this.onCreateOnDay,
+    this.onPinnedDayChanged,
     this.transactionNames = const {},
     this.dataFrom,
     this.dataThrough,
@@ -242,6 +243,10 @@ class BalanceChart extends StatefulWidget {
   final double visibleDays;
   final ViewportChanged onViewportChanged;
   final CreateOnDay onCreateOnDay;
+
+  /// The day selected on the date lane (the pinned pick bubble), or null
+  /// once it is dismissed. Notified after the frame that changes it.
+  final ValueChanged<DateTime?>? onPinnedDayChanged;
 
   /// Occurrence transaction id to display name. Missing ids are left unlabeled.
   final Map<String, String> transactionNames;
@@ -628,6 +633,11 @@ class _BalanceChartState extends State<BalanceChart>
 
   @override
   void dispose() {
+    if (_notifiedPin != null) {
+      // The parent must not keep a selection this chart no longer shows.
+      final cb = widget.onPinnedDayChanged;
+      WidgetsBinding.instance.addPostFrameCallback((_) => cb?.call(null));
+    }
     _wheelTicker.dispose();
     _holdTimer?.cancel();
     _autoScroll?.cancel();
@@ -1415,8 +1425,21 @@ class _BalanceChartState extends State<BalanceChart>
     widget.onViewportChanged(addDays(anchor, -fraction * nextDays), nextDays);
   }
 
+  /// Last value sent to [BalanceChart.onPinnedDayChanged].
+  DateTime? _notifiedPin;
+
+  void _syncPinnedDay() {
+    final pinned = _pickPinned ? _pickDay : null;
+    if (pinned == _notifiedPin || widget.onPinnedDayChanged == null) return;
+    _notifiedPin = pinned;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _notifiedPin == pinned) widget.onPinnedDayChanged!(pinned);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _syncPinnedDay();
     final theme = Theme.of(context);
     final cursor = _mode == _Gesture.pick || _mode == _Gesture.select
         ? SystemMouseCursors.resizeColumn

@@ -71,16 +71,14 @@ Router buildPoolsApi(Session conn) {
     }
   });
 
-  router.get('/<poolId>/transactions',
-      (Request request, String poolId) async {
+  router.get('/<poolId>/transactions', (Request request, String poolId) async {
     final pool = await pools.get(poolId);
     if (pool == null) return jsonError(404, 'pool not found');
     final items = await transactions.listByPool(poolId);
     return jsonOk({'transactions': items.map((s) => s.toJson()).toList()});
   });
 
-  router.post('/<poolId>/transactions',
-      (Request request, String poolId) async {
+  router.post('/<poolId>/transactions', (Request request, String poolId) async {
     try {
       final pool = await pools.get(poolId);
       if (pool == null) return jsonError(404, 'pool not found');
@@ -125,7 +123,9 @@ Router buildPoolsApi(Session conn) {
     }
   });
 
-  // Bulk import (see docs in transaction_import.dart). Body: the raw paste —
+  // Bulk import (see docs in transaction_import.dart). `?root=YYYY-MM-DD`
+  // (required) is the selected timeline day all day offsets count from.
+  // Body: the raw paste —
   // a JSON array of TransactionImport, a single object, or either wrapped in
   // a ```json fence. `?dryRun=true` validates and returns the preview only.
   // All-or-nothing: any invalid item -> 400 with per-item `issues`, nothing
@@ -135,13 +135,22 @@ Router buildPoolsApi(Session conn) {
     final pool = await pools.get(poolId);
     if (pool == null) return jsonError(404, 'pool not found');
     final dryRun = request.url.queryParameters['dryRun'] == 'true';
+    final root = parseImportRoot(request.url.queryParameters['root']);
     final raw = await request.readAsString();
     try {
-      final items = parseImport(raw);
+      if (root == null) {
+        throw ImportValidationException([
+          ImportIssue(
+              null,
+              'root',
+              'Select a day on the timeline first: offsets count from it '
+                  '(?root=YYYY-MM-DD)')
+        ]);
+      }
+      final items = parseImport(raw, root: root);
       if (dryRun) {
-        final existing = (await transactions.listByPool(poolId))
-            .map((t) => t.id)
-            .toSet();
+        final existing =
+            (await transactions.listByPool(poolId)).map((t) => t.id).toSet();
         final dupes = [
           for (final i in items)
             if (i.id != null && existing.contains(i.id)) i.index

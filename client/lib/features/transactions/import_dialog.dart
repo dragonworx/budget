@@ -7,6 +7,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/api_client.dart';
 import '../../state/providers.dart';
 import '../../widgets/money_text.dart';
+import '../timeline/occurrence_info.dart';
+
+/// Shown wherever import is unavailable because no day is selected.
+const importNeedsDayHint =
+    'Select a day first: tap the dates under the timeline. '
+    'Imported dates count from that day.';
+
+/// Example paste for the dialog's help: offsets are whole days from the
+/// selected day (the date root).
+const importExampleJson = '''[
+  { "name": "Rent", "direction": "debit", "amount": "2000.00",
+    "startOffset": 0,
+    "recurrence": { "mode": "every", "interval": 1, "unit": "months" },
+    "end": { "mode": "until_offset", "endOffset": 365 },
+    "skippedOffsets": [61] },
+  { "name": "Bonus", "direction": "credit", "amount": "500.00",
+    "startOffset": 14, "recurrence": { "mode": "once" } }
+]''';
 
 /// Result of a successful import.
 class ImportResult {
@@ -23,21 +41,27 @@ class ImportResult {
   }
 }
 
-/// Paste-a-JSON-array import into [poolId]. The server validates (dry
-/// run) as you type; Import is enabled once the whole paste is valid.
+/// Paste-a-JSON-array import into [poolId]. Every date in the paste is a
+/// whole-day offset from [root] (the day selected on the timeline). The
+/// server validates (dry run) as you type; Import is enabled once the whole
+/// paste is valid.
 Future<ImportResult?> showImportDialog(
   BuildContext context, {
   required String poolId,
+  required DateTime root,
 }) {
   return showDialog<ImportResult>(
     context: context,
-    builder: (_) => _ImportDialog(poolId: poolId),
+    builder: (_) => _ImportDialog(poolId: poolId, root: root),
   );
 }
 
 class _ImportDialog extends ConsumerStatefulWidget {
-  const _ImportDialog({required this.poolId});
+  const _ImportDialog({required this.poolId, required this.root});
   final String poolId;
+
+  /// The selected day; fixed for the dialog's lifetime.
+  final DateTime root;
   @override
   ConsumerState<_ImportDialog> createState() => _ImportDialogState();
 }
@@ -85,7 +109,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
     try {
       final res = await ref
           .read(transactionRepositoryProvider)
-          .import(widget.poolId, raw, dryRun: true);
+          .import(widget.poolId, raw, root: widget.root, dryRun: true);
       if (seq != _requestSeq || !mounted) return;
       setState(() {
         _items = (res['items'] as List).cast<Map<String, dynamic>>();
@@ -130,7 +154,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
     try {
       final res = await ref
           .read(transactionRepositoryProvider)
-          .import(widget.poolId, _controller.text);
+          .import(widget.poolId, _controller.text, root: widget.root);
       if (!mounted) return;
       Navigator.of(context).pop(
         ImportResult(res['created'] as int? ?? 0, res['skipped'] as int? ?? 0),
@@ -145,8 +169,15 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
     }
   }
 
+  /// A server `YYYY-MM-DD` as "Mon 12 Jan 2026" (as-is if unparseable).
+  static String _day(Object? iso) {
+    final p = '$iso'.split('-').map(int.tryParse).toList();
+    if (p.length != 3 || p.contains(null)) return '$iso';
+    return formatOccurrenceDate(DateTime(p[0]!, p[1]!, p[2]!));
+  }
+
   String _frequency(Map<String, dynamic> item) {
-    final start = item['startDate'];
+    final start = _day(item['startDate']);
     if (item['recurrenceMode'] == 'once') return 'Once on $start';
     final n = item['interval'] as int? ?? 1;
     final unit = (item['unit'] as String? ?? 'months');
@@ -154,7 +185,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
         ? 'Every ${unit.substring(0, unit.length - 1)}'
         : 'Every $n $unit';
     final end = switch (item['endMode']) {
-      'until_date' => ' until ${item['endDate']}',
+      'until_date' => ' until ${_day(item['endDate'])}',
       'count' => ' × ${item['occurrenceCount']}',
       _ => '',
     };
@@ -166,6 +197,8 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
     final theme = Theme.of(context);
     final valid = _items.isNotEmpty && _issues.isEmpty && !_checking;
     return AlertDialog(
+      // Phones: the help, paste and preview scroll instead of overflowing.
+      scrollable: true,
       title: const Text('Import transactions'),
       content: SizedBox(
         width: 560,
@@ -173,10 +206,54 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text.rich(
+              key: const ValueKey('import-root'),
+              TextSpan(
+                children: [
+                  const TextSpan(text: 'Dates count from '),
+                  TextSpan(
+                    text: formatOccurrenceDate(widget.root),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const TextSpan(text: ' (the selected day).'),
+                ],
+              ),
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 6),
             Text(
               'Paste a JSON array of transactions (```json fences are fine). '
-              'Items with an id that already exists in this pool are skipped.',
+              'Every date is a whole number of days from the selected day: '
+              'startOffset 0 is that day, 14 is two weeks later, -1 the day '
+              'before. end {"mode": "until_offset", "endOffset": N} and '
+              'skippedOffsets count the same way; absolute dates are not '
+              'accepted. Items with an id that already exists in this pool '
+              'are skipped.',
               style: theme.textTheme.bodySmall,
+            ),
+            Theme(
+              data: theme.copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                key: const ValueKey('import-example'),
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                dense: true,
+                title: Text('Example', style: theme.textTheme.labelLarge),
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const SelectableText(
+                      importExampleJson,
+                      style: TextStyle(fontFamily: 'monospace', fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -188,7 +265,9 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
               autofocus: true,
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
               decoration: const InputDecoration(
-                hintText: '[ { "name": "Rent", "direction": "debit", ... } ]',
+                hintText:
+                    '[ { "name": "Rent", "direction": "debit", '
+                    '"amount": "2000", "startOffset": 0, ... } ]',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -263,13 +342,12 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
       children: [
         Text(summary, style: theme.textTheme.labelLarge),
         const SizedBox(height: 6),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 220),
-          child: ListView.separated(
-            shrinkWrap: true,
-            itemCount: _items.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, i) {
+        // The dialog itself scrolls (scrollable: true needs intrinsic
+        // sizes, which a lazy ListView can't give).
+        for (var i = 0; i < _items.length; i++) ...[
+          if (i > 0) const Divider(height: 1),
+          Builder(
+            builder: (context) {
               final item = _items[i];
               final credit = item['direction'] == 'credit';
               final name = (item['name'] as String?)?.isNotEmpty == true
@@ -296,7 +374,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
                   [
                     _frequency(item),
                     if (skips > 0)
-                      '$skips skipped date${skips == 1 ? '' : 's'}',
+                      'skips ${[for (final d in item['skippedDates'] as List) _day(d)].join(', ')}',
                     if (item['enabled'] == false) 'disabled',
                     if (exists) 'already exists',
                   ].join(' · '),
@@ -311,7 +389,7 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
               );
             },
           ),
-        ),
+        ],
       ],
     );
   }

@@ -4,6 +4,24 @@ import 'package:decimal/decimal.dart';
 
 import 'enums.dart';
 
+// Import format (see the /transaction skill): every date is a whole number
+// of calendar days relative to a date root — the day the user selected on
+// the timeline, sent as `?root=YYYY-MM-DD`. `startOffset`, `end.endOffset`
+// (mode "until_offset") and `skippedOffsets` resolve to root + n days with
+// date-only arithmetic, so DST and month/year lengths never shift a date.
+// Absolute dates (startDate, endDate, skippedDates, mode "until_date") are
+// rejected with a pointer to the offset field to use instead.
+
+/// Largest accepted |offset| (about 100 years either way).
+const maxImportOffset = 36600;
+
+/// [root] + [days] calendar days, as a UTC midnight date.
+DateTime resolveOffset(DateTime root, int days) =>
+    DateTime.utc(root.year, root.month, root.day + days);
+
+/// Parses a `root` query value (YYYY-MM-DD) or returns null.
+DateTime? parseImportRoot(String? v) => _date(v);
+
 /// One validation problem in an import payload.
 class ImportIssue {
   ImportIssue(this.index, this.field, this.message);
@@ -53,6 +71,9 @@ class ImportItem {
     this.occurrenceCount,
     required this.enabled,
     required this.skippedDates,
+    this.startOffset = 0,
+    this.endOffset,
+    this.skippedOffsets = const [],
   });
 
   final int index;
@@ -69,6 +90,9 @@ class ImportItem {
   final int? occurrenceCount;
   final bool enabled;
   final List<DateTime> skippedDates;
+  final int startOffset;
+  final int? endOffset;
+  final List<int> skippedOffsets;
 
   Map<String, dynamic> toJson() => {
         'index': index,
@@ -85,6 +109,9 @@ class ImportItem {
         'occurrenceCount': occurrenceCount,
         'enabled': enabled,
         'skippedDates': skippedDates.map(_fmt).toList(),
+        'startOffset': startOffset,
+        'endOffset': endOffset,
+        'skippedOffsets': skippedOffsets,
       };
 }
 
@@ -138,9 +165,23 @@ DateTime? _date(Object? v) {
   return d;
 }
 
-/// Validates every item, collecting all issues. Throws
+/// A whole-number day offset: an int, or an integral finite double (3.0).
+/// Strings ("3"), fractions (1.5), NaN and other types are rejected.
+int? _offset(Object? v) {
+  if (v is int) return v;
+  if (v is double && v.isFinite && v == v.roundToDouble()) return v.toInt();
+  return null;
+}
+
+String _offsetProblem(Object? v) => v is String
+    ? 'must be a whole number of days, not a string ("$v")'
+    : 'must be a whole number of days (e.g. 0, 14, -3)';
+
+/// Validates every item, collecting all issues, resolving day offsets
+/// against [root] (the selected timeline day). Throws
 /// [ImportValidationException] if any item is invalid.
-List<ImportItem> parseImport(String raw) {
+List<ImportItem> parseImport(String raw, {required DateTime root}) {
+  root = DateTime.utc(root.year, root.month, root.day);
   final list = decodeImportPayload(raw);
   if (list.isEmpty) {
     throw ImportValidationException(
@@ -166,17 +207,32 @@ List<ImportItem> parseImport(String raw) {
       'name',
       'direction',
       'amount',
-      'startDate',
+      'startOffset',
       'recurrence',
       'end',
       'enabled',
-      'skippedDates',
+      'skippedOffsets',
+    };
+    // Absolute dates from the old format: rejected with a pointer to the
+    // offset field that replaces them.
+    const absolute = {
+      'startDate': 'startOffset',
+      'endDate': 'end: {"mode":"until_offset","endOffset":N}',
+      'skippedDates': 'skippedOffsets',
     };
     // Older files may carry project / account fields (projects are gone,
     // accounts are now pools): ignored.
     const legacy = {'projectId', 'projectName', 'accountId', 'accountName'};
     for (final k in m.keys) {
-      if (!known.contains(k) && !legacy.contains(k)) bad(k, 'unknown field');
+      final use = absolute[k];
+      if (use != null) {
+        bad(
+            k,
+            'absolute dates are not accepted; use $use '
+            '(whole days from the selected day)');
+      } else if (!known.contains(k) && !legacy.contains(k)) {
+        bad(k, 'unknown field');
+      }
     }
 
     String? id;
@@ -225,13 +281,20 @@ List<ImportItem> parseImport(String raw) {
               : 'must be a number or numeric string');
     }
 
-    final startDate = _date(m['startDate']);
-    if (startDate == null) {
-      bad(
-          'startDate',
-          m['startDate'] == null
-              ? 'is required (YYYY-MM-DD)'
-              : 'must be a valid YYYY-MM-DD date');
+    DateTime? startDate;
+    final startOffset = _offset(m['startOffset']);
+    if (startOffset == null) {
+      if (!m.containsKey('startDate')) {
+        bad(
+            'startOffset',
+            m['startOffset'] == null
+                ? 'is required (whole days from the selected day; 0 = that day)'
+                : _offsetProblem(m['startOffset']));
+      }
+    } else if (startOffset.abs() > maxImportOffset) {
+      bad('startOffset', 'is too far from the selected day');
+    } else {
+      startDate = resolveOffset(root, startOffset);
     }
 
     RecurrenceMode? mode;
@@ -264,6 +327,7 @@ List<ImportItem> parseImport(String raw) {
 
     var endMode = EndMode.never;
     DateTime? endDate;
+    int? endOffset;
     int? count;
     final end = m['end'];
     if (end == null) {
@@ -276,14 +340,30 @@ List<ImportItem> parseImport(String raw) {
       switch (end['mode']) {
         case 'never':
           endMode = EndMode.never;
-        case 'until_date':
+        case 'until_offset':
           endMode = EndMode.untilDate;
-          endDate = _date(end['endDate']);
-          if (endDate == null) {
-            bad('end.endDate', 'must be a valid YYYY-MM-DD date');
-          } else if (startDate != null && endDate.isBefore(startDate)) {
-            bad('end.endDate', 'is before startDate');
+          endOffset = _offset(end['endOffset']);
+          if (endOffset == null) {
+            bad(
+                'end.endOffset',
+                end['endOffset'] == null
+                    ? 'is required for mode "until_offset"'
+                    : _offsetProblem(end['endOffset']));
+          } else if (endOffset.abs() > maxImportOffset) {
+            bad('end.endOffset', 'is too far from the selected day');
+            endOffset = null;
+          } else {
+            endDate = resolveOffset(root, endOffset);
+            if (startOffset != null && endOffset < startOffset) {
+              bad('end.endOffset', 'is before startOffset');
+            }
           }
+        case 'until_date':
+          bad(
+              'end.mode',
+              '"until_date" (an absolute date) is not accepted; use '
+                  '{"mode":"until_offset","endOffset":N} (whole days from the '
+                  'selected day)');
         case 'count':
           endMode = EndMode.count;
           final c = end['occurrences'];
@@ -295,12 +375,19 @@ List<ImportItem> parseImport(String raw) {
             bad('end.occurrences', 'must be an integer >= 1');
           }
         default:
-          bad('end.mode', 'must be "never", "until_date" or "count"');
+          bad('end.mode', 'must be "never", "until_offset" or "count"');
+      }
+      if (end.containsKey('endDate')) {
+        bad(
+            'end.endDate',
+            'absolute dates are not accepted; use end.endOffset '
+                '(whole days from the selected day)');
       }
       // A one-off has no recurrence end; store it as never.
       if (mode == RecurrenceMode.once) {
         endMode = EndMode.never;
         endDate = null;
+        endOffset = null;
         count = null;
       }
     }
@@ -311,17 +398,21 @@ List<ImportItem> parseImport(String raw) {
     }
 
     final skipped = <DateTime>[];
-    final sk = m['skippedDates'];
+    final skippedOffsets = <int>[];
+    final sk = m['skippedOffsets'];
     if (sk != null) {
       if (sk is! List) {
-        bad('skippedDates', 'must be an array of YYYY-MM-DD dates');
+        bad('skippedOffsets', 'must be an array of whole day offsets');
       } else {
         for (var j = 0; j < sk.length; j++) {
-          final d = _date(sk[j]);
-          if (d == null) {
-            bad('skippedDates[$j]', 'must be a valid YYYY-MM-DD date');
-          } else if (!skipped.contains(d)) {
-            skipped.add(d);
+          final n = _offset(sk[j]);
+          if (n == null) {
+            bad('skippedOffsets[$j]', _offsetProblem(sk[j]));
+          } else if (n.abs() > maxImportOffset) {
+            bad('skippedOffsets[$j]', 'is too far from the selected day');
+          } else if (!skippedOffsets.contains(n)) {
+            skippedOffsets.add(n);
+            skipped.add(resolveOffset(root, n));
           }
         }
       }
@@ -343,6 +434,9 @@ List<ImportItem> parseImport(String raw) {
         occurrenceCount: count,
         enabled: enabledRaw as bool? ?? true,
         skippedDates: skipped,
+        startOffset: startOffset!,
+        endOffset: endOffset,
+        skippedOffsets: skippedOffsets,
       ));
     }
   }

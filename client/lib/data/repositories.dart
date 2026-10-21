@@ -236,15 +236,19 @@ class TransactionRepository {
   Future<void> delete(String id) => _api.delete('/api/transactions/$id');
 
   /// Bulk import of a pasted `TransactionImport[]` (raw text; fences are
-  /// stripped server-side). With [dryRun] only validates and previews.
+  /// stripped server-side). Its day offsets count from [root], the day
+  /// selected on the timeline; the server validates and resolves them.
+  /// With [dryRun] only validates and previews.
   /// Throws [ApiException] (status 400, `details` per-item issues) if invalid.
   Future<Map<String, dynamic>> import(
     String poolId,
     String raw, {
+    required DateTime root,
     bool dryRun = false,
   }) async {
+    final q = [if (dryRun) 'dryRun=true', 'root=${importRootParam(root)}'];
     final data = await _api.post(
-      '/api/pools/$poolId/transactions/import${dryRun ? '?dryRun=true' : ''}',
+      '/api/pools/$poolId/transactions/import?${q.join('&')}',
       body: raw,
     );
     return data as Map<String, dynamic>;
@@ -341,3 +345,10 @@ List<Map<String, dynamic>> _asList(dynamic data) {
   }
   throw ApiException('Unexpected list response shape');
 }
+
+/// [day]'s calendar date as `YYYY-MM-DD`, read from its fields (never via
+/// UTC conversion), so a local midnight on a DST change day keeps its date.
+String importRootParam(DateTime day) =>
+    '${day.year.toString().padLeft(4, '0')}-'
+    '${day.month.toString().padLeft(2, '0')}-'
+    '${day.day.toString().padLeft(2, '0')}';
