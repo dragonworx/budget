@@ -2651,13 +2651,11 @@ void main() {
               .toPlainText(),
           'Dates count from $dateText (the selected day).',
         );
-        await tester.enterText(
-          find.byKey(const ValueKey('import-paste')),
+        await _pasteImport(
+          tester,
           '[{"name":"Bonus","direction":"credit","amount":5,'
           '"startOffset":0,"recurrence":{"mode":"once"}}]',
         );
-        await tester.pump(const Duration(milliseconds: 500));
-        await tester.pumpAndSettle();
         expect(
           store.calls,
           contains('import ${importRootParam(day)} dryRun=true'),
@@ -2682,13 +2680,11 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('Import transactions'));
         await tester.pumpAndSettle();
-        await tester.enterText(
-          find.byKey(const ValueKey('import-paste')),
+        await _pasteImport(
+          tester,
           '[{"direction":"credit","amount":5,"startOffset":0,'
           '"recurrence":{"mode":"once"}}]',
         );
-        await tester.pump(const Duration(milliseconds: 500));
-        await tester.pumpAndSettle();
         await tester.tap(find.text('Import 1'));
         await tester.pumpAndSettle();
       }
@@ -2885,4 +2881,20 @@ void popupSizeProbe() {
       });
     }
   }
+}
+
+/// Puts [json] on the (mock) clipboard and taps the import dialog's Paste.
+Future<void> _pasteImport(WidgetTester tester, String json) async {
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async => call.method == 'Clipboard.getData' ? {'text': json} : null,
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    ),
+  );
+  await tester.tap(find.byKey(const ValueKey('import-paste')));
+  await tester.pumpAndSettle();
 }

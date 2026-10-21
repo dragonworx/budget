@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+
 /// Non-web (tests): no page to reload.
 void reloadPage() {}
 
@@ -51,3 +53,22 @@ int primeSoftKeyboardCalls = 0;
 
 /// Web: focuses a hidden input inside the tap so phones raise the keyboard.
 void primeSoftKeyboard() => primeSoftKeyboardCalls++;
+
+/// Non-web (tests): the platform clipboard (mock it with
+/// `SystemChannels.platform`); a platform error is a [ClipboardReadException].
+Future<String?> readClipboardText() async {
+  try {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    return data?.text;
+  } on PlatformException catch (e) {
+    throw ClipboardReadException(e.message ?? e.code);
+  }
+}
+
+/// The clipboard could not be read (denied, unavailable or failed).
+class ClipboardReadException implements Exception {
+  const ClipboardReadException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}

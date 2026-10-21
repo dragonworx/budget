@@ -3,9 +3,15 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
+import '../../boot/page_stub.dart'
+    if (dart.library.js_interop) '../../boot/page_web.dart';
 import '../../data/api_client.dart';
+import '../../data/frequency.dart';
+import '../../data/models.dart';
 import '../../state/providers.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
 import '../timeline/occurrence_info.dart';
 
@@ -13,18 +19,6 @@ import '../timeline/occurrence_info.dart';
 const importNeedsDayHint =
     'Select a day first: tap the dates under the timeline. '
     'Imported dates count from that day.';
-
-/// Example paste for the dialog's help: offsets are whole days from the
-/// selected day (the date root).
-const importExampleJson = '''[
-  { "name": "Rent", "direction": "debit", "amount": "2000.00",
-    "startOffset": 0,
-    "recurrence": { "mode": "every", "interval": 1, "unit": "months" },
-    "end": { "mode": "until_offset", "endOffset": 365 },
-    "skippedOffsets": [61] },
-  { "name": "Bonus", "direction": "credit", "amount": "500.00",
-    "startOffset": 14, "recurrence": { "mode": "once" } }
-]''';
 
 /// Result of a successful import.
 class ImportResult {
@@ -44,10 +38,11 @@ class ImportResult {
   }
 }
 
-/// Paste-a-JSON-array import into [poolId]. Every date in the paste is a
-/// whole-day offset from [root] (the day selected on the timeline). The
-/// server validates (dry run) as you type; Import is enabled once the whole
-/// paste is valid.
+/// Paste import into [poolId]: a Paste button reads the clipboard (a JSON
+/// array of `TransactionImport`, day offsets from [root], the day selected
+/// on the timeline); the server validates it and resolves the dates (dry
+/// run), and the dialog previews one row per transaction. Import is
+/// enabled once a paste is valid.
 Future<ImportResult?> showImportDialog(
   BuildContext context, {
   required String poolId,
@@ -69,95 +64,141 @@ class _ImportDialog extends ConsumerStatefulWidget {
   ConsumerState<_ImportDialog> createState() => _ImportDialogState();
 }
 
-class _Issue {
-  _Issue(this.text);
-  final String text;
-}
-
 class _ImportDialogState extends ConsumerState<_ImportDialog> {
-  final _controller = TextEditingController();
-  Timer? _debounce;
-  int _requestSeq = 0;
-  bool _checking = false;
+  /// The validated paste (what Import sends), or null.
+  String? _raw;
+  bool _reading = false;
   bool _importing = false;
   List<Map<String, dynamic>> _items = const [];
-  List<_Issue> _issues = const [];
+  List<String> _issues = const [];
   int _toCreate = 0;
   int _toSkip = 0;
 
+  /// The read started from the press's pointer-up (inside the gesture, as
+  /// iOS Safari requires); the button's onPressed then does nothing more.
+  DateTime? _readStartedAt;
+
+  final _tableScroll = ScrollController();
+
   @override
   void dispose() {
-    _debounce?.cancel();
-    _controller.dispose();
+    _tableScroll.dispose();
     super.dispose();
   }
 
-  void _onChanged(String _) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), _validate);
+  void _pasteFromPointer() {
+    if (_reading || _importing) return;
+    _readStartedAt = DateTime.now();
+    _paste();
   }
 
-  Future<void> _validate() async {
-    final raw = _controller.text;
-    final seq = ++_requestSeq;
-    if (raw.trim().isEmpty) {
+  void _pasteFromButton() {
+    final t = _readStartedAt;
+    if (t != null &&
+        DateTime.now().difference(t) < const Duration(seconds: 1)) {
+      return; // this press already started the read
+    }
+    _paste();
+  }
+
+  Future<void> _paste() async {
+    if (_reading || _importing) return;
+    // Called synchronously from the tap: the clipboard read starts here.
+    final read = readClipboardText();
+    setState(() {
+      _reading = true;
+      _issues = const [];
+    });
+    String? text;
+    try {
+      text = await read;
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _items = const [];
-        _issues = const [];
-        _checking = false;
+        _reading = false;
+        _clearPreview();
+        _issues = [
+          'Couldn’t read the clipboard'
+              '${e is ClipboardReadException ? ' ($e)' : ''}. Allow '
+              'clipboard access for this site (on iPhone, tap Paste when '
+              'Safari asks), then try again.',
+        ];
       });
       return;
     }
-    setState(() => _checking = true);
+    if (!mounted) return;
+    if (text == null || text.trim().isEmpty) {
+      setState(() {
+        _reading = false;
+        _clearPreview();
+        _issues = const [
+          'The clipboard is empty. Copy the transactions JSON, then tap '
+              'Paste.',
+        ];
+      });
+      return;
+    }
     try {
       final res = await ref
           .read(transactionRepositoryProvider)
-          .import(widget.poolId, raw, root: widget.root, dryRun: true);
-      if (seq != _requestSeq || !mounted) return;
+          .import(widget.poolId, text, root: widget.root, dryRun: true);
+      if (!mounted) return;
       setState(() {
+        _reading = false;
+        _raw = text;
         _items = (res['items'] as List).cast<Map<String, dynamic>>();
         _toCreate = res['toCreate'] as int? ?? _items.length;
         _toSkip = res['toSkip'] as int? ?? 0;
         _issues = const [];
-        _checking = false;
       });
     } on ApiException catch (e) {
-      if (seq != _requestSeq || !mounted) return;
+      if (!mounted) return;
       setState(() {
-        _items = const [];
+        _reading = false;
+        _clearPreview();
         _issues = _issuesFrom(e);
-        _checking = false;
       });
     } catch (e) {
-      if (seq != _requestSeq || !mounted) return;
+      if (!mounted) return;
       setState(() {
-        _items = const [];
-        _issues = [_Issue(e.toString())];
-        _checking = false;
+        _reading = false;
+        _clearPreview();
+        _issues = [friendlyMessage(e)];
       });
     }
   }
 
-  List<_Issue> _issuesFrom(ApiException e) {
+  void _clearPreview() {
+    _raw = null;
+    _items = const [];
+    _toCreate = 0;
+    _toSkip = 0;
+  }
+
+  static String friendlyMessage(Object e) => '$e';
+
+  List<String> _issuesFrom(ApiException e) {
     try {
       final body = jsonDecode(e.body ?? '');
       final details = body is Map ? body['details'] : null;
       if (details is List && details.isNotEmpty) {
         return [
           for (final d in details)
-            _Issue(d is Map ? (d['text'] ?? d['message']).toString() : '$d'),
+            d is Map ? (d['text'] ?? d['message']).toString() : '$d',
         ];
       }
     } catch (_) {}
-    return [_Issue(e.message)];
+    return [e.message];
   }
 
   Future<void> _import() async {
+    final raw = _raw;
+    if (raw == null) return;
     setState(() => _importing = true);
     try {
       final res = await ref
           .read(transactionRepositoryProvider)
-          .import(widget.poolId, _controller.text, root: widget.root);
+          .import(widget.poolId, raw, root: widget.root);
       if (!mounted) return;
       Navigator.of(context).pop(
         ImportResult(
@@ -172,45 +213,31 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
       if (!mounted) return;
       setState(() {
         _importing = false;
-        _items = const [];
+        _clearPreview();
         _issues = _issuesFrom(e);
       });
     }
   }
 
-  /// A server `YYYY-MM-DD` as "Mon 12 Jan 2026" (as-is if unparseable).
-  static String _day(Object? iso) {
-    final p = '$iso'.split('-').map(int.tryParse).toList();
-    if (p.length != 3 || p.contains(null)) return '$iso';
-    return formatOccurrenceDate(DateTime(p[0]!, p[1]!, p[2]!));
-  }
-
-  String _frequency(Map<String, dynamic> item) {
-    final start = _day(item['startDate']);
-    if (item['recurrenceMode'] == 'once') return 'Once on $start';
-    final n = item['interval'] as int? ?? 1;
-    final unit = (item['unit'] as String? ?? 'months');
-    final every = n == 1
-        ? 'Every ${unit.substring(0, unit.length - 1)}'
-        : 'Every $n $unit';
-    final end = switch (item['endMode']) {
-      'until_date' => ' until ${_day(item['endDate'])}',
-      'count' => ' × ${item['occurrenceCount']}',
-      _ => '',
-    };
-    return '$every from $start$end';
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final valid = _items.isNotEmpty && _issues.isEmpty && !_checking;
+    final valid = _raw != null && _items.isNotEmpty && _issues.isEmpty;
+    final busy = _reading || _importing;
+    final size = MediaQuery.sizeOf(context);
+    final narrow = size.width < 520;
     return AlertDialog(
-      // Phones: the help, paste and preview scroll instead of overflowing.
+      // Phones: header, paste and preview scroll instead of overflowing.
       scrollable: true,
+      // Phones: tighter margins so the four columns fit the width.
+      insetPadding: narrow
+          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 24)
+          : null,
+      titlePadding: narrow ? const EdgeInsets.fromLTRB(16, 20, 16, 0) : null,
+      contentPadding: narrow ? const EdgeInsets.fromLTRB(16, 16, 16, 8) : null,
       title: const Text('Import transactions'),
       content: SizedBox(
-        width: 560,
+        width: 640,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -229,61 +256,45 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
               ),
               style: theme.textTheme.bodyMedium,
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Paste a JSON array of transactions (```json fences are fine). '
-              'Every date is a whole number of days from the selected day: '
-              'startOffset 0 is that day, 14 is two weeks later, -1 the day '
-              'before. end {"mode": "until_offset", "endOffset": N} and '
-              'skippedOffsets count the same way; absolute dates are not '
-              'accepted. Items with an id that already exists in this pool '
-              'are skipped.',
-              style: theme.textTheme.bodySmall,
-            ),
-            Theme(
-              data: theme.copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                key: const ValueKey('import-example'),
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: EdgeInsets.zero,
-                dense: true,
-                title: Text('Example', style: theme.textTheme.labelLarge),
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const SelectableText(
-                      importExampleJson,
-                      style: TextStyle(fontFamily: 'monospace', fontSize: 11),
-                    ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              // The read starts on pointer-up, inside the tap (iOS Safari);
+              // onPressed covers keyboard / assistive activation.
+              child: Listener(
+                onPointerUp: (_) => _pasteFromPointer(),
+                child: FilledButton.tonalIcon(
+                  key: const ValueKey('import-paste'),
+                  onPressed: busy ? null : _pasteFromButton,
+                  icon: _reading
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.content_paste_rounded),
+                  label: Text(
+                    _reading
+                        ? 'Reading…'
+                        : (_raw == null ? 'Paste' : 'Paste again'),
                   ),
-                ],
+                ),
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              key: const ValueKey('import-paste'),
-              controller: _controller,
-              onChanged: _onChanged,
-              minLines: 6,
-              maxLines: 10,
-              autofocus: true,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-              decoration: const InputDecoration(
-                hintText:
-                    '[ { "name": "Rent", "direction": "debit", '
-                    '"amount": "2000", "startOffset": 0, ... } ]',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            if (_checking) const LinearProgressIndicator(minHeight: 2),
             if (_issues.isNotEmpty) _issuesBox(theme),
-            if (_items.isNotEmpty) _previewBox(theme),
+            if (_items.isNotEmpty)
+              _previewTable(
+                theme,
+                narrow: narrow,
+                // The dialog's content width (less the table border): no
+                // LayoutBuilder, the scrollable AlertDialog measures
+                // intrinsics.
+                tableWidth:
+                    (size.width - (narrow ? 2 * 12 + 2 * 16 : 2 * 40 + 2 * 24))
+                        .clamp(0, 640) -
+                    2,
+                maxHeight: (size.height * 0.5).clamp(140, 420),
+              ),
           ],
         ),
       ),
@@ -293,7 +304,8 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: valid && _toCreate > 0 && !_importing ? _import : null,
+          key: const ValueKey('import-confirm'),
+          onPressed: valid && _toCreate > 0 && !busy ? _import : null,
           child: Text(
             _importing
                 ? 'Importing…'
@@ -307,99 +319,276 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
   }
 
   Widget _issuesBox(ThemeData theme) {
+    final fg = theme.colorScheme.onErrorContainer;
     return Container(
-      constraints: const BoxConstraints(maxHeight: 180),
+      key: const ValueKey('import-error'),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: theme.colorScheme.errorContainer.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Fix ${_issues.length} problem${_issues.length == 1 ? '' : 's'} to import (nothing is imported until all items are valid):',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onErrorContainer,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_issues.length > 1 || _issues.first.startsWith('['))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                'Nothing can be imported until every item is valid '
+                '(${_issues.length} problem${_issues.length == 1 ? '' : 's'}):',
+                style: theme.textTheme.labelMedium?.copyWith(color: fg),
               ),
             ),
-            const SizedBox(height: 6),
-            for (final issue in _issues)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  '• ${issue.text}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onErrorContainer,
-                  ),
-                ),
+          for (final issue in _issues.take(12))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text(
+                _issues.length > 1 || issue.startsWith('[')
+                    ? '• $issue'
+                    : issue,
+                style: theme.textTheme.bodySmall?.copyWith(color: fg),
               ),
-          ],
-        ),
+            ),
+          if (_issues.length > 12)
+            Text(
+              '… and ${_issues.length - 12} more',
+              style: theme.textTheme.bodySmall?.copyWith(color: fg),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _previewBox(ThemeData theme) {
+  Widget _previewTable(
+    ThemeData theme, {
+    required double maxHeight,
+    required bool narrow,
+    required double tableWidth,
+  }) {
     final summary = [
       '${_items.length} transaction${_items.length == 1 ? '' : 's'}',
       if (_toSkip > 0) '$_toSkip already exist (will be skipped)',
     ].join(' · ');
+    final head = theme.textTheme.labelSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+      letterSpacing: 0.4,
+    );
+    final cellStyle = narrow
+        ? theme.textTheme.bodySmall
+        : theme.textTheme.bodyMedium;
+    final sub =
+        (narrow ? theme.textTheme.labelSmall : theme.textTheme.bodySmall)
+            ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    Widget cell(Widget child, {bool end = false}) => Padding(
+      padding: EdgeInsets.symmetric(horizontal: narrow ? 4 : 8, vertical: 8),
+      child: Align(
+        alignment: end ? Alignment.centerRight : Alignment.centerLeft,
+        child: child,
+      ),
+    );
+    final rows = <TableRow>[
+      TableRow(
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: theme.dividerColor)),
+        ),
+        children: [
+          cell(Text('DATE', style: head)),
+          cell(Text('NAME', style: head)),
+          cell(Text('AMOUNT', style: head), end: true),
+          cell(Text('FREQUENCY', style: head)),
+        ],
+      ),
+      for (final (i, item) in _items.indexed)
+        _row(i, item, cell, cellStyle, sub, theme, narrow),
+    ];
     return Column(
+      key: const ValueKey('import-preview'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(summary, style: theme.textTheme.labelLarge),
         const SizedBox(height: 6),
-        // The dialog itself scrolls (scrollable: true needs intrinsic
-        // sizes, which a lazy ListView can't give).
-        for (var i = 0; i < _items.length; i++) ...[
-          if (i > 0) const Divider(height: 1),
-          Builder(
-            builder: (context) {
-              final item = _items[i];
-              final credit = item['direction'] == 'credit';
-              final name = (item['name'] as String?)?.isNotEmpty == true
-                  ? item['name'] as String
-                  : '(unnamed)';
-              final exists = item['exists'] == true;
-              final skips = (item['skippedDates'] as List?)?.length ?? 0;
-              return ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  credit ? Icons.south_west : Icons.north_east,
-                  size: 18,
-                  color: credit ? Colors.green.shade700 : Colors.red.shade700,
-                ),
-                title: Text(
-                  name,
-                  overflow: TextOverflow.ellipsis,
-                  style: exists
-                      ? const TextStyle(decoration: TextDecoration.lineThrough)
-                      : null,
-                ),
-                subtitle: Text(
-                  [
-                    _frequency(item),
-                    if (skips > 0)
-                      'skips ${[for (final d in item['skippedDates'] as List) _day(d)].join(', ')}',
-                    if (item['enabled'] == false) 'disabled',
-                    if (exists) 'already exists',
-                  ].join(' · '),
-                ),
-                trailing: Text(
-                  '${credit ? '+' : '−'}$moneySymbol${item['amount']}',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: credit ? Colors.green.shade800 : Colors.red.shade800,
+        DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: theme.dividerColor),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: Scrollbar(
+              controller: _tableScroll,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                key: const ValueKey('import-preview-scroll'),
+                controller: _tableScroll,
+                // The table fills the width, the name column taking what the
+                // others leave (wrapping); only a very narrow screen scrolls
+                // it sideways.
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Padding(
+                    // Room for the scrollbar thumb (phones: the frequency
+                    // column's slack takes it; every pixel goes to columns).
+                    padding: EdgeInsets.only(right: narrow ? 0 : 10),
+                    child: SizedBox(
+                      width:
+                          (tableWidth < 320 ? 320 : tableWidth) -
+                          (narrow ? 0 : 10),
+                      child: Table(
+                        key: const ValueKey('import-preview-table'),
+                        defaultColumnWidth: const IntrinsicColumnWidth(),
+                        columnWidths: const {
+                          1: MaxColumnWidth(
+                            FlexColumnWidth(),
+                            FixedColumnWidth(72),
+                          ),
+                        },
+                        defaultVerticalAlignment:
+                            TableCellVerticalAlignment.middle,
+                        children: rows,
+                      ),
+                    ),
                   ),
                 ),
-              );
-            },
+              ),
+            ),
           ),
-        ],
+        ),
       ],
     );
   }
+
+  TableRow _row(
+    int i,
+    Map<String, dynamic> item,
+    Widget Function(Widget, {bool end}) cell,
+    TextStyle? style,
+    TextStyle? sub,
+    ThemeData theme,
+    bool narrow,
+  ) {
+    final credit = item['direction'] == 'credit';
+    final name = (item['name'] as String?)?.isNotEmpty == true
+        ? item['name'] as String
+        : '(unnamed)';
+    final exists = item['exists'] == true;
+    final amount = num.tryParse('${item['amount']}') ?? 0;
+    final strike = exists
+        ? const TextStyle(decoration: TextDecoration.lineThrough)
+        : const TextStyle();
+    final (freq, detail) = importFrequency(item);
+    final notes = [
+      ?detail,
+      if ((item['skippedDates'] as List?)?.isNotEmpty == true)
+        '${(item['skippedDates'] as List).length} skipped',
+      if (item['enabled'] == false) 'excluded',
+      if (exists) 'already exists',
+    ];
+    return TableRow(
+      key: ValueKey('import-row-$i'),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
+        ),
+      ),
+      children: [
+        cell(
+          Text(
+            _day(item['startDate']),
+            key: ValueKey('import-row-$i-date'),
+            style: style?.merge(strike),
+            softWrap: false,
+          ),
+        ),
+        cell(
+          Text(
+            name,
+            key: ValueKey('import-row-$i-name'),
+            style: style?.merge(strike),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        cell(
+          Text(
+            formatSignedAmount(credit ? amount : -amount),
+            key: ValueKey('import-row-$i-amount'),
+            softWrap: false,
+            style: style
+                ?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: credit ? AppTheme.creditColor : AppTheme.debitColor,
+                )
+                .merge(strike),
+          ),
+          end: true,
+        ),
+        cell(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                freq,
+                key: ValueKey('import-row-$i-frequency'),
+                style: style,
+                softWrap: false,
+              ),
+              if (notes.isNotEmpty)
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: narrow ? 84 : 140),
+                  child: Text(
+                    notes.join(' · '),
+                    style: sub,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// A server `YYYY-MM-DD` as "Mon 12 Jan 2026" (as-is if unparseable).
+  static String _day(Object? iso) {
+    final d = _parseDay(iso);
+    return d == null ? '$iso' : formatOccurrenceDate(d);
+  }
+}
+
+DateTime? _parseDay(Object? iso) {
+  final p = '$iso'.split('-').map(int.tryParse).toList();
+  if (p.length != 3 || p.contains(null)) return null;
+  return DateTime(p[0]!, p[1]!, p[2]!);
+}
+
+/// A previewed item's frequency in the editor's wording ("Once", "Weekly",
+/// "Fortnightly", "Monthly", or "Every 5 days" when no preset matches) and
+/// its end ("until 26 Jan 2027", "12 times"), if any.
+@visibleForTesting
+(String, String?) importFrequency(Map<String, dynamic> item) {
+  if (item['recurrenceMode'] == 'once') return ('Once', null);
+  final n = item['interval'] as int? ?? 1;
+  final unit = RecurrenceUnit.values.firstWhere(
+    (u) => u.name == item['unit'],
+    orElse: () => RecurrenceUnit.months,
+  );
+  final preset = FrequencyPreset.of(once: false, interval: n, unit: unit);
+  final name = unit.name;
+  final label = preset != FrequencyPreset.custom
+      ? preset.label
+      : (n == 1
+            ? 'Every ${name.substring(0, name.length - 1)}'
+            : 'Every $n $name');
+  final end = switch (item['endMode']) {
+    'until_date' => switch (_parseDay(item['endDate'])) {
+      final d? => 'until ${DateFormat('d MMM y').format(d)}',
+      null => null,
+    },
+    'count' => '${item['occurrenceCount']} times',
+    _ => null,
+  };
+  return (label, end);
 }

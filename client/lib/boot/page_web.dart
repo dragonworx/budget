@@ -104,3 +104,29 @@ void primeSoftKeyboard() {
   input.focus(web.FocusOptions(preventScroll: true));
   Timer(const Duration(seconds: 2), drop);
 }
+
+/// The clipboard's text, read with `navigator.clipboard.readText()`. Call it
+/// synchronously from the tap (iOS Safari only allows the read inside the
+/// user's gesture, and then shows its own "Paste" button to confirm).
+/// Throws a [ClipboardReadException] when the read is denied or the
+/// browser has no clipboard API (e.g. an insecure origin).
+Future<String?> readClipboardText() async {
+  final web.Clipboard? clip = web.window.navigator.clipboard as web.Clipboard?;
+  if (clip == null) {
+    throw const ClipboardReadException('This browser can’t read the clipboard');
+  }
+  try {
+    final text = await clip.readText().toDart;
+    return text.toDart;
+  } catch (e) {
+    throw ClipboardReadException('$e');
+  }
+}
+
+/// The clipboard could not be read (denied, unavailable or failed).
+class ClipboardReadException implements Exception {
+  const ClipboardReadException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
