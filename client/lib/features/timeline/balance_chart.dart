@@ -108,6 +108,7 @@ class BalanceChart extends StatefulWidget {
     this.onPinnedDayChanged,
     this.selectDay,
     this.selectDayToken = 0,
+    this.dataEditToken = 0,
     this.transactionNames = const {},
     this.dataFrom,
     this.dataThrough,
@@ -257,6 +258,12 @@ class BalanceChart extends StatefulWidget {
   /// update (the jump itself) does not dismiss it; later ones do.
   final DateTime? selectDay;
   final int selectDayToken;
+
+  /// Bumped when the user changed the data (import, undo, add, edit,
+  /// delete): the balance that comes back refits the balance range if the
+  /// line no longer fits it (see [_BalanceChartState._refitIfDataLeftRange]).
+  /// Syncs from others and combining pools never refit.
+  final int dataEditToken;
 
   /// Occurrence transaction id to display name. Missing ids are left unlabeled.
   final Map<String, String> transactionNames;
@@ -503,6 +510,7 @@ class _BalanceChartState extends State<BalanceChart>
     _yRange = y;
     _scaleDefault = false;
     _fitAwaitingData = false;
+    _restorePending = true;
   }
 
   BalanceExtents? _reportedY;
@@ -594,6 +602,69 @@ class _BalanceChartState extends State<BalanceChart>
       _stopDoubleTap();
       _restoreY();
     }
+    if (oldWidget.dataEditToken != widget.dataEditToken) {
+      _refitAfterEdit = true;
+    }
+    if (_refitAfterEdit && !identical(oldWidget.series, widget.series)) {
+      _refitIfDataLeftRange(oldWidget);
+    }
+  }
+
+  /// An edit is waiting for its refreshed balance.
+  bool _refitAfterEdit = false;
+
+  /// The user's edit (an import, add, edit, undo) came back and pushes the
+  /// line out of a balance range it fitted in before: refit the range so
+  /// the changed line and its dots stay in view. A range the line was
+  /// already outside (the user panned or zoomed the balance axis) is kept.
+  /// Waits (keeps [_refitAfterEdit]) while the line is unchanged.
+  void _refitIfDataLeftRange(BalanceChart old) {
+    final y = _yRange;
+    final now = _visible()?.extents;
+    final before = visibleBalance(
+      points: old.series.points,
+      viewStart: old.viewStart,
+      viewEnd: addDays(old.viewStart, old.visibleDays),
+      seedDate: dateOnly(old.lineStart ?? old.seedDate),
+    )?.extents;
+    if (now == null) return;
+    if (before != null && before.min == now.min && before.max == now.max) {
+      return; // not the refreshed balance yet
+    }
+    _refitAfterEdit = false;
+    if (y == null || _extentsWithin(now, y)) return;
+    if (before != null && !_extentsWithin(before, y)) return;
+    _yRange = null;
+    _scaleDefault = false;
+    _restorePending = false;
+  }
+
+  static bool _extentsWithin(BalanceExtents e, BalanceExtents range) {
+    final tol = (range.max - range.min).abs() * 1e-6;
+    return e.min >= range.min - tol && e.max <= range.max + tol;
+  }
+
+  /// A restored (saved) range is checked against the data once it is in:
+  /// one far too small for the line in view (it fitted a flat line, before
+  /// transactions arrived, e.g. an import) is dropped for a fit.
+  bool _restorePending = false;
+
+  void _checkRestoredRange() {
+    if (!_restorePending) return;
+    final y = _yRange;
+    final now = _visible()?.extents;
+    if (y == null) {
+      _restorePending = false;
+      return;
+    }
+    if (now == null || widget.series.points.isEmpty) return;
+    _restorePending = false;
+    if (_extentsWithin(now, y)) return;
+    final dataSpan = now.max - now.min;
+    if (dataSpan > 10 * (y.max - y.min)) {
+      _yRange = null;
+      _scaleDefault = false;
+    }
   }
 
   /// Current balance range, fitting it to the data in view the first time.
@@ -608,6 +679,15 @@ class _BalanceChartState extends State<BalanceChart>
         visible.extents.min,
         visible.extents.max,
       );
+    }
+    // A line flat at $0 (no transactions in view yet) fits the currency
+    // scale's default rather than ±$1, so what is added next shows.
+    final ext = visible.extents;
+    final seedV = widget.seedBalance != null && _seedInView
+        ? widget.seedBalance!
+        : 0.0;
+    if (ext.min.abs() < 1e-9 && ext.max.abs() < 1e-9 && seedV.abs() < 1e-9) {
+      return _yRange = currencyScaleRange(widget.currencyScale ?? 0, 0, 0);
     }
     // Fits always include the origin, so the zero line is in view.
     return _yRange = paddedRange(
@@ -1443,6 +1523,7 @@ class _BalanceChartState extends State<BalanceChart>
   @override
   Widget build(BuildContext context) {
     _syncPinnedDay();
+    _checkRestoredRange();
     final theme = Theme.of(context);
     final cursor = _mode == _Gesture.pick || _mode == _Gesture.select
         ? SystemMouseCursors.resizeColumn

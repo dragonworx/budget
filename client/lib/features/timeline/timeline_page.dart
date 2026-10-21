@@ -911,7 +911,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
+  /// Bumped by every user edit of this pool's data; see
+  /// [BalanceChart.dataEditToken].
+  int _dataEditToken = 0;
+
   void _invalidateBalance() {
+    _dataEditToken++;
     ref.invalidate(balanceProvider(_query));
     ref.invalidate(todayBalanceProvider(widget.poolId));
     ref.invalidate(insightsProvider(widget.poolId));
@@ -1253,6 +1258,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           onPinnedDayChanged: _onPinnedDay,
                                           selectDay: _selectDay,
                                           selectDayToken: _selectDayToken,
+                                          dataEditToken: _dataEditToken,
                                           onCreateOnDay: (day) =>
                                               pool.role.canEdit
                                               ? _createOnceOnDay(context, day)
