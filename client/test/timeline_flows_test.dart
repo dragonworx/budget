@@ -911,7 +911,8 @@ void main() {
         tester.getCenter(items[1]).dy,
         lessThan(tester.getCenter(items[2]).dy),
       );
-      expect(find.text('Trim series here'), findsOneWidget);
+      expect(find.text('Trim'), findsOneWidget);
+      expect(find.text('Trim series here'), findsNothing);
       expect(find.textContaining('New transaction on '), findsOneWidget);
       await tester.tap(items[2], kind: kind);
       await tester.pumpAndSettle();

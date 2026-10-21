@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../boot/page_stub.dart'
+    if (dart.library.js_interop) '../boot/page_web.dart';
 import '../data/models.dart';
 import '../state/providers.dart';
 import '../theme/app_theme.dart';
@@ -229,12 +231,19 @@ class _PoolPickerState extends ConsumerState<PoolPicker> {
       ],
       if (hasActions) const Divider(height: 9),
       if (widget.onNewPool != null)
-        _action(
-          'new-pool',
-          Icons.add_rounded,
-          'New pool',
-          widget.onNewPool!,
-          focus: first(),
+        // MenuItemButton runs onPressed a frame later (after the menu
+        // closes), outside the tap: prime the keyboard on the release so
+        // the New pool dialog's Name field raises it on phones.
+        Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerUp: (_) => primeSoftKeyboard(),
+          child: _action(
+            'new-pool',
+            Icons.add_rounded,
+            'New pool',
+            widget.onNewPool!,
+            focus: first(),
+          ),
         ),
     ];
   }

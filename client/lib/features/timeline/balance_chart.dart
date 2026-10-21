@@ -2762,7 +2762,7 @@ class _BalanceChartState extends State<BalanceChart>
           _RowAction(
             'tip-menu-trim-${own.id}',
             Icons.content_cut_rounded,
-            'Trim series here',
+            'Trim',
             () => widget.onTrimOccurrence?.call(own, day),
           ),
         );

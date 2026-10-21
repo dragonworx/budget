@@ -1,13 +1,19 @@
+import 'dart:async';
+
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../boot/page_stub.dart'
+    if (dart.library.js_interop) '../boot/page_web.dart';
 import '../data/models.dart';
 import 'money_text.dart';
 import '../theme/app_theme.dart';
 
 /// New / edit pool dialog (name, seed balance + date, loss
-/// threshold). Returns the edited pool, not yet saved — unless [onSave]
+/// threshold; Currency Scale only when editing: new pools start at
+/// Hundreds). Opening it new focuses Name and, on touch, raises the
+/// keyboard (see [primeSoftKeyboard]). Returns the edited pool, not yet saved — unless [onSave]
 /// is given: then Save runs it inside the dialog (staying open with the error
 /// shown if it throws) and returns its result.
 Future<Pool?> showPoolDialog(
@@ -16,6 +22,9 @@ Future<Pool?> showPoolDialog(
   Future<Pool> Function(Pool draft)? onSave,
   int? transactionCount,
 }) {
+  // Still inside the tap: lets iOS / Android web raise the keyboard for
+  // the Name field that focuses once the dialog is built.
+  if (existing == null) primeSoftKeyboard();
   return showDialog<Pool>(
     context: context,
     builder: (context) => PoolDialog(
@@ -66,8 +75,11 @@ class _PoolDialogState extends State<PoolDialog> {
   late final TextEditingController _lossThreshold;
   late DateTime _seedDate;
 
-  /// New pools start at Hundreds ([Pool.defaultCurrencyScale]).
+  /// New pools start at Hundreds ([Pool.defaultCurrencyScale]); only
+  /// Edit pool (Pool settings) offers the picker.
   late int _currencyScale;
+  final _nameFocus = FocusNode(debugLabel: 'pool-name');
+  Timer? _refocus;
   String? _nameError;
   String? _balanceError;
   String? _lossError;
@@ -91,10 +103,25 @@ class _PoolDialogState extends State<PoolDialog> {
     );
     _seedDate = existing?.seedDate ?? DateTime.now();
     _currencyScale = existing?.currencyScale ?? Pool.defaultCurrencyScale;
+    // New: Name again once the dialog has animated in, unless focus has
+    // already moved inside it (a closing menu restores its own focus).
+    if (existing == null) {
+      _refocus = Timer(poolNameRefocusDelay, () {
+        if (!mounted || _nameFocus.hasFocus) return;
+        final primary = FocusManager.instance.primaryFocus;
+        final ctx = primary?.context;
+        final inDialog =
+            ctx != null &&
+            ctx.findAncestorStateOfType<_PoolDialogState>() == this;
+        if (!inDialog) _nameFocus.requestFocus();
+      });
+    }
   }
 
   @override
   void dispose() {
+    _refocus?.cancel();
+    _nameFocus.dispose();
     _name.dispose();
     _seedBalance.dispose();
     _lossThreshold.dispose();
@@ -114,6 +141,7 @@ class _PoolDialogState extends State<PoolDialog> {
             TextField(
               key: const ValueKey('pool-name'),
               controller: _name,
+              focusNode: _nameFocus,
               onChanged: _revalidate,
               onSubmitted: (_) => _submit(),
               textInputAction: TextInputAction.next,
@@ -157,29 +185,31 @@ class _PoolDialogState extends State<PoolDialog> {
                 signed: true,
               ),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<int>(
-              key: ValueKey('pool-currency-scale-$_currencyScale'),
-              initialValue: _currencyScale,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Currency Scale',
-                helperText: 'Sets the timeline\'s default vertical view',
+            if (widget.existing != null) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                key: ValueKey('pool-currency-scale-$_currencyScale'),
+                initialValue: _currencyScale,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Currency Scale',
+                  helperText: 'Sets the timeline\'s default vertical view',
+                ),
+                items: [
+                  for (final e in Pool.currencyScales.entries)
+                    DropdownMenuItem(
+                      key: ValueKey('currency-scale-${e.key}'),
+                      value: e.key,
+                      child: Text(e.value),
+                    ),
+                ],
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => _currencyScale = v);
+                  }
+                },
               ),
-              items: [
-                for (final e in Pool.currencyScales.entries)
-                  DropdownMenuItem(
-                    key: ValueKey('currency-scale-${e.key}'),
-                    value: e.key,
-                    child: Text(e.value),
-                  ),
-              ],
-              onChanged: (v) {
-                if (v != null) {
-                  setState(() => _currencyScale = v);
-                }
-              },
-            ),
+            ],
             const SizedBox(height: 12),
             InkWell(
               borderRadius: BorderRadius.circular(10),
@@ -314,6 +344,10 @@ class _PoolDialogState extends State<PoolDialog> {
     }
   }
 }
+
+/// How long after opening a new pool's dialog Name is refocused if
+/// something took the focus away.
+const Duration poolNameRefocusDelay = Duration(milliseconds: 400);
 
 /// Calendar days from [from] to [to] (date parts only, DST safe).
 int seedShiftDays(DateTime from, DateTime to) => DateTime.utc(

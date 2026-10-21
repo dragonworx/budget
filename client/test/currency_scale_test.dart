@@ -97,34 +97,7 @@ void main() {
     expect(Pool.autoCurrencyScale(5e9), 1000000);
   });
 
-  testWidgets('new pool defaults to Hundreds; a pick sticks', (tester) async {
-    late Future<Pool?> result;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (c) => TextButton(
-            onPressed: () => result = showPoolDialog(c),
-            child: const Text('open'),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    expect(Pool.defaultCurrencyScale, 100);
-    expect(find.text('Hundreds (\$100)'), findsOneWidget); // seed 0
-    // The seed balance no longer changes it.
-    await tester.enterText(find.byKey(const ValueKey('pool-seed')), '3500');
-    await tester.pumpAndSettle();
-    expect(find.text('Hundreds (\$100)'), findsOneWidget);
-    await tester.enterText(find.byKey(const ValueKey('pool-name')), 'N');
-    await tester.tap(find.byKey(const ValueKey('pool-save')));
-    await tester.pumpAndSettle();
-    expect((await result)!.currencyScale, 100);
-    expect((await result)!.toCreateJson()['currencyScale'], 100);
-  });
-
-  testWidgets('new pool: an explicit Currency Scale pick is kept', (
+  testWidgets('new pool: no Currency Scale field; saves Hundreds', (
     tester,
   ) async {
     late Future<Pool?> result;
@@ -140,16 +113,16 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButtonFormField<int>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('currency-scale-10')).last);
-    await tester.pumpAndSettle();
+    expect(Pool.defaultCurrencyScale, 100);
+    // Scale is only offered by Edit pool (Pool settings).
+    expect(find.text('Currency Scale'), findsNothing);
+    expect(find.byType(DropdownButtonFormField<int>), findsNothing);
+    // A big seed balance doesn't change it either.
     await tester.enterText(find.byKey(const ValueKey('pool-seed')), '90000');
-    await tester.pumpAndSettle();
-    expect(find.text('Tens (\$10)'), findsOneWidget);
     await tester.enterText(find.byKey(const ValueKey('pool-name')), 'N');
     await tester.tap(find.byKey(const ValueKey('pool-save')));
     await tester.pumpAndSettle();
-    expect((await result)!.currencyScale, 10);
+    expect((await result)!.currencyScale, 100);
+    expect((await result)!.toCreateJson()['currencyScale'], 100);
   });
 }

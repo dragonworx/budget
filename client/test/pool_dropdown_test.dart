@@ -3,6 +3,7 @@
 // New pool action (no Manage pools: the back arrow leads home). No submenus. Rows are touch-sized,
 // the menu stays on a 320–390px screen, Esc / outside tap dismiss, and the
 // keyboard works.
+import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:budget_client/widgets/pool_picker.dart';
@@ -232,6 +233,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(log.created, 1);
     expect(log.picked, isEmpty);
+  });
+
+  testWidgets('touch: tapping New pool primes the soft keyboard on the '
+      'release (inside the tap), then runs New pool', (tester) async {
+    final log = await _pump(tester, const Size(390, 844));
+    await tester.tap(find.text('Jump'));
+    await tester.pumpAndSettle();
+    final before = page.primeSoftKeyboardCalls;
+    await tester.tap(
+      find.byKey(const ValueKey('nav-new-pool')),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pumpAndSettle();
+    expect(page.primeSoftKeyboardCalls, before + 1);
+    expect(log.created, 1);
   });
 
   testWidgets('transfer picker: only pools I can edit, never the source, '
