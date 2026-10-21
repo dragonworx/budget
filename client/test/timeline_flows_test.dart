@@ -1481,10 +1481,8 @@ void main() {
     (Size(1440, 900), true, true, true, false),
   ]) {
     testWidgets('${size.width.toInt()}px header: every action in the top row, '
-        'More rightmost, Transactions plain just left of View, Reminders '
-        'prominent; the date heatmap alone spans the second row', (
-      tester,
-    ) async {
+        'Reminders · Transactions (plain list) · View · More at the right '
+        'end; the date heatmap alone spans the second row', (tester) async {
       final w = size.width;
       await _pump(tester, size: size);
       expect(tester.takeException(), isNull);
@@ -1514,24 +1512,59 @@ void main() {
       }
       expect(more.right, lessThanOrEqualTo(w));
       expect(more.right, greaterThan(w - 16));
-      // Header row: View, Reminders and (not at 320) Transactions.
+      // Right end, in order: Reminders · Transactions (not at 320) · View ·
+      // More.
       expect(inBar('fit-menu'), isTrue);
       expect(inBar('open-reminders'), isTrue);
-      expect(r('open-reminders').left, greaterThan(r('fit-menu').right - 1));
-      expect(
-        r('timeline-more').left,
-        greaterThan(r('open-reminders').right - 1),
-      );
+      expect(r('timeline-more').left, greaterThan(r('fit-menu').right - 1));
+      expect(r('timeline-more').left - r('fit-menu').right, lessThan(4));
       if (tiny) {
         expect(find.byKey(const ValueKey('open-transactions')), findsNothing);
+        expect(r('fit-menu').left, greaterThan(r('open-reminders').right - 1));
       } else {
         expect(inBar('open-transactions'), isTrue);
-        expect(r('fit-menu').left - r('open-transactions').right, lessThan(4));
         expect(
-          tester.widget(find.byKey(const ValueKey('open-transactions'))),
-          isA<IconButton>(),
+          r('open-transactions').left,
+          greaterThan(r('open-reminders').right - 1),
+        );
+        expect(r('fit-menu').left - r('open-transactions').right, lessThan(4));
+        // A plain list icon: no outlined / tonal / filled container.
+        final tx = tester.widget<IconButton>(
+          find.byKey(const ValueKey('open-transactions')),
+        );
+        expect(tx.style, isNull);
+        expect((tx.icon as Icon).icon, Icons.format_list_bulleted_rounded);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('open-transactions')),
+            matching: find.byWidgetPredicate(
+              (w) =>
+                  w is Ink ||
+                  w is DecoratedBox &&
+                      w.decoration is BoxDecoration &&
+                      (w.decoration as BoxDecoration).border != null,
+            ),
+          ),
+          findsNothing,
+        );
+        expect(
+          tester
+              .getSize(find.byKey(const ValueKey('open-transactions')))
+              .height,
+          greaterThanOrEqualTo(40),
         );
         expect(find.byTooltip('Transactions (2)'), findsOneWidget);
+      }
+      // Everything else (Today, Seed, Share, Pool settings) sits left of
+      // Reminders.
+      for (final k in ['go-today', 'go-seed', 'pool-share', 'pool-settings']) {
+        if (inBar(k)) {
+          expect(
+            r(k).right,
+            lessThanOrEqualTo(r('open-reminders').left + 0.5),
+            reason: k,
+          );
+        }
       }
       // Reminders: the prominent (filled tonal) one; labelled when wide.
       expect(find.text('Reminders'), mid ? findsOneWidget : findsNothing);

@@ -247,13 +247,17 @@ class PageHeading extends StatelessWidget {
 class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,
-    required this.icon,
+    this.icon,
+    this.glyph,
     required this.title,
     required this.message,
     this.action,
     this.error = false,
-  });
-  final IconData icon;
+  }) : assert(icon != null || glyph != null);
+  final IconData? icon;
+
+  /// A custom icon widget (e.g. [PoolIcon]) instead of [icon].
+  final Widget? glyph;
   final String title;
   final String message;
   final Widget? action;
@@ -279,7 +283,10 @@ class EmptyState extends StatelessWidget {
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: tint.withValues(alpha: 0.3)),
                 ),
-                child: Icon(icon, size: 30, color: tint),
+                child: IconTheme(
+                  data: IconThemeData(size: 30, color: tint),
+                  child: Center(child: glyph ?? Icon(icon)),
+                ),
               ),
               const SizedBox(height: 16),
               Text(
@@ -304,8 +311,17 @@ class EmptyState extends StatelessWidget {
 
 /// Tinted square icon tile used on list cards.
 class IconTile extends StatelessWidget {
-  const IconTile(this.icon, {super.key, this.color = AppTheme.accent});
-  final IconData icon;
+  const IconTile(this.icon, {super.key, this.color = AppTheme.accent})
+    : glyph = null;
+
+  /// A tile around a custom icon widget (e.g. [PoolIcon]).
+  const IconTile.glyph(
+    Widget this.glyph, {
+    super.key,
+    this.color = AppTheme.accent,
+  }) : icon = null;
+  final IconData? icon;
+  final Widget? glyph;
   final Color color;
 
   @override
@@ -316,7 +332,10 @@ class IconTile extends StatelessWidget {
       color: color.withValues(alpha: 0.14),
       borderRadius: BorderRadius.circular(10),
     ),
-    child: Icon(icon, color: color, size: 22),
+    child: IconTheme(
+      data: IconThemeData(color: color, size: 22),
+      child: Center(child: glyph ?? Icon(icon)),
+    ),
   );
 }
 

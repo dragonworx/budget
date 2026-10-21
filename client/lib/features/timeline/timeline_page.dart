@@ -1347,16 +1347,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   // ---------------------------------------------------------------- header
 
   /// Every timeline action lives in the header row, right of the pool
-  /// name; the More (⋮) menu is always last and takes what does not fit:
+  /// name. The right end is always Reminders (prominent) · Transactions
+  /// (plain list icon) · View · More (⋮, rightmost, takes what does not
+  /// fit); the rest sits left of Reminders:
   ///
-  /// * ≥1240px: Today, Seed (labelled) · Transactions · View · Share ·
-  ///   Pool settings · Reminders (labelled, prominent) · More (Import,
-  ///   Gestures & shortcuts).
-  /// * 960–1240px: the same with icon-only Today / Seed.
-  /// * 600–960px: Today, Seed (icons) · Transactions · View (icon) ·
-  ///   Reminders (tonal icon) · More (Pool settings, Share, Import,
+  /// * ≥1240px: Today, Seed (labelled) · Share · Pool settings · Reminders
+  ///   (labelled) · Transactions · View · More (Import, Gestures &
   ///   shortcuts).
-  /// * <600px: Transactions · View (with Go to today / seed) · Reminders ·
+  /// * 960–1240px: the same with icon-only Today / Seed.
+  /// * 600–960px: Today, Seed (icons) · Reminders (tonal icon) ·
+  ///   Transactions · View (icon) · More (Pool settings, Share, Import,
+  ///   shortcuts).
+  /// * <600px: Reminders · Transactions · View (with Go to today / seed) ·
   ///   More; below 360px Transactions moves into More too.
   List<Widget> _headerActions(
     BuildContext context,
@@ -1395,7 +1397,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           key: const ValueKey('more-transactions'),
           value: 'transactions',
           child: ListTile(
-            leading: const Icon(Icons.list_alt_rounded),
+            leading: const Icon(Icons.format_list_bulleted_rounded),
             title: Text('Transactions (${transactions.length})'),
           ),
         ),
@@ -1460,8 +1462,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           seed,
         ),
       ],
-      if (!tiny) _transactionsButton(context, pool, count: transactions.length),
-      _fitMenu(pool, compact: !desk, iconOnly: !mid),
       if (mid && owner)
         icon(
           'pool-share',
@@ -1495,6 +1495,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           onPressed: () => showReminders(context, pool),
           icon: const Icon(Icons.calendar_month_rounded),
         ),
+      SizedBox(width: mid ? 4 : 0),
+      if (!tiny) _transactionsButton(context, pool, count: transactions.length),
+      _fitMenu(pool, compact: !desk, iconOnly: !mid),
       // Always the rightmost item.
       PopupMenuButton<String>(
         key: const ValueKey('timeline-more'),
@@ -1593,19 +1596,25 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// The transactions list: a plain icon button just left of the View
-  /// menu (the count is in its tooltip; Reminders is the prominent one).
+  /// The transactions list: a plain bulleted-list icon (no box, border or
+  /// fill) between Reminders and the View menu; the count is in its
+  /// tooltip. On wide screens it toggles the docked list, and the icon is
+  /// tinted accent while that list is open.
   Widget _transactionsButton(
     BuildContext context,
     Pool pool, {
     required int count,
-  }) => IconButton(
-    key: const ValueKey('open-transactions'),
-    tooltip: 'Transactions ($count)',
-    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-    onPressed: () => _openTransactionsPanel(context, pool),
-    icon: const Icon(Icons.list_alt_rounded),
-  );
+  }) {
+    final docked = _dockable(context) && _dockOpen;
+    return IconButton(
+      key: const ValueKey('open-transactions'),
+      tooltip: 'Transactions ($count)',
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      color: docked ? AppTheme.accent : null,
+      onPressed: () => _openTransactionsPanel(context, pool),
+      icon: const Icon(Icons.format_list_bulleted_rounded),
+    );
+  }
 
   /// Start / end label of the date-range row: pick that end of the view.
   /// A start before the end (or an end on / after the start) moves just that

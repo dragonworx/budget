@@ -12,6 +12,7 @@ import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/features/transactions/transaction_editor.dart';
 import 'package:budget_client/features/transactions/transactions_panel.dart';
 import 'package:budget_client/state/auth_providers.dart';
+import 'package:budget_client/theme/app_theme.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
@@ -170,6 +171,11 @@ void main() {
       expect(tester.getSize(_docked).width, panelW + 16);
       final open = _view(tester);
       expect(open.width, lessThan(size.width - panelW));
+      // Open state: the plain list icon is tinted accent (no fill/border).
+      Color? txColor() => tester
+          .widget<IconButton>(find.byKey(const ValueKey('open-transactions')))
+          .color;
+      expect(txColor(), AppTheme.accent);
 
       await tester.tap(
         find.byKey(const ValueKey('open-transactions')),
@@ -185,6 +191,7 @@ void main() {
       await tester.pumpAndSettle();
       final closed = _view(tester);
       expect(closed.width, closeTo(open.width + panelW + 16, 1));
+      expect(txColor(), isNull, reason: 'closed: default icon colour');
       for (final v in [mid, closed]) {
         expect(v.start, open.start, reason: 'left edge stays');
         expect(v.days, open.days, reason: 'same days, new scale');

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:budget_client/widgets/pool_icon.dart';
 
 import 'support/fake_pools.dart';
 import 'support/fake_auth.dart';
@@ -106,6 +107,13 @@ void main() {
     final c = await _app(tester, repo);
     expect(_path(c), '/');
     expect(find.byKey(const ValueKey('pools-empty')), findsOneWidget);
+    // The empty state shows the bucket pool icon at 30px.
+    final emptyIcon = find.descendant(
+      of: find.byKey(const ValueKey('pools-empty')),
+      matching: find.byType(PoolIcon),
+    );
+    expect(emptyIcon, findsOneWidget);
+    expect(tester.getSize(emptyIcon), const Size(30, 30));
     expect(find.textContaining('roject'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('new-pool')));
     await tester.pumpAndSettle();
@@ -148,6 +156,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(_path(c), poolsPath);
       expect(find.byKey(const ValueKey('pool-card-a1')), findsOneWidget);
+      // Pool cards lead with the bucket pool icon (22px in its tile).
+      final cardIcon = find.descendant(
+        of: find.byKey(const ValueKey('pool-card-a1')),
+        matching: find.byType(PoolIcon),
+      );
+      expect(cardIcon, findsOneWidget);
+      expect(tester.getSize(cardIcon), const Size(22, 22));
+      expect(find.byIcon(Icons.account_balance_wallet_rounded), findsNothing);
     });
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/models.dart';
 import '../state/providers.dart';
 import '../theme/app_theme.dart';
+import 'pool_icon.dart';
 
 /// Reusable pool picker: a dropdown anchored to the trigger, with a flat
 /// list of my pools (the current one checked), then a "Shared with me"
@@ -154,13 +155,9 @@ class _PoolPickerState extends ConsumerState<PoolPicker> {
     key: ValueKey('${widget.keyPrefix}-pool-${a.id}'),
     focusNode: focus,
     style: _style,
-    leadingIcon: Icon(
-      a.id == widget.currentPoolId
-          ? Icons.check_rounded
-          : Icons.account_balance_wallet_outlined,
-      size: 18,
-      color: a.id == widget.currentPoolId ? AppTheme.accent : null,
-    ),
+    leadingIcon: a.id == widget.currentPoolId
+        ? const Icon(Icons.check_rounded, size: 18, color: AppTheme.accent)
+        : const PoolIcon(key: ValueKey('pool-icon'), size: 18),
     onPressed: () => widget.onSelected(a),
     trailingIcon: sharedIndicator(a),
     child: _MenuLabel(a.name),

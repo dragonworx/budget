@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:budget_client/widgets/pool_icon.dart';
 
 import 'support/fake_pools.dart';
 
@@ -140,6 +141,23 @@ void main() {
         findsOneWidget,
       );
       expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+      // Every other pool row leads with the bucket pool icon at 18px.
+      for (final k in ['nav-pool-s', 'nav-pool-b', 'nav-pool-v']) {
+        final icon = find.descendant(
+          of: find.byKey(ValueKey(k)),
+          matching: find.byType(PoolIcon),
+        );
+        expect(icon, findsOneWidget, reason: k);
+        expect(tester.getSize(icon), const Size(18, 18), reason: k);
+      }
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('nav-pool-a')),
+          matching: find.byType(PoolIcon),
+        ),
+        findsNothing,
+      );
+      expect(find.byIcon(Icons.account_balance_wallet_outlined), findsNothing);
       // Shared rows carry the people icon (my role in the tooltip).
       expect(find.byKey(const ValueKey('shared-indicator-b')), findsOneWidget);
       expect(find.byKey(const ValueKey('shared-indicator-a')), findsNothing);

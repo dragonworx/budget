@@ -12,6 +12,7 @@ import '../../state/providers.dart';
 import '../../state/realtime_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/pool_dialog.dart';
+import '../../widgets/pool_icon.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/conflict_dialog.dart';
 import '../../widgets/money_text.dart';
@@ -137,7 +138,7 @@ class _PoolsPageState extends ConsumerState<PoolsPage> {
               for (final i in invites) _PendingInviteTile(invite: i),
               EmptyState(
                 key: const ValueKey('pools-empty'),
-                icon: Icons.account_balance_wallet_rounded,
+                glyph: const PoolIcon(key: ValueKey('pool-icon')),
                 title: 'No pools yet',
                 message: 'Create a pool with a starting (seed) balance, then plan its transactions on the timeline. Pools others share with you show up here too.',
                 action: FilledButton.icon(
@@ -312,7 +313,7 @@ class _PoolCard extends ConsumerWidget {
             children: [
               Row(
                 children: [
-                  const IconTile(Icons.account_balance_wallet_rounded),
+                  const IconTile.glyph(PoolIcon(key: ValueKey('pool-icon'))),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Tooltip(
