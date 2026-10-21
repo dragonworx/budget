@@ -143,13 +143,23 @@ void main() {
     await tester.pumpAndSettle();
     final minus = find.byKey(const ValueKey('editor-interval-minus'));
     final plus = find.byKey(const ValueKey('editor-interval-plus'));
+    // New: Once by default; Repeats starts at every 1 week, − disabled at 1.
+    expect(
+      tester
+          .widget<SegmentedButton<bool>>(
+            find.byKey(const ValueKey('editor-repeats')),
+          )
+          .selected,
+      {false},
+    );
+    expect(find.byKey(const ValueKey('editor-interval')), findsNothing);
+    await _touch(tester, find.byKey(const ValueKey('editor-repeats-every')));
+    expect(_intervalText(tester), '1');
     for (final b in [minus, plus]) {
       final size = tester.getSize(b);
       expect(size.width, greaterThanOrEqualTo(44));
       expect(size.height, greaterThanOrEqualTo(44));
     }
-    // Default: every 1 week; − is disabled at 1.
-    expect(_intervalText(tester), '1');
     expect(find.text('week'), findsWidgets);
     expect(find.text('month'), findsNothing);
     expect(tester.widget<IconButton>(minus).onPressed, isNull);

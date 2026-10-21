@@ -212,10 +212,11 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     _direction = existing?.direction ?? TransactionDirection.debit;
     _transfer = existing?.transfer;
     _transferMode = _transfer != null;
-    _recurrenceMode = widget.onceOnly
+    // New transactions start as a one-off from every entry point (saved
+    // ones keep theirs). Switching to Repeats starts at every 1 week.
+    _recurrenceMode = widget.onceOnly || existing == null
         ? RecurrenceMode.once
-        : (existing?.recurrenceMode ?? RecurrenceMode.every);
-    // New series default to every 1 week (saved ones keep theirs).
+        : existing.recurrenceMode;
     _unit = existing?.unit ?? RecurrenceUnit.weeks;
     _endMode = existing?.endMode ?? EndMode.never;
     if (existing == null && _recurrenceMode == RecurrenceMode.once) {
@@ -496,10 +497,15 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                       _ro(_detailsSection(theme)),
                       const SizedBox(height: 12),
                       _ro(_scheduleSection(theme)),
-                      const SizedBox(height: 12),
-                      _previewSection(theme, draft),
-                      const SizedBox(height: 12),
-                      _ro(_optionsSection(theme)),
+                      // New transactions: just Details and Schedule
+                      // (Include in balance stays on). Editing keeps the
+                      // Occurrences preview and Options.
+                      if (!_isNew) ...[
+                        const SizedBox(height: 12),
+                        _previewSection(theme, draft),
+                        const SizedBox(height: 12),
+                        _ro(_optionsSection(theme)),
+                      ],
                     ],
                   ),
                 ),
@@ -910,6 +916,12 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
       onSelectionChanged: (v) => setState(() {
         if (v.first) {
           _recurrenceMode = RecurrenceMode.every;
+          // A new one from a selected period: repeating ends on its last day.
+          final presetEnd = widget.initialEndDate;
+          if (_isNew && presetEnd != null && _endMode == EndMode.never) {
+            _endMode = EndMode.untilDate;
+            _endDate = DateTime(presetEnd.year, presetEnd.month, presetEnd.day);
+          }
         } else {
           _recurrenceMode = RecurrenceMode.once;
           _endMode = EndMode.never;

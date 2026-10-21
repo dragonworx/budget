@@ -4,6 +4,7 @@ import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/features/transactions/transaction_editor.dart';
 import 'package:budget_client/data/models.dart';
+import 'package:budget_client/widgets/ui.dart' show SectionCard;
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/planning/plan_panel.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
@@ -317,6 +318,11 @@ void main() {
     expect(find.text('New transaction'), findsWidgets);
     String fmt(DateTime d) => DateFormat('EEE d MMM y').format(d);
     expect(find.text(fmt(start)), findsWidgets, reason: 'start pre-filled');
+    // Once by default (every entry point); Repeats ends on the period's
+    // last day.
+    expect(find.byType(SegmentedButton<EndMode>), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('editor-repeats-every')));
+    await tester.pumpAndSettle();
     expect(find.text(fmt(end)), findsWidgets, reason: 'end pre-filled');
     final ends = tester.widget<SegmentedButton<EndMode>>(
       find.byType(SegmentedButton<EndMode>),
@@ -1231,7 +1237,13 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  // ── New transaction: Name focused (phones too); new series every 1 week ──
+  // ── New transaction: Name focused (phones too); Once by default, no
+  // Occurrences / Options; Repeats starts at every 1 week ──
+
+  List<String> sectionTitles(WidgetTester tester) => [
+    for (final c in tester.widgetList<SectionCard>(find.byType(SectionCard)))
+      c.title,
+  ];
 
   bool nameFocused(WidgetTester tester) => tester
       .widget<EditableText>(
@@ -1249,8 +1261,9 @@ void main() {
     ('desktop: New', Size(1440, 900), PointerDeviceKind.mouse, false),
     ('desktop: New ▾ › New', Size(1440, 900), PointerDeviceKind.mouse, true),
   ]) {
-    testWidgets('$label focuses Name (keyboard primed in the tap) and '
-        'defaults to every 1 week', (tester) async {
+    testWidgets('$label focuses Name (keyboard primed in the tap), '
+        'defaults to Once with no Occurrences / Options; Repeats starts '
+        'at every 1 week', (tester) async {
       final store = await _pump(tester, size: size);
       await tester.tap(
         find.byKey(const ValueKey('open-transactions')),
@@ -1280,9 +1293,31 @@ void main() {
       await tester.pump(nameRefocusDelay);
       await tester.pumpAndSettle();
       expect(nameFocused(tester), isTrue);
-      // Every 1 week by default.
-      expect(find.text('week'), findsWidgets);
-      expect(find.text('month'), findsNothing);
+      // Once by default; just Details and Schedule.
+      expect(
+        tester
+            .widget<SegmentedButton<bool>>(
+              find.byKey(const ValueKey('editor-repeats')),
+            )
+            .selected,
+        {false},
+      );
+      expect(find.byKey(const ValueKey('editor-interval')), findsNothing);
+      expect(sectionTitles(tester), ['Details', 'Schedule']);
+      expect(find.text('Include in balance'), findsNothing);
+      expect(find.text('Solve from a target total…'), findsNothing);
+      // viaMenu: switch to Repeats, which starts at every 1 week.
+      if (viaMenu) {
+        await tester.tap(
+          find.byKey(const ValueKey('editor-repeats-every')),
+          kind: kind,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('week'), findsWidgets);
+        expect(find.text('month'), findsNothing);
+        // Still no Occurrences / Options for a new series.
+        expect(sectionTitles(tester), ['Details', 'Schedule']);
+      }
       await tester.enterText(
         find.descendant(
           of: find.byKey(const ValueKey('editor-name')),
@@ -1300,8 +1335,15 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('editor-save')));
       await tester.pumpAndSettle();
       final created = store.txs.values.firstWhere((t) => t.name == 'Coffee');
-      expect(created.unit, RecurrenceUnit.weeks);
-      expect(created.interval, 1);
+      expect(created.enabled, isTrue);
+      if (viaMenu) {
+        expect(created.recurrenceMode, RecurrenceMode.every);
+        expect(created.unit, RecurrenceUnit.weeks);
+        expect(created.interval, 1);
+        expect(created.endMode, EndMode.never);
+      } else {
+        expect(created.recurrenceMode, RecurrenceMode.once);
+      }
       await tester.pump(const Duration(seconds: 6));
     });
   }
@@ -1327,6 +1369,19 @@ void main() {
     expect(nameFocused(tester), isFalse);
     expect(find.text('months'), findsWidgets);
     expect(find.text('week'), findsNothing);
+    // Editing keeps the Occurrences preview and Options (below the fold).
+    expect(sectionTitles(tester), containsAllInOrder(['Details', 'Schedule']));
+    await tester.scrollUntilVisible(
+      find.text('Include in balance'),
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(TransactionEditor),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(sectionTitles(tester), containsAll(['Occurrences', 'Options']));
     await tester.pump(const Duration(seconds: 6));
   });
 
@@ -1342,7 +1397,8 @@ void main() {
     await tester.pump(nameRefocusDelay);
     await tester.pumpAndSettle();
     expect(nameFocused(tester), isTrue);
-    expect(find.text('week'), findsWidgets);
+    expect(find.byKey(const ValueKey('editor-interval')), findsNothing);
+    expect(sectionTitles(tester), ['Details', 'Schedule']);
   });
 
   for (final (name, size, a11y) in const [
