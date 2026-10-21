@@ -34,7 +34,36 @@
 
   <title>Budgie</title>
   <link rel="manifest" href="manifest.json?v=budgie1">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <style id="vp-lock">
+    /* Fixed to the window: no page scale, scroll, rubber-band or text
+       inflation (iPhone Safari especially). The app pans / zooms its own
+       canvas from pointer events, so the page itself never needs to. */
+    html,body{margin:0;padding:0;position:fixed;inset:0;width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none;touch-action:none;-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+    /* iOS zooms into a focused field under 16px: Flutter's hidden editing
+       inputs (they copy the field's text size) never go below 16px. */
+    flt-text-editing-host input,flt-text-editing-host textarea,input.flt-text-editing,textarea.flt-text-editing{font-size:16px!important}
+  </style>
+  <script>
+  /* Viewport lock. Flutter swaps in its own viewport meta (maximum-scale=5)
+     at startup, so keep every viewport meta on this content; and block the
+     page-level pinch / double-tap zoom iOS Safari allows despite
+     user-scalable=no. Pointer events (Flutter's input) are untouched:
+     gesture* events and multi-touch touchmove defaults are page zoom only. */
+  (function(){
+    var LOCK='width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+    function fix(){var m=document.querySelectorAll('meta[name="viewport"]');for(var i=0;i<m.length;i++){if(m[i].getAttribute('content')!==LOCK)m[i].setAttribute('content',LOCK)}}
+    fix();
+    try{new MutationObserver(fix).observe(document.head,{childList:true,subtree:true,attributes:true,attributeFilter:['content']})}catch(e){}
+    function stop(e){if(e.cancelable)e.preventDefault()}
+    ['gesturestart','gesturechange','gestureend'].forEach(function(t){document.addEventListener(t,stop,{passive:false})});
+    document.addEventListener('touchmove',function(e){if(e.touches&&e.touches.length>1)stop(e)},{passive:false});
+    // Double-tap zoom: touch-action:none above (no touchend preventDefault:
+    // it would cancel the tap's click and user activation).
+    // Pinch or a stray scroll that still moved the page: put it back.
+    window.addEventListener('scroll',function(){if(window.scrollX||window.scrollY)window.scrollTo(0,0)},{passive:true});
+  })();
+  </script>
   <style id="bl-style">
     html,body{margin:0;background:#0D1117}
     #bl{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#0D1117;color:#E6EBF2;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;transition:opacity .35s ease;padding:16px;box-sizing:border-box}

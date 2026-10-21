@@ -185,6 +185,28 @@ void main() {
     expect(h.created, isEmpty);
   });
 
+  for (final kind in const [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
+    testWidgets('${kind.name}: a held selection dragged past either edge '
+        'never moves the view and clamps to the visible days', (tester) async {
+      final h = await _pump(tester);
+      final g = await _hold(tester, Offset(_x(4), _y(1600)), kind: kind);
+      expect(_card, findsOneWidget);
+      for (final x in [_size.width - 2, _size.width + 300, -300.0]) {
+        await g.moveTo(Offset(x, _y(1600)));
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(h.viewports, isEmpty, reason: 'no scroll at x=$x');
+      }
+      await g.up();
+      await tester.pump(const Duration(seconds: 1));
+      expect(h.viewports, isEmpty);
+      expect(h.viewStart, _start);
+      // Anchor 5 Oct back to the first day of the view (1 Oct).
+      expect(_range(tester), '1 Oct – 5 Oct 2026');
+    });
+  }
+
   testWidgets('hold in the fill under the line selects', (tester) async {
     await _pump(tester);
     final g = await _hold(tester, Offset(_x(4), _y(400)));

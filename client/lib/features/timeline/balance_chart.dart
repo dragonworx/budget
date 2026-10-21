@@ -43,8 +43,9 @@ typedef EditOccurrence = void Function(Transaction transaction, DateTime date);
 /// balance. Touch: drag pans, pinch zooms time at the pinch focus.
 ///
 /// Pressing on the date axis (month/week/day lanes) picks a date instead:
-/// a bubble, guide line and day highlight follow the pointer, the view
-/// auto-scrolls near the plot edges. The bubble shows the day's "+" from
+/// a bubble, guide line and day highlight follow the pointer. The view
+/// never moves: past an edge the day clamps to the first / last visible
+/// day. The bubble shows the day's "+" from
 /// the press on, following the picked day while dragging. Releasing (or a
 /// plain tap) never acts by itself: the line and bubble stay pinned on
 /// that day; only tapping "+" calls [onCreateOnDay]. Dragging anywhere
@@ -408,8 +409,6 @@ class _BalanceChartState extends State<BalanceChart>
   Offset? _pickPos;
   bool _pickTouch = false;
 
-  Timer? _autoScroll;
-
   /// The pick was released: its line and bubble stay up (with the "+"
   /// button) until acted on or dismissed.
   bool _pickPinned = false;
@@ -640,7 +639,6 @@ class _BalanceChartState extends State<BalanceChart>
     }
     _wheelTicker.dispose();
     _holdTimer?.cancel();
-    _autoScroll?.cancel();
     _tapTipTimer?.cancel();
     _dtAnim.dispose();
     _hoverDay.dispose();
@@ -653,6 +651,21 @@ class _BalanceChartState extends State<BalanceChart>
 
   DateTime _dayAt(double localDx) {
     return _layout.dateAt(localDx, widget.viewStart, widget.visibleDays);
+  }
+
+  /// The day a date-lane pick at [localDx] selects, clamped to the visible
+  /// days: from the first day fully clear of the lane-name strip to the
+  /// last day whose start is on screen. Picking never moves the view.
+  DateTime _pickDayAt(double localDx) {
+    final layout = _layout;
+    final (first, last) = pickableDays(
+      layout,
+      widget.viewStart,
+      widget.visibleDays,
+      ChartLayout.laneNameWidth(layout.size.width),
+    );
+    final day = _dayAt(localDx);
+    return day.isBefore(first) ? first : (day.isAfter(last) ? last : day);
   }
 
   void _onPointerDown(PointerDownEvent event) {
@@ -713,7 +726,7 @@ class _BalanceChartState extends State<BalanceChart>
         _mode = _Gesture.pick;
         _pickTouch = touch;
         _pickPos = event.localPosition;
-        _pickDay = _dayAt(event.localPosition.dx);
+        _pickDay = _pickDayAt(event.localPosition.dx);
       });
       return;
     }
@@ -993,50 +1006,16 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   void _updatePick(Offset pos) {
-    final layout = _layout;
-    final day = layout.dateAt(pos.dx, widget.viewStart, widget.visibleDays);
-    // Anywhere on screen (however far up) it just tracks the day.
+    // Anywhere on screen (however far up or past an edge) it just tracks
+    // the day, clamped to the visible ones: the view never scrolls.
+    final day = _pickDayAt(pos.dx);
     setState(() {
       _pickPos = pos;
       _pickDay = day;
     });
-    final depth = layout.edgeDepth(pos.dx);
-    if (depth == 0) {
-      _autoScroll?.cancel();
-      _autoScroll = null;
-    } else {
-      _autoScroll ??= Timer.periodic(
-        const Duration(milliseconds: 16),
-        (_) => _autoScrollTick(),
-      );
-    }
-  }
-
-  /// One auto-scroll frame while picking near (or past) a plot edge.
-  void _autoScrollTick() {
-    final pos = _pickPos;
-    if (!mounted || _mode != _Gesture.pick || pos == null) {
-      _autoScroll?.cancel();
-      _autoScroll = null;
-      return;
-    }
-    final layout = _layout;
-    final depth = layout.edgeDepth(pos.dx);
-    if (depth == 0) {
-      _autoScroll?.cancel();
-      _autoScroll = null;
-      return;
-    }
-    final delta = autoScrollDays(depth, widget.visibleDays) * 0.016;
-    final start = addDays(widget.viewStart, delta);
-    widget.onViewportChanged(start, widget.visibleDays);
-    final day = layout.dateAt(pos.dx, start, widget.visibleDays);
-    setState(() => _pickDay = day);
   }
 
   void _endPick({required bool commit}) {
-    _autoScroll?.cancel();
-    _autoScroll = null;
     final day = _pickDay;
     final ok = commit && day != null;
     setState(() {
@@ -3454,14 +3433,6 @@ class ChartLayout {
     (dayBand ?? weekBand ?? monthBand).bottom,
   );
 
-  /// How far [x] is inside the auto-scroll zone at either plot edge:
-  /// negative toward the left edge, positive toward the right, 0 inside.
-  double edgeDepth(double x, {double zone = 40}) {
-    if (x < plot.left + zone) return -(plot.left + zone - x);
-    if (x > plot.right - zone) return x - (plot.right - zone);
-    return 0;
-  }
-
   DateTime dateAt(double localDx, DateTime viewStart, double visibleDays) {
     final fraction = ((localDx - plot.left) / plot.width).clamp(0.0, 1.0);
     return dateOnly(addDays(viewStart, fraction * visibleDays));
@@ -5090,12 +5061,24 @@ double distanceToSegment(Offset p, Offset a, Offset b) {
 
 enum _Gesture { none, pan, pick, pinch, scrub, select }
 
-/// Auto-scroll speed in days per second for a pointer [depth] px into (or
-/// past) an edge zone; negative scrolls back in time. Scales with depth and
-/// the visible span, capped so it stays controllable.
-double autoScrollDays(double depth, double visibleDays) {
-  final strength = (depth.abs() / 40).clamp(0.0, 3.0);
-  return depth.sign * visibleDays * 0.5 * strength;
+/// First and last days a date-lane pick can select in a view: the first
+/// day whose start is clear of the lane-name strip ([nameWidth] px over the
+/// plot's left edge) to the last day whose start is on screen.
+(DateTime, DateTime) pickableDays(
+  ChartLayout layout,
+  DateTime viewStart,
+  double visibleDays,
+  double nameWidth,
+) {
+  final plot = layout.plot;
+  final width = math.max(plot.width, 1.0);
+  final last = layout.dateAt(plot.right - 0.5, viewStart, visibleDays);
+  final inset = nameWidth / width * visibleDays;
+  var first = dateFromDayCoord(
+    (dayCoord(viewStart) + inset - 1e-6).ceilToDouble(),
+  );
+  if (first.isAfter(last)) first = last;
+  return (first, last);
 }
 
 /// View after a two-finger pinch: zooms time by the change in finger

@@ -328,42 +328,74 @@ void main() {
     expect(h.created, isEmpty);
   });
 
-  testWidgets('auto-scrolls past the right and left edges', (tester) async {
+  for (final kind in const [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
+    testWidgets('${kind.name}: a pick dragged past either edge never moves the '
+        'view; the day clamps to the first / last visible day', (tester) async {
+      final h = await _pump(tester);
+      // First day clear of the lane-name strip .. last day starting on screen.
+      final (first, last) = pickableDays(
+        _layout,
+        _start,
+        _days,
+        ChartLayout.laneNameWidth(_size.width),
+      );
+      expect(first, DateTime(2026, 10, 3));
+      expect(last, DateTime(2026, 10, 30));
+      final bubbleDate = find.descendant(
+        of: find.byKey(const ValueKey('pick-bubble')),
+        matching: find.text(formatOccurrenceDate(last)),
+      );
+
+      final g = await tester.startGesture(Offset(_x(15), _axisY), kind: kind);
+      // Well past the right edge (off the chart), held there for a while.
+      for (final x in [_x(25), _size.width - 2, _size.width + 300]) {
+        await g.moveTo(Offset(x, _axisY));
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(h.viewports, isEmpty, reason: 'no auto-scroll at x=$x');
+      }
+      expect(bubbleDate, findsOneWidget);
+      // Then past the left edge, and above the chart.
+      for (final p in [
+        Offset(10, _axisY),
+        Offset(-300, _axisY),
+        Offset(-300, -200),
+      ]) {
+        await g.moveTo(p);
+        for (var i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(h.viewports, isEmpty, reason: 'no auto-scroll at $p');
+      }
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('pick-bubble')),
+          matching: find.text(formatOccurrenceDate(first)),
+        ),
+        findsOneWidget,
+      );
+      await g.up();
+      await tester.pump(const Duration(seconds: 1));
+      expect(h.viewports, isEmpty);
+      expect(h.viewStart, _start);
+      expect(h.visibleDays, _days);
+      await tester.tap(find.byKey(const ValueKey('pick-add')), kind: kind);
+      await tester.pump();
+      expect(h.created, [first]);
+      expect(h.viewports, isEmpty);
+    });
+  }
+
+  testWidgets('a press on the axis under the lane names picks the first '
+      'visible day', (tester) async {
     final h = await _pump(tester);
-    final g = await tester.startGesture(
-      Offset(_x(15), _axisY),
-      kind: PointerDeviceKind.touch,
-    );
-    await g.moveTo(Offset(_size.width - 2, _axisY));
-    for (var i = 0; i < 30; i++) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
-    expect(h.viewStart.isAfter(_start), isTrue);
-    await g.up();
+    await tester.tapAt(Offset(_layout.plot.left + 4, _axisY));
     await tester.pump();
-    expect(h.created, isEmpty);
     await tester.tap(find.byKey(const ValueKey('pick-add')));
     await tester.pump();
-    final picked = h.created.single;
-    expect(picked.isAfter(DateTime(2026, 10, 31)), isTrue);
-
-    final startAfterRight = h.viewStart;
-    final g2 = await tester.startGesture(Offset(_x(15), _axisY));
-    await g2.moveTo(Offset(10, _axisY));
-    for (var i = 0; i < 30; i++) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
-    expect(h.viewStart.isBefore(startAfterRight), isTrue);
-    // Moving back inside stops scrolling.
-    await g2.moveTo(Offset(_x(15), _axisY));
-    await tester.pump(const Duration(milliseconds: 16));
-    final stopped = h.viewStart;
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
-    expect(h.viewStart, stopped);
-    await g2.up();
-    await tester.pump();
+    expect(h.created, [DateTime(2026, 10, 3)]);
+    expect(h.viewports, isEmpty);
   });
 
   testWidgets('dragging the chart pans and never picks', (tester) async {
@@ -401,12 +433,5 @@ void main() {
     await b.up();
     await tester.pump();
     expect(h.created, isEmpty);
-  });
-
-  test('auto-scroll speed scales with depth and is capped', () {
-    expect(autoScrollDays(0, 30), 0);
-    expect(autoScrollDays(20, 30), closeTo(7.5, 1e-9));
-    expect(autoScrollDays(-40, 30), closeTo(-15, 1e-9));
-    expect(autoScrollDays(400, 30), autoScrollDays(120, 30));
   });
 }
