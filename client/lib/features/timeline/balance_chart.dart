@@ -2737,7 +2737,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// The day a popup row is about: its occurrence's (or the seed's).
   DateTime _rowDay(Occurrence? o) => dateOnly(o?.date ?? widget.seedDate);
 
-  /// A row's ⋮ menu entries, in order: New transaction on that day, Trim
+  /// A row's ⋮ menu entries, in order: New (a transaction on that day), Trim
   /// series here (own recurring series, when trimmable), Edit (own) or
   /// "Edit in pool" (another pool's row I can edit). Empty: no ⋮.
   List<_RowAction> _rowActions(Occurrence? o) {
@@ -2749,7 +2749,7 @@ class _BalanceChartState extends State<BalanceChart>
         _RowAction(
           'tip-menu-new-$id',
           Icons.add_rounded,
-          'New transaction on ${DateFormat('EEE d MMM').format(day)}',
+          'New',
           () => widget.onNewOnDay?.call(day),
         ),
       );

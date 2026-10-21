@@ -266,7 +266,28 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   Timer? _refocus;
 
   final _scope = FocusScopeNode(debugLabel: 'TransactionEditor');
-  final _nameFocus = FocusNode(debugLabel: 'editor-name');
+
+  /// Tab from Name goes straight to Amount (skipping Money in / out /
+  /// Transfer and the transfer pool); Enter / Next does too (see Name's
+  /// onFieldSubmitted). Shift+Tab keeps the normal order.
+  late final _nameFocus = FocusNode(
+    debugLabel: 'editor-name',
+    onKeyEvent: (node, event) {
+      if (event is! KeyDownEvent ||
+          event.logicalKey != LogicalKeyboardKey.tab ||
+          HardwareKeyboard.instance.isShiftPressed) {
+        return KeyEventResult.ignored;
+      }
+      _focusAmount();
+      return KeyEventResult.handled;
+    },
+  );
+  final _amountFocus = FocusNode(debugLabel: 'editor-amount');
+
+  void _focusAmount() {
+    if (widget.readOnly) return;
+    _amountFocus.requestFocus();
+  }
 
   /// Everything the form would save, to detect unsaved edits.
   String _signature() {
@@ -323,6 +344,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     _scope.dispose();
     _refocus?.cancel();
     _nameFocus.dispose();
+    _amountFocus.dispose();
     super.dispose();
   }
 
@@ -727,8 +749,10 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
               labelText: 'Name',
               hintText: 'Rent, Salary, Groceries…',
             ),
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _save(),
+            // Enter / the keyboard's Next: on to Amount (never saves);
+            // the keyboard stays up and switches to Amount's number pad.
+            textInputAction: TextInputAction.next,
+            onFieldSubmitted: (_) => _focusAmount(),
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
@@ -827,6 +851,7 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
           TextFormField(
             key: const ValueKey('editor-amount'),
             controller: _amount,
+            focusNode: _amountFocus,
             decoration: InputDecoration(
               labelText: _recurrenceMode == RecurrenceMode.every
                   ? 'Amount each time'

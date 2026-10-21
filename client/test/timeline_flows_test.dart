@@ -919,7 +919,14 @@ void main() {
       );
       expect(find.text('Trim'), findsOneWidget);
       expect(find.text('Trim series here'), findsNothing);
-      expect(find.textContaining('New transaction on '), findsOneWidget);
+      expect(
+        find.descendant(
+          of: _keyStarts('tip-menu-new-'),
+          matching: find.text('New'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('New transaction on '), findsNothing);
       await tester.tap(items[2], kind: kind);
       await tester.pumpAndSettle();
       final field = tester.widget<TextField>(
@@ -1094,12 +1101,10 @@ void main() {
       final plus = _keyStarts('tip-menu-new-');
       expect(plus, findsOneWidget);
       expect(
-        find.descendant(
-          of: plus,
-          matching: find.textContaining('New transaction on '),
-        ),
+        find.descendant(of: plus, matching: find.text('New')),
         findsOneWidget,
       );
+      expect(find.textContaining('New transaction on '), findsNothing);
       final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
       final txDay = chart.series.occurrences
           .map((o) => DateTime(o.date.year, o.date.month, o.date.day))
@@ -1383,6 +1388,97 @@ void main() {
     );
     expect(sectionTitles(tester), containsAll(['Occurrences', 'Options']));
     await tester.pump(const Duration(seconds: 6));
+  });
+
+  bool amountFocused(WidgetTester tester) => tester
+      .widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-amount')),
+          matching: find.byType(EditableText),
+        ),
+      )
+      .focusNode
+      .hasFocus;
+
+  for (final (label, size) in const [
+    ('phone', Size(390, 844)),
+    ('desktop', Size(1440, 900)),
+  ]) {
+    testWidgets('$label: Enter / Next and Tab in Name jump to Amount; '
+        'nothing saves or closes; Shift+Tab is unchanged', (tester) async {
+      final store = await _pump(tester, size: size);
+      final ctx = tester.element(find.byType(BalanceChart));
+      unawaited(showTransactionEditor(ctx, poolId: 'p1'));
+      await tester.pump();
+      await tester.pump(nameRefocusDelay);
+      await tester.pumpAndSettle();
+      expect(nameFocused(tester), isTrue);
+      final name = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-name')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      // Name asks the keyboard for "Next", not "Done".
+      expect(name.textInputAction, TextInputAction.next);
+      tester.testTextInput.enterText('Coffee');
+      await tester.pump();
+      // Enter / iOS Next (the IME's next action).
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pumpAndSettle();
+      expect(amountFocused(tester), isTrue);
+      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+      // Amount uses the number pad.
+      final amount = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-amount')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(amount.keyboardType.decimal, isTrue);
+      // Back in Name, a hardware Tab skips Money in / out / Transfer.
+      await tester.tap(find.byKey(const ValueKey('editor-name')));
+      await tester.pumpAndSettle();
+      expect(nameFocused(tester), isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(amountFocused(tester), isTrue);
+      // A plain Enter in Name doesn't save either.
+      await tester.tap(find.byKey(const ValueKey('editor-name')));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+      // Shift+Tab from Name keeps the normal (backwards) order.
+      await tester.tap(find.byKey(const ValueKey('editor-name')));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      expect(amountFocused(tester), isFalse);
+      expect(nameFocused(tester), isFalse);
+    });
+  }
+
+  testWidgets('editing: Next in Name jumps to Amount too, without saving', (
+    tester,
+  ) async {
+    final store = await _pump(tester, size: const Size(390, 844));
+    final ctx = tester.element(find.byType(BalanceChart));
+    unawaited(
+      showTransactionEditor(ctx, poolId: 'p1', existing: store.txs['rent']),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('editor-name')));
+    await tester.pumpAndSettle();
+    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pumpAndSettle();
+    expect(amountFocused(tester), isTrue);
+    expect(store.calls.where((c) => c.startsWith('update')), isEmpty);
+    expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
   });
 
   testWidgets('other create paths (showTransactionEditor) focus Name too', (
