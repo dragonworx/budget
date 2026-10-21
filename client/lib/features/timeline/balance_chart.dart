@@ -106,6 +106,8 @@ class BalanceChart extends StatefulWidget {
     required this.onViewportChanged,
     required this.onCreateOnDay,
     this.onPinnedDayChanged,
+    this.selectDay,
+    this.selectDayToken = 0,
     this.transactionNames = const {},
     this.dataFrom,
     this.dataThrough,
@@ -248,6 +250,13 @@ class BalanceChart extends StatefulWidget {
   /// The day selected on the date lane (the pinned pick bubble), or null
   /// once it is dismissed. Notified after the frame that changes it.
   final ValueChanged<DateTime?>? onPinnedDayChanged;
+
+  /// Selects [selectDay] on the date lane, exactly as tapping it there does
+  /// (line, bubble with its "+", [onPinnedDayChanged]), each time
+  /// [selectDayToken] changes (Go to today / seed). A view move in the same
+  /// update (the jump itself) does not dismiss it; later ones do.
+  final DateTime? selectDay;
+  final int selectDayToken;
 
   /// Occurrence transaction id to display name. Missing ids are left unlabeled.
   final Map<String, String> transactionNames;
@@ -540,6 +549,21 @@ class _BalanceChartState extends State<BalanceChart>
       // only closing its card clears it.
       _clearTip();
       if (_mode != _Gesture.pick) _clearPin();
+    }
+    // After the clear above: the jump that comes with it must not dismiss.
+    final select = widget.selectDay;
+    if (oldWidget.selectDayToken != widget.selectDayToken &&
+        select != null &&
+        _mode != _Gesture.pick) {
+      _pickDay = dateOnly(select);
+      _pickPos = null; // the bubble sits just above the date lane
+      _pickTouch = false;
+      _pickPinned = true;
+      // Esc dismisses it as it does a tapped one: the chart takes focus
+      // (from the Today / Seed button or menu that asked).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _pickPinned) _focus.requestFocus();
+      });
     }
     if (oldWidget.fitToken != widget.fitToken ||
         oldWidget.zeroToken != widget.zeroToken ||

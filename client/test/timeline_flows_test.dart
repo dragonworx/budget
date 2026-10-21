@@ -2197,6 +2197,159 @@ void main() {
     }
   });
 
+  group('Today / Seed select that day (as a date-lane tap)', () {
+    final pickDate = find.byKey(const ValueKey('pick-date'));
+    final bubble = find.byKey(const ValueKey('pick-bubble'));
+
+    /// The bubble shows [day], with its +, and its line is on [day]'s
+    /// start, on screen; the More menu's Import counts from it.
+    Future<void> expectSelected(
+      WidgetTester tester,
+      DateTime day,
+      String why,
+    ) async {
+      expect(bubble, findsOneWidget, reason: why);
+      expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
+      expect(
+        tester.widget<Text>(pickDate).data,
+        DateFormat('EEE d MMM y').format(day),
+        reason: why,
+      );
+      final chart = tester.getRect(find.byType(BalanceChart));
+      final line = tester.getRect(find.byKey(const ValueKey('pick-line')));
+      expect(line.center.dx - chart.left, closeTo(xOfDay(tester, day), 1.5));
+      expect(line.left, greaterThanOrEqualTo(chart.left), reason: why);
+      expect(line.right, lessThanOrEqualTo(chart.right), reason: why);
+      final b = tester.getRect(bubble);
+      expect(b.left, greaterThanOrEqualTo(chart.left), reason: why);
+      expect(b.right, lessThanOrEqualTo(chart.right), reason: why);
+      expect(b.top, greaterThanOrEqualTo(chart.top), reason: why);
+      expect(b.bottom, lessThanOrEqualTo(chart.bottom), reason: why);
+      await tester.tap(find.byKey(const ValueKey('timeline-more')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<PopupMenuItem<String>>(
+              find.byKey(const ValueKey('more-import')),
+            )
+            .enabled,
+        isTrue,
+        reason: why,
+      );
+      expect(
+        find.text('Dates count from ${DateFormat('EEE d MMM y').format(day)}'),
+        findsOneWidget,
+        reason: why,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('desktop header buttons: selected, then dismissed like a '
+        'tap (Esc, a tap elsewhere, moving the view)', (tester) async {
+      final store = await _pump(tester);
+      expect(bubble, findsNothing);
+      await tester.tap(find.byKey(const ValueKey('go-seed')));
+      await tester.pumpAndSettle();
+      expectAtLeft(tester, seedDay, 'seed');
+      await expectSelected(tester, seedDay, 'seed');
+      // Today moves the selection to today.
+      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await tester.pumpAndSettle();
+      expectAtLeft(tester, _day, 'today');
+      await expectSelected(tester, _day, 'today');
+      // It stays up (no timeout) …
+      await tester.pump(const Duration(seconds: 5));
+      expect(bubble, findsOneWidget);
+      // … until a tap elsewhere …
+      final chart = tester.getRect(find.byType(BalanceChart));
+      await tester.tapAt(chart.center + const Offset(0, -150));
+      await tester.pumpAndSettle();
+      expect(bubble, findsNothing, reason: 'a tap elsewhere dismisses');
+      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await tester.pumpAndSettle();
+      expect(bubble, findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('go-seed')));
+      await tester.pumpAndSettle();
+      expect(bubble, findsOneWidget);
+      // … or the view moving (a pan).
+      await tester.dragFrom(
+        chart.center + const Offset(0, -150),
+        const Offset(-120, 0),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(bubble, findsNothing, reason: 'moving the view dismisses');
+      await tester.tap(find.byKey(const ValueKey('timeline-more')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<PopupMenuItem<String>>(
+              find.byKey(const ValueKey('more-import')),
+            )
+            .enabled,
+        isFalse,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      // Never creates, trims or edits anything.
+      expect(
+        store.calls.where(
+          (c) =>
+              RegExp(r'^(create|update|override|delete|skip|import)')
+                  .hasMatch(c),
+        ),
+        isEmpty,
+      );
+    });
+
+    testWidgets('desktop: Esc dismisses a Today selection', (tester) async {
+      await _pump(tester);
+      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await tester.pumpAndSettle();
+      expect(bubble, findsOneWidget);
+      // Straight after the button (no press on the chart): the chart took
+      // focus, so Esc reaches it.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(bubble, findsNothing);
+    });
+
+    for (final size in const [Size(390, 844), Size(402, 874)]) {
+      testWidgets('phone ${size.width.toInt()}: View menu Go to seed / today '
+          'select the day', (tester) async {
+        final store = await _pump(tester, size: size);
+        for (final (label, day) in [
+          ('Go to seed date', seedDay),
+          ('Go to today', _day),
+        ]) {
+          await tester.tap(find.byKey(const ValueKey('fit-menu')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(label));
+          await tester.pumpAndSettle();
+          expectAtLeft(tester, day, label);
+          await expectSelected(tester, day, label);
+        }
+        // The + opens the editor on that day; nothing is created yet.
+        await tester.tap(find.byKey(const ValueKey('pick-add')));
+        await tester.pumpAndSettle();
+        expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('Today twice keeps the same selection', (tester) async {
+      await _pump(tester);
+      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await tester.pumpAndSettle();
+      final first = tester.widget<Text>(pickDate).data;
+      // Today again on the same day: same selection, still visible.
+      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(pickDate).data, first);
+    });
+  });
+
   testWidgets('More menu (below 960px): Pool settings is the first item', (
     tester,
   ) async {

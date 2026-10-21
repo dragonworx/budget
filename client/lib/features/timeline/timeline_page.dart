@@ -774,6 +774,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// imports count their day offsets from. Null when none is selected.
   DateTime? _pinnedDay;
 
+  /// Go to today / seed also select that day on the date lane (as a tap
+  /// there does): [_selectDay] each time [_selectDayToken] changes.
+  DateTime? _selectDay;
+  int _selectDayToken = 0;
+
+  /// Today / Seed: show [day] from the left edge, then select it.
+  void _goToAndSelect(DateTime day) {
+    _showFrom(day);
+    setState(() {
+      _selectDay = dateOnly(day);
+      _selectDayToken++;
+    });
+  }
+
   void _onPinnedDay(DateTime? day) {
     if (!mounted || day == _pinnedDay) return;
     setState(() => _pinnedDay = day);
@@ -1237,6 +1251,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           yRestoreToken: _yRestoreToken,
                                           onYRangeChanged: _onChartY,
                                           onPinnedDayChanged: _onPinnedDay,
+                                          selectDay: _selectDay,
+                                          selectDayToken: _selectDayToken,
                                           onCreateOnDay: (day) =>
                                               pool.role.canEdit
                                               ? _createOnceOnDay(context, day)
@@ -1508,8 +1524,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           onPressed: f,
           icon: glyph,
         );
-    void today() => _showFrom(DateTime.now());
-    void seed() => _showFrom(pool.seedDate);
+    void today() => _goToAndSelect(DateTime.now());
+    void seed() => _goToAndSelect(pool.seedDate);
     final seedIcon = const Icon(Icons.flag_rounded, color: AppTheme.violet);
 
     // More, in order: Pool settings first, then whatever overflowed.
@@ -1674,8 +1690,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       compact: compact,
       pools: others,
       combined: _combine,
-      onToday: () => _showFrom(DateTime.now()),
-      onSeed: () => _showFrom(pool.seedDate),
+      onToday: () => _goToAndSelect(DateTime.now()),
+      onSeed: () => _goToAndSelect(pool.seedDate),
       onTogglePool: _toggleCombine,
       builder: (context, open) => icon
           ? IconButton(
