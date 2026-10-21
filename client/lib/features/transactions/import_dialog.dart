@@ -28,9 +28,12 @@ const importExampleJson = '''[
 
 /// Result of a successful import.
 class ImportResult {
-  const ImportResult(this.created, this.skipped);
+  const ImportResult(this.created, this.skipped, {this.createdIds = const []});
   final int created;
   final int skipped;
+
+  /// Ids of the rows this import created (what its Undo removes).
+  final List<String> createdIds;
 
   String get message {
     final parts = [
@@ -157,7 +160,13 @@ class _ImportDialogState extends ConsumerState<_ImportDialog> {
           .import(widget.poolId, _controller.text, root: widget.root);
       if (!mounted) return;
       Navigator.of(context).pop(
-        ImportResult(res['created'] as int? ?? 0, res['skipped'] as int? ?? 0),
+        ImportResult(
+          res['created'] as int? ?? 0,
+          res['skipped'] as int? ?? 0,
+          createdIds: [
+            for (final id in res['createdIds'] as List? ?? const []) '$id',
+          ],
+        ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;

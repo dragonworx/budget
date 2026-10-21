@@ -3,6 +3,7 @@ import 'package:postgres/postgres.dart' hide Pool;
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
+import '../auth/authz.dart' show uuidRe;
 import '../auth/authz_middleware.dart';
 import '../auth/middleware.dart';
 import '../domain/models.dart';
@@ -179,6 +180,36 @@ Router buildPoolsApi(Session conn) {
               .map((i) => {...i.toJson(), 'text': i.toString()})
               .toList());
     }
+  });
+
+  // Undo of an import. Body: {"ids": [...]} (the import's createdIds).
+  // One DB transaction: every listed row still in this pool goes, or none
+  // does. Ids already gone (deleted / never in this pool) are reported as
+  // `missing`, not an error, so a retry after a partial outcome is safe.
+  router.post('/<poolId>/transactions/import/undo',
+      (Request request, String poolId) async {
+    final pool = await pools.get(poolId);
+    if (pool == null) return jsonError(404, 'pool not found');
+    final List<String> ids;
+    try {
+      final raw = (await readJsonObject(request))['ids'];
+      if (raw is! List ||
+          raw.isEmpty ||
+          raw.length > 5000 ||
+          raw.any((e) => e is! String || !uuidRe.hasMatch(e))) {
+        return jsonError(400, 'ids must be a non-empty array of UUIDs');
+      }
+      ids = {for (final e in raw) (e as String).toLowerCase()}.toList();
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+    final result = await txOf(conn)
+        .runTx((tx) => TransactionRepo(tx).deleteImported(poolId, ids));
+    return jsonOk({
+      'deleted': result.deleted.length,
+      'deletedIds': result.deleted,
+      'missing': result.missing,
+    });
   });
 
   attachBalanceRoutes(router, conn);

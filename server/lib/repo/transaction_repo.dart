@@ -474,6 +474,33 @@ class TransactionRepo {
     return rows.isNotEmpty;
   }
 
+  /// Undo of an import: deletes every row of [ids] that still exists in
+  /// [poolId] (call inside a DB transaction: all of them or none). Ids that
+  /// are gone already, or belong to another pool, are left alone and
+  /// returned as `missing`. Imports never create transfers, but a transfer
+  /// row is still deleted with its peer, as a normal delete would.
+  Future<({List<String> deleted, List<String> missing})> deleteImported(
+      String poolId, List<String> ids) async {
+    if (ids.isEmpty) return (deleted: <String>[], missing: <String>[]);
+    final rows = await _conn.execute(
+      Sql.named('SELECT id::text FROM transactions '
+          'WHERE pool_id = @p::uuid AND id = ANY(@ids::uuid[])'),
+      parameters: {'p': poolId, 'ids': ids},
+    );
+    final present = {for (final r in rows) (r[0] as String).toLowerCase()};
+    final deleted = <String>[];
+    for (final id in ids) {
+      if (present.contains(id) && await delete(id)) deleted.add(id);
+    }
+    return (
+      deleted: deleted,
+      missing: [
+        for (final id in ids)
+          if (!present.contains(id)) id
+      ],
+    );
+  }
+
   /// Inserts validated import [items] into [poolId]. Call inside a DB
   /// transaction (all-or-nothing). Items whose `id` already exists in this
   /// pool are skipped unchanged (idempotent re-import); an `id` owned by
@@ -501,8 +528,8 @@ class TransactionRepo {
     final conflicts = [
       for (final i in items)
         if (i.id != null && owners[i.id] != null && owners[i.id] != poolId)
-          ImportIssue(i.index, 'id',
-              'already used by a transaction in another pool'),
+          ImportIssue(
+              i.index, 'id', 'already used by a transaction in another pool'),
     ];
     if (conflicts.isNotEmpty) throw ImportValidationException(conflicts);
 
@@ -702,8 +729,7 @@ class TransactionRepo {
   /// Creates the peer row of a new transfer in [peerPoolId], mirroring
   /// [source] with the opposite direction, and links both by a new
   /// transfer_id. Call inside a DB transaction.
-  Future<Transaction> linkNewPeer(
-      Transaction source, String peerPoolId) async {
+  Future<Transaction> linkNewPeer(Transaction source, String peerPoolId) async {
     await _checkPeerPool(source, peerPoolId);
     final transferId = _uuid.v4();
     await _conn.execute(

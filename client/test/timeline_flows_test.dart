@@ -86,6 +86,7 @@ class _Store {
   final skips = <String, Set<DateTime>>{};
   final calls = <String>[];
   Role role = Role.owner;
+  bool undoFails = false;
 }
 
 class _PoolRepo extends PoolRepository {
@@ -189,7 +190,21 @@ class _TxRepo extends TransactionRepository {
             'toCreate': 1,
             'toSkip': 0,
           }
-        : {'created': 1, 'skipped': 0};
+        : {
+            'created': 1,
+            'skipped': 0,
+            'createdIds': ['imp-${s.calls.length}'],
+          };
+  }
+
+  @override
+  Future<Map<String, dynamic>> undoImport(
+    String poolId,
+    List<String> ids,
+  ) async {
+    s.calls.add('undoImport ${ids.join(',')}');
+    if (s.undoFails) throw ApiException('Server unavailable', statusCode: 503);
+    return {'deleted': ids.length, 'deletedIds': ids, 'missing': <String>[]};
   }
 
   @override
@@ -2657,6 +2672,101 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+
+    /// Pins a day and imports one item; returns the store.
+    Future<_Store> importOne(WidgetTester tester, {Size? size}) async {
+      final store = await _pump(tester, size: size ?? const Size(1440, 900));
+      await pinDay(tester);
+      Future<void> once() async {
+        await tester.tap(find.byKey(const ValueKey('timeline-more')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Import transactions'));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('import-paste')),
+          '[{"direction":"credit","amount":5,"startOffset":0,'
+          '"recurrence":{"mode":"once"}}]',
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Import 1'));
+        await tester.pumpAndSettle();
+      }
+
+      await once();
+      return store;
+    }
+
+    final bar = find.byKey(const ValueKey('import-undo-bar'));
+
+    for (final size in const [Size(1440, 900), Size(402, 681)]) {
+      testWidgets('${size.width.toInt()}px: the undo bar stays (no timeout) '
+          'and Undo removes exactly the imported ids', (tester) async {
+        final store = await importOne(tester, size: size);
+        expect(bar, findsOneWidget);
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('import-undo-message')))
+              .data,
+          'Imported 1 transaction',
+        );
+        // Far past the 5 s undo tip (and past 10 s): still up.
+        for (var i = 0; i < 15; i++) {
+          await tester.pump(const Duration(seconds: 1));
+        }
+        await tester.pumpAndSettle();
+        expect(bar, findsOneWidget);
+        final created = store.calls.lastWhere(
+          (c) => c.startsWith('import ') && c.endsWith('false'),
+        );
+        final id = 'imp-${store.calls.indexOf(created) + 1}';
+        await tester.tap(find.byKey(const ValueKey('import-undo')));
+        await tester.pumpAndSettle();
+        expect(store.calls.where((c) => c.startsWith('undoImport')), [
+          'undoImport $id',
+        ]);
+        expect(bar, findsNothing);
+        expect(find.text('Import undone'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('the close box dismisses the bar and keeps the import', (
+      tester,
+    ) async {
+      final store = await importOne(tester);
+      await tester.tap(find.byKey(const ValueKey('import-undo-close')));
+      await tester.pumpAndSettle();
+      expect(bar, findsNothing);
+      expect(store.calls.where((c) => c.startsWith('undoImport')), isEmpty);
+      expect(find.text('Import undone'), findsNothing);
+    });
+
+    testWidgets('a failed undo keeps the bar with the error and Retry', (
+      tester,
+    ) async {
+      final store = await importOne(tester);
+      store.undoFails = true;
+      await tester.tap(find.byKey(const ValueKey('import-undo')));
+      await tester.pumpAndSettle();
+      expect(bar, findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('import-undo-message')))
+            .data,
+        allOf(startsWith('Undo failed'), endsWith('Nothing was removed.')),
+      );
+      expect(find.text('Retry'), findsOneWidget);
+      store.undoFails = false;
+      await tester.tap(find.byKey(const ValueKey('import-undo')));
+      await tester.pumpAndSettle();
+      expect(bar, findsNothing);
+      expect(find.text('Import undone'), findsOneWidget);
+      expect(
+        store.calls.where((c) => c.startsWith('undoImport')),
+        hasLength(2),
+      );
+    });
 
     testWidgets('dismissing the selected day blocks import again', (
       tester,

@@ -254,6 +254,20 @@ class TransactionRepository {
     return data as Map<String, dynamic>;
   }
 
+  /// Undo of an import: deletes exactly [ids] (its `createdIds`) in one DB
+  /// transaction. Returns `{deleted, deletedIds, missing}`; ids already
+  /// gone are listed in `missing`, not an error.
+  Future<Map<String, dynamic>> undoImport(
+    String poolId,
+    List<String> ids,
+  ) async {
+    final data = await _api.post(
+      '/api/pools/$poolId/transactions/import/undo',
+      body: {'ids': ids},
+    );
+    return data as Map<String, dynamic>;
+  }
+
   /// Once-off: [date]'s occurrence takes [amount] / [direction] instead of
   /// the series value. Sends [version] (stale: 409) unless null.
   Future<Transaction> setOverride(

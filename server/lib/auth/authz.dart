@@ -106,13 +106,15 @@ const policies = <Policy>[
   Policy('PUT', 'pools/:a/view', Scope.pool),
   Policy('PATCH', 'pools/:a', Scope.pool,
       min: _e, event: 'pool.updated', versioned: 'pools'),
-  Policy('DELETE', 'pools/:a', Scope.pool,
-      min: _o, event: 'pool.deleted'),
+  Policy('DELETE', 'pools/:a', Scope.pool, min: _o, event: 'pool.deleted'),
   Policy('GET', 'pools/:a/transactions', Scope.pool),
   Policy('POST', 'pools/:a/transactions', Scope.pool,
       min: _e, event: 'transaction.created'),
   Policy('POST', 'pools/:a/transactions/import', Scope.pool,
       min: _e, event: 'transactions.imported'),
+  // Undo of an import: bulk delete of the ids that import created.
+  Policy('POST', 'pools/:a/transactions/import/undo', Scope.pool,
+      min: _e, event: 'transactions.import_undone'),
   Policy('PATCH', 'pools/:a/reorder-transactions', Scope.pool,
       min: _e, event: 'pool.reordered'),
   Policy('GET', 'pools/:a/balance', Scope.pool),
@@ -135,8 +137,7 @@ const policies = <Policy>[
       min: _o, event: 'pool_share.changed'),
   Policy('DELETE', 'pools/:a/shares/:u', Scope.pool,
       min: _o, event: 'pool_share.revoked'),
-  Policy('POST', 'pools/:a/leave', Scope.pool,
-      event: 'pool_share.left'),
+  Policy('POST', 'pools/:a/leave', Scope.pool, event: 'pool_share.left'),
   // Transactions
   Policy('GET', 'transactions/:t', Scope.transaction),
   Policy('PATCH', 'transactions/:t', Scope.transaction,
@@ -216,8 +217,7 @@ class Authz {
   }
 
   /// Pools (of [ids]) that [userId] can read.
-  Future<Set<String>> readablePools(
-      Iterable<String> ids, String userId) async {
+  Future<Set<String>> readablePools(Iterable<String> ids, String userId) async {
     final list = ids.where(uuidRe.hasMatch).toSet().toList();
     if (list.isEmpty) return {};
     final r = await _db.execute(

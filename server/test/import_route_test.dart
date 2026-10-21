@@ -95,6 +95,48 @@ void main() {
           rows.map(
               (r) => '${r[0]} ${day(r[1])} ${r[2] == null ? '-' : day(r[2])}'),
           ['Bonus 2026-12-31 -', 'Phone 2027-01-01 2027-04-01']);
+
+      // Undo removes exactly that import's rows, atomically; other data stays.
+      final keep = await post(
+          '?root=2026-12-31',
+          '[{"name":"Keep","direction":"debit","amount":"1","startOffset":5,'
+              '"recurrence":{"mode":"once"}}]');
+      expect(keep.status, 201);
+      final ids = (done.json['createdIds'] as List).cast<String>();
+      Future<({int status, dynamic json})> undo(Object body) async {
+        final res = await h(Request(
+            'POST', Uri.parse('http://x/$pool/transactions/import/undo'),
+            body: jsonEncode(body)));
+        return (
+          status: res.statusCode,
+          json: jsonDecode(await res.readAsString())
+        );
+      }
+
+      expect((await undo({'ids': []})).status, 400);
+      expect(
+          (await undo({
+            'ids': ['nope']
+          }))
+              .status,
+          400);
+      final undone = await undo({'ids': ids});
+      expect(undone.status, 200);
+      expect(undone.json['deleted'], 2);
+      expect(undone.json['missing'], isEmpty);
+      final left = await c.execute(
+          Sql.named('SELECT name FROM transactions WHERE pool_id = @p::uuid'),
+          parameters: {'p': pool});
+      expect(left.map((r) => r[0]), ['Keep']);
+      final order = await c.execute(
+          Sql.named('SELECT cardinality(transaction_order) FROM pools '
+              'WHERE id = @p::uuid'),
+          parameters: {'p': pool});
+      expect(order.single[0], 1, reason: 'undone ids leave the list order');
+      // A repeat (or a row deleted meanwhile) is reported, not an error.
+      final again = await undo({'ids': ids});
+      expect(again.json['deleted'], 0);
+      expect(again.json['missing'], ids);
     } finally {
       await PoolRepo(c).delete(pool);
     }

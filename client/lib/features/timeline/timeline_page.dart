@@ -789,12 +789,112 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       return;
     }
     final result = await showImportDialog(context, poolId: pool.id, root: root);
-    if (result == null || !context.mounted) return;
+    if (result == null || !mounted) return;
+    _refreshAfterImport();
+    // The undo bar says what happened and stays up (no timeout) until Undo
+    // or its close box. A newer import replaces it.
+    setState(() {
+      _importUndo = result.createdIds.isEmpty
+          ? null
+          : _ImportUndo(widget.poolId, result);
+      _importUndoError = null;
+    });
+    if (result.createdIds.isEmpty && context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(result.message)));
+    }
+  }
+
+  void _refreshAfterImport() {
     ref.invalidate(transactionsProvider(widget.poolId));
     ref.invalidate(poolProvider(widget.poolId));
     _invalidateBalance();
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  /// The last import, while its undo bar is up. Page state, so leaving this
+  /// pool's timeline (another pool, the pool list) dismisses it: its Undo
+  /// only ever acts on the pool on screen.
+  _ImportUndo? _importUndo;
+  bool _undoingImport = false;
+  String? _importUndoError;
+
+  /// Undo: one bulk delete of exactly the ids that import created (one DB
+  /// transaction server-side: all of them or none).
+  Future<void> _undoImport() async {
+    final u = _importUndo;
+    if (u == null || _undoingImport) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _undoingImport = true;
+      _importUndoError = null;
+    });
+    try {
+      final res = await ref
+          .read(transactionRepositoryProvider)
+          .undoImport(u.poolId, u.result.createdIds);
+      if (!mounted) return;
+      final deleted = res['deleted'] as int? ?? 0;
+      final missing = (res['missing'] as List?)?.length ?? 0;
+      setState(() {
+        _undoingImport = false;
+        if (identical(_importUndo, u)) _importUndo = null;
+      });
+      _refreshAfterImport();
+      messenger.showSnackBar(
+        SnackBar(
+          key: const ValueKey('import-undone'),
+          content: Text(
+            missing == 0
+                ? 'Import undone'
+                : 'Import undone: removed $deleted; '
+                      '$missing ${missing == 1 ? 'was' : 'were'} already gone',
+          ),
+        ),
+      );
+    } catch (error) {
+      // The server deletes all or nothing: nothing changed, so the bar
+      // stays with the error and Undo can be retried.
+      if (!mounted) return;
+      setState(() {
+        _undoingImport = false;
+        _importUndoError =
+            'Undo failed: ${friendlyError(error)}. Nothing was removed.';
+      });
+    }
+  }
+
+  Widget _withImportUndo(Widget page) {
+    final u = _importUndo;
+    final show = u != null && u.poolId == widget.poolId;
+    final pad = MediaQuery.viewPaddingOf(context).bottom;
+    // Always the same Stack (the page keeps its element and state when the
+    // bar comes and goes).
+    return Stack(
+      children: [
+        Positioned.fill(child: page),
+        if (show)
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 12 + pad,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: _ImportUndoBar(
+                  message: _importUndoError ?? u.result.message,
+                  error: _importUndoError != null,
+                  busy: _undoingImport,
+                  onUndo: _undoImport,
+                  onClose: () => setState(() {
+                    _importUndo = null;
+                    _importUndoError = null;
+                  }),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   void _invalidateBalance() {
@@ -1000,238 +1100,245 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
         final width = MediaQuery.sizeOf(context).width;
         final compact = width < 600;
-        return _withFullPlan(
-          context,
-          Scaffold(
-            appBar: AppBar(
-              toolbarHeight: compact ? 56 : 60,
-              // Below 360 the back button's slot tightens (56 → 48) so the
-              // pool name keeps room next to the full action row.
-              leadingWidth: width < 360 ? 48 : null,
-              leading: IconButton(
-                key: const ValueKey('timeline-back'),
-                tooltip: 'All pools',
-                icon: const Icon(Icons.arrow_back_rounded),
-                onPressed: () => _goBack(context),
-              ),
-              titleSpacing: compact ? 0 : 4,
-              title: Row(
-                children: [
-                  _HeaderBrand(compact: compact, tight: width < 360),
-                  Flexible(
-                    child: _PoolHeader(pool: pool, compact: compact),
-                  ),
-                ],
-              ),
-              actions: _headerActions(context, pool, width, transactions),
-            ),
-            body: _withPlanPanel(
-              context,
-              compact: compact,
-              child: _withDockedList(
-                context,
-                pool,
-                Column(
+        return _withImportUndo(
+          _withFullPlan(
+            context,
+            Scaffold(
+              appBar: AppBar(
+                toolbarHeight: compact ? 56 : 60,
+                // Below 360 the back button's slot tightens (56 → 48) so the
+                // pool name keeps room next to the full action row.
+                leadingWidth: width < 360 ? 48 : null,
+                leading: IconButton(
+                  key: const ValueKey('timeline-back'),
+                  tooltip: 'All pools',
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () => _goBack(context),
+                ),
+                titleSpacing: compact ? 0 : 4,
+                title: Row(
                   children: [
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        compact ? 8 : 16,
-                        compact ? 6 : 12,
-                        compact ? 8 : 16,
-                        0,
-                      ),
-                      // The second row is the date range heatmap alone,
-                      // full width.
-                      child: DateRangeHeatmap(
-                        from: _firstClearDay,
-                        to: lastVisibleDay(_viewStart, _visibleDays),
-                        today: DateTime.now(),
-                        height: 44,
-                        nets: shown == null
-                            ? const {}
-                            : dayNetTotals(
-                                shown,
-                                enabledOf: (id) =>
-                                    (transactionsById[id] ??
-                                            combo?.transactions[id])
-                                        ?.enabled,
-                              ),
-                        // The strip between the labels: the start picker, as
-                        // the whole control did before (least surprising).
-                        onTap: () => _pickRangeEnd(context, start: true),
-                        onStartTap: () => _pickRangeEnd(context, start: true),
-                        onEndTap: () => _pickRangeEnd(context, start: false),
-                      ),
+                    _HeaderBrand(compact: compact, tight: width < 360),
+                    Flexible(
+                      child: _PoolHeader(pool: pool, compact: compact),
                     ),
-                    Expanded(
-                      child: Padding(
+                  ],
+                ),
+                actions: _headerActions(context, pool, width, transactions),
+              ),
+              body: _withPlanPanel(
+                context,
+                compact: compact,
+                child: _withDockedList(
+                  context,
+                  pool,
+                  Column(
+                    children: [
+                      Padding(
                         padding: EdgeInsets.fromLTRB(
                           compact ? 8 : 16,
-                          compact ? 6 : 10,
+                          compact ? 6 : 12,
                           compact ? 8 : 16,
-                          6,
+                          0,
                         ),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: AppTheme.surface,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppTheme.border),
+                        // The second row is the date range heatmap alone,
+                        // full width.
+                        child: DateRangeHeatmap(
+                          from: _firstClearDay,
+                          to: lastVisibleDay(_viewStart, _visibleDays),
+                          today: DateTime.now(),
+                          height: 44,
+                          nets: shown == null
+                              ? const {}
+                              : dayNetTotals(
+                                  shown,
+                                  enabledOf: (id) =>
+                                      (transactionsById[id] ??
+                                              combo?.transactions[id])
+                                          ?.enabled,
+                                ),
+                          // The strip between the labels: the start picker, as
+                          // the whole control did before (least surprising).
+                          onTap: () => _pickRangeEnd(context, start: true),
+                          onStartTap: () => _pickRangeEnd(context, start: true),
+                          onEndTap: () => _pickRangeEnd(context, start: false),
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            compact ? 8 : 16,
+                            compact ? 6 : 10,
+                            compact ? 8 : 16,
+                            6,
                           ),
-                          child: ClipRRect(
-                            key: _chartAreaKey,
-                            borderRadius: BorderRadius.circular(15),
-                            child: series == null
-                                ? balanceAsync.when(
-                                    loading: () => const Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                    error: (error, _) => _BalanceError(
-                                      message: friendlyError(error),
-                                      onRetry: _invalidateBalance,
-                                    ),
-                                    data: (_) => const SizedBox.shrink(),
-                                  )
-                                : Stack(
-                                    children: [
-                                      BalanceChart(
-                                        key: ValueKey(pool.id),
-                                        fitToken: _fitToken,
-                                        combineKey: combo == null
-                                            ? ''
-                                            : (combo.pools.keys.toList()
-                                                    ..sort())
-                                                  .join(','),
-                                        zeroToken: _zeroToken,
-                                        onFitRequested: (mode) =>
-                                            _fit(mode, pool),
-                                        onZoomStep: _zoomStep,
-                                        onShift: _shift,
-                                        series: shown!,
-                                        seedDate: pool.seedDate,
-                                        // Combined: no opening diamond (the
-                                        // line is a sum, not this seed).
-                                        seedBalance: combo != null
-                                            ? null
-                                            : pool.seedBalance.toDouble(),
-                                        lineStart: combo?.lineStart,
-                                        combinedPools: combo?.pools ?? const {},
-                                        otherTransactions:
-                                            combo?.transactions ?? const {},
-                                        onOpenOtherTransaction:
-                                            (other, t, date) => _openOther(
-                                              context,
-                                              other,
-                                              t,
-                                              date,
-                                            ),
-                                        lossThreshold: pool.lossThreshold
-                                            .toDouble(),
-                                        currencyScale: pool.currencyScale
-                                            .toDouble(),
-                                        viewStart: _viewStart,
-                                        visibleDays: _visibleDays,
-                                        onViewportChanged: _onChartViewport,
-                                        restoreYRange: _restoreY,
-                                        yRestoreToken: _yRestoreToken,
-                                        onYRangeChanged: _onChartY,
-                                        onPinnedDayChanged: _onPinnedDay,
-                                        onCreateOnDay: (day) =>
-                                            pool.role.canEdit
-                                            ? _createOnceOnDay(context, day)
-                                            : _viewOnlyToast(context),
-                                        onTrimOccurrence: pool.role.canEdit
-                                            ? (t, day) =>
-                                                  _trimAt(context, t, day)
-                                            : null,
-                                        onNewOnDay: pool.role.canEdit
-                                            ? (day) => _openEditor(
-                                                context,
-                                                pool,
-                                                initialDate: day,
-                                              )
-                                            : null,
-                                        onEditTransaction: pool.role.canEdit
-                                            ? (t, date) => _openEditor(
-                                                context,
-                                                pool,
-                                                existing: t,
-                                                focusDate: date,
-                                              )
-                                            : null,
-                                        transactionNames: transactionNames,
-                                        transactions: {
-                                          for (final t in transactions) t.id: t,
-                                        },
-                                        dataFrom: _seriesCacheQuery?.from,
-                                        dataThrough: _seriesCacheQuery?.to,
-                                        ghosts: _ghosts,
-                                        target: _goalActive
-                                            ? _goalTarget
-                                            : null,
-                                        targetMode: _goalActive && _targetMode,
-                                        onTargetChanged: _onTargetDrag,
-                                        onAddForPeriod: pool.role.canEdit
-                                            ? (start, end) => _openEditor(
-                                                context,
-                                                pool,
-                                                initialDate: start,
-                                                initialEndDate: end,
-                                              )
-                                            : null,
-                                        onPlanPeriod: (p) => _planPeriod(
-                                          p,
-                                          pool.lossThreshold.toDouble(),
-                                        ),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: AppTheme.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppTheme.border),
+                            ),
+                            child: ClipRRect(
+                              key: _chartAreaKey,
+                              borderRadius: BorderRadius.circular(15),
+                              child: series == null
+                                  ? balanceAsync.when(
+                                      loading: () => const Center(
+                                        child: CircularProgressIndicator(),
                                       ),
-                                      if (_goalActive)
-                                        Positioned(
-                                          top: combo != null ? 44 : 8,
-                                          right: 8,
-                                          child: FilterChip(
-                                            key: const ValueKey('target-tool'),
-                                            avatar: const Icon(
-                                              Icons.my_location_rounded,
-                                              size: 16,
-                                            ),
-                                            label: Text(
-                                              _targetMode
-                                                  ? 'Tap or drag to set target'
-                                                  : 'Set target',
-                                            ),
-                                            tooltip: 'Target tool: tap or drag on the chart to set the goal balance and date',
-                                            selected: _targetMode,
-                                            onSelected: (on) => setState(
-                                              () => _targetMode = on,
-                                            ),
+                                      error: (error, _) => _BalanceError(
+                                        message: friendlyError(error),
+                                        onRetry: _invalidateBalance,
+                                      ),
+                                      data: (_) => const SizedBox.shrink(),
+                                    )
+                                  : Stack(
+                                      children: [
+                                        BalanceChart(
+                                          key: ValueKey(pool.id),
+                                          fitToken: _fitToken,
+                                          combineKey: combo == null
+                                              ? ''
+                                              : (combo.pools.keys.toList()
+                                                      ..sort())
+                                                    .join(','),
+                                          zeroToken: _zeroToken,
+                                          onFitRequested: (mode) =>
+                                              _fit(mode, pool),
+                                          onZoomStep: _zoomStep,
+                                          onShift: _shift,
+                                          series: shown!,
+                                          seedDate: pool.seedDate,
+                                          // Combined: no opening diamond (the
+                                          // line is a sum, not this seed).
+                                          seedBalance: combo != null
+                                              ? null
+                                              : pool.seedBalance.toDouble(),
+                                          lineStart: combo?.lineStart,
+                                          combinedPools:
+                                              combo?.pools ?? const {},
+                                          otherTransactions:
+                                              combo?.transactions ?? const {},
+                                          onOpenOtherTransaction:
+                                              (other, t, date) => _openOther(
+                                                context,
+                                                other,
+                                                t,
+                                                date,
+                                              ),
+                                          lossThreshold: pool.lossThreshold
+                                              .toDouble(),
+                                          currencyScale: pool.currencyScale
+                                              .toDouble(),
+                                          viewStart: _viewStart,
+                                          visibleDays: _visibleDays,
+                                          onViewportChanged: _onChartViewport,
+                                          restoreYRange: _restoreY,
+                                          yRestoreToken: _yRestoreToken,
+                                          onYRangeChanged: _onChartY,
+                                          onPinnedDayChanged: _onPinnedDay,
+                                          onCreateOnDay: (day) =>
+                                              pool.role.canEdit
+                                              ? _createOnceOnDay(context, day)
+                                              : _viewOnlyToast(context),
+                                          onTrimOccurrence: pool.role.canEdit
+                                              ? (t, day) =>
+                                                    _trimAt(context, t, day)
+                                              : null,
+                                          onNewOnDay: pool.role.canEdit
+                                              ? (day) => _openEditor(
+                                                  context,
+                                                  pool,
+                                                  initialDate: day,
+                                                )
+                                              : null,
+                                          onEditTransaction: pool.role.canEdit
+                                              ? (t, date) => _openEditor(
+                                                  context,
+                                                  pool,
+                                                  existing: t,
+                                                  focusDate: date,
+                                                )
+                                              : null,
+                                          transactionNames: transactionNames,
+                                          transactions: {
+                                            for (final t in transactions)
+                                              t.id: t,
+                                          },
+                                          dataFrom: _seriesCacheQuery?.from,
+                                          dataThrough: _seriesCacheQuery?.to,
+                                          ghosts: _ghosts,
+                                          target: _goalActive
+                                              ? _goalTarget
+                                              : null,
+                                          targetMode:
+                                              _goalActive && _targetMode,
+                                          onTargetChanged: _onTargetDrag,
+                                          onAddForPeriod: pool.role.canEdit
+                                              ? (start, end) => _openEditor(
+                                                  context,
+                                                  pool,
+                                                  initialDate: start,
+                                                  initialEndDate: end,
+                                                )
+                                              : null,
+                                          onPlanPeriod: (p) => _planPeriod(
+                                            p,
+                                            pool.lossThreshold.toDouble(),
                                           ),
                                         ),
-                                      if (combo != null)
-                                        Positioned(
-                                          top: 8,
-                                          right: 8,
-                                          child: _CombinedLegend(
-                                            combo: combo,
-                                            poolName: pool.name,
+                                        if (_goalActive)
+                                          Positioned(
+                                            top: combo != null ? 44 : 8,
+                                            right: 8,
+                                            child: FilterChip(
+                                              key: const ValueKey(
+                                                'target-tool',
+                                              ),
+                                              avatar: const Icon(
+                                                Icons.my_location_rounded,
+                                                size: 16,
+                                              ),
+                                              label: Text(
+                                                _targetMode
+                                                    ? 'Tap or drag to set target'
+                                                    : 'Set target',
+                                              ),
+                                              tooltip: 'Target tool: tap or drag on the chart to set the goal balance and date',
+                                              selected: _targetMode,
+                                              onSelected: (on) => setState(
+                                                () => _targetMode = on,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                      if (balanceAsync.isLoading ||
-                                          (combo?.loading ?? false))
-                                        const Positioned(
-                                          top: 0,
-                                          left: 0,
-                                          right: 0,
-                                          child: LinearProgressIndicator(
-                                            minHeight: 2,
+                                        if (combo != null)
+                                          Positioned(
+                                            top: 8,
+                                            right: 8,
+                                            child: _CombinedLegend(
+                                              combo: combo,
+                                              poolName: pool.name,
+                                            ),
                                           ),
-                                        ),
-                                    ],
-                                  ),
+                                        if (balanceAsync.isLoading ||
+                                            (combo?.loading ?? false))
+                                          const Positioned(
+                                            top: 0,
+                                            left: 0,
+                                            right: 0,
+                                            child: LinearProgressIndicator(
+                                              minHeight: 2,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    if (!_planOpen || !compact) _TipsBar(compact: compact),
-                  ],
+                      if (!_planOpen || !compact) _TipsBar(compact: compact),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2242,4 +2349,77 @@ class _HeaderBrand extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The import an undo bar can roll back.
+class _ImportUndo {
+  _ImportUndo(this.poolId, this.result);
+  final String poolId;
+  final ImportResult result;
+}
+
+/// Floating "Imported N transactions · Undo · ×" bar. Unlike the 5 s undo
+/// tip it never times out: it stays until Undo or the close box.
+class _ImportUndoBar extends StatelessWidget {
+  const _ImportUndoBar({
+    required this.message,
+    required this.error,
+    required this.busy,
+    required this.onUndo,
+    required this.onClose,
+  });
+
+  final String message;
+  final bool error;
+  final bool busy;
+  final VoidCallback onUndo;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final fg = scheme.onInverseSurface;
+    return Material(
+      key: const ValueKey('import-undo-bar'),
+      color: scheme.inverseSurface,
+      elevation: 6,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+        child: Row(
+          children: [
+            Icon(
+              error ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+              size: 20,
+              color: error ? scheme.error : fg,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                key: const ValueKey('import-undo-message'),
+                style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+              ),
+            ),
+            TextButton(
+              key: const ValueKey('import-undo'),
+              onPressed: busy ? null : onUndo,
+              style: TextButton.styleFrom(
+                foregroundColor: scheme.inversePrimary,
+                minimumSize: const Size(64, 44),
+              ),
+              child: Text(busy ? 'Undoing…' : (error ? 'Retry' : 'Undo')),
+            ),
+            IconButton(
+              key: const ValueKey('import-undo-close'),
+              tooltip: 'Close',
+              onPressed: busy ? null : onClose,
+              icon: Icon(Icons.close_rounded, color: fg),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
