@@ -8,6 +8,7 @@ build() {
   local out="build/web-$(date +%s)" t0=$SECONDS
   echo "--- $(date +%T) building release -> $out"
   if flutter build web --release --pwa-strategy=none --dart-define=API_BASE_URL= -o "$out" 2>&1 | grep -v '^$' | tail -4 && [ -f "$out/main.dart.js" ]; then
+    sh tool/hash_fonts.sh "$out" >/dev/null || true   # same content-hashed font names as prod (client/Dockerfile)
     ln -sfn "$(basename "$out")" build/web-live.tmp && mv -T build/web-live.tmp build/web-live
     ls -d build/web-[0-9]* | sort | head -n -2 | xargs -r rm -rf   # keep current + previous
     local live=$((SECONDS - t0)) tun

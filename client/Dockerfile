@@ -26,7 +26,8 @@ RUN B="${BUILD_ID:-$(date -u +%Y%m%d%H%M%S)}" \
       --dart-define=API_BASE_URL= \
       --dart-define=GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID} \
       --dart-define=BUILD_ID=$B \
- && printf '{"build":"%s"}\n' "$B" > build/web/build.json
+ && printf '{"build":"%s"}\n' "$B" > build/web/build.json \
+ && sh tool/hash_fonts.sh build/web
 # Ship less, compress once at build time with the strongest settings (Caddy
 # serves the .br/.zst/.gz siblings via `precompressed`; on-the-fly zstd/gzip
 # is ~40% larger for main.dart.js). CanvasKit loads from gstatic, so its

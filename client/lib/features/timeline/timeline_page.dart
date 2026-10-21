@@ -22,6 +22,7 @@ import '../../state/realtime_providers.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/pool_dialog.dart';
+import '../../widgets/list_glyph.dart';
 import '../../widgets/pool_picker.dart';
 import '../../widgets/ui.dart';
 import '../transactions/editor_outcome.dart';
@@ -1616,7 +1617,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       color: docked ? AppTheme.accent : null,
       onPressed: () => _openTransactionsPanel(context, pool),
-      icon: const Icon(Icons.format_list_bulleted_rounded),
+      icon: const ListGlyph(key: ValueKey('tx-list-glyph')),
     );
   }
 

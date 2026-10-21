@@ -14,6 +14,7 @@ import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:budget_client/state/realtime_providers.dart';
+import 'package:budget_client/widgets/list_glyph.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1529,19 +1530,24 @@ void main() {
         expect(r('open-transactions').width, greaterThanOrEqualTo(40));
         expect(r('open-transactions').right, lessThanOrEqualTo(w));
         // The glyph is painted (not transparent) when the list is closed.
-        final glyph = tester.widget<RichText>(
+        final glyph = tester.widget<CustomPaint>(
           find.descendant(
-            of: find.byKey(const ValueKey('open-transactions')),
-            matching: find.byType(RichText),
+            of: find.byKey(const ValueKey('tx-list-glyph')),
+            matching: find.byType(CustomPaint),
           ),
         );
-        expect(glyph.text.style?.color?.a, greaterThan(0.5));
+        expect((glyph.painter! as ListGlyphPainter).color.a, greaterThan(0.5));
+        expect(
+          tester.getSize(find.byKey(const ValueKey('tx-list-glyph'))),
+          const Size(24, 24),
+        );
         // A plain list icon: no outlined / tonal / filled container.
         final tx = tester.widget<IconButton>(
           find.byKey(const ValueKey('open-transactions')),
         );
         expect(tx.style, isNull);
-        expect((tx.icon as Icon).icon, Icons.format_list_bulleted_rounded);
+        // Painted (ListGlyph), not an icon-font glyph a stale font lacks.
+        expect(tx.icon, isA<ListGlyph>());
         expect(
           find.descendant(
             of: find.byKey(const ValueKey('open-transactions')),
