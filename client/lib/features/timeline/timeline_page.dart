@@ -986,6 +986,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           Scaffold(
             appBar: AppBar(
               toolbarHeight: compact ? 56 : 60,
+              // Below 360 the back button's slot tightens (56 → 48) so the
+              // pool name keeps room next to the full action row.
+              leadingWidth: width < 360 ? 48 : null,
               leading: IconButton(
                 key: const ValueKey('timeline-back'),
                 tooltip: 'All pools',
@@ -995,7 +998,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               titleSpacing: compact ? 0 : 4,
               title: Row(
                 children: [
-                  _HeaderBrand(compact: compact),
+                  _HeaderBrand(compact: compact, tight: width < 360),
                   Flexible(
                     child: _PoolHeader(pool: pool, compact: compact),
                   ),
@@ -1359,7 +1362,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   ///   Transactions · View (icon) · More (Pool settings, Share, Import,
   ///   shortcuts).
   /// * <600px: Reminders · Transactions · View (with Go to today / seed) ·
-  ///   More; below 360px Transactions moves into More too.
+  ///   More. Transactions stays in the header at every width; below 360px
+  ///   the back slot, logo gap and View button tighten so it fits.
   List<Widget> _headerActions(
     BuildContext context,
     Pool pool,
@@ -1392,15 +1396,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             title: Text('Pool settings'),
           ),
         ),
-      if (tiny)
-        PopupMenuItem(
-          key: const ValueKey('more-transactions'),
-          value: 'transactions',
-          child: ListTile(
-            leading: const Icon(Icons.format_list_bulleted_rounded),
-            title: Text('Transactions (${transactions.length})'),
-          ),
-        ),
       if (owner && !mid)
         const PopupMenuItem(
           key: ValueKey('more-share'),
@@ -1430,7 +1425,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     ];
 
     return [
-      const RealtimeDot(),
+      // Below 360 the sync dot sits on the logo's corner instead.
+      if (!tiny) const RealtimeDot(),
       if (wide) ...[
         OutlinedButton.icon(
           key: const ValueKey('go-today'),
@@ -1496,8 +1492,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           icon: const Icon(Icons.calendar_month_rounded),
         ),
       SizedBox(width: mid ? 4 : 0),
-      if (!tiny) _transactionsButton(context, pool, count: transactions.length),
-      _fitMenu(pool, compact: !desk, iconOnly: !mid),
+      // Always in the header, at every width (320 included): below 360 the
+      // left side and View tighten instead so it fits.
+      _transactionsButton(context, pool, count: transactions.length),
+      _fitMenu(pool, compact: !desk, iconOnly: !mid, tight: tiny),
       // Always the rightmost item.
       PopupMenuButton<String>(
         key: const ValueKey('timeline-more'),
@@ -1509,8 +1507,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               _openImport(context, pool);
             case 'settings':
               _editPool(context, pool);
-            case 'transactions':
-              _openTransactionsPanel(context, pool);
             case 'shortcuts':
               _showShortcuts(context);
             case 'share':
@@ -1526,7 +1522,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// View options: Combine with other pools and, on phones, Go to today /
   /// seed date. The fit modes are keyboard-only (F / A / H, listed in the
   /// shortcuts sheet) and never stretch to the alert line.
-  Widget _fitMenu(Pool pool, {required bool compact, bool? iconOnly}) {
+  Widget _fitMenu(
+    Pool pool, {
+    required bool compact,
+    bool? iconOnly,
+    bool tight = false,
+  }) {
     final icon = iconOnly ?? compact;
     final others = _otherPools(pool.id);
     final combined = others.where((p) => _combine.contains(p.id)).length;
@@ -1545,7 +1546,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           ? IconButton(
               key: const ValueKey('fit-menu'),
               tooltip: tip,
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              constraints: BoxConstraints(
+                minWidth: tight ? 40 : 44,
+                minHeight: 44,
+              ),
               onPressed: open,
               icon: Badge(
                 key: const ValueKey('combine-badge'),
@@ -2176,19 +2180,37 @@ class _CombinedLegend extends StatelessWidget {
 /// the header row, a little smaller on phones. The landing intro glides
 /// into it.
 class _HeaderBrand extends StatelessWidget {
-  const _HeaderBrand({required this.compact});
+  const _HeaderBrand({required this.compact, this.tight = false});
 
   final bool compact;
 
+  /// Below 360px: a smaller gap before the pool name, and the sync dot on
+  /// the logo.
+  final bool tight;
+
   @override
   Widget build(BuildContext context) => Padding(
-    padding: EdgeInsetsDirectional.only(end: compact ? 10 : 12),
+    padding: EdgeInsetsDirectional.only(end: tight ? 6 : (compact ? 10 : 12)),
     child: Semantics(
       label: 'Budgie',
       image: true,
       child: BrandAnchor(
         key: const ValueKey('timeline-brand'),
-        child: BudgieIcon(size: compact ? 26 : 32),
+        child: tight
+            // Below 360px the sync dot rides on the logo's corner, so the
+            // action row (with Transactions) and the pool name both fit.
+            ? Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  BudgieIcon(size: compact ? 26 : 32),
+                  const Positioned(
+                    right: -9,
+                    bottom: -2,
+                    child: RealtimeDot(key: ValueKey('brand-rt-dot')),
+                  ),
+                ],
+              )
+            : BudgieIcon(size: compact ? 26 : 32),
       ),
     ),
   );

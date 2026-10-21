@@ -13,6 +13,7 @@ import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
+import 'package:budget_client/state/realtime_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1512,22 +1513,29 @@ void main() {
       }
       expect(more.right, lessThanOrEqualTo(w));
       expect(more.right, greaterThan(w - 16));
-      // Right end, in order: Reminders · Transactions (not at 320) · View ·
-      // More.
+      // Right end, in order: Reminders · Transactions · View · More, at
+      // every width (320 included: Transactions never hides in More).
       expect(inBar('fit-menu'), isTrue);
       expect(inBar('open-reminders'), isTrue);
       expect(r('timeline-more').left, greaterThan(r('fit-menu').right - 1));
       expect(r('timeline-more').left - r('fit-menu').right, lessThan(4));
-      if (tiny) {
-        expect(find.byKey(const ValueKey('open-transactions')), findsNothing);
-        expect(r('fit-menu').left, greaterThan(r('open-reminders').right - 1));
-      } else {
+      {
         expect(inBar('open-transactions'), isTrue);
         expect(
           r('open-transactions').left,
           greaterThan(r('open-reminders').right - 1),
         );
         expect(r('fit-menu').left - r('open-transactions').right, lessThan(4));
+        expect(r('open-transactions').width, greaterThanOrEqualTo(40));
+        expect(r('open-transactions').right, lessThanOrEqualTo(w));
+        // The glyph is painted (not transparent) when the list is closed.
+        final glyph = tester.widget<RichText>(
+          find.descendant(
+            of: find.byKey(const ValueKey('open-transactions')),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(glyph.text.style?.color?.a, greaterThan(0.5));
         // A plain list icon: no outlined / tonal / filled container.
         final tx = tester.widget<IconButton>(
           find.byKey(const ValueKey('open-transactions')),
@@ -1616,13 +1624,14 @@ void main() {
       expect(find.text('Share pool'), mid ? findsNothing : findsOneWidget);
       expect(find.text('Import transactions'), findsOneWidget);
       expect(find.text('Gestures & shortcuts'), findsOneWidget);
-      expect(
-        find.text('Transactions (2)'),
-        tiny ? findsOneWidget : findsNothing,
-      );
+      // Transactions is never duplicated in More.
+      expect(find.byKey(const ValueKey('more-transactions')), findsNothing);
+      expect(find.text('Transactions (2)'), findsNothing);
       expect(find.text('Plan a payment'), findsNothing);
       if (tiny) {
-        await tester.tap(find.text('Transactions (2)'));
+        await tester.tapAt(const Offset(4, 4));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('open-transactions')));
         await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('panel-new-transaction')),
@@ -1630,6 +1639,39 @@ void main() {
         );
       }
       expect(tester.takeException(), isNull);
+    });
+  }
+
+  // Regression: after 1e4bdcc Transactions hid in More below 360px, which
+  // is what zoomed / large-display-size phones report (e.g. 390 at 115%
+  // page zoom ≈ 339). It must stay in the header at every phone width.
+  for (final w in const [320.0, 339.0, 359.0, 360.0, 375.0, 412.0, 430.0]) {
+    testWidgets('${w.toInt()}px phone: the Transactions list icon is in the '
+        'header between Reminders and View, the name keeps room', (
+      tester,
+    ) async {
+      await _pump(tester, size: Size(w, 800));
+      expect(tester.takeException(), isNull);
+      Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
+      final tx = r('open-transactions');
+      expect(tx.left, greaterThan(r('open-reminders').right - 1));
+      expect(tx.right, lessThanOrEqualTo(r('fit-menu').left + 0.5));
+      expect(tx.width, greaterThanOrEqualTo(40));
+      expect(r('timeline-more').right, lessThanOrEqualTo(w));
+      expect(r('header-pool-picker').width, greaterThan(40));
+      expect(r('header-pool-picker').right, lessThanOrEqualTo(tx.left));
+      // One sync dot: on the logo below 360, in the action row otherwise.
+      expect(find.byType(RealtimeDot), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('brand-rt-dot')),
+        w < 360 ? findsOneWidget : findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('open-transactions')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('panel-new-transaction')),
+        findsOneWidget,
+      );
     });
   }
 
