@@ -30,7 +30,12 @@ class PoolPicker extends ConsumerStatefulWidget {
     this.onNewPool,
     this.title = 'Choose a pool',
     this.keyPrefix = 'picker',
+    this.mineHeader = true,
   });
+
+  /// Head my pools with a "My pools" label (the header menu lists them
+  /// directly; "Shared with me" still heads shared pools).
+  final bool mineHeader;
 
   final Widget Function(BuildContext context, VoidCallback open) builder;
   final ValueChanged<Pool> onSelected;
@@ -219,7 +224,8 @@ class _PoolPickerState extends ConsumerState<PoolPicker> {
           ),
         ),
       if (mine.isNotEmpty) ...[
-        PickerSectionHeader('My pools', key: ValueKey('$p-header-mine')),
+        if (widget.mineHeader)
+          PickerSectionHeader('My pools', key: ValueKey('$p-header-mine')),
         for (final a in mine) _poolItem(a, focus: first()),
       ],
       if (shared.isNotEmpty) ...[

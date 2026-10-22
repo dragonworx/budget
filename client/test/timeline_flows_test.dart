@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/api_client.dart';
@@ -1802,9 +1803,23 @@ void main() {
         expect(find.byKey(ValueKey(gone)), findsNothing);
       }
       expect(find.textContaining('Seed \$'), findsNothing);
+      // The pool picker stretches up to the actions (its arrow at the
+      // right end; the empty space after the name opens it too).
       final name = r('header-pool-picker');
-      expect(name.width, lessThanOrEqualTo(desk ? 260 : 150));
       expect(name.width, greaterThan(40));
+      final firstAction = [
+        for (final e
+            in find
+                .descendant(
+                  of: find.byType(AppBar),
+                  matching: find.byWidgetPredicate(
+                    (w) => w is IconButton || w is ButtonStyleButton,
+                  ),
+                )
+                .evaluate())
+          tester.getRect(find.byWidget(e.widget)).left,
+      ].where((l) => l >= name.right - 0.5).reduce(math.min);
+      expect(firstAction - name.right, lessThanOrEqualTo(26));
       expect(find.byKey(const ValueKey('open-plan')), findsNothing);
       // Second row: the heatmap alone, the timeline's full width.
       final heat = r('jump-to-date');

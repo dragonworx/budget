@@ -2,10 +2,12 @@
 // Pools home shows an empty state with New pool; creating one lands in
 // it. There are no projects.
 import 'package:budget_client/app.dart';
+import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -140,7 +142,13 @@ void main() {
       expect(_path(c), '/pools/a1/timeline');
       await tester.tap(find.byKey(const ValueKey('header-pool-picker')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('nav-header-mine')), findsOneWidget);
+      // No "My pools" label: the menu starts with my pools.
+      expect(find.byKey(const ValueKey('nav-header-mine')), findsNothing);
+      expect(find.text('My pools'), findsNothing);
+      expect(
+        tester.getRect(find.byKey(const ValueKey('nav-pool-a1'))).top,
+        lessThan(tester.getRect(find.byKey(const ValueKey('nav-pool-a2'))).top),
+      );
       expect(find.byKey(const ValueKey('nav-pool-a2')), findsOneWidget);
       expect(find.byKey(const ValueKey('nav-header-shared')), findsOneWidget);
       expect(find.byKey(const ValueKey('nav-pool-b1')), findsOneWidget);
@@ -165,5 +173,96 @@ void main() {
       expect(tester.getSize(cardIcon), const Size(22, 22));
       expect(find.byIcon(Icons.account_balance_wallet_rounded), findsNothing);
     });
+  }
+
+  // The header pool picker fills the room between the brand and the
+  // actions: the arrow at its right end, the empty space after the name a
+  // tap target too; the actions stay on screen.
+  for (final (size, docked) in const [
+    (Size(320, 640), false),
+    (Size(412, 915), false),
+    (Size(932, 430), false),
+    (Size(1440, 900), false),
+    (Size(1440, 900), true),
+  ]) {
+    final label =
+        '${size.width.toInt()}x${size.height.toInt()}'
+        '${docked ? ' docked' : ''}';
+    for (final name in const ['Bills', 'Savings for a long holiday abroad']) {
+      testWidgets('$label, "$name": the header pool picker stretches; the '
+          'empty space and the arrow open the menu', (tester) async {
+        page.localSet('budget_tx_docked', docked ? '1' : '0');
+        addTearDown(page.clearLocal);
+        final repo = FakePoolRepository(
+          pools: [testPool('a1', name), testPool('a2', 'Other')],
+          lastPoolId: 'a1',
+        );
+        await _app(tester, repo, size: size);
+        expect(tester.takeException(), isNull);
+        final area = tester.getRect(
+          find.byKey(const ValueKey('header-pool-picker')),
+        );
+        final arrow = tester.getRect(
+          find.byKey(const ValueKey('header-pool-arrow')),
+        );
+        // The arrow ends the stretched area, at the actions (the toolbar's
+        // 16px middle spacing plus the actions' own leading gap).
+        expect(arrow.right, closeTo(area.right, 0.5));
+        final actions = find.descendant(
+          of: find.byType(AppBar),
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is IconButton ||
+                w is ButtonStyleButton ||
+                w is PopupMenuButton,
+          ),
+        );
+        final rights = [
+          for (final e in actions.evaluate())
+            tester.getRect(find.byWidget(e.widget)),
+        ].where((r) => r.left >= area.right - 0.5).toList();
+        expect(rights, isNotEmpty);
+        final firstAction = rights
+            .map((r) => r.left)
+            .reduce((a, b) => a < b ? a : b);
+        expect(firstAction - area.right, lessThanOrEqualTo(26));
+        for (final r in rights) {
+          expect(r.right, lessThanOrEqualTo(size.width));
+        }
+        // The name stays left; a long one ellipsises.
+        final text = tester.renderObject<RenderParagraph>(
+          find.descendant(of: find.text(name), matching: find.byType(RichText)),
+        );
+        final glyphs = text.getMaxIntrinsicWidth(double.infinity);
+        final ellipsised = text.didExceedMaxLines;
+        final textBox = tester.getRect(
+          find.descendant(of: find.text(name), matching: find.byType(RichText)),
+        );
+        expect(textBox.left, closeTo(area.left, 0.5));
+        Future<void> opens(Offset at, String why) async {
+          await tester.tapAt(at);
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('nav-pool-a2')),
+            findsOneWidget,
+            reason: why,
+          );
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await tester.pumpAndSettle();
+          expect(find.byKey(const ValueKey('nav-pool-a2')), findsNothing);
+        }
+
+        await opens(arrow.center, 'arrow');
+        await opens(Offset(arrow.left - 2, area.top + 4), 'just left of it');
+        if (glyphs < textBox.width - 8) {
+          // Short name: the empty space after its characters.
+          final x = (textBox.left + glyphs + arrow.left) / 2;
+          await opens(Offset(x, area.center.dy), 'empty space');
+          await opens(Offset(x, area.bottom - 3), 'empty space, low');
+        } else {
+          expect(ellipsised, isTrue);
+        }
+      });
+    }
   }
 }

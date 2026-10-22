@@ -1147,7 +1147,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 title: Row(
                   children: [
                     _HeaderBrand(compact: compact, tight: width < 360),
-                    Flexible(
+                    // The picker takes all the room up to the actions: its
+                    // arrow sits at the far right and the empty space after
+                    // the name opens it too.
+                    Expanded(
                       child: _PoolHeader(pool: pool, compact: compact),
                     ),
                   ],
@@ -2121,13 +2124,17 @@ class _PoolHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Compact: the name truncates and the picker stays narrow so every
-    // action fits in this row (no balance / alert summary here).
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: compact ? 150 : 260),
+    // Fills the free space between the brand and the actions (the toolbar
+    // lays the actions out first, so they always fit): the name stays left
+    // and ellipsises, the arrow sits at the right end, and the whole area,
+    // empty space included, is one tap target with its ink.
+    return SizedBox(
+      key: const ValueKey('header-pool-area'),
+      width: double.infinity,
       child: PoolPicker(
         keyPrefix: 'nav',
         title: 'Jump to pool',
+        mineHeader: false,
         currentPoolId: pool.id,
         onSelected: (a) {
           if (a.id == pool.id) return;
@@ -2146,24 +2153,32 @@ class _PoolHeader extends StatelessWidget {
           child: Tooltip(
             message: 'Jump to another pool',
             waitDuration: const Duration(milliseconds: 500),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: Text(
-                    pool.name,
-                    style: compact
-                        ? theme.textTheme.titleMedium
-                        : theme.textTheme.titleLarge,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            // Opaque: a tap anywhere in the stretched area hits, not only
+            // on the glyphs.
+            child: ColoredBox(
+              color: Colors.transparent,
+              child: SizedBox(
+                height: 48,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        pool.name,
+                        style: compact
+                            ? theme.textTheme.titleMedium
+                            : theme.textTheme.titleLarge,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_drop_down_rounded,
+                      key: ValueKey('header-pool-arrow'),
+                      color: AppTheme.textMuted,
+                    ),
+                  ],
                 ),
-                const Icon(
-                  Icons.arrow_drop_down_rounded,
-                  color: AppTheme.textMuted,
-                ),
-              ],
+              ),
             ),
           ),
         ),
