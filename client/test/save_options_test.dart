@@ -14,6 +14,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:budget_client/widgets/ui.dart';
 
 final _start = DateTime(2026, 10, 5);
 final _focus = DateTime(2026, 10, 19);
@@ -324,10 +325,6 @@ void main() {
       'Once-off −\$250 on this date · series −\$100',
     );
     expect(find.text('Reset to series −\$100'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('chip-override-2026-10-19')),
-      findsOneWidget,
-    );
     await tester.tap(find.byKey(const ValueKey('editor-clear-override')));
     await tester.pumpAndSettle();
     expect(repo.calls, ['clear t 2026-10-19']);
@@ -356,36 +353,40 @@ void main() {
     expect(outcomes.single!.action, EditorAction.overrideCleared);
   });
 
-  testWidgets('clear all overrides shows the count and confirms', (
+  testWidgets('editing shows just Details and Schedule (no Occurrences or '
+      'Options); a save keeps once-offs, skips and Include in balance', (
     tester,
   ) async {
-    final (repo, outcomes) = await _pump(
-      tester,
-      existing: _series(
-        overrides: {_focus: _o(250), DateTime(2026, 10, 26): _o(5)},
-      ),
-      focus: _focus,
-    );
-    final clearAll = find.byKey(const ValueKey('editor-clear-overrides'));
-    await tester.ensureVisible(clearAll);
-    expect(find.text('2 once-off overrides on single dates'), findsOneWidget);
-    await tester.tap(clearAll);
-    await tester.pumpAndSettle();
-    expect(find.text('Clear 2 once-off overrides?'), findsOneWidget);
-    // Cancel first: nothing happens.
-    await tester.tap(find.widgetWithText(TextButton, 'Cancel').last);
-    await tester.pumpAndSettle();
-    expect(repo.calls, isEmpty);
-    await tester.tap(clearAll);
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Clear all'));
-    await tester.pumpAndSettle();
-    expect(repo.calls, ['clear t all']);
-    expect(outcomes.single!.action, EditorAction.overridesCleared);
+    final existing = _series(
+      overrides: {_focus: _o(250), DateTime(2026, 10, 26): _o(5)},
+    ).copyWith(enabled: false);
+    final (repo, outcomes) = await _pump(tester, existing: existing);
     expect(
-      describeOutcome(outcomes.single),
-      'Cleared 2 once-off overrides · “Rent”',
+      [
+        for (final c in tester.widgetList<SectionCard>(
+          find.byType(SectionCard),
+        ))
+          c.title,
+      ],
+      ['Details', 'Schedule'],
     );
+    for (final gone in [
+      'Include in balance',
+      'Solve from a target total…',
+      'Tap a date to skip or restore it',
+    ]) {
+      expect(find.text(gone), findsNothing, reason: gone);
+    }
+    expect(find.byKey(const ValueKey('editor-clear-overrides')), findsNothing);
+    await _amount(tester, '120');
+    await tester.tap(find.byKey(const ValueKey('editor-save')));
+    await tester.pumpAndSettle();
+    expect(repo.calls, ['update t Rent 120 v3']);
+    expect(repo.t.enabled, isFalse, reason: 'excluded stays excluded');
+    // Once-offs and skips live beside the row on the server: a plain update
+    // (no clear / skip calls, no overrides in the payload) leaves them.
+    expect(repo.t.toJson().containsKey('overrides'), isFalse);
+    expect(outcomes.single!.action, EditorAction.saved);
   });
 
   testWidgets('viewers see overrides but cannot clear them', (tester) async {
@@ -397,8 +398,7 @@ void main() {
     );
     expect(find.textContaining('Once-off −\$250'), findsWidgets);
     expect(find.byKey(const ValueKey('editor-clear-override')), findsNothing);
-    expect(find.byKey(const ValueKey('editor-clear-overrides')), findsNothing);
-    expect(find.text('1 once-off override on single dates'), findsOneWidget);
+    expect(find.byKey(const ValueKey('skip-occurrence')), findsNothing);
     expect(repo.calls, isEmpty);
   });
 

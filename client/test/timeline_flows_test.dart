@@ -1417,19 +1417,20 @@ void main() {
     expect(nameFocused(tester), isFalse);
     expect(find.text('months'), findsWidgets);
     expect(find.text('week'), findsNothing);
-    // Editing keeps the Occurrences preview and Options (below the fold).
-    expect(sectionTitles(tester), containsAllInOrder(['Details', 'Schedule']));
-    await tester.scrollUntilVisible(
-      find.text('Include in balance'),
-      200,
-      scrollable: find
-          .descendant(
-            of: find.byType(TransactionEditor),
-            matching: find.byType(Scrollable),
-          )
-          .first,
-    );
-    expect(sectionTitles(tester), containsAll(['Occurrences', 'Options']));
+    // Editing is just Details and Schedule too (no Occurrences / Options),
+    // to the end of the form.
+    final scroll = find
+        .descendant(
+          of: find.byType(TransactionEditor),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.drag(scroll, const Offset(0, -2000));
+    await tester.pumpAndSettle();
+    expect(find.text('Include in balance'), findsNothing);
+    await tester.drag(scroll, const Offset(0, 2000));
+    await tester.pumpAndSettle();
+    expect(sectionTitles(tester), ['Details', 'Schedule']);
     await tester.pump(const Duration(seconds: 6));
   });
 

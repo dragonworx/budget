@@ -20,9 +20,7 @@ import '../../widgets/confirm_dialog.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/recurrence_interval_field.dart';
 import '../../widgets/ui.dart';
-import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
-import 'solve_sheet.dart';
 
 enum EditorAction {
   created,
@@ -189,9 +187,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   late Set<DateTime> _skippedInitially;
   late String _initialSignature;
 
-  /// Whether the count field holds a user value rather than the default.
-  late bool _countEdited;
-
   bool get _isNew => widget.existing == null;
 
   @override
@@ -208,7 +203,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     _count = TextEditingController(
       text: (existing?.occurrenceCount ?? 12).toString(),
     );
-    _countEdited = existing?.occurrenceCount != null;
     _direction = existing?.direction ?? TransactionDirection.debit;
     _transfer = existing?.transfer;
     _transferMode = _transfer != null;
@@ -434,16 +428,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     );
   }
 
-  int? _finiteCount(Transaction draft) {
-    if (draft.recurrenceMode == RecurrenceMode.once) return 1;
-    if (draft.endMode == EndMode.count) return draft.occurrenceCount;
-    if (draft.endMode == EndMode.untilDate && draft.endDate != null) {
-      final dates = estimateOccurrenceDates(draft, maxCount: 5000);
-      return dates.isEmpty ? null : dates.length;
-    }
-    return null;
-  }
-
   void _finish(EditorOutcome? outcome, {bool closePanel = false}) {
     if (closePanel && widget.onClosePanel != null) {
       widget.onClosePanel!(outcome);
@@ -474,7 +458,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final draft = _draft();
     final title = _isNew
         ? 'New transaction'
         : (widget.existing!.name.isEmpty
@@ -519,15 +502,9 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                       _ro(_detailsSection(theme)),
                       const SizedBox(height: 12),
                       _ro(_scheduleSection(theme)),
-                      // New transactions: just Details and Schedule
-                      // (Include in balance stays on). Editing keeps the
-                      // Occurrences preview and Options.
-                      if (!_isNew) ...[
-                        const SizedBox(height: 12),
-                        _previewSection(theme, draft),
-                        const SizedBox(height: 12),
-                        _ro(_optionsSection(theme)),
-                      ],
+                      // Just Details and Schedule, new or edited: Include in
+                      // balance is the list row's switch, skips / once-offs
+                      // are kept as they are (saving never resets them).
                     ],
                   ),
                 ),
@@ -1035,7 +1012,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
                   suffixText: 'times',
                 ),
                 keyboardType: TextInputType.number,
-                onChanged: (_) => setState(() => _countEdited = true),
                 onFieldSubmitted: (_) => _save(),
                 autovalidateMode: AutovalidateMode.onUserInteraction,
                 validator: (value) {
@@ -1047,141 +1023,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
             ],
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _previewSection(ThemeData theme, Transaction draft) {
-    final all = estimateOccurrenceDates(draft, maxCount: 400);
-    final focus = widget.focusDate == null ? null : _day(widget.focusDate!);
-    final today = _day(DateTime.now());
-    var from = 0;
-    if (focus != null && all.contains(focus)) {
-      from = (all.indexOf(focus) - 2).clamp(0, all.length);
-    } else {
-      final upcoming = all.indexWhere((d) => !d.isBefore(today));
-      if (upcoming > 0) from = upcoming;
-    }
-    final shown = all.skip(from).take(8).toList();
-    final amount = parseMoneyInput(_amount.text);
-    final count = _finiteCount(draft);
-    final symbolAmount = amount == null
-        ? null
-        : formatSignedAmount(
-            (_direction == TransactionDirection.credit ? 1 : -1) *
-                amount.toDouble(),
-          );
-    String? total;
-    if (amount != null && count != null && count > 1) {
-      final sum =
-          (_direction == TransactionDirection.credit ? 1 : -1) *
-          amount.toDouble() *
-          count;
-      total = '${formatSignedAmount(sum)} over $count occurrences';
-    }
-    return SectionCard(
-      title: 'Occurrences',
-      icon: Icons.timeline_rounded,
-      trailing: symbolAmount == null
-          ? null
-          : Text(
-              '$symbolAmount each',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: _direction == TransactionDirection.credit
-                    ? AppTheme.creditColor
-                    : AppTheme.debitColor,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (shown.isEmpty)
-            Text('No occurrences', style: theme.textTheme.bodySmall)
-          else
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final d in shown) _occurrenceChip(theme, d, focus),
-              ],
-            ),
-          const SizedBox(height: 10),
-          Text(
-            [
-              ?total,
-              if (draft.recurrenceMode == RecurrenceMode.every &&
-                  draft.endMode == EndMode.never)
-                'Repeats with no end',
-              if (!_isNew && widget.existing!.overrides.isNotEmpty)
-                '${widget.existing!.overrides.length} once-off',
-              if (!_isNew) 'Tap a date to skip or restore it',
-            ].join(' · '),
-            style: theme.textTheme.bodySmall,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _occurrenceChip(ThemeData theme, DateTime date, DateTime? focus) {
-    final skipped = _skipped.contains(date);
-    final isFocus = date == focus;
-    final busy = _skipBusy.contains(date);
-    final canToggle = !_isNew && _sameScheduleAsSaved();
-    final override = canToggle ? widget.existing!.overrideOn(date) : null;
-    final text = Text(
-      formatOccurrenceDate(date),
-      style: theme.textTheme.labelMedium?.copyWith(
-        color: skipped
-            ? AppTheme.textFaint
-            : (isFocus ? AppTheme.accent : AppTheme.text),
-        decoration: skipped ? TextDecoration.lineThrough : null,
-        fontWeight: isFocus ? FontWeight.w700 : FontWeight.w500,
-      ),
-    );
-    final label = override == null
-        ? text
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              text,
-              const SizedBox(width: 4),
-              Text(
-                _signed(override.signed),
-                key: ValueKey('chip-override-${formatDate(date)}'),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: override.direction == TransactionDirection.credit
-                      ? AppTheme.creditColor
-                      : AppTheme.debitColor,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          );
-    return Tooltip(
-      message: override != null
-          ? 'Once-off ${_signed(override.signed)}'
-          : !canToggle
-          ? (_isNew
-                ? 'Save first to skip dates'
-                : 'Save schedule changes first')
-          : (skipped ? 'Restore this occurrence' : 'Skip this occurrence'),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: canToggle && !busy ? () => _toggleSkip(date) : null,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: isFocus ? AppTheme.accentSoft : AppTheme.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isFocus ? AppTheme.accent : AppTheme.border,
-              width: isFocus ? 1.5 : 1,
-            ),
-          ),
-          child: label,
-        ),
       ),
     );
   }
@@ -1199,71 +1040,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
         e.endMode == d.endMode &&
         e.endDate == d.endDate &&
         e.occurrenceCount == d.occurrenceCount;
-  }
-
-  Widget _optionsSection(ThemeData theme) {
-    return SectionCard(
-      title: 'Options',
-      icon: Icons.tune_rounded,
-      child: Column(
-        children: [
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Include in balance'),
-            subtitle: Text(
-              _enabled
-                  ? 'Counts towards the timeline'
-                  : 'Disabled: kept but ignored',
-              style: theme.textTheme.bodySmall,
-            ),
-            value: _enabled,
-            onChanged: (value) => setState(() => _enabled = value),
-          ),
-          if (!_isNew && widget.existing!.overrides.isNotEmpty)
-            _overridesRow(theme),
-          const SizedBox(height: 4),
-          if (!_transferMode)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _saving ? null : _openPlanner,
-                icon: const Icon(Icons.calculate_outlined, size: 18),
-                label: const Text('Solve from a target total…'),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _overridesRow(ThemeData theme) {
-    final n = widget.existing!.overrides.length;
-    return Padding(
-      key: const ValueKey('editor-overrides'),
-      padding: const EdgeInsets.only(top: 4),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.edit_calendar_rounded,
-            size: 18,
-            color: AppTheme.textMuted,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '$n once-off override${n == 1 ? '' : 's'} on single dates',
-              style: theme.textTheme.bodyMedium,
-            ),
-          ),
-          if (!widget.readOnly)
-            TextButton(
-              key: const ValueKey('editor-clear-overrides'),
-              onPressed: _saving ? null : _clearAllOverrides,
-              child: const Text('Clear all'),
-            ),
-        ],
-      ),
-    );
   }
 
   /// Save offers "once-off" / "from now on" only when the editor was opened
@@ -1559,22 +1335,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     await _runClear(EditorAction.overrideCleared, date: date);
   }
 
-  Future<void> _clearAllOverrides() async {
-    final existing = widget.existing!;
-    final n = existing.overrides.length;
-    final ok = await showConfirmDialog(
-      context,
-      title: 'Clear $n once-off override${n == 1 ? '' : 's'}?',
-      message:
-          'Every date goes back to the series value '
-          '${_signed(existing.signedAmount)}.'
-          '${_dirty ? ' Your other edits are not saved and will be discarded.' : ''}',
-      confirmLabel: 'Clear all',
-    );
-    if (!ok || !mounted) return;
-    await _runClear(EditorAction.overridesCleared);
-  }
-
   Future<void> _runClear(EditorAction action, {DateTime? date}) async {
     final existing = widget.existing!;
     setState(() => _saving = true);
@@ -1697,51 +1457,6 @@ class _TransactionEditorState extends ConsumerState<TransactionEditor> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(friendlyError(error))));
-  }
-
-  Future<void> _openPlanner() async {
-    final repeating = _recurrenceMode == RecurrenceMode.every;
-    final amount = parseMoneyInput(_amount.text);
-    final result = await showSolveSheet(
-      context,
-      poolId: widget.poolId,
-      saveOnCommit: false,
-      initial: SolveRequest(
-        name: _name.text.trim(),
-        direction: _direction,
-        unit: repeating ? _unit : RecurrenceUnit.weeks,
-        interval: repeating ? _intervalValue : 1,
-        startDate: _startDate,
-        amount: amount != null && amount > Decimal.zero ? amount : null,
-        endDate: repeating && _endMode == EndMode.untilDate ? _endDate : null,
-        occurrenceCount: repeating && _endMode == EndMode.count && _countEdited
-            ? int.tryParse(_count.text.trim())
-            : null,
-      ),
-    );
-    final transaction = result?.transaction;
-    if (transaction == null || !mounted) return;
-    setState(() {
-      _name.text = transaction.name;
-      _direction = transaction.direction;
-      _amount.text = transaction.amount.toString();
-      _startDate = _day(transaction.startDate);
-      _recurrenceMode = transaction.recurrenceMode;
-      _endDateError = null;
-      if (transaction.recurrenceMode == RecurrenceMode.once) {
-        _endMode = EndMode.never;
-        _endDate = null;
-        return;
-      }
-      _interval.text = '${transaction.interval ?? 1}';
-      _unit = transaction.unit ?? _unit;
-      _endMode = transaction.endMode;
-      _endDate = transaction.endDate;
-      if (transaction.occurrenceCount != null) {
-        _count.text = '${transaction.occurrenceCount}';
-        _countEdited = true;
-      }
-    });
   }
 
   /// Validates the form; returns what to save (null: invalid, errors shown).
