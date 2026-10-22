@@ -79,4 +79,15 @@ void main() {
     expect(find.text('Esc'), findsOneWidget);
     expect(find.byType(DirectionBadge), findsOneWidget);
   });
+
+  test('startPhrase: the series\' first (seed) date', () {
+    final t = tx('Rent'); // starts Sat 31 Jan 2026
+    expect(startPhrase(t, DateTime(2026, 10, 22)), 'Started Sat 31 Jan 2026');
+    expect(startPhrase(t, DateTime(2026, 1, 31)), 'Started Sat 31 Jan 2026');
+    expect(startPhrase(t, DateTime(2026, 1, 1)), 'Starts Sat 31 Jan 2026');
+    expect(
+      startPhrase(t, DateTime(2026, 10, 22), compact: true),
+      'Started 31 Jan 2026',
+    );
+  });
 }

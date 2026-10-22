@@ -43,6 +43,8 @@ import 'date_heatmap.dart';
 import 'view_menu.dart';
 import '../../state/auth_providers.dart';
 import '../../state/pool_cleanup.dart';
+import '../../state/app_prefs.dart';
+import 'dock_split.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
 import 'saved_view.dart';
@@ -70,10 +72,6 @@ bool dockedListEnabled = true;
 /// The docked list starts open unless this browser closed it.
 @visibleForTesting
 bool dockedListDefaultOpen = true;
-
-/// Width of the docked list for a [screenWidth]-wide window.
-double dockedListWidth(double screenWidth) =>
-    (screenWidth * 0.3).clamp(384.0, 420.0).toDouble();
 
 /// Eased show / hide of the docked list.
 const Duration dockedListDuration = Duration(milliseconds: 280);
@@ -122,6 +120,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         !(_planOpen && !_planFull(context));
   }
 
+  /// Width dragged on this device (px; null: the default). Kept as chosen
+  /// and clamped to the window when used, so a narrower window never
+  /// overwrites it.
+  double? _dockWidthPref = appPrefs.getDouble(PrefKeys.dockedListWidth);
+
   void _toggleDock() {
     setState(() => _dockOpen = !_dockOpen);
     page.localSet(_dockStoreKey, _dockOpen ? '1' : '0');
@@ -137,40 +140,38 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// relayouts while it eases; the date window and balance range stay.
   Widget _withDockedList(BuildContext context, Pool pool, Widget child) {
     if (!_dockable(context)) return child;
-    final width = dockedListWidth(MediaQuery.sizeOf(context).width);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: child),
-        SizeTransition(
-          key: const ValueKey('docked-transactions'),
-          sizeFactor: _dockCurve,
-          axis: Axis.horizontal,
-          alignment: Alignment.centerLeft,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(0, 12, 16, 10),
-            child: SizedBox(
-              width: width,
-              child: RepaintBoundary(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: DecoratedBox(
-                    position: DecorationPosition.foreground,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: TickerMode(
-                      enabled: _dockOpen || _dockAnim.isAnimating,
-                      child: _transactionsPanel(context, pool, docked: true),
-                    ),
-                  ),
-                ),
-              ),
+    // The splitter sits in the 16px gap between the timeline card and the
+    // list (the timeline's own right padding, no chart under it) and slides
+    // with the list as it eases in / out.
+    return DockSplit(
+      reveal: _dockCurve,
+      open: _dockOpen,
+      savedWidth: _dockWidthPref,
+      onWidthChanged: (w) {
+        appPrefs.setDouble(PrefKeys.dockedListWidth, w);
+        setState(() => _dockWidthPref = w);
+      },
+      onReset: () {
+        appPrefs.remove(PrefKeys.dockedListWidth);
+        setState(() => _dockWidthPref = null);
+      },
+      timeline: child,
+      panel: RepaintBoundary(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: TickerMode(
+              enabled: _dockOpen || _dockAnim.isAnimating,
+              child: _transactionsPanel(context, pool, docked: true),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -2098,11 +2099,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     onClose: docked ? _toggleDock : null,
     onPanelClosed: (outcome) {
       if (context.mounted) _report(context, outcome);
-    },
-    // Locate: the docked list stays; the overlay gets out of the way.
-    onLocate: (date) {
-      close?.call();
-      _showFrom(date);
     },
     onChanged: _invalidateBalance,
     // New ▾ Plan: the only way into the planner.

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../boot/page_stub.dart'
     if (dart.library.js_interop) '../../boot/page_web.dart';
@@ -62,15 +63,25 @@ String? scheduleHint(Transaction t, DateTime today) {
   return d.isBefore(dateOnly(today)) ? 'ended $when' : 'next $when';
 }
 
+/// A series' first (seed) date: "Starts Mon 26 Oct 2026" / "Started …"
+/// (from [today]); [compact] (phones) drops the weekday: "Started 26 Oct
+/// 2026".
+String startPhrase(Transaction t, DateTime today, {bool compact = false}) {
+  final d = dateOnly(t.startDate);
+  final when = compact
+      ? DateFormat('d MMM y').format(d)
+      : formatOccurrenceDate(d);
+  return d.isAfter(dateOnly(today)) ? 'Starts $when' : 'Started $when';
+}
+
 /// Side panel listing a pool's transactions: search, filter, toggle,
-/// edit and locate on the timeline.
+/// delete; a row opens in the editor.
 class TransactionsPanel extends ConsumerStatefulWidget {
   const TransactionsPanel({
     super.key,
     required this.pool,
     required this.skipsFor,
     required this.onPanelClosed,
-    required this.onLocate,
     required this.onChanged,
     this.onPlan,
     this.onClose,
@@ -88,7 +99,6 @@ class TransactionsPanel extends ConsumerStatefulWidget {
 
   /// The panel was closed from inside the editor with this outcome.
   final ValueChanged<EditorOutcome?> onPanelClosed;
-  final ValueChanged<DateTime> onLocate;
   final VoidCallback onChanged;
 
   /// "Plan" in the New split button: opens the payment / goal planner.
@@ -511,10 +521,6 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
       readOnly: _readOnly,
       onTap: () => _open(t),
       onDelete: () => _deleteFromList(context, t),
-      onLocate: () {
-        final d = nextOccurrence(t, DateTime.now());
-        if (d != null) widget.onLocate(d);
-      },
       onToggle: (v) async {
         try {
           final n = ref.read(transactionsProvider(widget.pool.id).notifier);
@@ -566,7 +572,6 @@ class _TxRow extends StatelessWidget {
     required this.transaction,
     required this.index,
     required this.onTap,
-    required this.onLocate,
     required this.onToggle,
     required this.onDelete,
     this.highlighted = false,
@@ -581,7 +586,6 @@ class _TxRow extends StatelessWidget {
   final Transaction transaction;
   final int? index;
   final VoidCallback onTap;
-  final VoidCallback onLocate;
   final ValueChanged<bool> onToggle;
   final VoidCallback onDelete;
 
@@ -591,7 +595,6 @@ class _TxRow extends StatelessWidget {
     final t = transaction;
     final credit = t.direction == TransactionDirection.credit;
     final amount = t.amount.toDouble() * (credit ? 1 : -1);
-    final next = nextOccurrence(t, DateTime.now());
     final touch = MediaQuery.sizeOf(context).width < 600;
     final name = t.name.isEmpty ? 'Untitled' : t.name;
     // Swipe left to delete (undo in the snackbar, so no confirm). Needs a
@@ -698,6 +701,18 @@ class _TxRow extends StatelessWidget {
                           style: theme.textTheme.bodySmall,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        // Its first (seed) date; a one-off's is the date
+                        // above.
+                        if (t.recurrenceMode != RecurrenceMode.once)
+                          Text(
+                            startPhrase(t, DateTime.now(), compact: touch),
+                            key: ValueKey('row-start-${t.id}'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppTheme.textMuted,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -712,7 +727,11 @@ class _TxRow extends StatelessWidget {
                           : AppTheme.debitColor,
                     ),
                   ),
-                  if (touch)
+                  // Delete (editors only): a ⋮ menu on touch, an icon with
+                  // a mouse. Tapping the row opens it in the editor.
+                  if (readOnly)
+                    const SizedBox(width: 4)
+                  else if (touch)
                     SizedBox(
                       width: 44,
                       height: 44,
@@ -721,50 +740,29 @@ class _TxRow extends StatelessWidget {
                         tooltip: 'More for $name',
                         icon: const Icon(Icons.more_vert_rounded, size: 20),
                         color: AppTheme.overlay,
-                        onSelected: (v) =>
-                            v == 'delete' ? onDelete() : onLocate(),
+                        onSelected: (_) => onDelete(),
                         itemBuilder: (_) => [
                           PopupMenuItem(
-                            value: 'locate',
-                            enabled: next != null,
-                            child: const ListTile(
-                              leading: Icon(Icons.my_location_rounded),
-                              title: Text('Show on timeline'),
+                            value: 'delete',
+                            child: ListTile(
+                              leading: Icon(
+                                Icons.delete_outline_rounded,
+                                color: AppTheme.debitColor,
+                              ),
+                              title: const Text('Delete'),
                             ),
                           ),
-                          if (!readOnly)
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: ListTile(
-                                leading: Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: AppTheme.debitColor,
-                                ),
-                                title: const Text('Delete'),
-                              ),
-                            ),
                         ],
                       ),
                     )
-                  else ...[
+                  else
                     IconButton(
-                      tooltip: 'Show on timeline',
+                      key: ValueKey('row-delete-${t.id}'),
+                      tooltip: 'Delete $name',
                       visualDensity: VisualDensity.compact,
-                      onPressed: next == null ? null : onLocate,
-                      icon: const Icon(Icons.my_location_rounded, size: 18),
+                      onPressed: onDelete,
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
                     ),
-                    if (!readOnly)
-                      IconButton(
-                        key: ValueKey('row-delete-${t.id}'),
-                        tooltip: 'Delete $name',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: onDelete,
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          size: 18,
-                        ),
-                      ),
-                  ],
                   Tooltip(
                     message: t.enabled
                         ? 'Included in balance'

@@ -8,9 +8,11 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
+import 'package:budget_client/features/timeline/dock_split.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/features/transactions/transaction_editor.dart';
 import 'package:budget_client/features/transactions/transactions_panel.dart';
+import 'package:budget_client/state/app_prefs.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/theme/app_theme.dart';
 import 'package:budget_client/state/providers.dart';
@@ -223,29 +225,29 @@ void main() {
       expect(find.byType(BalanceChart), findsOneWidget, reason: 'no pop');
     });
 
-    testWidgets('$name: Locate from the docked list left-aligns the day and '
-        'keeps the list; New ▾ opens the editor in the panel', (tester) async {
+    testWidgets('$name: rows have no Show on timeline (a row opens the '
+        'editor in the panel), show the start date; New ▾ opens the editor '
+        'in the panel', (tester) async {
       await _pump(tester, size);
-      final locate = find.descendant(
-        of: _docked,
-        matching: find.byTooltip('Show on timeline'),
+      expect(find.byTooltip('Show on timeline'), findsNothing);
+      expect(find.text('Show on timeline'), findsNothing);
+      expect(find.byIcon(Icons.my_location_rounded), findsNothing);
+      final before = _view(tester);
+      await tester.tap(
+        find.descendant(of: _docked, matching: find.text('Rent')),
+        kind: kind,
       );
-      if (locate.evaluate().isNotEmpty) {
-        await tester.tap(locate, kind: kind);
-      } else {
-        await tester.tap(
-          find.byKey(const ValueKey('row-menu-rent')),
-          kind: kind,
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Show on timeline'), kind: kind);
-      }
       await tester.pumpAndSettle();
-      final c = tester.widget<BalanceChart>(find.byType(BalanceChart));
-      final w = tester.getSize(find.byType(BalanceChart)).width;
-      // Left-align rule: the day starts just clear of the left strip.
-      final inset = ChartLayout.laneNameWidth(w) * c.visibleDays / w;
-      expect(dayCoord(c.viewStart), closeTo(dayCoord(_d(40)) - inset, 0.05));
+      expect(
+        find.descendant(of: _docked, matching: find.byType(TransactionEditor)),
+        findsOneWidget,
+      );
+      expect(_view(tester).start, before.start, reason: 'view unchanged');
+      await tester.tap(
+        find.byKey(const ValueKey('editor-close')).first,
+        kind: kind,
+      );
+      await tester.pumpAndSettle();
       expect(_dockedPanel, findsOneWidget);
       expect(tester.getSize(_docked).width, greaterThan(300));
 
@@ -303,4 +305,142 @@ void main() {
       expect(find.byType(TransactionsPanel), findsNothing);
     });
   }
+
+  group('splitter', () {
+    final split = find.byKey(const ValueKey('dock-splitter'));
+    double panelW(WidgetTester t) => t.getSize(_dockedPanel).width;
+    String? saved() =>
+        page.localGet('${AppPrefs.prefix}${PrefKeys.dockedListWidth}');
+
+    test('limits and the stored width (px, clamped to the window)', () {
+      expect(dockedListMinDrag, 280);
+      expect(dockedListMaxWidth(1440), 864);
+      expect(dockedListMaxWidth(1024), 464);
+      expect(dockedListEffectiveWidth(1440, null), 420);
+      expect(dockedListEffectiveWidth(1440, 620), 620);
+      expect(dockedListEffectiveWidth(1100, 620), 540);
+      expect(dockedListEffectiveWidth(1440, 100), 280);
+      expect(dockedListEffectiveWidth(1440, 5000), 864);
+      const prefs = AppPrefs();
+      prefs.setDouble('x', 1.5);
+      expect(page.localGet('budgie.prefs.v1.x'), '1.5');
+      expect(prefs.getDouble('x'), 1.5);
+      page.localSet('budgie.prefs.v1.x', 'NaN');
+      expect(prefs.getDouble('x'), isNull);
+      prefs.remove('x');
+      expect(prefs.getString('x'), isNull);
+      prefs.setBool('b', true);
+      expect(prefs.getBool('b'), isTrue);
+    });
+
+    for (final (name, size, kind) in [
+      ('1440 mouse', const Size(1440, 900), PointerDeviceKind.mouse),
+      ('1180x820 touch', const Size(1180, 820), PointerDeviceKind.touch),
+    ]) {
+      testWidgets('$name: dragging resizes the list (the timeline keeps its '
+          'date window, no day picked); saved; a reload restores it; '
+          'hide / show restores it; double-tap resets', (tester) async {
+        await _pump(tester, size);
+        final w0 = panelW(tester);
+        expect(w0, dockedListWidth(size.width));
+        final before = _view(tester);
+        // The splitter sits in the gap, left of the list.
+        final sr = tester.getRect(split);
+        final pr = tester.getRect(_dockedPanel);
+        expect(sr.width, 24);
+        expect(sr.center.dx, closeTo(pr.left - 8, 0.5));
+        final chartR = tester.getRect(find.byType(BalanceChart));
+        expect(chartR.right, lessThanOrEqualTo(sr.left + 4 + 1));
+
+        final g = await tester.startGesture(sr.center, kind: kind);
+        for (var i = 0; i < 10; i++) {
+          await g.moveBy(const Offset(-15, 0));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        // Live while dragging, not saved until release.
+        expect(panelW(tester), closeTo(w0 + 150, 0.5));
+        expect(saved(), isNull);
+        await g.up();
+        await tester.pumpAndSettle();
+        expect(panelW(tester), closeTo(w0 + 150, 0.5));
+        expect(double.parse(saved()!), closeTo(w0 + 150, 0.5));
+        final after = _view(tester);
+        expect(after.start, before.start, reason: 'left edge stays');
+        expect(after.days, before.days, reason: 'same days, new scale');
+        expect(after.width, closeTo(before.width - 150, 1));
+        expect(find.byKey(const ValueKey('selection-band')), findsNothing);
+        expect(
+          find.byTooltip(RegExp(r'^Add a transaction on ').pattern),
+          findsNothing,
+        );
+        expect(find.byType(TransactionEditor), findsNothing);
+
+        // Reload: restored from the app prefs.
+        await _pump(tester, size);
+        expect(panelW(tester), closeTo(w0 + 150, 0.5));
+        // Hide / show eases back to the saved width.
+        await tester.tap(
+          find.byKey(const ValueKey('open-transactions')),
+          kind: kind,
+        );
+        await tester.pumpAndSettle();
+        expect(tester.getSize(_docked).width, 0);
+        expect(split, findsNothing);
+        await tester.tap(
+          find.byKey(const ValueKey('open-transactions')),
+          kind: kind,
+        );
+        await tester.pump();
+        await tester.pump(dockedListDuration ~/ 2);
+        final midW = tester.getSize(_docked).width;
+        expect(midW, greaterThan(20));
+        expect(midW, lessThan(w0 + 150 + 16 - 20));
+        await tester.pumpAndSettle();
+        expect(panelW(tester), closeTo(w0 + 150, 0.5));
+
+        // Double-tap: back to the default; the saved width goes.
+        final c = tester.getCenter(split);
+        await tester.tapAt(c, kind: kind);
+        await tester.pump(const Duration(milliseconds: 60));
+        await tester.tapAt(c, kind: kind);
+        await tester.pumpAndSettle();
+        expect(panelW(tester), w0);
+        expect(saved(), isNull);
+      });
+    }
+
+    testWidgets('clamps: min 280, the timeline keeps its room; a narrower '
+        'window clamps without forgetting the chosen width', (tester) async {
+      await _pump(tester, const Size(1440, 900));
+      Future<void> drag(double dx) async {
+        await tester.drag(split, Offset(dx, 0), kind: PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+      }
+
+      await drag(600);
+      expect(panelW(tester), 280);
+      final e = tester.takeException();
+      expect(e, isNull, reason: 'at 280');
+      await drag(-2000);
+      expect(panelW(tester), 864);
+      expect(
+        tester.getSize(find.byType(BalanceChart)).width,
+        greaterThan(1440 - 864 - 80),
+      );
+      // Narrower window (still docked): clamped, the choice is kept.
+      tester.view.physicalSize = const Size(1100, 800);
+      await tester.pumpAndSettle();
+      expect(panelW(tester), 540);
+      expect(tester.takeException(), isNull, reason: 'at 1100');
+      expect(saved(), '864.0');
+      tester.view.physicalSize = const Size(1440, 900);
+      await tester.pumpAndSettle();
+      expect(panelW(tester), 864);
+      // Too narrow to dock: the overlay takes over (no splitter).
+      tester.view.physicalSize = const Size(1000, 800);
+      await tester.pumpAndSettle();
+      expect(_docked, findsNothing);
+      expect(split, findsNothing);
+    });
+  });
 }

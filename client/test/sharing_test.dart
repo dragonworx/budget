@@ -430,7 +430,6 @@ void main() {
               pool: _acct('a1', role: Role.viewer),
               skipsFor: (_) => const {},
               onPanelClosed: (_) {},
-              onLocate: (_) {},
               onChanged: () {},
             ),
           ),
