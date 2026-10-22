@@ -6,6 +6,8 @@ import '../data/models.dart';
 import '../features/planning/goal_models.dart';
 import '../data/repositories.dart';
 import '../data/sharing.dart';
+import 'auth_providers.dart';
+import 'pool_cleanup.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final client = ApiClient();
@@ -23,8 +25,9 @@ final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
 
 /// Every pool I can open: mine first (display order), then those shared
 /// with me. Pools are top level (no projects).
-final poolsProvider =
-    AsyncNotifierProvider<PoolsNotifier, List<Pool>>(PoolsNotifier.new);
+final poolsProvider = AsyncNotifierProvider<PoolsNotifier, List<Pool>>(
+  PoolsNotifier.new,
+);
 
 class PoolsNotifier extends AsyncNotifier<List<Pool>> {
   /// The pool I opened last, if still accessible (from the last fetch).
@@ -47,8 +50,14 @@ class PoolsNotifier extends AsyncNotifier<List<Pool>> {
   Future<Pool> create(Pool draft) async {
     final created = await ref.read(poolRepositoryProvider).create(draft);
     final current = state.valueOrNull ?? [];
-    final mine = [for (final a in current) if (!a.shared) a];
-    final shared = [for (final a in current) if (a.shared) a];
+    final mine = [
+      for (final a in current)
+        if (!a.shared) a,
+    ];
+    final shared = [
+      for (final a in current)
+        if (a.shared) a,
+    ];
     state = AsyncData([...mine, created, ...shared]);
     return created;
   }
@@ -66,16 +75,23 @@ class PoolsNotifier extends AsyncNotifier<List<Pool>> {
     final current = state.valueOrNull ?? [];
     state = AsyncData([
       for (final a in current)
-        a.id == pool.id
-            ? updated.copyWith(role: a.role).withSharing(a)
-            : a,
+        a.id == pool.id ? updated.copyWith(role: a.role).withSharing(a) : a,
     ]);
   }
 
-  Future<void> delete(String id) async {
-    await ref.read(poolRepositoryProvider).delete(id);
+  Future<void> delete(
+    String id, {
+    PoolDeleteTransfers transfers = PoolDeleteTransfers.keep,
+  }) async {
+    await ref.read(poolRepositoryProvider).delete(id, transfers: transfers);
     final current = state.valueOrNull ?? [];
     state = AsyncData(current.where((a) => a.id != id).toList());
+    if (lastPoolId == id) lastPoolId = null;
+    forgetDeletedPool(
+      ref.invalidate,
+      id,
+      userId: ref.read(authProvider).valueOrNull?.user?.id,
+    );
   }
 }
 
@@ -297,9 +313,7 @@ final insightsProvider = FutureProvider.family<BalanceInsights, String>((
   ref,
   poolId,
 ) {
-  return ref
-      .read(poolRepositoryProvider)
-      .insights(poolId, DateTime.now());
+  return ref.read(poolRepositoryProvider).insights(poolId, DateTime.now());
 });
 
 /// Saved what-if scenarios for a pool.

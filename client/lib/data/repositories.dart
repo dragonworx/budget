@@ -71,7 +71,12 @@ class PoolRepository {
     return Pool.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<void> delete(String id) => _api.delete('/api/pools/$id');
+  /// Deletes the pool and its transactions; [transfers] says what happens
+  /// to the far side of its transfers in other pools.
+  Future<void> delete(
+    String id, {
+    PoolDeleteTransfers transfers = PoolDeleteTransfers.keep,
+  }) => _api.delete('/api/pools/$id?transfers=${transfers.name}');
 
   Future<BalanceSeries> balance(
     String poolId, {
@@ -366,3 +371,7 @@ String importRootParam(DateTime day) =>
     '${day.year.toString().padLeft(4, '0')}-'
     '${day.month.toString().padLeft(2, '0')}-'
     '${day.day.toString().padLeft(2, '0')}';
+
+/// Deleting a pool: the far side of each of its transfers (in another pool)
+/// is kept there as a plain debit / credit, or deleted.
+enum PoolDeleteTransfers { keep, delete }

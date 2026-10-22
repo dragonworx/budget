@@ -40,6 +40,8 @@ void sessionSet(String key, String value) => _session[key] = value;
 final _local = <String, String>{};
 String? localGet(String key) => _local[key];
 void localSet(String key, String value) => _local[key] = value;
+void localRemove(String key) => _local.remove(key);
+List<String> localKeys() => _local.keys.toList();
 
 /// Tests: forget everything saved with [localSet].
 void clearLocal() => _local.clear();

@@ -150,7 +150,7 @@ void main() {
         (await h.call('DELETE', '/api/pools/${other.json['id']}',
                 as: 'owner'))
             .status,
-        204);
+        200);
   });
 
   test('pool names are unique per owner, not site-wide', () async {

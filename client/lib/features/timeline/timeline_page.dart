@@ -42,6 +42,7 @@ import 'combined.dart';
 import 'date_heatmap.dart';
 import 'view_menu.dart';
 import '../../state/auth_providers.dart';
+import '../../state/pool_cleanup.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
 import 'saved_view.dart';
@@ -237,7 +238,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _viewSaveTimer?.cancel();
     _viewSaveTimer = null;
     final poolId = _viewPoolId, uid = _viewUid;
-    if (poolId == null) return;
+    // A deleted pool's view is not written back as its page closes.
+    if (poolId == null || isForgottenPool(poolId)) return;
     final view = _currentView;
     if (view.sameAs(_viewSaved)) return;
     _viewSaved = view;
@@ -568,7 +570,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       if (!_combine.remove(otherId)) _combine.add(otherId);
     });
     final uid = _userId;
-    if (uid != null) _combineStore.save(uid, widget.poolId, _combine);
+    if (uid != null && !isForgottenPool(widget.poolId)) {
+      _combineStore.save(uid, widget.poolId, _combine);
+    }
   }
 
   /// Every pool I can open other than this one, in my pools order, each
@@ -1076,21 +1080,26 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     return poolAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
-      error: (error, _) => Scaffold(
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => _goBack(context),
-          ),
-          title: const Text('Timeline'),
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(friendlyError(error), textAlign: TextAlign.center),
-          ),
-        ),
-      ),
+      error: (error, _) => _isGone(error)
+          ? _PoolGone(poolId: widget.poolId)
+          : Scaffold(
+              appBar: AppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => _goBack(context),
+                ),
+                title: const Text('Timeline'),
+              ),
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    friendlyError(error),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
       data: (pool) {
         _ensureWindow(pool);
         final balanceAsync = ref.watch(balanceProvider(_query));
@@ -2444,4 +2453,48 @@ class _ImportUndoBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The pool no longer exists for me (deleted, or my access was removed).
+bool _isGone(Object error) =>
+    error is ApiException &&
+    (error.statusCode == 404 || error.statusCode == 403);
+
+/// A deep link / last-opened / stale tab on a pool that is gone: back to
+/// the pools home with a note, and this browser forgets the pool.
+class _PoolGone extends ConsumerStatefulWidget {
+  const _PoolGone({required this.poolId});
+  final String poolId;
+  @override
+  ConsumerState<_PoolGone> createState() => _PoolGoneState();
+}
+
+class _PoolGoneState extends ConsumerState<_PoolGone> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      forgetPoolLocally(
+        widget.poolId,
+        userId: ref.read(authProvider).valueOrNull?.user?.id,
+      );
+      ref.invalidate(poolsProvider);
+      // Already on the way out (the realtime "deleted" notice did it).
+      final router = GoRouter.of(context);
+      final path = router.routerDelegate.currentConfiguration.uri.path;
+      if (!path.startsWith('/pools/${widget.poolId}/')) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      context.go(poolsPath);
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('That pool no longer exists')),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const Scaffold(
+    key: ValueKey('pool-gone'),
+    body: Center(child: CircularProgressIndicator()),
+  );
 }

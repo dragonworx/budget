@@ -20,6 +20,8 @@ import '../../widgets/sharing_ui.dart';
 import '../../widgets/ui.dart';
 import '../../widgets/user_menu.dart';
 import '../sharing/share_dialog.dart';
+import '../../data/repositories.dart' show PoolDeleteTransfers;
+import 'delete_pool_dialog.dart';
 
 /// Opens the new-pool dialog; the pool is created inside it (errors
 /// keep it open). Resolves to the created pool.
@@ -251,14 +253,39 @@ class _PoolsPageState extends ConsumerState<PoolsPage> {
   }
 
   Future<void> _delete(BuildContext context, Pool pool) async {
-    final confirmed = await showConfirmDialog(
-      context,
-      title: 'Delete pool?',
-      message: '“${pool.name}” and all of its transactions will be removed.',
-    );
-    if (!confirmed) return;
+    // What goes with it decides the confirm: a pool with transactions lists
+    // them and asks what happens to its transfers' far sides.
+    List<Transaction> transactions;
     try {
-      await ref.read(poolsProvider.notifier).delete(pool.id);
+      transactions = await ref.read(transactionsProvider(pool.id).future);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(friendlyError(error))));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    PoolDeleteTransfers? mode;
+    if (transactions.isEmpty) {
+      final confirmed = await showConfirmDialog(
+        context,
+        title: 'Delete pool?',
+        message: '“${pool.name}” will be removed. It has no transactions.',
+        confirmLabel: 'Delete pool',
+      );
+      if (confirmed) mode = PoolDeleteTransfers.keep;
+    } else {
+      mode = await showDeletePoolDialog(
+        context,
+        pool: pool,
+        transactions: transactions,
+        pools: ref.read(poolsProvider).valueOrNull ?? const [],
+      );
+    }
+    if (mode == null) return;
+    try {
+      await ref.read(poolsProvider.notifier).delete(pool.id, transfers: mode);
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)

@@ -14,6 +14,7 @@ import '../data/sharing.dart';
 import '../features/admin/admin_page.dart';
 import 'auth_providers.dart';
 import 'providers.dart';
+import 'pool_cleanup.dart';
 
 /// App-wide messenger so realtime notices show on any page.
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -90,7 +91,9 @@ class RealtimeController {
     s.onGoodbye = _goodbye;
     void sync() {
       final v = s.status.value;
-      Future.microtask(() => ref.read(realtimeStatusProvider.notifier).state = v);
+      Future.microtask(
+        () => ref.read(realtimeStatusProvider.notifier).state = v,
+      );
     }
 
     s.status.addListener(sync);
@@ -167,6 +170,9 @@ class RealtimeController {
           if (e.action == 'pool.updated') _pool(aid);
           if (e.action == 'pool.deleted') {
             _leaveIfOn(poolId: aid, message: 'This pool was deleted');
+            // Its transfers' far sides changed in other pools; its saved
+            // view / combine choices in this browser go.
+            forgetDeletedPool(ref.invalidate, aid, userId: _me);
           }
         }
       case 'transaction':
@@ -189,9 +195,16 @@ class RealtimeController {
           ref.invalidate(poolProvider(aid));
         }
         ref.read(sharingEpochProvider.notifier).state++;
-        final lost = e.action.endsWith('.revoked') || e.action.endsWith('.left');
-        if (lost && e.subjectUserId != null && e.subjectUserId == _me && aid != null) {
-          _leaveIfOn(poolId: aid, message: 'You no longer have access to that pool');
+        final lost =
+            e.action.endsWith('.revoked') || e.action.endsWith('.left');
+        if (lost &&
+            e.subjectUserId != null &&
+            e.subjectUserId == _me &&
+            aid != null) {
+          _leaveIfOn(
+            poolId: aid,
+            message: 'You no longer have access to that pool',
+          );
         }
       case 'admin':
         ref.invalidate(adminUsersProvider);
@@ -209,7 +222,9 @@ class RealtimeController {
   }
 
   void _notice(String text) {
-    scaffoldMessengerKey.currentState?.showSnackBar(SnackBar(content: Text(text)));
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(content: Text(text)),
+    );
   }
 }
 
@@ -221,10 +236,16 @@ class RealtimeDot extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(realtimeStatusProvider);
     final (color, label) = switch (s) {
-      RealtimeStatus.connected => (const Color(0xFF45D48C), 'Live: changes sync instantly'),
+      RealtimeStatus.connected => (
+        const Color(0xFF45D48C),
+        'Live: changes sync instantly',
+      ),
       RealtimeStatus.connecting => (const Color(0xFFF2B84B), 'Connecting…'),
       RealtimeStatus.reconnecting => (const Color(0xFFF2B84B), 'Reconnecting…'),
-      RealtimeStatus.offline => (const Color(0xFF7F8A9A), 'Offline: changes from others won’t show until reconnected'),
+      RealtimeStatus.offline => (
+        const Color(0xFF7F8A9A),
+        'Offline: changes from others won’t show until reconnected',
+      ),
     };
     return Tooltip(
       message: label,

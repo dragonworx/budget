@@ -3,7 +3,8 @@ import 'package:postgres/postgres.dart' hide Pool;
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
-import '../auth/authz.dart' show uuidRe;
+import '../auth/authz.dart' show Authz, Role, uuidRe;
+import '../repo/audit_repo.dart';
 import '../auth/authz_middleware.dart';
 import '../auth/middleware.dart';
 import '../domain/models.dart';
@@ -302,10 +303,62 @@ Router buildPoolsApi(Session conn) {
     }
   });
 
+  // Deleting a pool: its own transactions go with it; the far side of each
+  // of its transfers (in other pools) is kept as a plain transaction
+  // (`?transfers=keep`, the default) or deleted (`?transfers=delete`, which
+  // needs editor on every such pool). Never left pointing at a missing
+  // pool. All in the request's DB transaction.
   router.delete('/<id>', (Request request, String id) async {
-    final ok = await pools.delete(id);
-    if (!ok) return jsonError(404, 'pool not found');
-    return Response(204);
+    final mode =
+        TransferDeleteMode.parse(request.url.queryParameters['transfers']);
+    if (mode == null) {
+      return jsonError(400, 'transfers must be keep or delete');
+    }
+    final me = requireAuth(request).user.id;
+    final peers = await pools.transferPeers(id);
+    final peerPools = {for (final p in peers) p.peerPoolId};
+    if (mode == TransferDeleteMode.delete) {
+      final authz = Authz(conn);
+      final blocked = <String>[];
+      for (final pid in peerPools) {
+        final a = await authz.pool(pid, me);
+        if (a?.role == null || !a!.role!.atLeast(Role.editor)) blocked.add(pid);
+      }
+      if (blocked.isNotEmpty) {
+        return jsonError(
+          403,
+          'deleting the transfers needs editor access to every pool they '
+          'are in; keep them instead',
+          details: {'pools': blocked},
+        );
+      }
+    }
+    final r = await pools.delete(id, transfers: mode);
+    if (!r.deleted) return jsonError(404, 'pool not found');
+    // The surviving pools changed too: tell their viewers (real-time).
+    final audit = AuditRepo(conn);
+    for (final pid in peerPools) {
+      final ids = [
+        for (final p in peers)
+          if (p.peerPoolId == pid) p.peerId
+      ];
+      await audit.record(
+        userId: me,
+        action: mode == TransferDeleteMode.keep
+            ? 'transactions.transfers_unlinked'
+            : 'transactions.transfers_deleted',
+        poolId: pid,
+        clientId: request.headers['x-client-id'],
+        detail: {'deletedPoolId': id, 'ids': ids},
+      );
+    }
+    return jsonOk({
+      'deleted': true,
+      'transfers': mode.name,
+      'converted': r.converted.length,
+      'removed': r.removed.length,
+      'affectedPools': peerPools.toList(),
+    });
   });
 
   return router;

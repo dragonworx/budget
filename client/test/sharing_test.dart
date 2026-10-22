@@ -320,7 +320,13 @@ void main() {
 
     testWidgets('preview then accept opens the pool', (tester) async {
       final s = FakeSharing()..preview_ = InvitePreview(invite: inv(), emailMatches: true);
-      final c = await _app(tester, sharing: s, path: '/invite/tok');
+      // The pool exists once accepted (a missing one now falls back home).
+      final c = await _app(
+        tester,
+        sharing: s,
+        path: '/invite/tok',
+        pools: [testPool('a9', 'Holiday', shared: true, role: Role.viewer)],
+      );
       expect(find.byKey(const ValueKey('invite-target')), findsOneWidget);
       expect(find.text('Holiday'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('invite-accept')));

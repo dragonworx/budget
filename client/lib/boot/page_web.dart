@@ -69,6 +69,13 @@ void sessionSet(String key, String value) =>
 String? localGet(String key) => web.window.localStorage.getItem(key);
 void localSet(String key, String value) =>
     web.window.localStorage.setItem(key, value);
+void localRemove(String key) => web.window.localStorage.removeItem(key);
+
+/// Every key in local storage.
+List<String> localKeys() {
+  final s = web.window.localStorage;
+  return [for (var i = 0; i < s.length; i++) ?s.key(i)];
+}
 
 /// The OS "reduce motion" setting (prefers-reduced-motion).
 bool get prefersReducedMotion =>

@@ -252,21 +252,72 @@ class PoolRepo {
     return _fromRow(rows.first);
   }
 
-  Future<bool> delete(String id) async {
-    await _conn.execute(
+  /// Transfers between [poolId] and other pools: one row per peer (the
+  /// surviving side), with its pool. Read before a delete.
+  Future<List<({String peerId, String peerPoolId})>> transferPeers(
+      String poolId) async {
+    final rows = await _conn.execute(
       Sql.named('''
-        UPDATE transactions SET transfer_id = NULL
-        WHERE pool_id <> @a::uuid AND transfer_id IN (
-          SELECT transfer_id FROM transactions
-          WHERE pool_id = @a::uuid AND transfer_id IS NOT NULL)
+        SELECT p.id::text, p.pool_id::text FROM transactions p
+        JOIN transactions t ON t.transfer_id = p.transfer_id AND t.id <> p.id
+        WHERE t.pool_id = @a::uuid AND t.transfer_id IS NOT NULL
+          AND p.pool_id <> @a::uuid
+        ORDER BY p.pool_id, p.id
       '''),
-      parameters: {'a': id},
+      parameters: {'a': poolId},
     );
+    return [
+      for (final r in rows) (peerId: r[0] as String, peerPoolId: r[1] as String)
+    ];
+  }
+
+  /// Deletes the pool and its own transactions (cascade). Its transfers'
+  /// far sides in other pools never dangle: [transfers] keep turns each
+  /// into a plain transaction of its pool (same name, direction, amount,
+  /// schedule, skips, overrides, enabled: that pool's balance is
+  /// unchanged); delete removes them. Call inside a DB transaction.
+  Future<({bool deleted, List<String> converted, List<String> removed})> delete(
+      String id,
+      {TransferDeleteMode transfers = TransferDeleteMode.keep}) async {
+    final peers = await transferPeers(id);
+    final ids = [for (final p in peers) p.peerId];
+    final converted = <String>[], removed = <String>[];
+    if (ids.isNotEmpty) {
+      if (transfers == TransferDeleteMode.keep) {
+        final rows = await _conn.execute(
+          Sql.named('''
+            UPDATE transactions
+            SET transfer_id = NULL, version = version + 1, updated_at = now()
+            WHERE id = ANY(@ids::uuid[]) RETURNING id::text
+          '''),
+          parameters: {'ids': ids},
+        );
+        converted.addAll(rows.map((r) => r[0] as String));
+      } else {
+        await _conn.execute(
+          Sql.named('''
+            UPDATE pools p SET transaction_order = COALESCE((
+              SELECT array_agg(x ORDER BY o) FROM unnest(p.transaction_order)
+                WITH ORDINALITY AS u(x, o)
+              WHERE NOT (x = ANY(@ids::uuid[]))), '{}')
+            WHERE p.id IN (SELECT pool_id FROM transactions
+                           WHERE id = ANY(@ids::uuid[]))
+          '''),
+          parameters: {'ids': ids},
+        );
+        final rows = await _conn.execute(
+          Sql.named('DELETE FROM transactions WHERE id = ANY(@ids::uuid[]) '
+              'RETURNING id::text'),
+          parameters: {'ids': ids},
+        );
+        removed.addAll(rows.map((r) => r[0] as String));
+      }
+    }
     final rows = await _conn.execute(
       Sql.named('DELETE FROM pools WHERE id = @id RETURNING id'),
       parameters: {'id': id},
     );
-    return rows.isNotEmpty;
+    return (deleted: rows.isNotEmpty, converted: converted, removed: removed);
   }
 
   Pool _fromRow(ResultRow row) {
@@ -295,4 +346,19 @@ class PoolRepo {
       version: row.length > 9 ? (row[9] as int? ?? 1) : 1,
     );
   }
+}
+
+/// What deleting a pool does to the far side of its transfers.
+enum TransferDeleteMode {
+  /// Kept in the other pool as plain transactions (the default).
+  keep,
+
+  /// Deleted from the other pools too.
+  delete;
+
+  static TransferDeleteMode? parse(String? v) => switch (v) {
+        null || '' || 'keep' => keep,
+        'delete' => delete,
+        _ => null,
+      };
 }
