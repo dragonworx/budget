@@ -522,26 +522,38 @@ void main() {
     _chart(tester).onViewportChanged(_d(-8), 30);
     await tester.pumpAndSettle();
     final origin = tester.getTopLeft(find.byType(BalanceChart));
-    // Kids' "pocket" label (latest paint) and the dot it names.
-    final (rect, _) = lines.lastWhere(
-      (e) => e.$2.any((l) => l.contains('pocket')),
-    );
-    final (dot, _) = labels.lastWhere((e) => e.$2.overlaps(rect));
+    // The day totals (latest paint) sit above the ribbon, flush with their
+    // day: clicking one opens its day's popup. Find the one for Kids' day.
     final dots = {for (final (c, _) in labels) c};
-    Offset? spot;
-    for (var fx = 0.95; fx > 0.05 && spot == null; fx -= 0.05) {
-      final p = Offset(rect.left + rect.width * fx, rect.center.dy);
-      if (dots.every((d) => (d - p).distance > mouseVertexHitRadius + 1)) {
-        spot = p;
+    final seen = <Rect>{};
+    var found = false;
+    for (final (rect, _) in lines.reversed.take(labels.length)) {
+      if (!seen.add(rect)) continue;
+      Offset? spot;
+      for (var fx = 0.95; fx > 0.05 && spot == null; fx -= 0.05) {
+        final p = Offset(rect.left + rect.width * fx, rect.center.dy);
+        if (dots.every((d) => (d - p).distance > mouseVertexHitRadius + 1)) {
+          spot = p;
+        }
       }
+      if (spot == null) continue;
+      await tester.tapAt(origin + spot, kind: PointerDeviceKind.mouse);
+      await tester.pump();
+      if (find.byKey(const ValueKey('tip-pool-c')).evaluate().isNotEmpty) {
+        found = true;
+        expect(
+          find.byKey(const ValueKey('occurrence-tooltip')),
+          findsOneWidget,
+        );
+        break;
+      }
+      await tester.tapAt(
+        origin + const Offset(300, 790),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(seconds: 6));
     }
-    expect(spot, isNotNull);
-    expect(find.byKey(const ValueKey('tip-pool-c')), findsNothing);
-    await tester.tapAt(origin + spot!, kind: PointerDeviceKind.mouse);
-    await tester.pump();
-    expect(find.byKey(const ValueKey('occurrence-tooltip')), findsOneWidget);
-    expect(find.byKey(const ValueKey('tip-pool-c')), findsOneWidget);
-    expect(dot, isNotNull);
+    expect(found, isTrue, reason: "a day total opens Kids' day popup");
     await tester.pump(const Duration(seconds: 6));
   });
 

@@ -20,6 +20,7 @@ import 'fit_ranges.dart';
 import 'ghost_line.dart';
 import 'occurrence_info.dart';
 import 'selection_period.dart';
+import 'stack_lanes.dart';
 import 'trim.dart';
 import 'zoom_level.dart';
 import '../../data/alert.dart';
@@ -135,7 +136,18 @@ class BalanceChart extends StatefulWidget {
     this.combinedPools = const {},
     this.otherTransactions = const {},
     this.onOpenOtherTransaction,
+    this.laneOrder = const [],
+    this.otherLaneOrder = const [],
   });
+
+  /// The viewed pool's transaction ids in the Transactions list's order: the
+  /// order of the stacked lanes (top first). Ids it misses follow, in
+  /// [transactions] order.
+  final List<String> laneOrder;
+
+  /// Combined view: the other pools' transaction ids, pool by pool in the
+  /// pools' order, each in its list order: the lanes after the viewed pool's.
+  final List<String> otherLaneOrder;
 
   /// Combined view: where the (summed) line starts, the earliest seed of
   /// the included pools. Null: [seedDate].
@@ -672,27 +684,47 @@ class _BalanceChartState extends State<BalanceChart>
     if (_yRange != null) return _yRange;
     final visible = _visible();
     if (visible == null) return null;
+    // The stacked ribbon is centred on the line, so a fit leaves room for
+    // half of it above the highest and below the lowest balance.
+    final half = _stackHalfPx();
+    final plotH = _layout.plot.height;
+    BalanceExtents fit(double lo, double hi) {
+      var r = _fitRange(lo, hi);
+      if (half <= 0 || plotH <= half * 2.5) return r;
+      for (var i = 0; i < 3; i++) {
+        final v = half * (r.max - r.min) / plotH;
+        r = _fitRange(lo - v, hi + v);
+      }
+      return r;
+    }
+
+    return _yRange = fit(visible.extents.min, visible.extents.max);
+  }
+
+  /// Half the tallest stack of lanes, in px, plus a little air.
+  double _stackHalfPx() {
+    final lanes = _laneSet();
+    if (lanes.isEmpty) return 0;
+    return lanes.maxActive * _laneHeight(lanes, _layout) / 2 + 6;
+  }
+
+  BalanceExtents _fitRange(double min, double max) {
     // The default view anchors $0 a third of the way up the plot.
     if (_scaleDefault) {
-      return _yRange = currencyScaleRange(
-        widget.currencyScale ?? 0,
-        visible.extents.min,
-        visible.extents.max,
-      );
+      return currencyScaleRange(widget.currencyScale ?? 0, min, max);
     }
     // A line flat at $0 (no transactions in view yet) fits the currency
     // scale's default rather than ±$1, so what is added next shows.
-    final ext = visible.extents;
     final seedV = widget.seedBalance != null && _seedInView
         ? widget.seedBalance!
         : 0.0;
-    if (ext.min.abs() < 1e-9 && ext.max.abs() < 1e-9 && seedV.abs() < 1e-9) {
-      return _yRange = currencyScaleRange(widget.currencyScale ?? 0, 0, 0);
+    if (min.abs() < 1e-9 && max.abs() < 1e-9 && seedV.abs() < 1e-9) {
+      return currencyScaleRange(widget.currencyScale ?? 0, 0, 0);
     }
     // Fits always include the origin, so the zero line is in view.
-    return _yRange = paddedRange(
-      visible.extents.min,
-      visible.extents.max,
+    return paddedRange(
+      min,
+      max,
       include: [
         0,
         if (widget.seedBalance != null && _seedInView) widget.seedBalance!,
@@ -862,11 +894,7 @@ class _BalanceChartState extends State<BalanceChart>
       }
       if (!touch) return; // mouse: hover already shows the dot's info
       // Touch long-press on a dot shows / pins its tooltip.
-      final hits = [
-        near,
-        for (final d in _dots(layout))
-          if (!identical(d, near) && (d.center - near.center).distance < 2) d,
-      ];
+      final hits = _overlapping(layout, near);
       _longPressTip = true;
       _hoverDots.value = _DotTip(hits, near.center);
     });
@@ -944,22 +972,37 @@ class _BalanceChartState extends State<BalanceChart>
     }
     var best = double.infinity;
     var cursor = xOf(drawStart);
-    void seg(Offset a, Offset b) =>
-        best = math.min(best, distanceToSegment(pos, a, b));
+    // Stacked lanes: the line is a ribbon, so a point inside it is on the
+    // line; [half] is half the stack's thickness around the balance.
+    final lanes = _laneSet();
+    final laneH = lanes.isEmpty ? 0.0 : _laneHeight(lanes, layout);
+    double halfAt(DateTime day) =>
+        lanes.isEmpty ? 0.0 : lanes.activeOn(day).length * laneH / 2;
+    var curHalf = halfAt(drawStart);
+    void seg(Offset a, Offset b, double half) => best = math.min(
+      best,
+      math.max(0.0, distanceToSegment(pos, a, b) - half),
+    );
     for (final j in jumps) {
-      final jx = xOf(addDays(dateOnly(j.date), 0.5));
+      final jx = xOf(dateOnly(j.date));
       final next = j.closingBalance.toDouble();
+      final nextHalf = halfAt(dateOnly(j.date));
       if (current != null) {
         final y = scale.yOf(current);
-        seg(Offset(cursor, y), Offset(jx, y));
-        seg(Offset(jx, y), Offset(jx, scale.yOf(next)));
+        seg(Offset(cursor, y), Offset(jx, y), curHalf);
+        seg(
+          Offset(jx, y),
+          Offset(jx, scale.yOf(next)),
+          math.max(curHalf, nextHalf),
+        );
       }
       current = next;
       cursor = jx;
+      curHalf = nextHalf;
     }
     if (current != null) {
       final y = scale.yOf(current);
-      seg(Offset(cursor, y), Offset(xOf(drawEnd), y));
+      seg(Offset(cursor, y), Offset(xOf(drawEnd), y), curHalf);
     }
     return best;
   }
@@ -1280,12 +1323,7 @@ class _BalanceChartState extends State<BalanceChart>
       _hoverDots.value = null;
       return;
     }
-    final group = [
-      nearest,
-      for (final d in _dots(layout))
-        if (!identical(d, nearest) && (d.center - nearest.center).distance < 2)
-          d,
-    ];
+    final group = _overlapping(layout, nearest);
     _tapTip = true;
     final current = _hoverDots.value;
     if (current != null && identical(current.dots.first, nearest) ||
@@ -1596,12 +1634,13 @@ class _BalanceChartState extends State<BalanceChart>
                                   .copyWith(fontWeight: FontWeight.w600),
                           transactionNames: widget.transactionNames,
                           transactionOrder: widget.transactions.keys.toList(),
+                          lanes: _laneSet(),
                           textScaler: MediaQuery.textScalerOf(context),
                           dataFrom: widget.dataFrom,
                           dataThrough: widget.dataThrough,
                           yRange: yRange,
                           highlightY: _tipShown(tip)
-                              ? _highlightDot(tip!).center.dy
+                              ? _highlightDot(tip!).balanceY
                               : null,
                         ),
                         child: const SizedBox.expand(),
@@ -1738,7 +1777,7 @@ class _BalanceChartState extends State<BalanceChart>
   List<Widget> _yHighlight(ThemeData theme, _DotTip tip) {
     final dot = _highlightDot(tip);
     final layout = _layout;
-    final y = dot.center.dy;
+    final y = dot.balanceY;
     if (y < layout.plot.top || y > layout.plot.bottom) return const [];
     // Cyan, so the dot's crosshair never reads as the (mint) today line.
     const color = guideColor;
@@ -2689,6 +2728,36 @@ class _BalanceChartState extends State<BalanceChart>
     return Rect.fromLTWH(left, top, size, size);
   }
 
+  LaneSet? _lanesMemo;
+  Object? _lanesKey;
+
+  /// The stacked lanes (see stack_lanes.dart), rebuilt only when the
+  /// transactions or their order change.
+  LaneSet _laneSet() {
+    final key = (
+      widget.transactions,
+      widget.otherTransactions,
+      widget.laneOrder,
+      widget.otherLaneOrder,
+    );
+    final last = _lanesKey as (Map, Map, List, List)?;
+    if (last != null &&
+        _lanesMemo != null &&
+        mapEquals(last.$1, key.$1) &&
+        mapEquals(last.$2, key.$2) &&
+        listEquals(last.$3, key.$3) &&
+        listEquals(last.$4, key.$4)) {
+      return _lanesMemo!;
+    }
+    _lanesKey = key;
+    return _lanesMemo = buildLaneSet(
+      order: widget.laneOrder,
+      transactions: widget.transactions,
+      others: widget.otherTransactions,
+      otherOrder: widget.otherLaneOrder,
+    );
+  }
+
   List<_Dot>? _dotsMemo;
   Object? _dotsKey;
 
@@ -2704,6 +2773,7 @@ class _BalanceChartState extends State<BalanceChart>
       widget.seedDate,
       widget.seedBalance,
       _lineStart,
+      _laneSet(),
     );
     if (_dotsKey == key && _dotsMemo != null) return _dotsMemo!;
     _dotsKey = key;
@@ -2731,6 +2801,9 @@ class _BalanceChartState extends State<BalanceChart>
         dots.add(_Dot(c, seedVertexRadius(radius), const [], seedBalance));
       }
     }
+    final lanes = _laneSet();
+    final laneH = lanes.isEmpty ? 0.0 : _laneHeight(lanes, layout);
+    if (!lanes.isEmpty && dayPx < laneDotsMinDayPx) return _dotsMemo = dots;
     for (final g in groupByDay(widget.series.occurrences)) {
       final day = g.day;
       if (day.isBefore(lineStart) ||
@@ -2740,15 +2813,48 @@ class _BalanceChartState extends State<BalanceChart>
       }
       final close = closes[day];
       if (close == null) continue;
-      final x = layout.xOf(
-        addDays(day, 0.5),
-        widget.viewStart,
-        widget.visibleDays,
+      // The day's left edge: where its balance steps and its lanes begin.
+      final x = layout.xOf(day, widget.viewStart, widget.visibleDays);
+      final balanceY = scale.yOf(close);
+      if (lanes.isEmpty) {
+        dots.add(_Dot(Offset(x, balanceY), radius, g.all, close, day: day));
+        continue;
+      }
+      final r = laneDotRadius(radius, laneH);
+      final laneDots = laneDotsForDay(
+        lanes: lanes,
+        group: g,
+        balanceY: balanceY,
+        thickness: laneH,
       );
-      dots.add(_Dot(Offset(x, scale.yOf(close)), radius, g.all, close));
+      for (final d in laneDots.dots) {
+        dots.add(
+          _Dot(
+            Offset(x, d.y),
+            r,
+            g.all,
+            close,
+            balanceY: balanceY,
+            day: day,
+            txId: d.txId,
+          ),
+        );
+      }
     }
     return _dotsMemo = dots;
   }
+
+  /// [nearest] with the dots drawn on top of it (a different day group at
+  /// the same spot, e.g. the opening diamond). Dots of one day, in different
+  /// lanes, are never merged: each opens that whole day's list.
+  List<_Dot> _overlapping(ChartLayout layout, _Dot nearest) => [
+    nearest,
+    for (final d in _dots(layout))
+      if (!identical(d, nearest) &&
+          !identical(d.occurrences, nearest.occurrences) &&
+          (d.center - nearest.center).distance < 2)
+        d,
+  ];
 
   /// The dot at [pos]: the nearest within [maxDistance], else the dot whose
   /// painted label (amount + names, pushed or "+N more") is under [pos].
@@ -2794,12 +2900,7 @@ class _BalanceChartState extends State<BalanceChart>
       }
       return;
     }
-    final group = [
-      nearest,
-      for (final d in _dots(layout))
-        if (!identical(d, nearest) && (d.center - nearest.center).distance < 2)
-          d,
-    ];
+    final group = _overlapping(layout, nearest);
     _hoverDots.value = _DotTip(group, nearest.center, finger: pos);
   }
 
@@ -2814,13 +2915,7 @@ class _BalanceChartState extends State<BalanceChart>
     );
     final overlapping = nearest == null
         ? const <_Dot>[]
-        : [
-            nearest,
-            for (final d in _dots(layout))
-              if (!identical(d, nearest) &&
-                  (d.center - nearest.center).distance < 2)
-                d,
-          ];
+        : _overlapping(layout, nearest);
     if (overlapping.isEmpty) {
       // A tooltip pinned by a click stays until its timeout or next click.
       if (_hoverDots.value != null && !_tapTip) _hoverDots.value = null;
@@ -3440,6 +3535,18 @@ class _BalanceChartState extends State<BalanceChart>
   }
 }
 
+/// A stacked lane's thickness in [layout] (phones get slimmer lanes).
+double _laneHeight(LaneSet lanes, ChartLayout layout) => laneThickness(
+  maxActive: lanes.maxActive,
+  plotHeight: layout.plot.height,
+  phone: layout.size.width < 600,
+);
+
+/// Test hook: called for every stacked-lane dot painted, with its
+/// transaction (null: no lane) and centre in chart coordinates.
+@visibleForTesting
+void Function(String? txId, Offset center)? debugLaneDot;
+
 class ChartLayout {
   const ChartLayout({
     required this.size,
@@ -3615,6 +3722,7 @@ class _BalanceChartPainter extends CustomPainter {
     required this.laneStyle,
     required this.transactionNames,
     this.transactionOrder = const [],
+    required this.lanes,
     required this.textScaler,
     this.dataFrom,
     this.dataThrough,
@@ -3660,6 +3768,9 @@ class _BalanceChartPainter extends CustomPainter {
   /// Transaction ids in the order they were added (labels list a day's
   /// names in this order). Ids not in it follow, by [transactionNames].
   final List<String> transactionOrder;
+
+  /// The stacked lanes the balance line is drawn as (none: a plain line).
+  final LaneSet lanes;
   final TextScaler textScaler;
 
   DateTime get _viewEnd => addDays(viewStart, visibleDays);
@@ -4335,6 +4446,12 @@ class _BalanceChartPainter extends CustomPainter {
       );
     }
 
+    if (!lanes.isEmpty) {
+      _paintStack(canvas, layout, scale, visible.samples, drawStart, drawEnd);
+      canvas.restore();
+      return;
+    }
+
     Path? stroke;
     bool? strokeLoss;
     void flushStroke() {
@@ -4363,6 +4480,377 @@ class _BalanceChartPainter extends CustomPainter {
     }
     flushStroke();
     canvas.restore();
+  }
+
+  /// The ribbon [_paintStack] drew last (for the day totals to steer clear
+  /// of).
+  List<StackPlateau> _plateaus = const [];
+  double _laneH = 0;
+
+  /// The balance line as stacked lanes: a ribbon one lane per active
+  /// transaction (list order, top first), centred on the balance and stepping
+  /// with it at each day's left edge; a thin line where no lane is active.
+  /// Lane names are written inside their lanes.
+  void _paintStack(
+    Canvas canvas,
+    ChartLayout layout,
+    _YScale scale,
+    List<BalancePoint> samples,
+    DateTime drawStart,
+    DateTime drawEnd,
+  ) {
+    final plot = layout.plot;
+    final h = _laneHeight(lanes, layout);
+    _laneH = h;
+    final plateaus = [
+      for (final p in stackPlateaus(
+        lanes: lanes,
+        samples: samples,
+        drawStart: drawStart,
+        drawEnd: drawEnd,
+        xOf: (d) => layout.xOf(d, viewStart, visibleDays),
+        minX: plot.left,
+        maxX: plot.right,
+      ))
+        if (p.x1 - p.x0 > 0.01) p,
+    ];
+    _plateaus = plateaus;
+    if (plateaus.isEmpty) return;
+
+    final thin = Path(); // the plain line where no lane is active
+    final loss = Path(); // a red rim on the ribbon below the alert
+    var cost = 0;
+    for (final p in plateaus) {
+      cost += p.active.length;
+    }
+    // A heavy pool zoomed far out: one band, no per-lane shapes.
+    final collapse = cost > 9000;
+    final paths = collapse
+        ? null
+        : List<Path?>.filled(lanes.lanes.length, null);
+    final openX = List<double>.filled(lanes.lanes.length, 0);
+    final openTop = List<double>.filled(lanes.lanes.length, double.nan);
+    final texts = <({int lane, double x0, double x1, double top})>[];
+    final band = Path();
+    final showText = !collapse && h >= laneTextMinHeight;
+    const rim = 2.4;
+
+    for (var pi = 0; pi < plateaus.length; pi++) {
+      final p = plateaus[pi];
+      final next =
+          pi + 1 < plateaus.length && (plateaus[pi + 1].x0 - p.x1).abs() < 0.5
+          ? plateaus[pi + 1]
+          : null;
+      final yb = scale.yOf(p.balance);
+      final m = p.active.length;
+      final yn = next == null ? 0.0 : scale.yOf(next.balance);
+      final mn = next?.active.length ?? 0;
+      final w = stackConnectorWidth(p.x1 - p.x0);
+      if (m == 0 || (next != null && mn == 0)) {
+        // The plain line: this level, and the rise or fall into the next.
+        if (m == 0) {
+          thin.addRect(Rect.fromLTRB(p.x0, yb - 1.2, p.x1, yb + 1.2));
+        }
+        if (next != null && (m == 0 || mn == 0)) {
+          final y0 = m == 0 ? yb : laneTop(yb, 0, m, h) + m * h / 2;
+          final y1 = mn == 0 ? yn : laneTop(yn, 0, mn, h) + mn * h / 2;
+          thin.addRect(
+            Rect.fromLTRB(
+              p.x1 - 1.2,
+              math.min(y0, y1) - 1.2,
+              p.x1 + 1.2,
+              math.max(y0, y1) + 1.2,
+            ),
+          );
+        }
+      }
+      if (m == 0) continue;
+      final top0 = laneTop(yb, 0, m, h);
+      if (_isLoss(p.balance)) {
+        loss.addRect(Rect.fromLTRB(p.x0, top0 - rim, p.x1, top0));
+      }
+      if (collapse) {
+        band.addRect(Rect.fromLTRB(p.x0, top0, p.x1, top0 + m * h));
+        continue;
+      }
+      var j = 0;
+      for (var k = 0; k < m; k++) {
+        final li = p.active[k];
+        final top = laneTop(yb, k, m, h);
+        int? nk;
+        if (next != null) {
+          while (j < mn && next.active[j] < li) {
+            j++;
+          }
+          if (j < mn && next.active[j] == li) nk = j;
+        }
+        final topN = nk == null ? null : laneTop(yn, nk, mn, h);
+        final continues = topN != null && (topN - top).abs() < 0.01;
+        final xEnd = topN == null || continues ? p.x1 : p.x1 - w;
+        final path = paths![li] ??= Path();
+        path.addRect(Rect.fromLTRB(p.x0, top, xEnd, top + h));
+        if (topN != null && !continues) {
+          path.addPolygon([
+            Offset(xEnd, top),
+            Offset(p.x1, topN),
+            Offset(p.x1, topN + h),
+            Offset(xEnd, top + h),
+          ], true);
+        }
+        if (showText) {
+          if (openTop[li].isNaN) {
+            openX[li] = p.x0;
+            openTop[li] = top;
+          }
+          if (topN == null || !continues) {
+            texts.add((lane: li, x0: openX[li], x1: xEnd, top: openTop[li]));
+            openTop[li] = double.nan;
+          }
+        }
+      }
+    }
+
+    if (collapse) {
+      canvas.drawPath(band, Paint()..color = const Color(0xFF4A6285));
+    } else {
+      for (final (li, path) in paths!.indexed) {
+        if (path == null) continue;
+        canvas.drawPath(
+          path,
+          Paint()..color = laneColor(lanes.lanes[li].colorIndex),
+        );
+      }
+    }
+    canvas.drawPath(thin, Paint()..color = _lineColor);
+    canvas.drawPath(loss, Paint()..color = AppTheme.debitColor);
+
+    if (!showText) return;
+    final fontSize = (h - 4).clamp(8.0, 11.0).toDouble();
+    final style = TextStyle(
+      fontSize: fontSize,
+      height: 1.0,
+      fontWeight: FontWeight.w600,
+      color: const Color(0xF2FFFFFF),
+    );
+    final strip = ChartLayout.laneNameWidth(layout.size.width);
+    for (final t in texts) {
+      // Names stay in view as the lane's left end scrolls off: they start
+      // after the y-axis labels' strip, else just right of the dot.
+      final clipped = t.x0 <= plot.left + 0.5;
+      final startX = clipped ? plot.left + strip + 4 : t.x0 + 10;
+      final avail = t.x1 - startX - 4;
+      if (avail < 34 || startX > plot.right) continue;
+      // Widths in steps, so a panning (growing) segment reuses its text.
+      final maxW = (avail / 6).floorToDouble() * 6;
+      final painter = _axisText.get(
+        lanes.lanes[t.lane].label,
+        style,
+        maxLines: 1,
+        ellipsis: '…',
+        maxWidth: maxW,
+      );
+      painter.paint(canvas, Offset(startX, t.top + (h - painter.height) / 2));
+    }
+  }
+
+  /// Day dots and day totals for the stacked lanes: a dot per transaction on
+  /// the left edge of its day, in that transaction's lane; the day's net
+  /// total above (else below) the ribbon, flush left with the day.
+  void _paintLaneOccurrences(
+    Canvas canvas,
+    ChartLayout layout,
+    _YScale scale,
+    DateTime viewEnd,
+    DateTime seed,
+    Map<int, double> closes,
+  ) {
+    final plot = layout.plot;
+    final h = _laneH > 0 ? _laneH : _laneHeight(lanes, layout);
+    final dayPx = plot.width / math.max(visibleDays, 0.001);
+    final base = dayPx > 28
+        ? 4.5
+        : dayPx > 12
+        ? 3.4
+        : 2.2;
+    final r = laneDotRadius(base, h);
+    final dots = dayPx >= laneDotsMinDayPx;
+    final simple = dayPx < 8;
+
+    final chips = <({Rect rect, Offset dot, String text, Color? color})>[];
+    final dayStyle = labelStyle.copyWith(
+      fontSize: dayPx >= 32 ? 11.5 : 10.5,
+      height: 1.0,
+      fontWeight: FontWeight.w800,
+    );
+    // Day totals: the ribbon's rects, then earlier totals, are kept clear.
+    final placed = <Rect>[..._markerLabelRects(layout)];
+    for (final p in _plateaus) {
+      final m = p.active.length;
+      if (m == 0) continue;
+      final top = laneTop(scale.yOf(p.balance), 0, m, h);
+      placed.add(Rect.fromLTRB(p.x0, top, p.x1, top + m * h));
+    }
+    void chip(
+      double x,
+      double above,
+      double below,
+      Offset dot,
+      String text,
+      Color? color,
+    ) {
+      final painter = _axisText.get(
+        text,
+        dayStyle.copyWith(color: color),
+        maxLines: 1,
+      );
+      final w = painter.width + 8, hh = painter.height + 4;
+      for (final top in [above - 3 - hh, below + 3]) {
+        if (top < plot.top + 1 || top + hh > plot.bottom - 1) continue;
+        final rect = Rect.fromLTWH(x, top, w, hh);
+        if (placed.any((q) => q.overlaps(rect))) continue;
+        placed.add(rect.inflate(1));
+        chips.add((rect: rect, dot: dot, text: text, color: color));
+        return;
+      }
+    }
+
+    canvas.save();
+    canvas.clipRect(plot);
+    if (dots) {
+      final ring = Paint()
+        ..color = _plotBg
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      final marginDays = 80 / math.max(dayPx, 0.001);
+      for (final g in groupByDay(series.occurrences)) {
+        final day = g.day;
+        if (day.isBefore(seed) ||
+            !addCalendarDays(day, 1).isAfter(addDays(viewStart, -marginDays)) ||
+            day.isAfter(addDays(viewEnd, marginDays))) {
+          continue;
+        }
+        final yValue = closes[day.millisecondsSinceEpoch];
+        if (yValue == null) continue;
+        final x = layout.xOf(day, viewStart, visibleDays);
+        final balanceY = scale.yOf(yValue);
+        final laneDots = laneDotsForDay(
+          lanes: lanes,
+          group: g,
+          balanceY: balanceY,
+          thickness: h,
+        );
+        final inView = x >= plot.left - r - 4 && x <= plot.right + r + 4;
+        if (inView) {
+          for (final d in laneDots.dots) {
+            final center = Offset(x, d.y);
+            debugLaneDot?.call(d.txId, center);
+            final own = DayGroup(day, d.own);
+            final net = own.net;
+            if (own.allSkipped) {
+              canvas.drawCircle(center, r, Paint()..color = _plotBg);
+              canvas.drawCircle(
+                center,
+                r,
+                Paint()
+                  ..color = AppTheme.textFaint
+                  ..style = PaintingStyle.stroke
+                  ..strokeWidth = 1.4,
+              );
+            } else {
+              canvas.drawCircle(
+                center,
+                r,
+                Paint()
+                  ..color = net < 0
+                      ? AppTheme.debitColor
+                      : AppTheme.creditColor,
+              );
+              if (!simple) canvas.drawCircle(center, r, ring);
+            }
+            // Combined view: another pool's money gets its tint as a ring.
+            if (!simple) {
+              final pool = d.own.first.poolId;
+              final c = pool == null ? null : poolColors[pool];
+              if (c != null) {
+                canvas.drawCircle(
+                  center,
+                  r + 2.2,
+                  Paint()
+                    ..color = c
+                    ..style = PaintingStyle.stroke
+                    ..strokeWidth = 2,
+                );
+              }
+            }
+          }
+        }
+        if (laneDots.dots.isEmpty || x < plot.left - 80 || x > plot.right) {
+          continue;
+        }
+        final net = g.net;
+        chip(
+          x,
+          laneDots.stackTop,
+          laneDots.stackBottom,
+          Offset(x, laneDots.dots.first.y),
+          formatSignedAmount(net),
+          g.allSkipped
+              ? AppTheme.textFaint
+              : net < 0
+              ? AppTheme.debitColor
+              : AppTheme.creditColor,
+        );
+      }
+    }
+    final seedBal = seedBalance;
+    if (seedBal != null) {
+      final c = Offset(
+        layout.xOf(dateOnly(seedDate), viewStart, visibleDays),
+        scale.yOf(seedBal),
+      );
+      if (plot.inflate(2).contains(c)) {
+        _paintSeedVertex(canvas, c, seedVertexRadius(base));
+        chip(
+          c.dx,
+          c.dy - 4,
+          c.dy + 4,
+          c,
+          'Opening ${formatMoneyAmount(seedBal)}',
+          AppTheme.accent,
+        );
+      }
+    }
+    for (final c in chips) {
+      final rrect = RRect.fromRectAndRadius(c.rect, const Radius.circular(4));
+      canvas.drawRRect(
+        rrect,
+        Paint()..color = AppTheme.raised.withValues(alpha: 0.94),
+      );
+      canvas.drawRRect(
+        rrect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = AppTheme.border,
+      );
+      _axisText
+          .get(c.text, dayStyle.copyWith(color: c.color), maxLines: 1)
+          .paint(canvas, Offset(c.rect.left + 4, c.rect.top + 2));
+    }
+    canvas.restore();
+    final rectHook = debugVertexLabelRect, linesHook = debugVertexLabelLines;
+    for (final c in chips) {
+      if (!plot.contains(c.rect.center)) continue;
+      rectHook?.call(c.text, c.dot, r, c.rect);
+      linesHook?.call(c.rect, [c.text]);
+    }
+    labelHits
+      ..clear()
+      ..addAll([
+        for (final c in chips)
+          if (plot.contains(c.rect.center)) (rect: c.rect, dot: c.dot),
+      ]);
+    labelMemory.clear();
   }
 
   bool _isLoss(double value) => belowAlert(value, lossThreshold);
@@ -4405,10 +4893,9 @@ class _BalanceChartPainter extends CustomPainter {
   double _absMax(BalanceExtents extents) =>
       math.max(extents.min.abs(), extents.max.abs());
 
-  /// Where a day's balance change is drawn: the middle of its day cell, so
-  /// the step and its dots sit inside the labelled day instead of on the
-  /// boundary shared with the previous day.
-  DateTime _stepAt(DateTime date) => addDays(dateOnly(date), 0.5);
+  /// Where a day's balance change is drawn: the left edge of its day cell,
+  /// where its lanes begin and its dots sit.
+  DateTime _stepAt(DateTime date) => dateOnly(date);
 
   void _paintOccurrences(
     Canvas canvas,
@@ -4420,6 +4907,10 @@ class _BalanceChartPainter extends CustomPainter {
     // Days before the seed are skipped below, so no seed filter here.
     final closes = pointIndexOf(series.points).closeByDayMs;
     final dayPx = layout.plot.width / math.max(visibleDays, 0.001);
+    if (!lanes.isEmpty) {
+      _paintLaneOccurrences(canvas, layout, scale, viewEnd, seed, closes);
+      return;
+    }
     final radius = dayPx > 28
         ? 4.5
         : dayPx > 12
@@ -5046,6 +5537,7 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.yRange?.max != yRange?.max ||
         oldDelegate.dataThrough != dataThrough ||
         !mapEquals(oldDelegate.transactionNames, transactionNames) ||
+        !identical(oldDelegate.lanes, lanes) ||
         !listEquals(oldDelegate.transactionOrder, transactionOrder);
   }
 }
@@ -5116,7 +5608,26 @@ class _YScale {
 }
 
 class _Dot {
-  const _Dot(this.center, this.radius, this.occurrences, this.balanceAfter);
+  _Dot(
+    this.center,
+    this.radius,
+    this.occurrences,
+    this.balanceAfter, {
+    double? balanceY,
+    this.day,
+    this.txId,
+  }) : balanceY = balanceY ?? center.dy;
+
+  /// The day this dot is on (null: the opening-balance diamond).
+  final DateTime? day;
+
+  /// Stacked lanes: the transaction whose lane this dot sits in (null: none).
+  final String? txId;
+
+  /// Where the balance is on the y axis at this dot: the ribbon's centre.
+  /// The dot itself sits in its lane, [center].dy; the y pill and guide
+  /// follow the balance.
+  final double balanceY;
   final Offset center;
   final double radius;
 

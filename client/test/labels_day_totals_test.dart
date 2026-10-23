@@ -119,8 +119,8 @@ void main() {
     expect(parseMoneyInput(r'-A$20'), Decimal.parse('-20'));
   });
 
-  testWidgets('a multi-transaction day shows its net total, then each name '
-      'in the order added; no badge, no balance', (tester) async {
+  testWidgets('with stacked lanes a day shows its net total only: the names '
+      'live in the lanes, not above the dots', (tester) async {
     addTearDown(tester.view.reset);
     final labels = await _labels(
       tester,
@@ -135,19 +135,10 @@ void main() {
       creationOrder: ['Salary', 'Bonus', 'Zeta gym', 'Alpha coffee'],
     );
     // Net of the counted occurrences: 1000 − 180 − 50 (skipped excluded).
-    expect(_labelStarting(labels, r'+$770'), [
-      r'+$770',
-      'Bonus',
-      'Zeta gym',
-      'Alpha coffee',
-    ]);
-    expect(_labelStarting(labels, r'+$2,400'), [r'+$2,400', 'Salary']);
+    expect(_labelStarting(labels, r'+$770'), [r'+$770']);
+    expect(_labelStarting(labels, r'+$2,400'), [r'+$2,400']);
     for (final (_, lines) in labels) {
-      for (final l in lines) {
-        expect(l.contains(r'A$'), isFalse, reason: l);
-        // No count badge line ("2", "3" ...).
-        expect(RegExp(r'^\d+$').hasMatch(l), isFalse, reason: l);
-      }
+      expect(lines.length, 1, reason: '$lines: amount only');
     }
     _expectNoOverlap(labels);
   });

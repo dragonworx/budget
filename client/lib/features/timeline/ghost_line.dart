@@ -32,7 +32,7 @@ class GhostLine {
 typedef GhostStep = ({DateTime start, DateTime end, double value});
 
 /// Collapses daily [points] into flat steps from [from] (day start) to the
-/// day after the last point. Balances change mid-day, like the main line.
+/// day after the last point. Balances change at the left edge of their day, like the main line.
 List<GhostStep> ghostSteps(List<BalancePoint> points, {DateTime? from}) {
   if (points.isEmpty) return const [];
   final sorted = [...points]..sort((a, b) => a.date.compareTo(b.date));
@@ -54,8 +54,9 @@ List<GhostStep> ghostSteps(List<BalancePoint> points, {DateTime? from}) {
       continue;
     }
     if (value == current) continue;
-    final at = addDays(day, 0.5);
-    steps.add((start: cursor, end: at, value: current));
+    final at = day;
+    // A change on the first day replaces the carried value outright.
+    if (at.isAfter(cursor)) steps.add((start: cursor, end: at, value: current));
     cursor = at;
     current = value;
   }
@@ -121,7 +122,7 @@ class GhostLinePainter extends CustomPainter {
     }
     final t = target;
     if (t != null) {
-      final c = Offset(xOf(addDays(dateOnly(t.$1), 0.5)), yOf(t.$2));
+      final c = Offset(xOf(dateOnly(t.$1)), yOf(t.$2));
       final guide = Paint()
         ..color = targetColor.withValues(alpha: 0.45)
         ..strokeWidth = 1;

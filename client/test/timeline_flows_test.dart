@@ -690,7 +690,17 @@ void main() {
         );
         await tester.tapAt(p, kind: PointerDeviceKind.touch);
         await tester.pump();
-        if (tip.evaluate().isNotEmpty) spot = p;
+        // Both fingers must reach the chart: clear of the popup.
+        final popup = find.byKey(const ValueKey('occurrence-tooltip'));
+        if (tip.evaluate().isNotEmpty &&
+            popup.evaluate().isNotEmpty &&
+            !tester.getRect(popup).inflate(50).contains(p) &&
+            !tester
+                .getRect(popup)
+                .inflate(50)
+                .contains(p + const Offset(0, 40))) {
+          spot = p;
+        }
         await tester.pump(const Duration(seconds: 6));
       }
     }

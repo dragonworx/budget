@@ -595,6 +595,28 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     ];
   }
 
+  /// Combined view: the other pools' transaction ids for the stacked lanes,
+  /// pool by pool in the pools' order, each in that pool's list order (its
+  /// saved order, then the rest as loaded).
+  List<String> _otherLaneOrder(_Combined combo) {
+    final out = <String>[];
+    for (final p in combo.pools.values) {
+      final order =
+          ref.watch(poolProvider(p.id)).valueOrNull?.transactionOrder ??
+          const <String>[];
+      final own = {
+        for (final e in combo.transactions.entries)
+          if (e.value.poolId == p.id) e.key,
+      };
+      out.addAll([
+        for (final id in order)
+          if (own.remove(id)) id,
+        ...own,
+      ]);
+    }
+    return out;
+  }
+
   /// The combined view for the checked pools, or null when none are
   /// checked (or the current series has not loaded). Pools whose data is
   /// still loading are waited for (the last complete view stays up).
@@ -1296,6 +1318,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                                 )
                                               : null,
                                           transactionNames: transactionNames,
+                                          laneOrder: pool.transactionOrder,
+                                          otherLaneOrder: combo == null
+                                              ? const []
+                                              : _otherLaneOrder(combo),
                                           transactions: {
                                             for (final t in transactions)
                                               t.id: t,
