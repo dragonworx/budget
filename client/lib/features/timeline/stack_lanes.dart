@@ -312,13 +312,18 @@ class LaneDot {
   /// Dot centre, vertically (x is the day's left edge).
   final double y;
 
-  /// That transaction's occurrences on the day.
+  /// That transaction's occurrences on the day (empty: the transaction has
+  /// a lane here but does not occur on this step).
   final List<Occurrence> own;
+
+  /// A lane's dot at a step its transaction does not occur on.
+  bool get idle => own.isEmpty && txId != null;
 }
 
-/// The dots of day [group], one per transaction, each in its transaction's
-/// lane (vertically centred in it), in lane order from the top; any
-/// occurrence with no lane that day gets its own dot on the balance.
+/// The dots of day [group]: one in EVERY lane active that day (vertically
+/// centred in it), in lane order from the top. A lane whose transaction
+/// occurs that day gets its occurrences; the others get an [LaneDot.idle]
+/// dot. Any occurrence with no lane that day gets its own dot on the balance.
 /// [balanceY] is the ribbon's centre (the day's closing balance), [thickness]
 /// a lane's. Also returns the stack's top and bottom ([stackTop] /
 /// [stackBottom], both [balanceY] when no lane is active).
@@ -349,6 +354,18 @@ class LaneDot {
         txId: e.key,
         y: laneTop(balanceY, slot, n, thickness) + thickness / 2,
         own: e.value,
+      ),
+    ));
+  }
+  final taken = {for (final (slot, _) in placed) slot};
+  for (var slot = 0; slot < n; slot++) {
+    if (taken.contains(slot)) continue;
+    placed.add((
+      slot,
+      LaneDot(
+        txId: lanes.lanes[active[slot]].id,
+        y: laneTop(balanceY, slot, n, thickness) + thickness / 2,
+        own: const [],
       ),
     ));
   }

@@ -8,6 +8,7 @@ import 'package:budget_client/theme/app_theme.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'chip_taps.dart';
@@ -193,13 +194,19 @@ void main() {
       DateTime? seedDate,
       double? seedBalance,
       List<int> dayOffsets = const [0, 7],
+      Map<int, List<String>>? occurs,
+      void Function(DateTime)? onCreate,
+      bool actions = false,
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final dots = <String?, List<Offset>>{};
       debugLaneDot = (id, c) => (dots[id] ??= []).add(c);
-      final days = [for (final o in dayOffsets) _start.add(Duration(days: o))];
+      final days = [
+        for (final o in occurs?.keys ?? dayOffsets)
+          _start.add(Duration(days: o)),
+      ];
       final points = <BalancePoint>[];
       var bal = balances[0];
       for (var i = 0; i < 60; i++) {
@@ -217,7 +224,9 @@ void main() {
                   points: points,
                   occurrences: [
                     for (final d in days)
-                      for (final id in ['a', 'b', 'c'])
+                      for (final id
+                          in occurs?[d.difference(_start).inDays] ??
+                              ['a', 'b', 'c'])
                         Occurrence(
                           transactionId: id,
                           date: d,
@@ -241,7 +250,10 @@ void main() {
                   'c': _t('c', 'Gym'),
                 },
                 onViewportChanged: (_, _) {},
-                onCreateOnDay: (_) {},
+                onCreateOnDay: onCreate ?? (_) {},
+                onNewOnDay: actions ? (_) {} : null,
+                onEditTransaction: actions ? (_, _) {} : null,
+                onTrimOccurrence: actions ? (_, _) {} : null,
               ),
             ),
           ),
@@ -412,6 +424,192 @@ void main() {
         expect(ys[1] - ys[0], closeTo(h, 0.01));
         expect(ys[2] - ys[1], closeTo(h, 0.01));
       }
+    });
+
+    /// Every dot the chart draws, by step (x) then lane (y): the lane's
+    /// transaction and whether it occurs on that step.
+    Future<Map<double, List<({String? id, Offset c, bool idle})>>> allDots(
+      WidgetTester tester,
+      List<String> order, {
+      required Map<int, List<String>> occurs,
+      Size size = const Size(1440, 800),
+      void Function(DateTime)? onCreate,
+      bool actions = false,
+    }) async {
+      final all = <({String? id, Offset c, bool idle})>[];
+      await pump(
+        tester,
+        order,
+        size: size,
+        occurs: occurs,
+        onCreate: onCreate,
+        actions: actions,
+      );
+      // Repaint with both hooks collecting.
+      debugLaneIdleDot = (id, c) => all.add((id: id, c: c, idle: true));
+      debugLaneDot = (id, c) => all.add((id: id, c: c, idle: false));
+      addTearDown(() => debugLaneIdleDot = null);
+      for (final e
+          in find
+              .descendant(
+                of: find.byType(BalanceChart),
+                matching: find.byType(CustomPaint),
+              )
+              .evaluate()) {
+        (e.renderObject as RenderCustomPaint).markNeedsPaint();
+      }
+      await tester.pump();
+      final byStep = <double, List<({String? id, Offset c, bool idle})>>{};
+      for (final d in all) {
+        (byStep[d.c.dx.roundToDouble()] ??= []).add(d);
+      }
+      for (final l in byStep.values) {
+        l.sort((a, b) => a.c.dy.compareTo(b.c.dy));
+      }
+      return byStep;
+    }
+
+    testWidgets('every active lane has a dot at every step, whether or not '
+        'its transaction occurs on it', (tester) async {
+      // Weekly Rent, monthly Salary, a third on its own days: the ribbon
+      // steps on day 0, 3 and 7.
+      final steps = await allDots(
+        tester,
+        ['a', 'b', 'c'],
+        occurs: {
+          0: ['b', 'a'],
+          3: ['c'],
+          7: ['a', 'c'],
+        },
+      );
+      expect(steps, hasLength(3));
+      final xs = steps.keys.toList()..sort();
+      final occurring = [
+        ['a', 'b'],
+        ['c'],
+        ['a', 'c'],
+      ];
+      final layout = ChartLayout.of(const Size(1440, 800), 30);
+      final h = laneThickness(
+        maxActive: 3,
+        plotHeight: layout.plot.height,
+        phone: false,
+      );
+      for (final (i, x) in xs.indexed) {
+        final col = steps[x]!;
+        // One dot per lane, in list order, a lane thick apart.
+        expect([for (final d in col) d.id], ['a', 'b', 'c'], reason: 'step $i');
+        expect(col[1].c.dy - col[0].c.dy, closeTo(h, 0.01));
+        expect(col[2].c.dy - col[1].c.dy, closeTo(h, 0.01));
+        for (final d in col) {
+          expect(
+            d.idle,
+            !occurring[i].contains(d.id),
+            reason: 'step $i lane ${d.id}',
+          );
+        }
+      }
+    });
+
+    testWidgets('a lane that starts or ends at a step has a dot there, and '
+        'none past its end', (tester) async {
+      // Gym (c) ends on day 3; Salary (b) starts on day 3.
+      tester.view.physicalSize = const Size(1440, 800);
+      final lanes = buildLaneSet(
+        order: ['a', 'b', 'c'],
+        transactions: {
+          'a': _t('a', 'Rent'),
+          'b': _t('b', 'Salary', start: _start.add(const Duration(days: 3))),
+          'c': _t(
+            'c',
+            'Gym',
+            endMode: EndMode.untilDate,
+            end: _start.add(const Duration(days: 3)),
+          ),
+        },
+      );
+      List<(String?, bool)> at(int day, List<String> occurs) {
+        final d = _start.add(Duration(days: day));
+        final r = laneDotsForDay(
+          lanes: lanes,
+          group: DayGroup(d, [
+            for (final id in occurs)
+              Occurrence(
+                transactionId: id,
+                date: d,
+                signedDelta: Decimal.fromInt(-10),
+              ),
+          ]),
+          balanceY: 100,
+          thickness: 10,
+        );
+        return [for (final x in r.dots) (x.txId, x.idle)];
+      }
+
+      expect(at(0, ['a']), [('a', false), ('c', true)]);
+      expect(at(3, ['b', 'c']), [('a', true), ('b', false), ('c', false)]);
+      expect(at(7, ['a', 'b']), [('a', false), ('b', false)]);
+    });
+
+    testWidgets('a dot for a transaction that does not occur inspects only '
+        'that transaction, and never creates or edits', (tester) async {
+      final created = <DateTime>[];
+      final steps = await allDots(
+        tester,
+        ['a', 'b', 'c'],
+        occurs: {
+          0: ['a', 'b'],
+          7: ['c'],
+        },
+        onCreate: created.add,
+        actions: true,
+      );
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      final xs = steps.keys.toList()..sort();
+      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+        // Rent (a) is idle on the second step; Gym (c) is idle on the first.
+        for (final (x, id) in [(xs[1], 'a'), (xs[0], 'c'), (xs[1], 'b')]) {
+          final dot = steps[x]!.firstWhere((d) => d.id == id);
+          expect(dot.idle, isTrue);
+          await tester.tapAt(origin + dot.c, kind: kind);
+          await tester.pump();
+          expect(tip, findsOneWidget, reason: '$id idle dot ($kind)');
+          for (final e in names.entries) {
+            expect(
+              find.descendant(of: tip, matching: find.text(e.value)),
+              e.key == id ? findsWidgets : findsNothing,
+              reason: '${e.value} (tapped idle $id, $kind)',
+            );
+          }
+          expect(
+            find.descendant(
+              of: tip,
+              matching: find.textContaining(
+                'Ring dot: not occurring on this day',
+                findRichText: true,
+              ),
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.descendant(
+              of: tip,
+              matching: find.textContaining('Prev ', findRichText: true),
+            ),
+            findsOneWidget,
+          );
+          expect(find.byKey(const ValueKey('day-net')), findsNothing);
+          expect(find.byKey(ValueKey('tip-menu-$id')), findsOneWidget);
+          await tester.tapAt(
+            origin + const Offset(700, 780),
+            kind: PointerDeviceKind.mouse,
+          );
+          await tester.pump(const Duration(seconds: 6));
+        }
+      }
+      // Taps only inspect.
+      expect(created, isEmpty);
     });
 
     testWidgets('each net amount is drawn once per step, never per lane', (

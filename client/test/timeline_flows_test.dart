@@ -269,7 +269,13 @@ Future<Offset> _revealTip(WidgetTester tester, PointerDeviceKind kind) async {
       );
       await tester.tapAt(p, kind: kind);
       await tester.pump();
-      if (tip.evaluate().isNotEmpty) return p;
+      if (tip.evaluate().isNotEmpty) {
+        // Ring (continuing-lane) dots also open a popup; these probes want
+        // an occurrence.
+        final ring = find.textContaining('Ring dot', findRichText: true);
+        if (ring.evaluate().isEmpty) return p;
+        await tester.pump(const Duration(seconds: 6));
+      }
     }
   }
   fail('a tap should reveal some dot');

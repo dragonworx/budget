@@ -1342,8 +1342,25 @@ class _BalanceChartState extends State<BalanceChart>
       _hoverDots.value = _DotTip(group, nearest.center);
     }
     // Touch tips stay until the next tap; mouse clicks time out.
-    if (_touchDown) return;
+    if (_touchDown) {
+      _repaintSoon();
+      return;
+    }
     _armTapTipTimer();
+  }
+
+  /// Safari (WebKit) can leave the canvas unpresented after a touch tap
+  /// until the next input event, so a freshly opened popup would not show.
+  /// A couple of re-notifications a moment later force real frames.
+  void _repaintSoon() {
+    if (!kIsWeb) return;
+    for (final ms in const [50, 200]) {
+      Timer(Duration(milliseconds: ms), () {
+        final tip = _hoverDots.value;
+        if (!mounted || tip == null || !_tapTip) return;
+        _hoverDots.value = _DotTip(tip.dots, tip.anchor, finger: tip.finger);
+      });
+    }
   }
 
   void _armTapTipTimer() {
@@ -1883,7 +1900,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// The date of the dot [_yHighlight] follows: its occurrences' day, or
   /// the seed date for the opening-balance diamond.
   DateTime _highlightDay(_Dot dot) =>
-      dateOnly(dot.occurrence?.date ?? widget.seedDate);
+      dateOnly(dot.day ?? dot.occurrence?.date ?? widget.seedDate);
 
   /// Matching vertical guide from the active dot down to the date lanes,
   /// the dot's day lit across the lanes, and its exact date on a pill in the
@@ -2888,6 +2905,7 @@ class _BalanceChartState extends State<BalanceChart>
             balanceY: balanceY,
             day: day,
             txId: d.txId,
+            idle: d.idle,
           ),
         );
       }
@@ -2902,6 +2920,8 @@ class _BalanceChartState extends State<BalanceChart>
     nearest,
     for (final d in _dots(layout))
       if (!nearest.wholeDay &&
+          !nearest.idle &&
+          !d.idle &&
           !identical(d, nearest) &&
           !identical(d.occurrences, nearest.occurrences) &&
           // Lane dots of one day are never merged: one dot, one transaction.
@@ -3031,8 +3051,11 @@ class _BalanceChartState extends State<BalanceChart>
   /// A row's ⋮ menu entries, in order: New (a transaction on that day), Trim
   /// series here (own recurring series, when trimmable), Edit (own) or
   /// "Edit in pool" (another pool's row I can edit). Empty: no ⋮.
-  List<_RowAction> _rowActions(Occurrence? o) {
-    final day = _rowDay(o);
+  List<_RowAction> _rowActions(Occurrence? o, {DateTime? onDay}) {
+    // A lane's dot at a step it does not occur on: [o] is its previous
+    // occurrence (Trim ends the series there), [onDay] the step itself.
+    final trimDay = _rowDay(o);
+    final day = onDay ?? trimDay;
     final id = o?.transactionId ?? 'seed';
     final actions = <_RowAction>[];
     if (widget.onNewOnDay != null) {
@@ -3054,7 +3077,7 @@ class _BalanceChartState extends State<BalanceChart>
             'tip-menu-trim-${own.id}',
             Icons.content_cut_rounded,
             'Trim',
-            () => widget.onTrimOccurrence?.call(own, day),
+            () => widget.onTrimOccurrence?.call(own, trimDay),
           ),
         );
       }
@@ -3183,12 +3206,38 @@ class _BalanceChartState extends State<BalanceChart>
     return w;
   }
 
+  /// "Fri 1 Jan" (with a ’yy year when it is not [ref]'s), or [none].
+  String _shortDay(DateTime? d, DateTime ref, {String none = '–'}) => d == null
+      ? none
+      : d.year == ref.year
+      ? DateFormat('EEE d MMM').format(d)
+      : DateFormat("EEE d MMM ’yy").format(d);
+
+  /// A transaction's occurrences just before and just after [day] in the
+  /// series (null: none), for the popup of a lane dot on a step it skips.
+  (Occurrence?, Occurrence?) _idleNeighbours(String txId, DateTime day) {
+    Occurrence? prev, next;
+    for (final o in widget.series.occurrences) {
+      if (o.transactionId != txId) continue;
+      final d = dateOnly(o.date);
+      if (d.isBefore(day)) {
+        if (prev == null || d.isAfter(dateOnly(prev.date))) prev = o;
+      } else if (d.isAfter(day)) {
+        if (next == null || d.isBefore(dateOnly(next.date))) next = o;
+      }
+    }
+    return (prev, next);
+  }
+
   Widget _tooltip(ThemeData theme, _DotTip tip) {
     final maxWidth = math.min(280.0, _size.width - 8);
     // One row per transaction on the vertex's day (seed: one row).
     final entries = <(_Dot, Occurrence?)>[
       for (final d in tip.dots)
-        if (d.isSeed) (d, null) else for (final o in d.occurrences) (d, o),
+        if (d.isSeed || d.idle)
+          (d, null)
+        else
+          for (final o in d.occurrences) (d, o),
     ];
     const maxRows = 12;
     final shown = entries.take(maxRows).toList();
@@ -3204,7 +3253,9 @@ class _BalanceChartState extends State<BalanceChart>
     final amountStyle = nameStyle?.copyWith(fontWeight: FontWeight.w800);
     // Same-day rows (the usual case) share one date header; dots of
     // different days merged at a far zoom date each row instead.
-    final days = {for (final (_, o) in shown) _rowDay(o)};
+    final days = {
+      for (final (d, o) in shown) d.idle ? dateOnly(d.day!) : _rowDay(o),
+    };
     final oneDay = days.length == 1;
     final rowMin = _touchUi ? 44.0 : 28.0;
     final rows = <Widget>[];
@@ -3213,21 +3264,38 @@ class _BalanceChartState extends State<BalanceChart>
     var anyActions = false;
     final seen = <String, int>{};
     for (final (dot, o) in shown) {
-      final actions = _rowActions(o);
+      final idle = dot.idle;
+      final (idlePrev, idleNext) = idle
+          ? _idleNeighbours(dot.txId!, dot.day!)
+          : (null, null);
+      final actions = idle
+          ? _rowActions(idlePrev, onDay: dot.day)
+          : _rowActions(o);
       // Unique per row: one series can show twice in a merged far-zoom dot.
-      final baseId = o?.transactionId ?? 'seed';
+      final baseId = o?.transactionId ?? (idle ? dot.txId! : 'seed');
       final n = seen[baseId] = (seen[baseId] ?? 0) + 1;
       final rowId = n == 1 ? baseId : '$baseId@$n';
       anyActions |= actions.isNotEmpty;
-      final t = o == null ? null : _txOf(o.transactionId);
-      final otherPool = o?.poolId == null
+      final t = idle
+          ? _txOf(dot.txId!)
+          : o == null
           ? null
-          : widget.combinedPools[o!.poolId];
+          : _txOf(o.transactionId);
+      final poolOf = idle ? idlePrev?.poolId : o?.poolId;
+      final otherPool = poolOf == null ? null : widget.combinedPools[poolOf];
       final String name;
       final String amountText;
       final Color amountColor;
       final skipped = o?.skipped ?? false;
-      if (o == null) {
+      if (idle) {
+        final raw = widget.transactionNames[dot.txId] ?? t?.name;
+        name = raw == null || raw.trim().isEmpty ? 'Transaction' : raw.trim();
+        final amount = (t?.signedAmount ?? idlePrev?.signedDelta)?.toDouble();
+        amountText = amount == null ? '' : formatSignedAmount(amount);
+        amountColor = amount == null || amount < 0
+            ? AppTheme.debitColor
+            : AppTheme.creditColor;
+      } else if (o == null) {
         name = 'Opening balance';
         amountText = formatMoneyAmount(dot.balanceAfter);
         amountColor = AppTheme.accent;
@@ -3243,7 +3311,10 @@ class _BalanceChartState extends State<BalanceChart>
       // Secondary line only when it says something: the other pool,
       // a repeat (not "One-off"), a status, or the date of a mixed popup.
       final metaSpans = <TextSpan>[
-        if (!oneDay) TextSpan(text: formatSelectedDate(_rowDay(o))),
+        if (!oneDay)
+          TextSpan(
+            text: formatSelectedDate(idle ? dateOnly(dot.day!) : _rowDay(o)),
+          ),
         if (otherPool != null)
           TextSpan(
             text: otherPool.canEdit
@@ -3254,7 +3325,17 @@ class _BalanceChartState extends State<BalanceChart>
               fontWeight: FontWeight.w700,
             ),
           ),
-        if (o != null && t != null && t.recurrenceMode != RecurrenceMode.once)
+        if (idle)
+          TextSpan(
+            text:
+                'Ring dot: not occurring on this day\n'
+                'Prev ${_shortDay(idlePrev?.date, dot.day!)}'
+                ' · Next ${_shortDay(idleNext?.date, dot.day!, none: 'none ahead')}',
+          ),
+        if (!idle &&
+            o != null &&
+            t != null &&
+            t.recurrenceMode != RecurrenceMode.once)
           TextSpan(
             text: [
               describeRecurrence(t),
@@ -3293,16 +3374,21 @@ class _BalanceChartState extends State<BalanceChart>
             menuW,
       );
       if (metaParts.isNotEmpty) {
-        contentWidth = math.max(
-          contentWidth,
-          _textWidth(TextSpan(children: metaParts).toPlainText(), meta) + menuW,
-        );
+        for (final line in TextSpan(
+          children: metaParts,
+        ).toPlainText().split('\n')) {
+          contentWidth = math.max(contentWidth, _textWidth(line, meta) + menuW);
+        }
       }
-      final lineH = metaParts.isEmpty ? 18.0 : 32.0;
+      final lineH = metaParts.isEmpty
+          ? 18.0
+          : idle
+          ? 46.0
+          : 32.0;
       rowsHeight += math.max(rowMin, lineH + 6);
       rows.add(
         ConstrainedBox(
-          key: ValueKey(o == null ? 'seed-tooltip' : 'tip-row-$rowId'),
+          key: ValueKey(o == null && !idle ? 'seed-tooltip' : 'tip-row-$rowId'),
           constraints: BoxConstraints(minHeight: rowMin),
           child: Row(
             children: [
@@ -3355,7 +3441,7 @@ class _BalanceChartState extends State<BalanceChart>
                           TextSpan(children: metaParts),
                           key: oneDay ? null : const ValueKey('tip-date'),
                           style: meta,
-                          maxLines: 1,
+                          maxLines: idle ? 2 : 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                     ],
@@ -3425,7 +3511,10 @@ class _BalanceChartState extends State<BalanceChart>
       orElse: () => tip.dots.first,
     );
     if (!day.isSeed) {
-      final g = DayGroup(dateOnly(day.occurrences.first.date), day.occurrences);
+      final g = DayGroup(
+        dateOnly(day.day ?? day.occurrences.first.date),
+        day.occurrences,
+      );
       final low = belowAlert(day.balanceAfter, widget.lossThreshold);
       final netLabel = 'Net · ${g.count}';
       final netText = formatSignedAmount(g.net);
@@ -3635,6 +3724,10 @@ double _laneHeight(LaneSet lanes, ChartLayout layout) => laneThickness(
 /// transaction (null: no lane) and centre in chart coordinates.
 @visibleForTesting
 void Function(String? txId, Offset center)? debugLaneDot;
+
+/// Test hook: a lane's dot at a step its transaction does not occur on.
+@visibleForTesting
+void Function(String? txId, Offset center)? debugLaneIdleDot;
 
 /// Test hook: called for every stretch of ribbon painted, with its day,
 /// the ribbon's rect in chart coordinates and the balance's own y.
@@ -4927,6 +5020,26 @@ class _BalanceChartPainter extends CustomPainter {
         if (inView) {
           for (final d in laneDots.dots) {
             final center = Offset(x, d.y);
+            if (d.idle) {
+              // The lane has no transaction on this step: a small dimmed
+              // ring, so the occurring dots still stand out.
+              debugLaneIdleDot?.call(d.txId, center);
+              final ir = math.max(1.7, r * 0.62);
+              canvas.drawCircle(
+                center,
+                ir,
+                Paint()..color = _plotBg.withValues(alpha: 0.6),
+              );
+              canvas.drawCircle(
+                center,
+                ir,
+                Paint()
+                  ..color = Colors.white.withValues(alpha: 0.8)
+                  ..style = PaintingStyle.stroke
+                  ..strokeWidth = 1.2,
+              );
+              continue;
+            }
             debugLaneDot?.call(d.txId, center);
             final own = DayGroup(day, d.own);
             final net = own.net;
@@ -5807,7 +5920,12 @@ class _Dot {
     this.day,
     this.txId,
     this.wholeDay = false,
+    this.idle = false,
   }) : balanceY = balanceY ?? center.dy;
+
+  /// Stacked lanes: this transaction has a lane at this step but does not
+  /// occur on it ([occurrences] is empty; [txId] and [day] say which).
+  final bool idle;
 
   /// Stacked lanes: stands for the whole day (the net chip), not one lane.
   final bool wholeDay;
@@ -5831,7 +5949,7 @@ class _Dot {
 
   Occurrence? get occurrence => occurrences.isEmpty ? null : occurrences.first;
 
-  bool get isSeed => occurrences.isEmpty;
+  bool get isSeed => occurrences.isEmpty && !idle;
 
   /// Pool balance right after this occurrence applied.
   final double balanceAfter;
