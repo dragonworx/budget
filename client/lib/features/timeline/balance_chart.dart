@@ -3591,6 +3591,16 @@ double _laneHeight(LaneSet lanes, ChartLayout layout) => laneThickness(
 @visibleForTesting
 void Function(String? txId, Offset center)? debugLaneDot;
 
+/// Test hook: called for every stretch of ribbon painted, with its day,
+/// the ribbon's rect in chart coordinates and the balance's own y.
+@visibleForTesting
+void Function(DateTime day, Rect ribbon, double balanceY)? debugRibbon;
+
+/// Test hook: the riser joining the opening diamond to the seed day's
+/// ribbon, in chart coordinates.
+@visibleForTesting
+void Function(Rect riser)? debugRiser;
+
 class ChartLayout {
   const ChartLayout({
     required this.size,
@@ -4576,6 +4586,29 @@ class _BalanceChartPainter extends CustomPainter {
     final openTop = List<double>.filled(lanes.lanes.length, double.nan);
     final texts = <({int lane, double x0, double x1, double top})>[];
     final band = Path();
+    // The line starts at the opening balance: on the seed day a plain riser
+    // joins the opening diamond to the ribbon (whose level is the day's
+    // closing balance, i.e. the opening plus the day's net).
+    final riser = Path();
+    final seedBal = seedBalance;
+    if (seedBal != null) {
+      final seedDay = dateOnly(seedDate);
+      for (final p in plateaus) {
+        if (p.day != seedDay) continue;
+        final y0 = scale.yOf(seedBal), y1 = scale.yOf(p.balance);
+        if ((y0 - y1).abs() > 0.5) {
+          final r = Rect.fromLTRB(
+            p.x0 - 1.2,
+            math.min(y0, y1) - 1.2,
+            p.x0 + 1.2,
+            math.max(y0, y1) + 1.2,
+          );
+          riser.addRect(r);
+          debugRiser?.call(r);
+        }
+        break;
+      }
+    }
     final showText = !collapse && h >= laneTextMinHeight;
     const rim = 2.4;
 
@@ -4610,6 +4643,11 @@ class _BalanceChartPainter extends CustomPainter {
       }
       if (m == 0) continue;
       final top0 = laneTop(yb, 0, m, h);
+      debugRibbon?.call(
+        p.day,
+        Rect.fromLTRB(p.x0, top0, p.x1, top0 + m * h),
+        yb,
+      );
       if (_isLoss(p.balance)) {
         loss.addRect(Rect.fromLTRB(p.x0, top0 - rim, p.x1, top0));
       }
@@ -4654,6 +4692,7 @@ class _BalanceChartPainter extends CustomPainter {
       }
     }
 
+    canvas.drawPath(riser, Paint()..color = _lineColor);
     if (collapse) {
       canvas.drawPath(band, Paint()..color = const Color(0xFF4A6285));
     } else {

@@ -38,7 +38,11 @@ Transaction _t(
 );
 
 void main() {
-  tearDown(() => debugLaneDot = null);
+  tearDown(() {
+    debugLaneDot = null;
+    debugRibbon = null;
+    debugRiser = null;
+  });
 
   group('lane set', () {
     test('lanes follow the list order, then the rest in loaded order', () {
@@ -183,6 +187,8 @@ void main() {
       Size size = const Size(1440, 800),
       double visibleDays = 30,
       List<int> balances = const [1000, 1500],
+      DateTime? seedDate,
+      double? seedBalance,
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -215,7 +221,8 @@ void main() {
                         ),
                   ],
                 ),
-                seedDate: _start.subtract(const Duration(days: 30)),
+                seedDate: seedDate ?? _start.subtract(const Duration(days: 30)),
+                seedBalance: seedBalance,
                 viewStart: _start.subtract(const Duration(days: 2)),
                 visibleDays: visibleDays,
                 transactionNames: names,
@@ -292,6 +299,52 @@ void main() {
       double px(double v) => (range.max - v) / span * layout.plot.height;
       expect(px(1500), greaterThanOrEqualTo(h * 3 / 2));
       expect(layout.plot.height - px(0), greaterThanOrEqualTo(h * 3 / 2));
+    });
+
+    testWidgets('the ribbon is centred on the balance\'s own y, at every '
+        'day, zoomed in or out', (tester) async {
+      for (final days in [30.0, 9.0, 60.0]) {
+        final seen = <DateTime, (Rect, double)>{};
+        debugRibbon = (d, r, y) => seen[d] = (r, y);
+        await pump(tester, ['a', 'b', 'c'], visibleDays: days);
+        final range =
+            (tester.state(find.byType(BalanceChart)) as dynamic).debugYRange
+                as BalanceExtents;
+        final layout = ChartLayout.of(const Size(1440, 800), days);
+        double yOf(double v) =>
+            layout.plot.bottom -
+            (v - range.min) / (range.max - range.min) * layout.plot.height;
+        expect(seen, isNotEmpty);
+        for (final e in seen.entries) {
+          final (rect, y) = e.value;
+          final balance = e.key.isBefore(_start.add(const Duration(days: 7)))
+              ? 1000.0
+              : 1500.0;
+          expect(rect.center.dy, closeTo(y, 0.01), reason: '${e.key}');
+          expect(rect.center.dy, closeTo(yOf(balance), 0.01), reason: '$days');
+        }
+      }
+    });
+
+    testWidgets('the line starts at the opening: a riser joins the seed '
+        'diamond to the seed day\'s ribbon', (tester) async {
+      final risers = <Rect>[];
+      debugRiser = risers.add;
+      final seen = <DateTime, Rect>{};
+      debugRibbon = (d, r, _) => seen[d] = r;
+      await pump(tester, ['a', 'b', 'c'], seedDate: _start, seedBalance: 400);
+      expect(risers, hasLength(1));
+      final range =
+          (tester.state(find.byType(BalanceChart)) as dynamic).debugYRange
+              as BalanceExtents;
+      final layout = ChartLayout.of(const Size(1440, 800), 30);
+      double yOf(double v) =>
+          layout.plot.bottom -
+          (v - range.min) / (range.max - range.min) * layout.plot.height;
+      final r = risers.single;
+      expect(r.bottom - 1.2, closeTo(yOf(400), 0.01));
+      expect(r.top + 1.2, closeTo(yOf(1000), 0.01));
+      expect(r.center.dx, closeTo(seen[_start]!.left, 0.01));
     });
 
     testWidgets('the stack rises and falls with the balance', (tester) async {
