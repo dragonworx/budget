@@ -71,6 +71,12 @@ debugVertexLabelRect;
 @visibleForTesting
 void Function(Rect rect, List<String> lines)? debugVertexLabelLines;
 
+/// Test hook: each lane label as drawn: the transaction's name, its signed
+/// amount text, that amount's colour and the amount pill's box.
+@visibleForTesting
+void Function(String name, String amount, Color color, Rect pill)?
+debugLaneAmount;
+
 /// Most transaction names listed under a day's total before "+N more".
 const int maxLabelNames = 6;
 
@@ -2821,6 +2827,7 @@ class _BalanceChartState extends State<BalanceChart>
     );
     if (_dotsKey == key && _dotsMemo != null) return _dotsMemo!;
     _dotsKey = key;
+    _wholeDayMemo.clear();
     final dots = <_Dot>[];
     if (range == null) return _dotsMemo = dots;
     final scale = _YScale(range.min, range.max, layout.plot);
@@ -2876,7 +2883,7 @@ class _BalanceChartState extends State<BalanceChart>
           _Dot(
             Offset(x, d.y),
             r,
-            g.all,
+            d.own,
             close,
             balanceY: balanceY,
             day: day,
@@ -2890,12 +2897,15 @@ class _BalanceChartState extends State<BalanceChart>
 
   /// [nearest] with the dots drawn on top of it (a different day group at
   /// the same spot, e.g. the opening diamond). Dots of one day, in different
-  /// lanes, are never merged: each opens that whole day's list.
+  /// lanes, are never merged: each inspects its own transaction only.
   List<_Dot> _overlapping(ChartLayout layout, _Dot nearest) => [
     nearest,
     for (final d in _dots(layout))
-      if (!identical(d, nearest) &&
+      if (!nearest.wholeDay &&
+          !identical(d, nearest) &&
           !identical(d.occurrences, nearest.occurrences) &&
+          // Lane dots of one day are never merged: one dot, one transaction.
+          !(d.txId != null && d.day == nearest.day) &&
           (d.center - nearest.center).distance < 2)
         d,
   ];
@@ -2903,19 +2913,54 @@ class _BalanceChartState extends State<BalanceChart>
   /// The dot at [pos]: the nearest within [maxDistance], else the dot whose
   /// painted label (amount + names, pushed or "+N more") is under [pos].
   /// Priority: dot > label > the chart itself.
+  /// With stacked lanes a net chip is an explicit target: inside its rect it
+  /// wins over the (far bigger) dot hit radius, whose nearest dot is just
+  /// one transaction.
   _Dot? _dotAt(ChartLayout layout, Offset pos, double maxDistance) =>
-      _nearestDot(layout, pos, maxDistance) ?? _labelDotAt(layout, pos);
+      (_laneSet().isEmpty ? null : _labelDotAt(layout, pos, slop: 0)) ??
+      _nearestDot(layout, pos, maxDistance) ??
+      _labelDotAt(layout, pos);
 
   /// The dot whose painted label contains [pos] (topmost / last painted).
-  _Dot? _labelDotAt(ChartLayout layout, Offset pos) {
+  _Dot? _labelDotAt(
+    ChartLayout layout,
+    Offset pos, {
+    double slop = labelHitSlop,
+  }) {
     if (!layout.plot.contains(pos)) return null;
     for (final hit in _labelHits.reversed) {
-      if (!hit.rect.inflate(labelHitSlop).contains(pos)) continue;
+      if (!hit.rect.inflate(slop).contains(pos)) continue;
       for (final d in _dots(layout)) {
-        if ((d.center - hit.dot).distance < 1.5) return d;
+        if ((d.center - hit.dot).distance < 1.5) return _wholeDay(layout, d);
       }
     }
     return null;
+  }
+
+  /// A day's net chip speaks for the whole day: the popup lists every
+  /// transaction on it (a lane dot, by contrast, inspects only its own).
+  _Dot _wholeDay(ChartLayout layout, _Dot d) {
+    final day = d.day;
+    if (d.isSeed || day == null || _laneSet().isEmpty) return d;
+    return _wholeDayMemo[day] ??= _wholeDayOf(layout, d, day);
+  }
+
+  final Map<DateTime, _Dot> _wholeDayMemo = {};
+
+  _Dot _wholeDayOf(ChartLayout layout, _Dot d, DateTime day) {
+    final all = <Occurrence>[];
+    for (final o in _dots(layout)) {
+      if (o.day == day) all.addAll(o.occurrences);
+    }
+    return _Dot(
+      d.center,
+      d.radius,
+      all,
+      d.balanceAfter,
+      balanceY: d.balanceY,
+      day: day,
+      wholeDay: true,
+    );
   }
 
   /// Nearest dot to [pos] within [maxDistance], by 2D distance.
@@ -4715,6 +4760,7 @@ class _BalanceChartPainter extends CustomPainter {
       fontWeight: FontWeight.w600,
       color: const Color(0xF2FFFFFF),
     );
+    final amountStyle = style.copyWith(fontWeight: FontWeight.w800);
     final strip = ChartLayout.laneNameWidth(layout.size.width);
     for (final t in texts) {
       // Names stay in view as the lane's left end scrolls off: they start
@@ -4723,16 +4769,51 @@ class _BalanceChartPainter extends CustomPainter {
       final startX = clipped ? plot.left + strip + 4 : t.x0 + 10;
       final avail = t.x1 - startX - 4;
       if (avail < 34 || startX > plot.right) continue;
-      // Widths in steps, so a panning (growing) segment reuses its text.
-      final maxW = (avail / 6).floorToDouble() * 6;
-      final painter = _axisText.get(
-        lanes.lanes[t.lane].label,
-        style,
+      final lane = lanes.lanes[t.lane];
+      // The amount follows the name, signed and coloured on a small dark
+      // pill (readable on every lane colour); the name gives way first.
+      final amountPainter = _axisText.get(
+        formatSignedAmount(lane.amount),
+        amountStyle.copyWith(
+          color: lane.amount < 0 ? AppTheme.debitColor : AppTheme.creditColor,
+        ),
         maxLines: 1,
-        ellipsis: '…',
-        maxWidth: maxW,
       );
-      painter.paint(canvas, Offset(startX, t.top + (h - painter.height) / 2));
+      final pillW = amountPainter.width + 8;
+      final nameMax = avail - pillW - 4;
+      // Too tight for even a short name: the amount alone, if it fits.
+      final nameless = nameMax < 24;
+      if (nameless && avail < pillW) continue;
+      final cy = t.top + h / 2;
+      var pillX = startX;
+      if (!nameless) {
+        // Widths in steps, so a panning (growing) segment reuses its text.
+        final maxW = (nameMax / 6).floorToDouble() * 6;
+        final painter = _axisText.get(
+          lane.label,
+          style,
+          maxLines: 1,
+          ellipsis: '…',
+          maxWidth: maxW,
+        );
+        painter.paint(canvas, Offset(startX, cy - painter.height / 2));
+        pillX = startX + painter.width + 4;
+      }
+      final pill = RRect.fromRectAndRadius(
+        Rect.fromLTWH(pillX, cy - (h - 3) / 2, pillW, h - 3),
+        const Radius.circular(3),
+      );
+      canvas.drawRRect(pill, Paint()..color = const Color(0xD90E1420));
+      debugLaneAmount?.call(
+        lane.name,
+        amountPainter.text!.toPlainText(),
+        lane.amount < 0 ? AppTheme.debitColor : AppTheme.creditColor,
+        pill.outerRect,
+      );
+      amountPainter.paint(
+        canvas,
+        Offset(pill.left + 4, cy - amountPainter.height / 2),
+      );
     }
   }
 
@@ -4760,6 +4841,8 @@ class _BalanceChartPainter extends CustomPainter {
     final simple = dayPx < 8;
 
     final chips = <({Rect rect, Offset dot, String text, Color? color})>[];
+    // Thin leaders from a chip pushed off its stack back to its step.
+    final leaders = <(Offset, Offset)>[];
     final dayStyle = labelStyle.copyWith(
       fontSize: dayPx >= 32 ? 11.5 : 10.5,
       height: 1.0,
@@ -4787,12 +4870,30 @@ class _BalanceChartPainter extends CustomPainter {
         maxLines: 1,
       );
       final w = painter.width + 8, hh = painter.height + 4;
-      for (final top in [above - 3 - hh, below + 3]) {
+      // Closest to the stack first: above it, then below; when a neighbour's
+      // chip is in the way, the next row out, so no step goes without its
+      // net while the view is narrow enough to have room at all.
+      for (final top in [
+        for (var k = 0; k < 8; k++) ...[
+          above - 3 - hh - k * (hh + 2),
+          below + 3 + k * (hh + 2),
+        ],
+      ]) {
         if (top < plot.top + 1 || top + hh > plot.bottom - 1) continue;
-        final rect = Rect.fromLTWH(x, top, w, hh);
+        // A step near the right edge keeps its net on screen: the chip
+        // slides left of its dot rather than being cut off.
+        final left = x < plot.right - 2
+            ? math.max(plot.left + 1, math.min(x, plot.right - w - 2))
+            : x;
+        final rect = Rect.fromLTWH(left, top, w, hh);
         if (placed.any((q) => q.overlaps(rect))) continue;
         placed.add(rect.inflate(1));
         chips.add((rect: rect, dot: dot, text: text, color: color));
+        if (top + hh < above - 0.5) {
+          leaders.add((Offset(x + 0.5, top + hh), Offset(x + 0.5, above)));
+        } else if (top > below + 0.5) {
+          leaders.add((Offset(x + 0.5, below), Offset(x + 0.5, top)));
+        }
         return;
       }
     }
@@ -4902,6 +5003,12 @@ class _BalanceChartPainter extends CustomPainter {
           AppTheme.accent,
         );
       }
+    }
+    final leaderPaint = Paint()
+      ..color = AppTheme.textFaint
+      ..strokeWidth = 1;
+    for (final (a, b) in leaders) {
+      canvas.drawLine(a, b, leaderPaint);
     }
     for (final c in chips) {
       final rrect = RRect.fromRectAndRadius(c.rect, const Radius.circular(4));
@@ -5699,7 +5806,11 @@ class _Dot {
     double? balanceY,
     this.day,
     this.txId,
+    this.wholeDay = false,
   }) : balanceY = balanceY ?? center.dy;
+
+  /// Stacked lanes: stands for the whole day (the net chip), not one lane.
+  final bool wholeDay;
 
   /// The day this dot is on (null: the opening-balance diamond).
   final DateTime? day;

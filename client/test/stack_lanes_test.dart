@@ -4,10 +4,13 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/stack_lanes.dart';
+import 'package:budget_client/theme/app_theme.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'chip_taps.dart';
 
 final _start = DateTime(2031, 3, 1);
 
@@ -189,13 +192,14 @@ void main() {
       List<int> balances = const [1000, 1500],
       DateTime? seedDate,
       double? seedBalance,
+      List<int> dayOffsets = const [0, 7],
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final dots = <String?, List<Offset>>{};
       debugLaneDot = (id, c) => (dots[id] ??= []).add(c);
-      final days = [_start, _start.add(const Duration(days: 7))];
+      final days = [for (final o in dayOffsets) _start.add(Duration(days: o))];
       final points = <BalancePoint>[];
       var bal = balances[0];
       for (var i = 0; i < 60; i++) {
@@ -360,32 +364,122 @@ void main() {
       expect(dots['c']!.first.dy - dots['c']!.last.dy, closeTo(shift, 0.01));
     });
 
-    testWidgets('tapping a lane dot opens that day\'s popup, whichever lane', (
-      tester,
-    ) async {
+    testWidgets('a lane dot inspects only its own transaction', (tester) async {
       final dots = await pump(tester, ['a', 'b', 'c']);
       final origin = tester.getTopLeft(find.byType(BalanceChart));
       final tip = find.byKey(const ValueKey('occurrence-tooltip'));
-      for (final id in ['a', 'b', 'c']) {
-        await tester.tapAt(
-          origin + dots[id]!.first,
-          kind: PointerDeviceKind.mouse,
-        );
-        await tester.pump();
-        expect(tip, findsOneWidget, reason: 'lane $id');
-        // The whole day is listed, wherever it was tapped.
-        for (final n in ['Rent', 'Salary', 'Gym']) {
-          expect(
-            find.descendant(of: tip, matching: find.text(n)),
-            findsWidgets,
-            reason: '$n listed (tapped $id)',
+      for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+        for (final id in ['a', 'b', 'c']) {
+          await tester.tapAt(origin + dots[id]!.first, kind: kind);
+          await tester.pump();
+          expect(tip, findsOneWidget, reason: 'lane $id');
+          for (final e in names.entries) {
+            expect(
+              find.descendant(of: tip, matching: find.text(e.value)),
+              e.key == id ? findsWidgets : findsNothing,
+              reason: '${e.value} (tapped $id, $kind)',
+            );
+          }
+          // One transaction has no day net, only the balance after.
+          expect(find.byKey(const ValueKey('day-net')), findsNothing);
+          await tester.tapAt(
+            origin + const Offset(700, 780),
+            kind: PointerDeviceKind.mouse,
           );
+          await tester.pump(const Duration(seconds: 6));
         }
-        await tester.tapAt(
-          origin + const Offset(700, 780),
-          kind: PointerDeviceKind.mouse,
-        );
-        await tester.pump(const Duration(seconds: 6));
+      }
+    });
+
+    testWidgets('every transaction gets its own dot at every step, in its '
+        'own lane', (tester) async {
+      final dots = await pump(tester, ['a', 'b', 'c']);
+      final layout = ChartLayout.of(const Size(1440, 800), 30);
+      final h = laneThickness(
+        maxActive: 3,
+        plotHeight: layout.plot.height,
+        phone: false,
+      );
+      // Two steps (day 0 and day 7) x three transactions: no grouping.
+      for (final id in ['a', 'b', 'c']) {
+        expect(dots[id], hasLength(2), reason: id);
+      }
+      expect(dots[null], isNull, reason: 'no shared orphan dot');
+      for (var step = 0; step < 2; step++) {
+        final ys = [
+          for (final id in ['a', 'b', 'c']) dots[id]![step].dy,
+        ];
+        expect(ys[1] - ys[0], closeTo(h, 0.01));
+        expect(ys[2] - ys[1], closeTo(h, 0.01));
+      }
+    });
+
+    testWidgets('each net amount is drawn once per step, never per lane', (
+      tester,
+    ) async {
+      final labels = <String>[];
+      final prev = debugVertexLabelLines;
+      debugVertexLabelLines = (rect, lines) => labels.add(lines.first);
+      addTearDown(() => debugVertexLabelLines = prev);
+      await pump(tester, ['a', 'b', 'c']);
+      final chips = await chartChips(tester);
+      // Two steps; each lists the day's net (+100 −10 −10 = +80) once.
+      expect(chips, hasLength(2));
+      final nets = labels.where((l) => l.contains('80')).toList();
+      expect(nets.length, greaterThanOrEqualTo(2));
+      expect(nets.every((l) => l.startsWith('+')), isTrue, reason: '$nets');
+      expect(labels.where((l) => l.contains('100')), isEmpty);
+    });
+
+    testWidgets('lane labels name the transaction then its amount, green '
+        'for a gain and red for a loss', (tester) async {
+      final seen = <String, (String, Color)>{};
+      debugLaneAmount = (name, amount, color, pill) =>
+          seen[name] = (amount, color);
+      addTearDown(() => debugLaneAmount = null);
+      await pump(tester, ['a', 'b', 'c']);
+      expect(seen.keys, containsAll(['Rent', 'Salary', 'Gym']));
+      expect(seen['Salary']!.$1, startsWith('+'));
+      expect(seen['Salary']!.$2, AppTheme.creditColor);
+      for (final n in ['Rent', 'Gym']) {
+        expect(seen[n]!.$1, anyOf(startsWith('-'), startsWith('\u2212')));
+        expect(seen[n]!.$2, AppTheme.debitColor, reason: n);
+      }
+    });
+
+    testWidgets('a crowded phone view still gives every step its net chip', (
+      tester,
+    ) async {
+      final offsets = [for (var i = 0; i < 12; i++) i];
+      await pump(
+        tester,
+        ['a', 'b', 'c'],
+        size: const Size(390, 844),
+        dayOffsets: offsets,
+      );
+      final chips = await chartChips(tester);
+      expect(chips, hasLength(offsets.length));
+      // Chips never pile on each other, whatever row they were pushed to.
+      for (var i = 0; i < chips.length; i++) {
+        for (var j = i + 1; j < chips.length; j++) {
+          expect(chips[i].overlaps(chips[j]), isFalse, reason: '$i vs $j');
+        }
+      }
+    });
+
+    testWidgets('a phone-width lane still draws its signed amount pill'
+        '', (tester) async {
+      final seen = <String, String>{};
+      debugLaneAmount = (name, amount, color, pill) => seen[name] = amount;
+      addTearDown(() => debugLaneAmount = null);
+      await pump(tester, ['a', 'b', 'c'], size: const Size(390, 844));
+      for (final a in seen.values) {
+        expect(a, isNotEmpty);
+      }
+      // A net chip near the right edge slides in rather than being cut off.
+      final width = tester.getSize(find.byType(BalanceChart)).width;
+      for (final r in await chartChips(tester)) {
+        expect(r.right, lessThanOrEqualTo(width));
       }
     });
 

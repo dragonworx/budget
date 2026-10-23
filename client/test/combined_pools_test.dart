@@ -17,6 +17,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'chip_taps.dart';
+
 import 'support/fake_auth.dart';
 
 final _now = DateTime.now();
@@ -442,25 +444,13 @@ void main() {
     // an explicit fit brings it into view.
     _chart(tester).onFitRequested!(FitMode.all);
     await tester.pumpAndSettle();
-    final plot = tester.getRect(find.byType(BalanceChart));
-    Future<bool> reveal(Key key) async {
-      for (var fy = 0.05; fy < 0.85; fy += 0.025) {
-        for (var fx = 0.3; fx < 0.98; fx += 0.02) {
-          await tester.tapAt(
-            Offset(plot.left + plot.width * fx, plot.top + plot.height * fy),
-            kind: PointerDeviceKind.touch,
-          );
-          // Apart in time, so two probes never count as a double-tap zoom.
-          await tester.pump(
-            kDoubleTapTimeout + const Duration(milliseconds: 20),
-          );
-          if (find.byKey(key).evaluate().isNotEmpty) return true;
-        }
-      }
-      return false;
-    }
-
-    expect(await reveal(const ValueKey('tip-pool-c')), isTrue);
+    // The day's net chip lists every pool's transaction on it.
+    await revealDayTip(
+      tester,
+      PointerDeviceKind.touch,
+      shown: () =>
+          find.byKey(const ValueKey('tip-pool-c')).evaluate().isNotEmpty,
+    );
     expect(find.byKey(const ValueKey('tip-pool-b')), findsOneWidget);
     expect(find.textContaining('Kids · view only'), findsOneWidget);
     expect(find.textContaining(RegExp(r'^Savings')), findsOneWidget);

@@ -23,6 +23,7 @@ class StackLane {
     required this.id,
     required this.name,
     required this.credit,
+    this.amount = 0,
     required this.colorIndex,
     required this.start,
     required this.end,
@@ -32,8 +33,12 @@ class StackLane {
   final String id;
   final String name;
 
-  /// Money in (vs out): shown as a "+" / "−" before the name.
+  /// Money in (vs out).
   final bool credit;
+
+  /// The transaction's own amount, signed (money out is negative); shown
+  /// after its name inside the lane.
+  final double amount;
   final int colorIndex;
 
   /// First day (inclusive).
@@ -48,8 +53,8 @@ class StackLane {
   bool activeOn(DateTime day) =>
       !day.isBefore(start) && (end == null || !day.isAfter(end!));
 
-  /// The text shown inside the lane.
-  String get label => '${credit ? '+' : '−'} $name';
+  /// The name shown inside the lane (its amount follows, coloured).
+  String get label => name;
 }
 
 class LaneSet {
@@ -134,6 +139,7 @@ LaneSet buildLaneSet({
         id: id,
         name: name.isEmpty ? 'Transaction' : name,
         credit: t.direction == TransactionDirection.credit,
+        amount: t.signedAmount.toDouble(),
         colorIndex: lanes.length,
         start: span.$1,
         end: span.$2,
@@ -312,7 +318,7 @@ class LaneDot {
 
 /// The dots of day [group], one per transaction, each in its transaction's
 /// lane (vertically centred in it), in lane order from the top; any
-/// occurrence with no lane that day gets one shared dot on the balance.
+/// occurrence with no lane that day gets its own dot on the balance.
 /// [balanceY] is the ribbon's centre (the day's closing balance), [thickness]
 /// a lane's. Also returns the stack's top and bottom ([stackTop] /
 /// [stackBottom], both [balanceY] when no lane is active).
@@ -329,12 +335,12 @@ class LaneDot {
     (byTx[o.transactionId] ??= []).add(o);
   }
   final placed = <(int, LaneDot)>[];
-  final orphans = <Occurrence>[];
+  final orphans = <MapEntry<String, List<Occurrence>>>[];
   for (final e in byTx.entries) {
     final li = lanes.indexOf(e.key);
     final slot = li == null ? -1 : active.indexOf(li);
     if (slot < 0) {
-      orphans.addAll(e.value);
+      orphans.add(e);
       continue;
     }
     placed.add((
@@ -350,7 +356,14 @@ class LaneDot {
   return (
     dots: [
       for (final (_, d) in placed) d,
-      if (orphans.isNotEmpty) LaneDot(txId: null, y: balanceY, own: orphans),
+      // A transaction with no lane that day: its own dot on the balance (a
+      // few of them fan out around it).
+      for (final (i, e) in orphans.indexed)
+        LaneDot(
+          txId: null,
+          y: balanceY + (i - (orphans.length - 1) / 2) * 9,
+          own: e.value,
+        ),
     ],
     stackTop: n == 0 ? balanceY : laneTop(balanceY, 0, n, thickness),
     stackBottom: n == 0 ? balanceY : laneTop(balanceY, n, n, thickness),

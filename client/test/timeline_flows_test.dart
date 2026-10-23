@@ -28,6 +28,8 @@ import 'package:budget_client/features/timeline/fit_ranges.dart';
 import 'package:budget_client/theme/app_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'chip_taps.dart';
+
 final _today = DateTime.now();
 final _day = DateTime(_today.year, _today.month, _today.day);
 
@@ -1077,7 +1079,7 @@ void main() {
       (const Size(320, 640), PointerDeviceKind.touch),
     ]) {
       final store = await _pump(tester, size: size);
-      await _revealTip(tester, kind);
+      await revealDayTip(tester, kind);
       final tipF = find.byKey(const ValueKey('occurrence-tooltip'));
       final tip = tester.getRect(tipF);
       expect(tip.right, lessThanOrEqualTo(size.width));
@@ -2434,7 +2436,7 @@ void main() {
         }),
       );
       store.calls.clear();
-      await _revealTip(tester, kind);
+      await revealDayTip(tester, kind);
       // Rent and Salary share each dot: each row's ⋮ has its own Trim.
       await _openRowMenu(tester, 'salary', kind);
       expect(
@@ -2500,7 +2502,7 @@ void main() {
         );
       },
     );
-    await _revealTip(tester, PointerDeviceKind.touch);
+    await revealDayTip(tester, PointerDeviceKind.touch);
     for (final id in ['rent', 'salary']) {
       await _openRowMenu(tester, id, PointerDeviceKind.touch);
       expect(find.byKey(ValueKey('tip-menu-trim-$id')), findsNothing);
@@ -2652,9 +2654,8 @@ void main() {
     (Size(1440, 900), PointerDeviceKind.mouse),
   ]) {
     testWidgets('${size.width.toInt()}px ${kind.name}: tapping a transaction '
-        'label shows its dot\'s popup (same day, same place); never creates', (
-      tester,
-    ) async {
+        'net chip shows the day\'s popup, its dot only its transaction; never '
+        'creates', (tester) async {
       final labels = <(Offset, Rect)>[];
       debugVertexLabelRect = (name, c, r, rect) => labels.add((c, rect));
       addTearDown(() => debugVertexLabelRect = null);
@@ -2723,11 +2724,17 @@ void main() {
       await tester.pump();
       await settle();
       expect(tip, findsNothing);
+      // The day's net chip lists the whole day; a dot only its own
+      // transaction (the lane's), with no day net.
+      expect(byLabel, containsAll(['Rent', 'Salary']));
+      expect(byLabel.any((t) => t.startsWith('Net')), isTrue);
+      expect(rectByLabel, isNotNull);
       await tester.tapAt(origin + dot!, kind: kind);
       await tester.pump();
       expect(tip, findsOneWidget);
-      expect(texts(), byLabel);
-      expect(tester.getRect(tip), rectByLabel);
+      final byDot = texts();
+      expect(byDot.where((t) => t == 'Rent' || t == 'Salary'), hasLength(1));
+      expect(byDot.any((t) => t.startsWith('Net')), isFalse);
       await settle();
       expect(find.byKey(const ValueKey('editor-name')), findsNothing);
       expect(
