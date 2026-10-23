@@ -1408,6 +1408,14 @@ class _BalanceChartState extends State<BalanceChart>
     if (width <= 0) return;
     final keys = HardwareKeyboard.instance;
     final range = _ensureYRange();
+    // Cmd (Ctrl on desktop builds; in a browser Ctrl+wheel is the trackpad
+    // pinch, which arrives as a scale event instead) + wheel: the pointer is
+    // the scaling centre of both axes.
+    if ((keys.isMetaPressed || (!kIsWeb && keys.isControlPressed)) &&
+        (dx != 0 || dy != 0)) {
+      _scaleAtPointer(event.localPosition, dx, dy, range);
+      return;
+    }
     if (range != null && keys.isShiftPressed) {
       // Browsers often turn Shift+wheel into a horizontal delta.
       final delta = dy != 0 ? dy : dx;
@@ -1443,6 +1451,42 @@ class _BalanceChartState extends State<BalanceChart>
     // Vertical wheel drives the time scale, smoothly, about the centre.
     _clearTip();
     _wheelZoom(dy);
+  }
+
+  /// Cmd+wheel: a vertical delta scales the $ axis about the pointer's y (the
+  /// balance under it stays put) and a horizontal delta scales the time axis
+  /// about the pointer's x (the date under it stays put), each by
+  /// `exp(delta * 0.0016)` (positive zooms out), within the usual limits.
+  /// Both apply when both deltas are present; a delta under a fifth of the
+  /// other is trackpad drift and ignored. The y change is a deliberate range
+  /// (not auto-fitted again), like Alt+wheel.
+  void _scaleAtPointer(
+    Offset local,
+    double dx,
+    double dy,
+    BalanceExtents? range,
+  ) {
+    final major = math.max(dx.abs(), dy.abs());
+    final sx = dx.abs() >= major * 0.2 ? dx : 0.0;
+    final sy = dy.abs() >= major * 0.2 ? dy : 0.0;
+    _stopWheel();
+    _clearTip();
+    if (sy != 0 && range != null) {
+      final plot = _layout.plot;
+      final fraction = plot.height <= 0
+          ? 0.5
+          : (plot.bottom - local.dy) / plot.height;
+      _setYRange(
+        zoomBalanceRange(
+          range,
+          math.exp(sy.clamp(-400.0, 400.0) * 0.0016),
+          fraction,
+        ),
+      );
+    }
+    if (sx != 0) {
+      _zoomAt(local.dx, math.exp(sx.clamp(-400.0, 400.0) * 0.0016));
+    }
   }
 
   void _handleScale(PointerSignalEvent event) {
