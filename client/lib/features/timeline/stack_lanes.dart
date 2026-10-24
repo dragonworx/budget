@@ -200,9 +200,11 @@ const List<Color> laneColors = [
 
 Color laneColor(int index) => laneColors[index % laneColors.length];
 
-/// Thickness of one lane. The tallest stack gets at most [maxShare] of the
-/// plot; lanes are 14-16px (text fits) while that allows, thinner for a heavy
-/// pool, never below [minLaneHeight].
+/// Thickness of one lane. The stack must stay close to the dollars it
+/// stands for, so the tallest stack gets about a quarter of the plot at full
+/// (14-16px) lanes; past that lanes keep the text height while the stack
+/// fits in about a third, then thin out (no text; hover / tap for details),
+/// never below [minLaneHeight].
 double laneThickness({
   required int maxActive,
   required double plotHeight,
@@ -210,11 +212,16 @@ double laneThickness({
 }) {
   if (maxActive <= 0) return 0;
   final cap = phone ? 14.0 : 16.0;
-  final share = plotHeight * (phone ? 0.42 : 0.45);
-  return (share / maxActive).clamp(minLaneHeight, cap).toDouble();
+  final share = plotHeight * (phone ? 0.22 : 0.25);
+  final textShare = plotHeight * (phone ? 0.30 : 0.32);
+  final h = (share / maxActive).clamp(minLaneHeight, cap).toDouble();
+  if (h < laneTextMinHeight && maxActive * laneTextMinHeight <= textShare) {
+    return laneTextMinHeight;
+  }
+  return h;
 }
 
-const double minLaneHeight = 2.0;
+const double minLaneHeight = 3.0;
 
 /// Lane text needs this much lane height.
 const double laneTextMinHeight = 11.5;

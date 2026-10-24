@@ -3713,6 +3713,11 @@ void Function(DateTime day, Rect ribbon, double balanceY)? debugRibbon;
 @visibleForTesting
 void Function(Rect riser)? debugRiser;
 
+/// Test hook: called for every piece of the true-balance line drawn through
+/// a stack of two or more lanes (a level, or its step at a day edge).
+@visibleForTesting
+void Function(Rect piece)? debugTrueLine;
+
 class ChartLayout {
   const ChartLayout({
     required this.size,
@@ -4737,6 +4742,7 @@ class _BalanceChartPainter extends CustomPainter {
     }
     final showText = !collapse && h >= laneTextMinHeight;
     const rim = 2.4;
+    final truth = <Rect>[];
 
     for (var pi = 0; pi < plateaus.length; pi++) {
       final p = plateaus[pi];
@@ -4768,6 +4774,21 @@ class _BalanceChartPainter extends CustomPainter {
         }
       }
       if (m == 0) continue;
+      // The exact closing balance through a stack of 2+ lanes (a single
+      // lane is centred on it already), stepping at the day edge.
+      if (m >= 2 || mn >= 2) {
+        if (m >= 2) truth.add(Rect.fromLTRB(p.x0, yb - 1.0, p.x1, yb + 1.0));
+        if (next != null && mn > 0 && (yn - yb).abs() > 0.5) {
+          truth.add(
+            Rect.fromLTRB(
+              p.x1 - 1.0,
+              math.min(yb, yn) - 1.0,
+              p.x1 + 1.0,
+              math.max(yb, yn) + 1.0,
+            ),
+          );
+        }
+      }
       final top0 = laneTop(yb, 0, m, h);
       debugRibbon?.call(
         p.day,
@@ -4839,7 +4860,69 @@ class _BalanceChartPainter extends CustomPainter {
     canvas.drawPath(thin, Paint()..color = _lineColor);
     canvas.drawPath(loss, Paint()..color = AppTheme.debitColor);
 
-    if (!showText) return;
+    // Text is laid out first so the true line can break around it.
+    final textRects = <Rect>[];
+    final drawText = <void Function()>[];
+    if (showText) {
+      _layoutLaneTexts(canvas, layout, texts, h, textRects, drawText);
+    }
+    if (truth.isNotEmpty && !collapse) {
+      // Break the line around lane text (an odd stack's middle lane).
+      final halo = Path(), core = Path();
+      for (final r in _gapsAround(truth, textRects)) {
+        halo.addRect(r.inflate(1.4));
+        core.addRect(r);
+        debugTrueLine?.call(r);
+      }
+      canvas.drawPath(halo, Paint()..color = const Color(0xF00B1017));
+      canvas.drawPath(core, Paint()..color = _lineColor);
+    }
+    for (final d in drawText) {
+      d();
+    }
+  }
+
+  /// [pieces] less the x-ranges of any [holes] (padded) they cross.
+  static List<Rect> _gapsAround(List<Rect> pieces, List<Rect> holes) {
+    if (holes.isEmpty) return pieces;
+    final out = <Rect>[];
+    for (final r in pieces) {
+      // Steps sit on day edges, by the dots, clear of the text.
+      if (r.height > r.width) {
+        out.add(r);
+        continue;
+      }
+      final cuts = [
+        for (final hole in holes)
+          if (hole.top - 2 < r.bottom && hole.bottom + 2 > r.top)
+            (hole.left - 3, hole.right + 3),
+      ]..sort((a, b) => a.$1.compareTo(b.$1));
+      var x = r.left;
+      for (final (a, b) in cuts) {
+        if (b <= x) continue;
+        if (a > x + 1) {
+          out.add(Rect.fromLTRB(x, r.top, math.min(a, r.right), r.bottom));
+        }
+
+        x = math.max(x, b);
+        if (x >= r.right) break;
+      }
+      if (x < r.right - 1) {
+        out.add(Rect.fromLTRB(x, r.top, r.right, r.bottom));
+      }
+    }
+    return out;
+  }
+
+  void _layoutLaneTexts(
+    Canvas canvas,
+    ChartLayout layout,
+    List<({int lane, double x0, double x1, double top, double edge})> texts,
+    double h,
+    List<Rect> rects,
+    List<void Function()> draws,
+  ) {
+    final plot = layout.plot;
     final fontSize = (h - 4).clamp(8.0, 11.0).toDouble();
     final style = TextStyle(
       fontSize: fontSize,
@@ -4883,32 +4966,31 @@ class _BalanceChartPainter extends CustomPainter {
           ellipsis: '…',
           maxWidth: maxW,
         );
-        painter.paint(canvas, Offset(startX, cy - painter.height / 2));
-        debugLaneName?.call(
-          lane.name,
-          Rect.fromLTWH(
-            startX,
-            cy - painter.height / 2,
-            painter.width,
-            painter.height,
-          ),
-        );
+        final at = Offset(startX, cy - painter.height / 2);
+        rects.add(at & painter.size);
+        draws.add(() {
+          painter.paint(canvas, at);
+          debugLaneName?.call(lane.name, at & painter.size);
+        });
       }
       final pill = RRect.fromRectAndRadius(
         Rect.fromLTWH(right - pillW, cy - (h - 3) / 2, pillW, h - 3),
         const Radius.circular(3),
       );
-      canvas.drawRRect(pill, Paint()..color = const Color(0xD90E1420));
-      debugLaneAmount?.call(
-        lane.name,
-        amountPainter.text!.toPlainText(),
-        lane.amount < 0 ? AppTheme.debitColor : AppTheme.creditColor,
-        pill.outerRect,
-      );
-      amountPainter.paint(
-        canvas,
-        Offset(pill.left + 4, cy - amountPainter.height / 2),
-      );
+      rects.add(pill.outerRect);
+      draws.add(() {
+        canvas.drawRRect(pill, Paint()..color = const Color(0xD90E1420));
+        debugLaneAmount?.call(
+          lane.name,
+          amountPainter.text!.toPlainText(),
+          lane.amount < 0 ? AppTheme.debitColor : AppTheme.creditColor,
+          pill.outerRect,
+        );
+        amountPainter.paint(
+          canvas,
+          Offset(pill.left + 4, cy - amountPainter.height / 2),
+        );
+      });
     }
   }
 

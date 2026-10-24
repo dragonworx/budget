@@ -48,6 +48,9 @@ void main() {
     debugLaneDot = null;
     debugRibbon = null;
     debugRiser = null;
+    debugTrueLine = null;
+    debugLaneName = null;
+    debugLaneAmount = null;
   });
 
   group('lane set', () {
@@ -130,6 +133,38 @@ void main() {
         minLaneHeight,
       );
     });
+
+    test('thickness keeps the stack near its dollars: full lanes up to a '
+        'quarter of the plot, text-height lanes up to a third, then thin', () {
+      double stack(int n, double plot, bool phone) =>
+          n * laneThickness(maxActive: n, plotHeight: plot, phone: phone);
+      // A few lanes: full size, as before.
+      expect(laneThickness(maxActive: 3, plotHeight: 500, phone: false), 16);
+      expect(laneThickness(maxActive: 3, plotHeight: 450, phone: true), 14);
+      // 8: still labelled, but the stack is at most a quarter of the plot.
+      for (final (plot, phone) in [(500.0, false), (450.0, true)]) {
+        final h = laneThickness(maxActive: 8, plotHeight: plot, phone: phone);
+        expect(h, greaterThanOrEqualTo(laneTextMinHeight));
+        expect(stack(8, plot, phone), lessThanOrEqualTo(plot * 0.25 + 0.01));
+      }
+      // 12 on desktop: text-height lanes, within a third.
+      expect(
+        laneThickness(maxActive: 12, plotHeight: 500, phone: false),
+        laneTextMinHeight,
+      );
+      expect(stack(12, 500, false), lessThanOrEqualTo(500 * 0.32));
+      // 20+: thin lanes, the stack back to a quarter (a fifth on phones).
+      for (final n in [20, 24, 40]) {
+        expect(stack(n, 500, false), lessThanOrEqualTo(500 * 0.25 + 0.01));
+        if (n < 40) {
+          expect(stack(n, 450, true), lessThanOrEqualTo(450 * 0.22 + 0.01));
+        }
+        expect(
+          laneThickness(maxActive: n, plotHeight: 500, phone: false),
+          lessThan(laneTextMinHeight),
+        );
+      }
+    });
   });
 
   group('ribbon geometry', () {
@@ -199,6 +234,7 @@ void main() {
       Map<int, List<String>>? occurs,
       void Function(DateTime)? onCreate,
       bool actions = false,
+      Set<String>? only,
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -243,13 +279,16 @@ void main() {
                 transactionNames: names,
                 laneOrder: order,
                 transactions: {
-                  'a': _t('a', 'Rent'),
-                  'b': _t(
-                    'b',
-                    'Salary',
-                    direction: TransactionDirection.credit,
-                  ),
-                  'c': _t('c', 'Gym'),
+                  for (final e in {
+                    'a': _t('a', 'Rent'),
+                    'b': _t(
+                      'b',
+                      'Salary',
+                      direction: TransactionDirection.credit,
+                    ),
+                    'c': _t('c', 'Gym'),
+                  }.entries)
+                    if (only == null || only.contains(e.key)) e.key: e.value,
                 },
                 onViewportChanged: (_, _) {},
                 onCreateOnDay: onCreate ?? (_) {},
@@ -363,6 +402,143 @@ void main() {
       expect(r.bottom - 1.2, closeTo(yOf(400), 0.01));
       expect(r.top + 1.2, closeTo(yOf(1000), 0.01));
       expect(r.center.dx, closeTo(seen[_start]!.left, 0.01));
+    });
+
+    testWidgets('a crisp true-balance line runs through a stack at the '
+        'balance\'s exact y, stepping at the day edge', (tester) async {
+      final pieces = <Rect>[];
+      debugTrueLine = pieces.add;
+      final ribbons = <DateTime, Rect>{};
+      debugRibbon = (d, r, _) => ribbons[d] = r;
+      await pump(tester, ['a', 'b', 'c']);
+      final range =
+          (tester.state(find.byType(BalanceChart)) as dynamic).debugYRange
+              as BalanceExtents;
+      final layout = ChartLayout.of(const Size(1440, 800), 30);
+      double yOf(double v) =>
+          layout.plot.bottom -
+          (v - range.min) / (range.max - range.min) * layout.plot.height;
+      final levels = pieces.where((r) => r.height <= 4).toList();
+      final steps = pieces.where((r) => r.height > 4).toList();
+      expect(levels.map((r) => r.center.dy).toSet().length, 2);
+      for (final r in levels) {
+        expect(r.height, closeTo(2, 0.01));
+        final y = r.center.dy;
+        expect(
+          (y - yOf(1000)).abs() < 0.01 || (y - yOf(1500)).abs() < 0.01,
+          isTrue,
+          reason: '$r',
+        );
+      }
+      // The stack's centre is the line, at every level.
+      for (final e in ribbons.entries) {
+        final y = e.key.isBefore(_start.add(const Duration(days: 7)))
+            ? yOf(1000)
+            : yOf(1500);
+        expect(e.value.center.dy, closeTo(y, 0.01));
+      }
+      // One step, at day 8's left edge, spanning the two balances.
+      final step = steps.single;
+      final edge = ribbons[_start.add(const Duration(days: 7))]!.left;
+      expect(step.center.dx, closeTo(edge, 0.01));
+      expect(step.top + 1, closeTo(yOf(1500), 0.01));
+      expect(step.bottom - 1, closeTo(yOf(1000), 0.01));
+    });
+
+    testWidgets('the true line breaks around the text of an odd stack\'s '
+        'middle lane', (tester) async {
+      final pieces = <Rect>[];
+      debugTrueLine = pieces.add;
+      final text = <Rect>[];
+      debugLaneName = (_, r) => text.add(r);
+      debugLaneAmount = (_, _, _, r) => text.add(r);
+      await pump(tester, ['a', 'b', 'c']);
+      expect(text, isNotEmpty);
+      expect(pieces, isNotEmpty);
+      for (final p in pieces) {
+        for (final t in text) {
+          expect(p.overlaps(t), isFalse, reason: '$p crosses $t');
+        }
+      }
+    });
+
+    testWidgets('a single lane is centred on the balance already: no '
+        'extra line', (tester) async {
+      final pieces = <Rect>[];
+      debugTrueLine = pieces.add;
+      final ribbons1 = <Rect>[];
+      debugRibbon = (_, r, _) => ribbons1.add(r);
+      await pump(
+        tester,
+        ['a'],
+        occurs: {
+          0: ['a'],
+          7: ['a'],
+        },
+        only: {'a'},
+      );
+      expect(ribbons1, isNotEmpty);
+      expect(ribbons1.first.height, 16);
+      expect(pieces, isEmpty);
+    });
+
+    testWidgets('20+ transactions: a short stack near its dollars, the '
+        'true line still drawn, dots still on every lane', (tester) async {
+      final pieces = <Rect>[];
+      debugTrueLine = pieces.add;
+      final ribbons = <Rect>[];
+      debugRibbon = (_, r, _) => ribbons.add(r);
+      final ids = [for (var i = 0; i < 22; i++) 't$i'];
+      final dots = <String?, List<Offset>>{};
+      debugLaneDot = (id, c) => (dots[id] ??= []).add(c);
+      tester.view.physicalSize = const Size(1440, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BalanceChart(
+              series: BalanceSeries(
+                points: [
+                  for (var i = 0; i < 40; i++)
+                    BalancePoint(
+                      date: _start.add(Duration(days: i)),
+                      closingBalance: Decimal.fromInt(5000 - (i ~/ 7) * 300),
+                    ),
+                ],
+                occurrences: [
+                  for (final id in ids)
+                    for (final o in [0, 7, 14])
+                      Occurrence(
+                        transactionId: id,
+                        date: _start.add(Duration(days: o)),
+                        signedDelta: Decimal.fromInt(-10),
+                      ),
+                ],
+              ),
+              seedDate: _start.subtract(const Duration(days: 30)),
+              viewStart: _start.subtract(const Duration(days: 2)),
+              visibleDays: 30,
+              transactionNames: {for (final id in ids) id: id},
+              laneOrder: ids,
+              transactions: {for (final id in ids) id: _t(id, 'Item $id')},
+              onViewportChanged: (_, _) {},
+              onCreateOnDay: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final plot = ChartLayout.of(const Size(1440, 800), 30).plot;
+      expect(ribbons, isNotEmpty);
+      for (final r in ribbons) {
+        expect(r.height, lessThanOrEqualTo(plot.height * 0.25 + 0.01));
+      }
+      expect(pieces.where((r) => r.width > r.height), isNotEmpty);
+      for (final id in ids) {
+        expect(dots[id], hasLength(3), reason: id);
+      }
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('the stack rises and falls with the balance', (tester) async {
