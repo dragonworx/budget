@@ -947,11 +947,6 @@ int isoWeekNumber(DateTime date) {
   return thursday.difference(jan1).inDays ~/ 7 + 1;
 }
 
-/// Span multiplier for one vertical wheel event of [dy] logical pixels
-/// (line-mode wheels already arrive scaled to pixels by the engine).
-/// Clamped per event so a single huge notch can't jump; up (< 0) zooms in.
-double wheelZoomFactor(double dy) => math.exp(dy.clamp(-240.0, 240.0) * 0.0018);
-
 /// Where a double-tap at ([fx], [fy]) of the plot (0..1 from the left /
 /// top) takes the view: time zoomed in 2x with the tapped instant at the
 /// centre, and the balance range (same span) centred on the tapped balance.

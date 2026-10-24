@@ -5,7 +5,6 @@ import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
@@ -39,9 +38,11 @@ typedef EditOccurrence = void Function(Transaction transaction, DateTime date);
 /// user. Panning or zooming time never rescales it, so a balance level keeps
 /// its height on screen.
 ///
-/// Click-drag pans time and balance. The mouse wheel and trackpad pinch zoom
-/// time around the pointer; Alt+wheel zooms balance; Shift+wheel pans
-/// balance. Touch: drag pans, pinch zooms time at the pinch focus.
+/// Click-drag pans time and balance. The wheel pans: vertical moves the
+/// balance range, horizontal (or Shift+vertical) moves time. Cmd, Option or
+/// Ctrl + wheel scales about the pointer (vertical → balance, horizontal →
+/// time), and a trackpad pinch zooms time about the pointer. Touch: drag
+/// pans, pinch zooms time at the pinch focus.
 ///
 /// Pressing on the date axis (month/week/day lanes) picks a date instead:
 /// a bubble, guide line and day highlight follow the pointer. The view
@@ -292,20 +293,6 @@ class BalanceChart extends StatefulWidget {
 
 class _BalanceChartState extends State<BalanceChart>
     with TickerProviderStateMixin {
-  /// Smooth wheel zoom: the wheel accumulates [_wheelTargetDays] and a
-  /// ticker eases the visible span toward it (exponential approach in log
-  /// space), anchored on [_wheelCenter] so the centre date never drifts.
-  late final Ticker _wheelTicker = createTicker(_tickWheel);
-  DateTime? _wheelCenter;
-  double _wheelTargetDays = 1;
-  double _wheelDays = 1;
-  Duration _wheelLast = Duration.zero;
-
-  /// Time constant of the ease (~95% settled after 3τ ≈ 120 ms).
-  static const double _wheelTau = 0.04;
-
-  bool get _wheelActive => _wheelTicker.isActive;
-
   /// Double-tap zoom: time 2x in about the tapped point and the balance
   /// range centred on it, eased together over [doubleTapZoomDuration].
   late final AnimationController _dtAnim = AnimationController(
@@ -348,7 +335,6 @@ class _BalanceChartState extends State<BalanceChart>
     final plot = layout.plot;
     final y = _ensureYRange();
     if (y == null || plot.width <= 0 || plot.height <= 0) return;
-    _stopWheel();
     _stopDoubleTap();
     _clearTip();
     _tapTip = false;
@@ -374,46 +360,6 @@ class _BalanceChartState extends State<BalanceChart>
   /// Tests: the balance range currently shown.
   @visibleForTesting
   BalanceExtents? get debugYRange => _yRange;
-
-  void _stopWheel() {
-    if (_wheelTicker.isActive) _wheelTicker.stop();
-    _wheelCenter = null;
-  }
-
-  /// Wheel up (dy < 0) zooms in, down zooms out, about the view centre.
-  void _wheelZoom(double dy) {
-    _stopDoubleTap();
-    final center = _wheelActive && _wheelCenter != null
-        ? _wheelCenter!
-        : addDays(widget.viewStart, widget.visibleDays / 2);
-    final base = _wheelActive ? _wheelTargetDays : widget.visibleDays;
-    if (!_wheelActive) _wheelDays = widget.visibleDays;
-    _wheelCenter = center;
-    _wheelTargetDays = (base * wheelZoomFactor(dy))
-        .clamp(minVisibleDays, maxVisibleDays)
-        .toDouble();
-    if (!_wheelTicker.isActive) {
-      _wheelLast = Duration.zero;
-      _wheelTicker.start();
-    }
-  }
-
-  void _tickWheel(Duration elapsed) {
-    final center = _wheelCenter;
-    if (center == null) return _stopWheel();
-    final dt = _wheelLast == Duration.zero
-        ? 1 / 60
-        : (elapsed - _wheelLast).inMicroseconds / 1e6;
-    _wheelLast = elapsed;
-    final a = 1 - math.exp(-dt.clamp(0.0, 0.1) / _wheelTau);
-    final from = math.log(_wheelDays), to = math.log(_wheelTargetDays);
-    var next = math.exp(from + (to - from) * a);
-    final done = (to - math.log(next)).abs() < 0.002;
-    if (done) next = _wheelTargetDays;
-    _wheelDays = next;
-    widget.onViewportChanged(addDays(center, -next / 2), next);
-    if (done) _stopWheel();
-  }
 
   Size _size = Size.zero;
   int? _pointer;
@@ -470,7 +416,6 @@ class _BalanceChartState extends State<BalanceChart>
 
   /// Touch drag started near a dot: dragging scrubs tooltips, not the view.
   bool _scrubCandidate = false;
-  double _lastScale = 1;
   final ValueNotifier<DateTime?> _hoverDay = ValueNotifier(null);
 
   /// Dots under the mouse (several when they overlap) and where it is.
@@ -556,15 +501,7 @@ class _BalanceChartState extends State<BalanceChart>
   @override
   void didUpdateWidget(covariant BalanceChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Someone else moved the view (pan, buttons, fit): drop the wheel ease.
-    if (_wheelActive &&
-        ((widget.visibleDays - _wheelDays).abs() > 1e-6 ||
-            (dayCoord(widget.viewStart) -
-                        (dayCoord(_wheelCenter!) - _wheelDays / 2))
-                    .abs() >
-                1e-6)) {
-      _stopWheel();
-    }
+    _sentView = null;
     if (oldWidget.viewStart != widget.viewStart ||
         oldWidget.visibleDays != widget.visibleDays ||
         oldWidget.fitToken != widget.fitToken ||
@@ -779,9 +716,9 @@ class _BalanceChartState extends State<BalanceChart>
       final cb = widget.onPinnedDayChanged;
       WidgetsBinding.instance.addPostFrameCallback((_) => cb?.call(null));
     }
-    _wheelTicker.dispose();
     _holdTimer?.cancel();
     _tapTipTimer?.cancel();
+    _nudgeTimer?.cancel();
     _dtAnim.dispose();
     _hoverDay.dispose();
     _hoverDots.dispose();
@@ -1228,7 +1165,6 @@ class _BalanceChartState extends State<BalanceChart>
     _pointer = null;
     _downPos = null;
     _downOnAdd = null;
-    _lastScale = 1;
     _stickyTip = false;
     if (_longPressTip || _mode == _Gesture.scrub) {
       final tip = _hoverDots.value;
@@ -1363,6 +1299,26 @@ class _BalanceChartState extends State<BalanceChart>
     }
   }
 
+  final _chartPaintKey = GlobalKey();
+  Timer? _nudgeTimer;
+
+  /// Safari (WebKit) can also leave the canvas showing the previous frame
+  /// after a wheel / pinch change until the next input event: repaint the
+  /// chart again shortly after the last such event.
+  void _nudgePaint() {
+    if (!kIsWeb) return;
+    void paint() =>
+        _chartPaintKey.currentContext?.findRenderObject()?.markNeedsPaint();
+    _nudgeTimer?.cancel();
+    _nudgeTimer = Timer(const Duration(milliseconds: 50), () {
+      if (!mounted) return;
+      paint();
+      _nudgeTimer = Timer(const Duration(milliseconds: 150), () {
+        if (mounted) paint();
+      });
+    });
+  }
+
   void _armTapTipTimer() {
     _tapTipTimer?.cancel();
     _tapTipTimer = Timer(_tapTipDuration, () {
@@ -1423,66 +1379,54 @@ class _BalanceChartState extends State<BalanceChart>
     }
   }
 
+  /// Cmd, Option or Ctrl is held: the wheel scales instead of panning.
+  static bool get _scaleKeys {
+    final k = HardwareKeyboard.instance;
+    return k.isMetaPressed || k.isAltPressed || k.isControlPressed;
+  }
+
+  /// The wheel. Plain: vertical pans the balance range (natural direction:
+  /// wheel down shows lower balances, like a scrolled page) and horizontal
+  /// (or Shift+vertical) pans time; a diagonal trackpad swipe does both.
+  /// With Cmd, Option or Ctrl: scales about the pointer ([_scaleAtPointer]).
   void _handleScroll(PointerSignalEvent event) {
     if (event is! PointerScrollEvent || _pointer != null) return;
-    final dx = event.scrollDelta.dx;
-    final dy = event.scrollDelta.dy;
-    final width = _layout.plot.width;
-    if (width <= 0) return;
-    final keys = HardwareKeyboard.instance;
+    var dx = event.scrollDelta.dx;
+    var dy = event.scrollDelta.dy;
+    final plot = _layout.plot;
+    if (plot.width <= 0 || (dx == 0 && dy == 0)) return;
     final range = _ensureYRange();
-    // Cmd (Ctrl on desktop builds; in a browser Ctrl+wheel is the trackpad
-    // pinch, which arrives as a scale event instead) + wheel: the pointer is
-    // the scaling centre of both axes.
-    if ((keys.isMetaPressed || (!kIsWeb && keys.isControlPressed)) &&
-        (dx != 0 || dy != 0)) {
+    _nudgePaint();
+    if (_scaleKeys) {
       _scaleAtPointer(event.localPosition, dx, dy, range);
       return;
     }
-    if (range != null && keys.isShiftPressed) {
-      // Browsers often turn Shift+wheel into a horizontal delta.
-      final delta = dy != 0 ? dy : dx;
-      if (delta != 0) {
-        _setYRange(panBalanceRange(range, -delta, _layout.plot.height));
-      }
-      return;
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      // Shift+wheel pans time (browsers may already turn it horizontal).
+      dx = dy != 0 ? dy : dx;
+      dy = 0;
     }
-    if (range != null && keys.isAltPressed && dy != 0) {
-      final plot = _layout.plot;
-      final fraction = plot.height <= 0
-          ? 0.5
-          : (plot.bottom - event.localPosition.dy) / plot.height;
-      _setYRange(
-        zoomBalanceRange(
-          range,
-          math.exp(dy.clamp(-400.0, 400.0) * 0.0016),
-          fraction,
-        ),
-      );
-      return;
-    }
-    if (dx.abs() > dy.abs() && dx != 0) {
-      _stopWheel();
-      final days = dx / width * widget.visibleDays;
-      widget.onViewportChanged(
-        addDays(widget.viewStart, days),
-        widget.visibleDays,
-      );
-      return;
-    }
-    if (dy == 0) return;
-    // Vertical wheel drives the time scale, smoothly, about the centre.
+    // A delta under a fifth of the other is trackpad drift.
+    final major = math.max(dx.abs(), dy.abs());
+    if (dx.abs() < major * 0.2) dx = 0;
+    if (dy.abs() < major * 0.2) dy = 0;
     _clearTip();
-    _wheelZoom(dy);
+    if (dy != 0 && range != null) {
+      _setYRange(panBalanceRange(range, -dy, plot.height));
+    }
+    if (dx != 0) {
+      final (start, days) = _wheelView;
+      _sendWheelView(addDays(start, dx / plot.width * days), days);
+    }
   }
 
-  /// Cmd+wheel: a vertical delta scales the $ axis about the pointer's y (the
-  /// balance under it stays put) and a horizontal delta scales the time axis
-  /// about the pointer's x (the date under it stays put), each by
-  /// `exp(delta * 0.0016)` (positive zooms out), within the usual limits.
-  /// Both apply when both deltas are present; a delta under a fifth of the
-  /// other is trackpad drift and ignored. The y change is a deliberate range
-  /// (not auto-fitted again), like Alt+wheel.
+  /// Cmd/Option/Ctrl+wheel: a vertical delta scales the $ axis about the
+  /// pointer's y (the balance under it stays put) and a horizontal delta
+  /// scales the time axis about the pointer's x (the date under it stays
+  /// put), each by `exp(delta * 0.0016)` (positive zooms out), within the
+  /// usual limits. Both apply when both deltas are present; a delta under a
+  /// fifth of the other is trackpad drift and ignored. The y change is a
+  /// deliberate range (not auto-fitted again; Fit resets it).
   void _scaleAtPointer(
     Offset local,
     double dx,
@@ -1492,7 +1436,6 @@ class _BalanceChartState extends State<BalanceChart>
     final major = math.max(dx.abs(), dy.abs());
     final sx = dx.abs() >= major * 0.2 ? dx : 0.0;
     final sy = dy.abs() >= major * 0.2 ? dy : 0.0;
-    _stopWheel();
     _clearTip();
     if (sy != 0 && range != null) {
       final plot = _layout.plot;
@@ -1512,18 +1455,27 @@ class _BalanceChartState extends State<BalanceChart>
     }
   }
 
+  /// Scale signals. In a browser these are Ctrl+wheel events, each its own
+  /// ratio (`scale = exp(-deltaY / 200)`): a trackpad pinch (no key held),
+  /// zooming time about the pointer's x, or a mouse wheel with the Ctrl key
+  /// really held (Windows / Linux), which behaves like Cmd/Option+wheel:
+  /// the $ axis about the pointer's y.
   void _handleScale(PointerSignalEvent event) {
     if (event is! PointerScaleEvent || _pointer != null) return;
     final scale = event.scale;
-    if (scale <= 0) return;
-    if ((scale - 1).abs() < 0.02) {
-      _lastScale = 1;
+    if (scale <= 0 || scale == 1) return;
+    _nudgePaint();
+    if (_scaleKeys) {
+      _scaleAtPointer(
+        event.localPosition,
+        0,
+        -200 * math.log(scale),
+        _ensureYRange(),
+      );
       return;
     }
-    final factor = _lastScale / scale;
-    _lastScale = scale;
-    if ((factor - 1).abs() < 0.01) return;
-    _zoomAt(event.localPosition.dx, factor);
+    _clearTip();
+    _zoomAt(event.localPosition.dx, 1 / scale);
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -1605,12 +1557,29 @@ class _BalanceChartState extends State<BalanceChart>
     final layout = _layout;
     final width = layout.plot.width;
     if (width <= 0 || factor <= 0) return;
+    final (start, days) = _wheelView;
     final fraction = ((localDx - layout.plot.left) / width).clamp(0.0, 1.0);
-    final anchor = addDays(widget.viewStart, fraction * widget.visibleDays);
-    final nextDays = (widget.visibleDays * factor)
+    final anchor = addDays(start, fraction * days);
+    final nextDays = (days * factor)
         .clamp(minVisibleDays, maxVisibleDays)
         .toDouble();
-    widget.onViewportChanged(addDays(anchor, -fraction * nextDays), nextDays);
+    _sendWheelView(addDays(anchor, -fraction * nextDays), nextDays);
+  }
+
+  /// The view a wheel / pinch event last asked for, until the parent
+  /// rebuilds with it: several events can land in one frame (fast wheels,
+  /// 120 Hz trackpads) and each must build on the previous one.
+  (DateTime, double)? _sentView;
+
+  (DateTime, double) get _wheelView =>
+      _sentView ?? (widget.viewStart, widget.visibleDays);
+
+  void _sendWheelView(DateTime start, double days) {
+    if (_sentView == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _sentView = null);
+    }
+    _sentView = (start, days);
+    widget.onViewportChanged(start, days);
   }
 
   /// Last value sent to [BalanceChart.onPinnedDayChanged].
@@ -1677,6 +1646,7 @@ class _BalanceChartState extends State<BalanceChart>
                     child: ValueListenableBuilder<_DotTip?>(
                       valueListenable: _hoverDots,
                       builder: (context, tip, _) => CustomPaint(
+                        key: _chartPaintKey,
                         painter: _BalanceChartPainter(
                           labelMemory: _labelMemory,
                           labelHits: _labelHits,
@@ -5160,7 +5130,7 @@ class _BalanceChartPainter extends CustomPainter {
 
   /// A chip at the bottom edge when balances in view dip below the
   /// vertical range, so a clipped low (or overdraft) is noticed (drag or
-  /// Shift+wheel to it). Clipped highs get no chip (removed with the
+  /// wheel to it). Clipped highs get no chip (removed with the
   /// "max" / "min" axis labels).
   void _paintOffscreenHints(
     Canvas canvas,

@@ -56,12 +56,49 @@
     fix();
     try{new MutationObserver(fix).observe(document.head,{childList:true,subtree:true,attributes:true,attributeFilter:['content']})}catch(e){}
     function stop(e){if(e.cancelable)e.preventDefault()}
-    ['gesturestart','gesturechange','gestureend'].forEach(function(t){document.addEventListener(t,stop,{passive:false})});
+    // Desktop Safari reports a trackpad pinch as gesture* events (no
+    // Ctrl+wheel like Chrome / Firefox), so after blocking the page zoom,
+    // replay it to Flutter as the Ctrl+wheel it understands, at the pointer.
+    // Touch devices skip this (Flutter gets the touches themselves), and so
+    // does a pinch that already arrives as real Ctrl+wheel events.
+    var ctrlWheelAt=0,gScale=1;
+    window.addEventListener('wheel',function(e){
+      if(!e.ctrlKey||!e.isTrusted)return;
+      // Flutter turns any Ctrl+wheel into a pinch scale from deltaY alone, so
+      // a sideways Ctrl+wheel (a real Ctrl key) would be lost: hand it over
+      // as a plain sideways wheel; Flutter still sees Ctrl held and scales.
+      if(e.deltaX!==0&&Math.abs(e.deltaX)>Math.abs(e.deltaY)){
+        e.stopImmediatePropagation();e.preventDefault();
+        e.target.dispatchEvent(new WheelEvent('wheel',{deltaX:e.deltaX,deltaY:0,deltaMode:e.deltaMode,clientX:e.clientX,clientY:e.clientY,screenX:e.screenX,screenY:e.screenY,shiftKey:e.shiftKey,altKey:e.altKey,metaKey:e.metaKey,bubbles:true,cancelable:true,composed:true}));
+        return;
+      }
+      ctrlWheelAt=Date.now();
+    },{capture:true,passive:false});
+    function gesture(e){
+      stop(e);
+      if(navigator.maxTouchPoints>0)return;
+      if(e.type==='gesturestart'){gScale=1;return}
+      if(e.type!=='gesturechange'||Date.now()-ctrlWheelAt<300)return;
+      var s=e.scale||1,r=s/gScale;gScale=s;
+      if(!(r>0)||r===1)return;
+      var t=document.elementFromPoint(e.clientX,e.clientY);if(!t)return;
+      // Flutter scales by exp(-deltaY/200), after multiplying deltas by the
+      // pixel ratio on macOS.
+      var k=/Mac/.test(navigator.platform)?(window.devicePixelRatio||1):1;
+      t.dispatchEvent(new WheelEvent('wheel',{deltaY:-200*Math.log(r)/k,deltaMode:0,ctrlKey:true,clientX:e.clientX,clientY:e.clientY,bubbles:true,cancelable:true,composed:true}));
+    }
+    ['gesturestart','gesturechange','gestureend'].forEach(function(t){document.addEventListener(t,gesture,{passive:false})});
     document.addEventListener('touchmove',function(e){if(e.touches&&e.touches.length>1)stop(e)},{passive:false});
     // Double-tap zoom: touch-action:none above (no touchend preventDefault:
     // it would cancel the tap's click and user activation).
     // Pinch or a stray scroll that still moved the page: put it back.
     window.addEventListener('scroll',function(){if(window.scrollX||window.scrollY)window.scrollTo(0,0)},{passive:true});
+    // WebKit can also scroll the (overflow:hidden) body itself, e.g. to
+    // reveal a focused off-screen field, shifting the whole app sideways
+    // and its pointer mapping with it: put that back too.
+    function unscroll(){var b=document.body,d=document.documentElement;if(b&&(b.scrollLeft||b.scrollTop)){b.scrollLeft=0;b.scrollTop=0}if(d.scrollLeft||d.scrollTop){d.scrollLeft=0;d.scrollTop=0}}
+    document.addEventListener('scroll',function(e){if(e.target===document||e.target===document.body||e.target===document.documentElement)unscroll()},{capture:true,passive:true});
+    window.addEventListener('load',unscroll);setInterval(unscroll,1000);
   })();
   </script>
   <style id="bl-style">

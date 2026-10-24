@@ -289,10 +289,10 @@ void main() {
 
     final mouse = TestPointer(9, PointerDeviceKind.mouse);
     await tester.sendEventToBinding(mouse.hover(Offset(_x(20), _y(400))));
-    await tester.sendEventToBinding(mouse.scroll(const Offset(0, 50)));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(50, 0)));
     await tester.pump();
     expect(h.viewports, isNotEmpty);
-    expect(_card, findsOneWidget, reason: 'wheel zoom keeps it');
+    expect(_card, findsOneWidget, reason: 'wheel pan keeps it');
     expect(_range(tester), range);
 
     await tester.tap(find.byKey(const ValueKey('selection-close')));
