@@ -151,6 +151,37 @@ class TransactionsNotifier
     _touchPeer(updated.transfer);
   }
 
+  /// Includes / excludes several series at once (the list's checkbox
+  /// paint-drag): the requests run together and the list updates once.
+  /// Returns the ids that failed (unchanged here) and the first error.
+  Future<({Set<String> failed, Object? error})> setEnabledMany(
+    Map<String, bool> changes,
+  ) async {
+    final repo = ref.read(transactionRepositoryProvider);
+    final failed = <String>{};
+    Object? error;
+    final done = <String, Transaction>{};
+    await Future.wait([
+      for (final e in changes.entries)
+        () async {
+          try {
+            done[e.key] = await repo.setEnabled(e.key, e.value);
+          } catch (err) {
+            failed.add(e.key);
+            error ??= err;
+          }
+        }(),
+    ]);
+    if (done.isNotEmpty) {
+      final current = state.valueOrNull ?? [];
+      state = AsyncData([for (final s in current) done[s.id] ?? s]);
+      for (final t in done.values) {
+        _touchPeer(t.transfer);
+      }
+    }
+    return (failed: failed, error: error);
+  }
+
   /// A transfer changed: the other pool's list and every balance
   /// (both sides move) are stale.
   void _touchPeer(TransferLink? link) {

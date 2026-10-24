@@ -238,6 +238,16 @@ class TransactionRepository {
     return Transaction.fromJson(data as Map<String, dynamic>);
   }
 
+  /// Includes / excludes a series in the balance: patches only `enabled`
+  /// (no version), so it never clobbers or conflicts with other edits.
+  Future<Transaction> setEnabled(String id, bool enabled) async {
+    final data = await _api.patch(
+      '/api/transactions/$id',
+      body: {'enabled': enabled},
+    );
+    return Transaction.fromJson(data as Map<String, dynamic>);
+  }
+
   Future<void> delete(String id) => _api.delete('/api/transactions/$id');
 
   /// Bulk import of a pasted `TransactionImport[]` (raw text; fences are

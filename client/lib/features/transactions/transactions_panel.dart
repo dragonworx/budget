@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -8,7 +10,6 @@ import '../../boot/page_stub.dart'
     if (dart.library.js_interop) '../../boot/page_web.dart';
 import '../../data/api_client.dart';
 import '../../data/models.dart';
-import '../../widgets/conflict_dialog.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
@@ -298,7 +299,181 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
     _search.dispose();
     _listScroll.dispose();
     _highlightTimer?.cancel();
+    _autoScroll?.cancel();
+    final pointer = _paintPointer;
+    if (pointer != null) {
+      GestureBinding.instance.pointerRouter.removeRoute(pointer, _paintEvent);
+    }
     super.dispose();
+  }
+
+  // ---- Include checkboxes: click / tap, or press and paint across rows.
+
+  /// Include values shown ahead of the server (a paint in progress, or
+  /// saves in flight); dropped when they land (or roll back on failure).
+  final Map<String, bool> _included = {};
+
+  /// The paint in progress: the value being set, the rows it touched (and
+  /// their values before), the pointer's last position.
+  bool? _paintValue;
+  final Map<String, bool> _paintBefore = {};
+  Offset? _paintAt;
+  Timer? _autoScroll;
+
+  /// Rows as built (for hit-testing a paint), and the list's box.
+  final Map<String, GlobalKey> _rowKeys = {};
+  final _listKey = GlobalKey();
+  List<Transaction> _shown = const [];
+
+  bool _isIncluded(Transaction t) => _included[t.id] ?? t.enabled;
+
+  int? _paintPointer;
+
+  void _paintStart(Transaction t, PointerDownEvent down) {
+    if (_readOnly || _paintValue != null) return;
+    _paintValue = !_isIncluded(t);
+    _paintBefore.clear();
+    _paintAt = down.position;
+    // Follow the pointer from the binding, not the row: the row that took
+    // the press may scroll away (and be disposed) mid-paint.
+    _paintPointer = down.pointer;
+    GestureBinding.instance.pointerRouter.addRoute(down.pointer, _paintEvent);
+    _paintRow(t);
+    _autoScroll = Timer.periodic(
+      const Duration(milliseconds: 16),
+      (_) => _tickAutoScroll(),
+    );
+  }
+
+  void _paintEvent(PointerEvent event) {
+    if (event is PointerMoveEvent) {
+      _paintMove(event.position);
+    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _paintEnd();
+    }
+  }
+
+  void _paintRow(Transaction t) {
+    final v = _paintValue;
+    if (v == null || _paintBefore.containsKey(t.id)) return;
+    _paintBefore[t.id] = t.enabled;
+    if (_isIncluded(t) != v) setState(() => _included[t.id] = v);
+  }
+
+  /// The list's on-screen rect (paints and auto-scroll stay inside it).
+  Rect? _listRect() {
+    final box = _listKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  /// The row (by its vertical band, so a loose drag still counts) under
+  /// global y, clamped into the list.
+  Transaction? _rowAtY(double y, Rect list) {
+    final cy = y.clamp(list.top + 1, list.bottom - 1);
+    for (final t in _shown) {
+      final box =
+          _rowKeys[t.id]?.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.attached || !box.hasSize) continue;
+      final top = box.localToGlobal(Offset.zero).dy;
+      if (cy >= top && cy < top + box.size.height) return t;
+    }
+    return null;
+  }
+
+  void _paintMove(Offset at) {
+    final from = _paintAt;
+    final list = _listRect();
+    _paintAt = at;
+    if (_paintValue == null || from == null || list == null) return;
+    // Sample every few px between pointer events so a fast flick still
+    // touches every row it crosses.
+    final dy = at.dy - from.dy;
+    final n = math.max(1, (dy.abs() / 6).ceil());
+    for (var i = 1; i <= n; i++) {
+      final t = _rowAtY(from.dy + dy * i / n, list);
+      if (t != null) _paintRow(t);
+    }
+  }
+
+  /// Near the list's top / bottom edge, scroll the list (only the list),
+  /// painting rows as they pass under the pointer.
+  void _tickAutoScroll() {
+    final at = _paintAt, list = _listRect();
+    if (_paintValue == null || at == null || list == null) return;
+    if (!_listScroll.hasClients) return;
+    const zone = 28.0;
+    final pos = _listScroll.position;
+    double step = 0;
+    if (at.dy < list.top + zone) {
+      step = -math.min(16.0, (list.top + zone - at.dy) / 2);
+    } else if (at.dy > list.bottom - zone) {
+      step = math.min(16.0, (at.dy - (list.bottom - zone)) / 2);
+    }
+    if (step == 0) return;
+    final to = (pos.pixels + step).clamp(
+      pos.minScrollExtent,
+      pos.maxScrollExtent,
+    );
+    if (to == pos.pixels) return;
+    pos.jumpTo(to);
+    final t = _rowAtY(at.dy, list);
+    if (t != null) _paintRow(t);
+  }
+
+  void _paintEnd() {
+    final v = _paintValue;
+    final pointer = _paintPointer;
+    if (pointer != null) {
+      GestureBinding.instance.pointerRouter.removeRoute(pointer, _paintEvent);
+    }
+    _paintPointer = null;
+    _autoScroll?.cancel();
+    _autoScroll = null;
+    _paintValue = null;
+    _paintAt = null;
+    if (v == null) return;
+    final changes = {
+      for (final e in _paintBefore.entries)
+        if (e.value != v) e.key: v,
+    };
+    // Rows painted back to their saved value need no request.
+    setState(() {
+      for (final id in _paintBefore.keys) {
+        if (!changes.containsKey(id) && _included[id] == _paintBefore[id]) {
+          _included.remove(id);
+        }
+      }
+    });
+    _paintBefore.clear();
+    _saveIncluded(changes);
+  }
+
+  /// Keyboard (Space) / semantics toggle of one row.
+  void _toggleOne(Transaction t, bool v) {
+    if (_readOnly || _paintValue != null) return;
+    setState(() => _included[t.id] = v);
+    _saveIncluded({if (v != t.enabled) t.id: v});
+  }
+
+  /// Saves the include changes in one batch; the timeline refreshes once.
+  Future<void> _saveIncluded(Map<String, bool> changes) async {
+    if (changes.isEmpty) return;
+    final r = await ref
+        .read(transactionsProvider(widget.pool.id).notifier)
+        .setEnabledMany(changes);
+    if (!mounted) return;
+    setState(() {
+      // Landed (now in the list) or failed (rolled back): drop the shown
+      // value, unless a newer paint has since changed it.
+      for (final e in changes.entries) {
+        if (_included[e.key] == e.value && !_paintBefore.containsKey(e.key)) {
+          _included.remove(e.key);
+        }
+      }
+    });
+    if (r.failed.length < changes.length) widget.onChanged();
+    if (r.error != null) _error(r.error!);
   }
 
   List<Transaction> _ordered(List<Transaction> items, {bool watch = true}) {
@@ -512,58 +687,84 @@ class _TransactionsPanelState extends ConsumerState<TransactionsPanel> {
         ),
       );
     }
+    _shown = shown;
+    _rowKeys.removeWhere((id, _) => !shown.any((t) => t.id == id));
     Widget row(int index, Transaction t) => _TxRow(
       key: ValueKey(t.id),
+      rowKey: _rowKeys[t.id] ??= GlobalKey(),
       highlightKey: t.id == _highlightId ? _highlightKey : null,
       highlighted: t.id == _highlightId,
-      transaction: t,
+      transaction: _included.containsKey(t.id)
+          ? t.copyWith(enabled: _included[t.id])
+          : t,
       index: canReorder ? index : null,
       readOnly: _readOnly,
       onTap: () => _open(t),
       onDelete: () => _deleteFromList(context, t),
-      onToggle: (v) async {
-        try {
-          final n = ref.read(transactionsProvider(widget.pool.id).notifier);
-          final r = await saveWithConflictCheck(
-            context,
-            save: (force) =>
-                n.updateTransaction(t.copyWith(enabled: v), force: force),
-            reload: n.refresh,
-          );
-          if (r != SaveResult.cancelled) widget.onChanged();
-        } catch (e) {
-          _error(e);
-        }
-      },
+      onToggle: (v) => _toggleOne(t, v),
+      onPaintStart: (down) => _paintStart(t, down),
     );
     if (!canReorder) {
-      return ListView.builder(
-        controller: _listScroll,
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: shown.length,
-        itemBuilder: (context, i) => row(i, shown[i]),
+      return KeyedSubtree(
+        key: _listKey,
+        child: ListView.builder(
+          controller: _listScroll,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: shown.length,
+          itemBuilder: (context, i) => row(i, shown[i]),
+        ),
       );
     }
-    return ReorderableListView.builder(
-      scrollController: _listScroll,
-      buildDefaultDragHandles: false,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: shown.length,
-      onReorderItem: (oldIndex, newIndex) async {
-        final ids = shown.map((s) => s.id).toList();
-        ids.insert(newIndex, ids.removeAt(oldIndex));
-        try {
-          await ref
-              .read(transactionsProvider(widget.pool.id).notifier)
-              .reorder(ids);
-          widget.onChanged();
-        } catch (e) {
-          _error(e);
-        }
-      },
-      itemBuilder: (context, i) => row(i, shown[i]),
+    return KeyedSubtree(
+      key: _listKey,
+      child: ReorderableListView.builder(
+        scrollController: _listScroll,
+        buildDefaultDragHandles: false,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: shown.length,
+        onReorderItem: (oldIndex, newIndex) async {
+          final ids = shown.map((s) => s.id).toList();
+          ids.insert(newIndex, ids.removeAt(oldIndex));
+          try {
+            await ref
+                .read(transactionsProvider(widget.pool.id).notifier)
+                .reorder(ids);
+            widget.onChanged();
+          } catch (e) {
+            _error(e);
+          }
+        },
+        itemBuilder: (context, i) => row(i, shown[i]),
+      ),
     );
   }
+}
+
+/// Wins a pointer the moment it lands (on an include checkbox), so the
+/// list doesn't scroll, the row doesn't swipe or open, and the drag paints
+/// (the panel follows the pointer from there).
+class _PaintDragRecognizer extends OneSequenceGestureRecognizer {
+  ValueChanged<PointerDownEvent>? onStart;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
+    onStart?.call(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerUpEvent || event is PointerCancelEvent) {
+      stopTrackingPointer(event.pointer);
+    }
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {}
+
+  @override
+  String get debugDescription => 'include paint drag';
 }
 
 class _TxRow extends StatelessWidget {
@@ -574,6 +775,8 @@ class _TxRow extends StatelessWidget {
     required this.onTap,
     required this.onToggle,
     required this.onDelete,
+    required this.onPaintStart,
+    this.rowKey,
     this.highlighted = false,
     this.highlightKey,
     this.readOnly = false,
@@ -588,6 +791,10 @@ class _TxRow extends StatelessWidget {
   final VoidCallback onTap;
   final ValueChanged<bool> onToggle;
   final VoidCallback onDelete;
+  final ValueChanged<PointerDownEvent> onPaintStart;
+
+  /// On the row's box, so a paint-drag can find the row under the pointer.
+  final Key? rowKey;
 
   @override
   Widget build(BuildContext context) {
@@ -627,171 +834,198 @@ class _TxRow extends StatelessWidget {
         ),
       ),
       onDismissed: (_) => onDelete(),
-      child: Padding(
-        key: highlightKey,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-        child: Material(
-          color: highlighted
-              ? Color.alphaBlend(
-                  AppTheme.accent.withValues(alpha: 0.12),
-                  AppTheme.raised,
-                )
-              : AppTheme.raised,
-          animationDuration: const Duration(milliseconds: 400),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: highlighted ? AppTheme.accent : AppTheme.border,
-              width: highlighted ? 1.5 : 1,
+      child: KeyedSubtree(
+        key: rowKey,
+        child: Padding(
+          key: highlightKey,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+          child: Material(
+            color: highlighted
+                ? Color.alphaBlend(
+                    AppTheme.accent.withValues(alpha: 0.12),
+                    AppTheme.raised,
+                  )
+                : AppTheme.raised,
+            animationDuration: const Duration(milliseconds: 400),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                color: highlighted ? AppTheme.accent : AppTheme.border,
+                width: highlighted ? 1.5 : 1,
+              ),
             ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
-              child: Row(
-                children: [
-                  if (index != null)
-                    ReorderableDragStartListener(
-                      index: index!,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 4),
-                        child: Icon(
-                          Icons.drag_indicator_rounded,
-                          size: 18,
-                          color: AppTheme.textFaint,
-                        ),
-                      ),
-                    )
-                  else
-                    const SizedBox(width: 8),
-                  t.isTransfer
-                      ? _TransferBadge(muted: !t.enabled)
-                      : DirectionBadge(credit: credit, muted: !t.enabled),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          t.name.isEmpty ? 'Untitled' : t.name,
-                          maxLines: 1,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: t.enabled ? null : AppTheme.textFaint,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+                child: Row(
+                  children: [
+                    if (index != null)
+                      ReorderableDragStartListener(
+                        index: index!,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(
+                            Icons.drag_indicator_rounded,
+                            size: 18,
+                            color: AppTheme.textFaint,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
-                        if (t.isTransfer)
+                      )
+                    else
+                      const SizedBox(width: 8),
+                    t.isTransfer
+                        ? _TransferBadge(muted: !t.enabled)
+                        : DirectionBadge(credit: credit, muted: !t.enabled),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            transferPhrase(t),
-                            key: ValueKey('row-transfer-${t.id}'),
+                            t.name.isEmpty ? 'Untitled' : t.name,
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: AppTheme.transferColor,
-                              fontWeight: FontWeight.w600,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: t.enabled ? null : AppTheme.textFaint,
                             ),
-                          ),
-                        Text(
-                          [
-                            describeRecurrence(t),
-                            ?scheduleHint(t, DateTime.now()),
-                          ].join(' · '),
-                          style: theme.textTheme.bodySmall,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        // Its first (seed) date; a one-off's is the date
-                        // above.
-                        if (t.recurrenceMode != RecurrenceMode.once)
-                          Text(
-                            startPhrase(t, DateTime.now(), compact: touch),
-                            key: ValueKey('row-start-${t.id}'),
-                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: AppTheme.textMuted,
-                            ),
                           ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    formatSignedAmount(amount),
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: !t.enabled
-                          ? AppTheme.textFaint
-                          : credit
-                          ? AppTheme.creditColor
-                          : AppTheme.debitColor,
-                    ),
-                  ),
-                  // Delete (editors only): a ⋮ menu on touch, an icon with
-                  // a mouse. Tapping the row opens it in the editor.
-                  if (readOnly)
-                    const SizedBox(width: 4)
-                  else if (touch)
-                    SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: PopupMenuButton<String>(
-                        key: ValueKey('row-menu-${t.id}'),
-                        tooltip: 'More for $name',
-                        icon: const Icon(Icons.more_vert_rounded, size: 20),
-                        color: AppTheme.overlay,
-                        onSelected: (_) => onDelete(),
-                        itemBuilder: (_) => [
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: ListTile(
-                              leading: Icon(
-                                Icons.delete_outline_rounded,
-                                color: AppTheme.debitColor,
+                          if (t.isTransfer)
+                            Text(
+                              transferPhrase(t),
+                              key: ValueKey('row-transfer-${t.id}'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppTheme.transferColor,
+                                fontWeight: FontWeight.w600,
                               ),
-                              title: const Text('Delete'),
                             ),
+                          Text(
+                            [
+                              describeRecurrence(t),
+                              ?scheduleHint(t, DateTime.now()),
+                            ].join(' · '),
+                            style: theme.textTheme.bodySmall,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                          // Its first (seed) date; a one-off's is the date
+                          // above.
+                          if (t.recurrenceMode != RecurrenceMode.once)
+                            Text(
+                              startPhrase(t, DateTime.now(), compact: touch),
+                              key: ValueKey('row-start-${t.id}'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: AppTheme.textMuted,
+                              ),
+                            ),
                         ],
                       ),
-                    )
-                  else
-                    IconButton(
-                      key: ValueKey('row-delete-${t.id}'),
-                      tooltip: 'Delete $name',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: onDelete,
-                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
                     ),
-                  Tooltip(
-                    message: t.enabled
-                        ? 'Included in balance'
-                        : 'Excluded from balance',
-                    // Tap toggles; horizontal drags fall through to the
-                    // row's Dismissible instead of flipping the switch.
-                    child: GestureDetector(
-                      key: ValueKey('row-switch-${t.id}'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: readOnly ? null : () => onToggle(!t.enabled),
-                      child: IgnorePointer(
-                        child: Opacity(
-                          opacity: readOnly ? 0.4 : 1,
-                          child: Transform.scale(
-                            scale: touch ? 0.9 : 0.8,
-                            child: Switch(
-                              value: t.enabled,
-                              onChanged: readOnly ? null : onToggle,
-                            ),
-                          ),
-                        ),
+                    const SizedBox(width: 8),
+                    Text(
+                      formatSignedAmount(amount),
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: !t.enabled
+                            ? AppTheme.textFaint
+                            : credit
+                            ? AppTheme.creditColor
+                            : AppTheme.debitColor,
                       ),
                     ),
-                  ),
-                ],
+                    // Delete (editors only): a ⋮ menu on touch, an icon with
+                    // a mouse. Tapping the row opens it in the editor.
+                    if (readOnly)
+                      const SizedBox(width: 4)
+                    else if (touch)
+                      SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: PopupMenuButton<String>(
+                          key: ValueKey('row-menu-${t.id}'),
+                          tooltip: 'More for $name',
+                          icon: const Icon(Icons.more_vert_rounded, size: 20),
+                          color: AppTheme.overlay,
+                          onSelected: (_) => onDelete(),
+                          itemBuilder: (_) => [
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: ListTile(
+                                leading: Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: AppTheme.debitColor,
+                                ),
+                                title: const Text('Delete'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      IconButton(
+                        key: ValueKey('row-delete-${t.id}'),
+                        tooltip: 'Delete $name',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onDelete,
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                        ),
+                      ),
+                    _includeBox(context, t, name, touch),
+                  ],
+                ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Include in balance: a compact checkbox (checked = included). Pressing
+  /// it flips it; dragging on across rows sets each to the same value.
+  /// Space toggles it from the keyboard.
+  Widget _includeBox(
+    BuildContext context,
+    Transaction t,
+    String name,
+    bool touch,
+  ) {
+    final size = touch ? 44.0 : 36.0;
+    final box = Checkbox(
+      value: t.enabled,
+      onChanged: readOnly ? null : (v) => onToggle(v ?? false),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      semanticLabel: 'Include $name in balance',
+    );
+    return Tooltip(
+      message: t.enabled ? 'Included in balance' : 'Excluded from balance',
+      waitDuration: const Duration(milliseconds: 600),
+      // The checkbox names itself; its checked state says the rest.
+      excludeFromSemantics: true,
+      child: SizedBox(
+        key: ValueKey('row-check-${t.id}'),
+        width: size,
+        height: size,
+        child: readOnly
+            ? Center(child: box)
+            : RawGestureDetector(
+                behavior: HitTestBehavior.opaque,
+                gestures: {
+                  _PaintDragRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                        _PaintDragRecognizer
+                      >(_PaintDragRecognizer.new, (r) {
+                        r.onStart = onPaintStart;
+                      }),
+                },
+                child: Center(child: box),
+              ),
       ),
     );
   }

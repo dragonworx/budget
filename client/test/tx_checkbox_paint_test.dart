@@ -1,0 +1,359 @@
+// Transactions list include checkboxes: click toggles; press and drag
+// across rows paints them all to the pressed row's new value (sets, never
+// toggles), saved in one batch with one timeline refresh; failures roll
+// back. Works scrolled, with touch (a drag from a checkbox paints instead
+// of scrolling) and from the keyboard.
+import 'dart:async';
+
+import 'package:budget_client/data/api_client.dart';
+import 'package:budget_client/data/models.dart';
+import 'package:budget_client/data/repositories.dart';
+import 'package:budget_client/features/transactions/transactions_panel.dart';
+import 'package:budget_client/state/providers.dart';
+import 'package:decimal/decimal.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+final _pool = Pool(
+  id: 'p',
+  ownerId: 'u1',
+  name: 'Everyday',
+  seedBalance: Decimal.parse('1000'),
+  seedDate: DateTime(2026, 1, 1),
+  lossThreshold: Decimal.zero,
+  role: Role.owner,
+);
+
+Transaction _tx(int i, {bool enabled = true}) => Transaction(
+  id: 't$i',
+  poolId: 'p',
+  name: 'Item $i',
+  direction: TransactionDirection.debit,
+  amount: Decimal.fromInt(10 + i),
+  startDate: DateTime(2026, 2, 1),
+  recurrenceMode: RecurrenceMode.once,
+  endMode: EndMode.never,
+  enabled: enabled,
+);
+
+class _PoolRepo extends PoolRepository {
+  _PoolRepo() : super(ApiClient());
+  @override
+  Future<Pool> get(String id) async => _pool;
+}
+
+class _TxRepo extends TransactionRepository {
+  _TxRepo(this.items) : super(ApiClient());
+  List<Transaction> items;
+  final calls = <String>[];
+  final fail = <String>{};
+  Completer<void>? gate;
+
+  @override
+  Future<List<Transaction>> listForPool(String poolId) async => items;
+
+  @override
+  Future<Transaction> setEnabled(String id, bool enabled) async {
+    calls.add('$id=$enabled');
+    if (gate != null) await gate!.future;
+    if (fail.contains(id)) throw ApiException('boom', statusCode: 500);
+    final t = items.firstWhere((t) => t.id == id).copyWith(enabled: enabled);
+    items = [for (final x in items) x.id == id ? t : x];
+    return t;
+  }
+}
+
+late _TxRepo _repo;
+var _changed = 0;
+
+Future<void> _pump(
+  WidgetTester tester, {
+  Size size = const Size(1000, 800),
+  int count = 24,
+  Set<int> disabled = const {},
+}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  _changed = 0;
+  _repo = _TxRepo([
+    for (var i = 0; i < count; i++) _tx(i, enabled: !disabled.contains(i)),
+  ]);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        poolRepositoryProvider.overrideWithValue(_PoolRepo()),
+        transactionRepositoryProvider.overrideWithValue(_repo),
+      ],
+      child: MaterialApp(
+        home: Scaffold(
+          body: TransactionsPanel(
+            pool: _pool,
+            skipsFor: (_) => const {},
+            onPanelClosed: (_) {},
+            onChanged: () => _changed++,
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+Finder _box(int i) => find.byKey(ValueKey('row-check-t$i'));
+
+bool _checked(WidgetTester tester, int i) => tester
+    .widget<Checkbox>(
+      find.descendant(of: _box(i), matching: find.byType(Checkbox)),
+    )
+    .value!;
+
+Finder get _listFinder =>
+    find.ancestor(of: _box(0), matching: find.byType(Scrollable)).first;
+
+ScrollPosition _list(WidgetTester tester) =>
+    tester.state<ScrollableState>(_listFinder).position;
+
+/// Saved include state (after the batch lands).
+bool _saved(int i) => _repo.items.firstWhere((t) => t.id == 't$i').enabled;
+
+void main() {
+  testWidgets('a click toggles one row, saved once', (tester) async {
+    await _pump(tester);
+    expect(find.byType(Switch), findsNothing);
+    expect(_checked(tester, 1), isTrue);
+    await tester.tap(_box(1), kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(_checked(tester, 1), isFalse);
+    expect(_repo.calls, ['t1=false']);
+    expect(_changed, 1);
+    // Back on: a second click.
+    await tester.tap(_box(1), kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(_checked(tester, 1), isTrue);
+    expect(_saved(1), isTrue);
+    // The row didn't open in the editor.
+    expect(find.byKey(const ValueKey('transactions-search')), findsOneWidget);
+  });
+
+  testWidgets('press and drag across rows sets them all, one batch', (
+    tester,
+  ) async {
+    // Row 2 is already excluded: painting "exclude" leaves it (sets, not
+    // toggles) and sends nothing for it.
+    await _pump(tester, disabled: {2});
+    final g = await tester.startGesture(
+      tester.getCenter(_box(0)),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    expect(_checked(tester, 0), isFalse, reason: 'flips on press');
+    for (var i = 1; i <= 4; i++) {
+      await g.moveTo(tester.getCenter(_box(i)));
+      await tester.pump();
+    }
+    // Nothing saved mid-drag; the rows already show it.
+    expect(_repo.calls, isEmpty);
+    for (var i = 0; i <= 4; i++) {
+      expect(_checked(tester, i), isFalse, reason: 'row $i');
+    }
+    expect(_checked(tester, 5), isTrue);
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(_repo.calls.toSet(), {
+      't0=false',
+      't1=false',
+      't3=false',
+      't4=false',
+    });
+    expect(_changed, 1, reason: 'the timeline refreshes once');
+    for (var i = 0; i <= 4; i++) {
+      expect(_saved(i), isFalse);
+    }
+    expect(_saved(5), isTrue);
+  });
+
+  testWidgets('dragging back over a row keeps it set; drags back up too', (
+    tester,
+  ) async {
+    await _pump(tester, disabled: {0, 1, 2, 3});
+    // Start on 3 (excluded → include) and paint upwards to 0.
+    final g = await tester.startGesture(
+      tester.getCenter(_box(3)),
+      kind: PointerDeviceKind.mouse,
+    );
+    await g.moveTo(tester.getCenter(_box(0)));
+    await g.moveTo(tester.getCenter(_box(2)));
+    await g.up();
+    await tester.pumpAndSettle();
+    for (var i = 0; i <= 3; i++) {
+      expect(_saved(i), isTrue, reason: 'row $i');
+    }
+  });
+
+  testWidgets('a fast flick skips no rows', (tester) async {
+    await _pump(tester);
+    final g = await tester.startGesture(
+      tester.getCenter(_box(0)),
+      kind: PointerDeviceKind.mouse,
+    );
+    // One move event straight from row 0 to row 7, off to the side.
+    await g.moveTo(tester.getCenter(_box(7)) + const Offset(-300, 0));
+    await g.up();
+    await tester.pumpAndSettle();
+    for (var i = 0; i <= 7; i++) {
+      expect(_saved(i), isFalse, reason: 'row $i');
+    }
+    expect(_saved(8), isTrue);
+    expect(_repo.calls, hasLength(8));
+  });
+
+  testWidgets('works when the list is scrolled', (tester) async {
+    await _pump(tester, count: 40);
+    _list(tester).jumpTo(900);
+    await tester.pumpAndSettle();
+    final first = [
+      for (var i = 0; i < 40; i++)
+        if (_box(i).evaluate().isNotEmpty && tester.getCenter(_box(i)).dy > 200)
+          i,
+    ].first;
+    expect(first, greaterThan(5));
+    final g = await tester.startGesture(
+      tester.getCenter(_box(first)),
+      kind: PointerDeviceKind.mouse,
+    );
+    await g.moveTo(tester.getCenter(_box(first + 3)));
+    await g.up();
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 40; i++) {
+      expect(
+        _saved(i),
+        i < first || i > first + 3,
+        reason: 'row $i (painted $first..${first + 3})',
+      );
+    }
+  });
+
+  testWidgets('dragging past the list edge auto-scrolls the list', (
+    tester,
+  ) async {
+    await _pump(tester, count: 40);
+    final pos = _list(tester);
+    expect(pos.pixels, 0);
+    final bottom = tester.getBottomLeft(_listFinder).dy;
+    final g = await tester.startGesture(
+      tester.getCenter(_box(2)),
+      kind: PointerDeviceKind.mouse,
+    );
+    await g.moveTo(Offset(tester.getCenter(_box(2)).dx, bottom - 5));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(pos.pixels, greaterThan(100));
+    await g.up();
+    await tester.pumpAndSettle();
+    // Every row from 2 down to the one now at the edge, none skipped.
+    final changed = [
+      for (var i = 0; i < 40; i++)
+        if (!_saved(i)) i,
+    ];
+    expect(changed.first, 2);
+    expect(changed, [for (var i = 2; i <= changed.last; i++) i]);
+    expect(changed.length, greaterThan(5));
+  });
+
+  testWidgets('touch: a drag from a checkbox paints instead of scrolling; '
+      'elsewhere it scrolls', (tester) async {
+    await _pump(tester, size: const Size(390, 844), count: 30);
+    final pos = _list(tester);
+    final g = await tester.startGesture(tester.getCenter(_box(1)));
+    for (var i = 2; i <= 4; i++) {
+      await g.moveTo(tester.getCenter(_box(i)));
+      await tester.pump();
+    }
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(pos.pixels, 0, reason: 'the list did not scroll');
+    for (var i = 1; i <= 4; i++) {
+      expect(_saved(i), isFalse, reason: 'row $i');
+    }
+    expect(_saved(0), isTrue);
+    expect(_changed, 1);
+    // A drag on the row's name scrolls as before.
+    await tester.drag(find.text('Item 6'), const Offset(0, -200));
+    await tester.pumpAndSettle();
+    expect(pos.pixels, greaterThan(100));
+    expect(_repo.calls, hasLength(4));
+  });
+
+  testWidgets('a failed save rolls those rows back', (tester) async {
+    await _pump(tester);
+    _repo.fail.add('t2');
+    _repo.gate = Completer();
+    final g = await tester.startGesture(
+      tester.getCenter(_box(1)),
+      kind: PointerDeviceKind.mouse,
+    );
+    await g.moveTo(tester.getCenter(_box(3)));
+    await g.up();
+    await tester.pump();
+    // Optimistic while the batch is in flight.
+    for (var i = 1; i <= 3; i++) {
+      expect(_checked(tester, i), isFalse);
+    }
+    _repo.gate!.complete();
+    await tester.pumpAndSettle();
+    expect(_checked(tester, 1), isFalse);
+    expect(_checked(tester, 2), isTrue, reason: 'rolled back');
+    expect(_checked(tester, 3), isFalse);
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(_changed, 1);
+  });
+
+  testWidgets('Space toggles a focused checkbox; it reads as a checkbox', (
+    tester,
+  ) async {
+    final sem = tester.ensureSemantics();
+    await _pump(tester);
+    expect(
+      tester.getSemantics(
+        find.descendant(of: _box(0), matching: find.byType(Checkbox)),
+      ),
+      matchesSemantics(
+        label: 'Include Item 0 in balance',
+        hasCheckedState: true,
+        isChecked: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        isFocusable: true,
+        hasTapAction: true,
+        hasFocusAction: true,
+      ),
+    );
+    final inner = find.descendant(
+      of: find.descendant(of: _box(0), matching: find.byType(Checkbox)),
+      matching: find.byType(CustomPaint),
+    );
+    Focus.of(tester.element(inner.first)).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(_checked(tester, 0), isFalse);
+    expect(_repo.calls, ['t0=false']);
+    expect(_changed, 1);
+    sem.dispose();
+  });
+
+  testWidgets('reorder handles still drag rows', (tester) async {
+    await _pump(tester, count: 6);
+    final handle = find.byIcon(Icons.drag_indicator_rounded).first;
+    expect(handle, findsOneWidget);
+    // The handle sits apart from the checkbox; pressing it paints nothing.
+    final g = await tester.startGesture(tester.getCenter(handle));
+    await g.moveBy(const Offset(0, 40));
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(_repo.calls, isEmpty);
+  });
+}
