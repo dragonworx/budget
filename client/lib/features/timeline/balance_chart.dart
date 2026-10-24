@@ -78,6 +78,10 @@ void Function(Rect rect, List<String> lines)? debugVertexLabelLines;
 void Function(String name, String amount, Color color, Rect pill)?
 debugLaneAmount;
 
+/// Test hook: each lane name as drawn (left, sticky) and its box.
+@visibleForTesting
+void Function(String name, Rect rect)? debugLaneName;
+
 /// Most transaction names listed under a day's total before "+N more".
 const int maxLabelNames = 6;
 
@@ -4692,7 +4696,21 @@ class _BalanceChartPainter extends CustomPainter {
         : List<Path?>.filled(lanes.lanes.length, null);
     final openX = List<double>.filled(lanes.lanes.length, 0);
     final openTop = List<double>.filled(lanes.lanes.length, double.nan);
-    final texts = <({int lane, double x0, double x1, double top})>[];
+    // A label's amount right-aligns where its lane's run ends, clear of the
+    // next step's dots / connector, so every lane of that stack shares it.
+    final texts =
+        <({int lane, double x0, double x1, double top, double edge})>[];
+    final dayPx = plot.width / math.max(visibleDays, 0.001);
+    final dotR = dayPx >= laneDotsMinDayPx
+        ? laneDotRadius(
+            dayPx > 28
+                ? 4.5
+                : dayPx > 12
+                ? 3.4
+                : 2.2,
+            h,
+          )
+        : 0.0;
     final band = Path();
     // The line starts at the opening balance: on the seed day a plain riser
     // joins the opening diamond to the ribbon (whose level is the day's
@@ -4793,7 +4811,13 @@ class _BalanceChartPainter extends CustomPainter {
             openTop[li] = top;
           }
           if (topN == null || !continues) {
-            texts.add((lane: li, x0: openX[li], x1: xEnd, top: openTop[li]));
+            texts.add((
+              lane: li,
+              x0: openX[li],
+              x1: xEnd,
+              top: openTop[li],
+              edge: next == null ? p.x1 : p.x1 - math.max(w, dotR + 2) - 2,
+            ));
             openTop[li] = double.nan;
           }
         }
@@ -4830,11 +4854,12 @@ class _BalanceChartPainter extends CustomPainter {
       // after the y-axis labels' strip, else just right of the dot.
       final clipped = t.x0 <= plot.left + 0.5;
       final startX = clipped ? plot.left + strip + 4 : t.x0 + 10;
-      final avail = t.x1 - startX - 4;
-      if (avail < 34 || startX > plot.right) continue;
+      if (startX > plot.right) continue;
       final lane = lanes.lanes[t.lane];
-      // The amount follows the name, signed and coloured on a small dark
-      // pill (readable on every lane colour); the name gives way first.
+      // The amount, signed and coloured on a small dark pill (readable on
+      // every lane colour), right-aligned at the segment's shared edge (or
+      // the chart's right edge when the segment runs off it), so a stack's
+      // amounts form a column; the name, left, gives way first.
       final amountPainter = _axisText.get(
         formatSignedAmount(lane.amount),
         amountStyle.copyWith(
@@ -4843,13 +4868,12 @@ class _BalanceChartPainter extends CustomPainter {
         maxLines: 1,
       );
       final pillW = amountPainter.width + 8;
-      final nameMax = avail - pillW - 4;
-      // Too tight for even a short name: the amount alone, if it fits.
-      final nameless = nameMax < 24;
-      if (nameless && avail < pillW) continue;
+      final right = math.min(t.edge, plot.right - 4);
+      final avail = right - startX;
+      if (avail < pillW) continue;
+      final nameMax = avail - pillW - 6;
       final cy = t.top + h / 2;
-      var pillX = startX;
-      if (!nameless) {
+      if (nameMax >= 24) {
         // Widths in steps, so a panning (growing) segment reuses its text.
         final maxW = (nameMax / 6).floorToDouble() * 6;
         final painter = _axisText.get(
@@ -4860,10 +4884,18 @@ class _BalanceChartPainter extends CustomPainter {
           maxWidth: maxW,
         );
         painter.paint(canvas, Offset(startX, cy - painter.height / 2));
-        pillX = startX + painter.width + 4;
+        debugLaneName?.call(
+          lane.name,
+          Rect.fromLTWH(
+            startX,
+            cy - painter.height / 2,
+            painter.width,
+            painter.height,
+          ),
+        );
       }
       final pill = RRect.fromRectAndRadius(
-        Rect.fromLTWH(pillX, cy - (h - 3) / 2, pillW, h - 3),
+        Rect.fromLTWH(right - pillW, cy - (h - 3) / 2, pillW, h - 3),
         const Radius.circular(3),
       );
       canvas.drawRRect(pill, Paint()..color = const Color(0xD90E1420));

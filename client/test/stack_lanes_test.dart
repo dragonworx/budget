@@ -1,5 +1,7 @@
 // Stacked lanes: the balance line drawn as one ribbon of a lane per
 // transaction (list order), dots on the left edge of their day.
+import 'dart:math' as math;
+
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
@@ -642,6 +644,120 @@ void main() {
       for (final n in ['Rent', 'Gym']) {
         expect(seen[n]!.$1, anyOf(startsWith('-'), startsWith('\u2212')));
         expect(seen[n]!.$2, AppTheme.debitColor, reason: n);
+      }
+    });
+
+    Future<
+      ({
+        List<(String, Rect)> pills,
+        List<(String, Rect)> names,
+        Map<String?, List<Offset>> dots,
+      })
+    >
+    labels(
+      WidgetTester tester, {
+      Size size = const Size(1440, 800),
+      double visibleDays = 30,
+    }) async {
+      final pills = <(String, Rect)>[], names = <(String, Rect)>[];
+      debugLaneAmount = (name, amount, color, pill) => pills.add((name, pill));
+      debugLaneName = (name, rect) => names.add((name, rect));
+      addTearDown(() {
+        debugLaneAmount = null;
+        debugLaneName = null;
+      });
+      final dots = await pump(
+        tester,
+        ['a', 'b', 'c'],
+        size: size,
+        visibleDays: visibleDays,
+      );
+      return (pills: pills, names: names, dots: dots);
+    }
+
+    testWidgets('lane amounts right-align on a shared edge per step, names '
+        'stay left', (tester) async {
+      final l = await labels(tester);
+      // Two steps (the stack moves at day 7): one column of 3 amounts each.
+      final byRight = <int, List<(String, Rect)>>{};
+      for (final p in l.pills) {
+        (byRight[p.$2.right.round()] ??= []).add(p);
+      }
+      expect(byRight, hasLength(2), reason: '${l.pills}');
+      for (final col in byRight.values) {
+        expect(col, hasLength(3));
+        final r = col.first.$2.right;
+        for (final p in col) {
+          expect(p.$2.right, closeTo(r, 0.01), reason: 'same right edge');
+        }
+      }
+      // The first column ends clear of the second step's dots.
+      final firstEdge = byRight.keys.reduce(math.min).toDouble();
+      final stepX = l.dots['a']!.map((o) => o.dx).reduce(math.max);
+      expect(firstEdge, lessThan(stepX - 4));
+      // The last segment runs off the chart: its column hugs the right edge.
+      final lastEdge = byRight.keys.reduce(math.max).toDouble();
+      expect(lastEdge, closeTo(1440 - 4, 1.5));
+      // Each name sits left of its own amount, all names flush left.
+      for (final (name, rect) in l.names) {
+        final pill = l.pills.firstWhere(
+          (p) =>
+              p.$1 == name &&
+              (p.$2.center.dy - rect.center.dy).abs() < 3 &&
+              p.$2.left > rect.left,
+        );
+        expect(rect.right, lessThanOrEqualTo(pill.$2.left - 4));
+      }
+      final lefts = {
+        for (final n in l.names)
+          if (n.$2.left < firstEdge) n.$2.left.round(),
+      };
+      expect(lefts, hasLength(1), reason: 'names share a left edge');
+    });
+
+    testWidgets('when tight, names give way first, then amounts', (
+      tester,
+    ) async {
+      // Phone, 25 days: the first step is ~110px wide: amounts only.
+      final tight = await labels(
+        tester,
+        size: const Size(390, 844),
+        visibleDays: 25,
+      );
+      final stepX = tight.dots['a']!.map((o) => o.dx).reduce(math.max);
+      final first = tight.pills.where((p) => p.$2.right < stepX).toList();
+      expect(first, hasLength(3), reason: 'every lane keeps its amount');
+      expect(
+        tight.names.where((n) => n.$2.left < stepX),
+        isEmpty,
+        reason: 'no room for names there',
+      );
+      final r = first.first.$2.right;
+      for (final p in first) {
+        expect(p.$2.right, closeTo(r, 0.01));
+      }
+      // Every drawn name has its amount.
+      for (final (name, _) in tight.names) {
+        expect(tight.pills.any((p) => p.$1 == name), isTrue);
+      }
+    });
+
+    testWidgets('a step too narrow for its amount shows neither', (
+      tester,
+    ) async {
+      // Phone, 60 days: the first step is ~45px wide.
+      final l = await labels(
+        tester,
+        size: const Size(390, 844),
+        visibleDays: 60,
+      );
+      final stepX = l.dots['a']!.map((o) => o.dx).reduce(math.max);
+      expect(l.pills.where((p) => p.$2.left < stepX), isEmpty);
+      expect(l.names.where((n) => n.$2.left < stepX), isEmpty);
+      // The wide last step still labels every lane, amounts right-aligned.
+      expect(l.pills, hasLength(3));
+      for (final p in l.pills) {
+        expect(p.$2.right, closeTo(390 - 4, 1.5));
       }
     });
 
