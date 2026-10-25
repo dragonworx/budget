@@ -21,6 +21,7 @@ import 'occurrence_info.dart';
 import 'selection_period.dart';
 import 'stack_lanes.dart';
 import 'trim.dart';
+import 'alert_fill.dart';
 import 'zoom_level.dart';
 import '../../data/alert.dart';
 
@@ -4214,6 +4215,9 @@ double _laneHeight(LaneSet lanes, ChartLayout layout) => laneThickness(
 @visibleForTesting
 void Function(String? txId, Offset center)? debugLaneDot;
 
+/// Tests: the balance fill as split at the alert line, each paint.
+void Function(AlertFill fill, double alertY)? debugAlertFill;
+
 /// Test hook: called for every lane dot actually painted (lane dots stay
 /// hidden until the pointer is on their lane); [idle] is a ring.
 @visibleForTesting
@@ -5105,20 +5109,61 @@ class _BalanceChartPainter extends CustomPainter {
         colors: [c.withValues(alpha: 0.30), c.withValues(alpha: 0.03)],
       ).createShader(layout.plot);
     final areaFill = gradientFill(_lineColor);
-    final lossFill = gradientFill(AppTheme.debitColor);
-    for (final plateau in plateaus) {
-      if (plateau.x1 <= plateau.x0) continue;
-      final y = scale.yOf(plateau.value);
-      final fill = Path()
-        ..moveTo(plateau.x0, y)
-        ..lineTo(plateau.x1, y)
-        ..lineTo(plateau.x1, layout.plot.bottom)
-        ..lineTo(plateau.x0, layout.plot.bottom)
-        ..close();
-      canvas.drawPath(fill, _isLoss(plateau.value) ? lossFill : areaFill);
+    final thresholdY = scale.yOf(lossThreshold);
+    final split = alertFillOf(
+      [
+        for (final p in plateaus)
+          (x0: p.x0, x1: p.x1, y: scale.yOf(p.value), low: _isLoss(p.value)),
+      ],
+      alertY: thresholdY,
+      plot: layout.plot,
+    );
+    debugAlertFill?.call(split, thresholdY);
+    for (final r in split.safe) {
+      canvas.drawRect(r, areaFill);
+    }
+    if (split.deficit.isNotEmpty || split.under.isNotEmpty) {
+      // Under the alert line, a low run is red: the band between the alert
+      // and the balance line deepens over its first stretch (a shallow dip
+      // reads lighter than a deep one), and its column under the line
+      // fades out towards the bottom like the green fill does.
+      final plot = layout.plot;
+      final top = thresholdY.clamp(plot.top, plot.bottom).toDouble();
+      final deep = math.max(24.0, (plot.bottom - top) * 0.35);
+      final deficitFill = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            AppTheme.debitColor.withValues(alpha: 0.20),
+            AppTheme.debitColor.withValues(alpha: 0.52),
+          ],
+        ).createShader(Rect.fromLTRB(plot.left, top, plot.right, top + deep));
+      final underFill = Paint()
+        ..shader =
+            LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                AppTheme.debitColor.withValues(alpha: 0.30),
+                AppTheme.debitColor.withValues(alpha: 0.04),
+              ],
+            ).createShader(
+              Rect.fromLTRB(
+                plot.left,
+                top,
+                plot.right,
+                math.max(plot.bottom, top + 1),
+              ),
+            );
+      for (final r in split.deficit) {
+        canvas.drawRect(r, deficitFill);
+      }
+      for (final r in split.under) {
+        canvas.drawRect(r, underFill);
+      }
     }
 
-    final thresholdY = scale.yOf(lossThreshold);
     if (thresholdY >= layout.plot.top && thresholdY <= layout.plot.bottom) {
       canvas.drawLine(
         Offset(layout.plot.left, thresholdY),

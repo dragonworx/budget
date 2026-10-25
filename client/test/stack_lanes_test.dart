@@ -3,6 +3,7 @@
 import 'dart:math' as math;
 
 import 'package:budget_client/data/models.dart';
+import 'package:budget_client/features/timeline/alert_fill.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/stack_lanes.dart';
@@ -280,6 +281,7 @@ void main() {
       List<String>? log,
       Set<String> once = const {},
       bool canEdit = true,
+      double lossThreshold = 0,
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -336,6 +338,7 @@ void main() {
                   }.entries)
                     if (only == null || only.contains(e.key)) e.key: e.value,
                 },
+                lossThreshold: lossThreshold,
                 onViewportChanged: (_, _) {},
                 onCreateOnDay: onCreate ?? (_) {},
                 onNewOnDay: log != null && canEdit
@@ -361,6 +364,46 @@ void main() {
       await tester.pump();
       return dots;
     }
+
+    testWidgets('the fill turns red under the alert line, split at the step', (
+      tester,
+    ) async {
+      AlertFill? fill;
+      double? alertY;
+      debugAlertFill = (f, y) {
+        fill = f;
+        alertY = y;
+      };
+      addTearDown(() => debugAlertFill = null);
+      // 1000 for the first week, then 1500: an alert at 1200 is crossed
+      // once, going up, on day 7's step.
+      final dots = await pump(tester, ['a', 'b', 'c'], lossThreshold: 1200);
+      final f = fill!;
+      expect(f.crossings, hasLength(1));
+      final cross = f.crossings.single;
+      expect(cross.dy, alertY);
+      expect(cross.dx, closeTo(dots['a']![1].dx, 12));
+      expect(f.deficit, isNotEmpty);
+      for (final r in f.deficit) {
+        expect(r.top, closeTo(alertY!, 0.01));
+        expect(r.right, lessThanOrEqualTo(cross.dx + 0.01));
+      }
+      for (final r in f.safe) {
+        expect(r.left, greaterThanOrEqualTo(cross.dx - 0.01));
+      }
+      expect(AlertFill.area(f.safe), greaterThan(0));
+
+      // Above the alert everywhere: no red at all.
+      await pump(tester, ['a', 'b', 'c'], lossThreshold: 900);
+      expect(fill!.deficit, isEmpty);
+      expect(fill!.under, isEmpty);
+      expect(fill!.crossings, isEmpty);
+
+      // Below it everywhere: no green.
+      await pump(tester, ['a', 'b', 'c'], lossThreshold: 1600);
+      expect(fill!.safe, isEmpty);
+      expect(AlertFill.area(fill!.deficit), greaterThan(0));
+    });
 
     testWidgets('dots stack in list order, centred in their lanes', (
       tester,
