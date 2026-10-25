@@ -4855,12 +4855,21 @@ class _BalanceChartPainter extends CustomPainter {
         );
       }
     }
-    canvas.drawPath(thin, Paint()..color = _lineColor);
     canvas.drawPath(loss, Paint()..color = AppTheme.debitColor);
 
-    // The balance line over every lane (and the opening riser), with a dark
-    // outline so it reads on any lane colour; lane text and pills, dots and
-    // chips are drawn over it.
+    // Lane names and amount pills first: the balance line goes over them.
+    final drawText = <void Function()>[];
+    if (showText) {
+      _layoutLaneTexts(canvas, layout, texts, h, drawText);
+    }
+    for (final d in drawText) {
+      d();
+    }
+
+    // The balance line on top of every lane and its text (and the opening
+    // riser, and the plain line where no lane is active), with a dark outline
+    // so it can be traced on any lane colour. Only the dots and chips, drawn
+    // later, sit above it.
     final halo = Path(), core = Path()..addPath(riser, Offset.zero);
     for (final r in truth) {
       halo.addRect(r.inflate(1.4));
@@ -4877,14 +4886,7 @@ class _BalanceChartPainter extends CustomPainter {
     );
     canvas.drawPath(halo, Paint()..color = outline);
     canvas.drawPath(core, Paint()..color = _lineColor);
-
-    final drawText = <void Function()>[];
-    if (showText) {
-      _layoutLaneTexts(canvas, layout, texts, h, truth, drawText);
-    }
-    for (final d in drawText) {
-      d();
-    }
+    canvas.drawPath(thin, Paint()..color = _lineColor);
   }
 
   void _layoutLaneTexts(
@@ -4892,7 +4894,6 @@ class _BalanceChartPainter extends CustomPainter {
     ChartLayout layout,
     List<({int lane, double x0, double x1, double top, double edge})> texts,
     double h,
-    List<Rect> line,
     List<void Function()> draws,
   ) {
     final plot = layout.plot;
@@ -4902,16 +4903,8 @@ class _BalanceChartPainter extends CustomPainter {
       height: 1.0,
       fontWeight: FontWeight.w600,
       color: const Color(0xF2FFFFFF),
-      // A soft dark edge keeps a name readable where the line runs under it.
-      shadows: const [
-        Shadow(color: Color(0xCC0B1017), blurRadius: 2),
-        Shadow(color: Color(0x990B1017), blurRadius: 1, offset: Offset(0, 0.5)),
-      ],
     );
-    final amountStyle = style.copyWith(
-      fontWeight: FontWeight.w800,
-      shadows: const [],
-    );
+    final amountStyle = style.copyWith(fontWeight: FontWeight.w800);
     final strip = ChartLayout.laneNameWidth(layout.size.width);
     for (final t in texts) {
       // Names stay in view as the lane's left end scrolls off: they start
@@ -4948,18 +4941,7 @@ class _BalanceChartPainter extends CustomPainter {
           maxWidth: maxW,
         );
         final at = Offset(startX, cy - painter.height / 2);
-        final plate = (at & painter.size).inflate(2.5);
-        final crossed = line.any((r) => r.overlaps(plate));
-        final plateColor = laneColor(lane.colorIndex).withValues(alpha: 0.82);
         draws.add(() {
-          // Where the balance line runs under a name, a soft lane-coloured
-          // plate keeps the name legible while the line still shows through.
-          if (crossed) {
-            canvas.drawRRect(
-              RRect.fromRectAndRadius(plate, const Radius.circular(3)),
-              Paint()..color = plateColor,
-            );
-          }
           painter.paint(canvas, at);
           debugLaneName?.call(lane.name, at & painter.size);
         });

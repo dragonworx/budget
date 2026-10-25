@@ -445,8 +445,8 @@ void main() {
       expect(step.bottom - 1, closeTo(yOf(1000), 0.01));
     });
 
-    testWidgets('the balance line paints over the lanes, unbroken through '
-        'every stack, under the lane text', (tester) async {
+    testWidgets('the balance line paints over the lanes and their text, '
+        'unbroken through every stack', (tester) async {
       final pieces = <Rect>[];
       final ribbons = <Rect>[];
       final order = <String>[];
@@ -470,7 +470,9 @@ void main() {
       expect(order, contains('text'));
       final lastLine = order.lastIndexOf('line');
       expect(order.lastIndexOf('ribbon'), lessThan(order.indexOf('line')));
-      expect(lastLine, lessThan(order.indexOf('text')));
+      // Over the lane text: every line piece after the last name / pill.
+      expect(order.indexOf('line'), greaterThan(order.lastIndexOf('text')));
+      expect(lastLine, order.length - 1);
       // Every stack's whole width carries the line at its centre, middle
       // lane text or not.
       for (final r in ribbons) {
