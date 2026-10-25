@@ -445,25 +445,52 @@ void main() {
       expect(step.bottom - 1, closeTo(yOf(1000), 0.01));
     });
 
-    testWidgets('the true line breaks around the text of an odd stack\'s '
-        'middle lane', (tester) async {
+    testWidgets('the balance line paints over the lanes, unbroken through '
+        'every stack, under the lane text', (tester) async {
       final pieces = <Rect>[];
-      debugTrueLine = pieces.add;
-      final text = <Rect>[];
-      debugLaneName = (_, r) => text.add(r);
-      debugLaneAmount = (_, _, _, r) => text.add(r);
-      await pump(tester, ['a', 'b', 'c']);
-      expect(text, isNotEmpty);
-      expect(pieces, isNotEmpty);
-      for (final p in pieces) {
-        for (final t in text) {
-          expect(p.overlaps(t), isFalse, reason: '$p crosses $t');
+      final ribbons = <Rect>[];
+      final order = <String>[];
+      debugRibbon = (_, r, _) {
+        // A new stack paint: keep only the latest frame's order.
+        if (order.isNotEmpty && order.last != 'ribbon') {
+          order.clear();
+          pieces.clear();
+          ribbons.clear();
         }
+        order.add('ribbon');
+        ribbons.add(r);
+      };
+      debugTrueLine = (r) {
+        order.add('line');
+        pieces.add(r);
+      };
+      debugLaneName = (_, _) => order.add('text');
+      debugLaneAmount = (_, _, _, _) => order.add('text');
+      await pump(tester, ['a', 'b', 'c']);
+      expect(order, contains('text'));
+      final lastLine = order.lastIndexOf('line');
+      expect(order.lastIndexOf('ribbon'), lessThan(order.indexOf('line')));
+      expect(lastLine, lessThan(order.indexOf('text')));
+      // Every stack's whole width carries the line at its centre, middle
+      // lane text or not.
+      for (final r in ribbons) {
+        expect(
+          pieces.any(
+            (p) =>
+                p.height <= 4 &&
+                (p.center.dy - r.center.dy).abs() < 0.01 &&
+                p.left <= r.left + 0.01 &&
+                p.right >= r.right - 0.01,
+          ),
+          isTrue,
+          reason: '$r',
+        );
       }
     });
 
-    testWidgets('a single lane is centred on the balance already: no '
-        'extra line', (tester) async {
+    testWidgets('a single lane gets the line too, through its centre', (
+      tester,
+    ) async {
       final pieces = <Rect>[];
       debugTrueLine = pieces.add;
       final ribbons1 = <Rect>[];
@@ -479,7 +506,20 @@ void main() {
       );
       expect(ribbons1, isNotEmpty);
       expect(ribbons1.first.height, 16);
-      expect(pieces, isEmpty);
+      for (final r in ribbons1) {
+        expect(
+          pieces.any(
+            (p) =>
+                p.height <= 4 &&
+                (p.center.dy - r.center.dy).abs() < 0.01 &&
+                p.left <= r.left + 0.01 &&
+                p.right >= r.right - 0.01,
+          ),
+          isTrue,
+        );
+      }
+      // And it steps with the balance at day 8.
+      expect(pieces.where((p) => p.height > 4), hasLength(1));
     });
 
     testWidgets('20+ transactions: a short stack near its dollars, the '

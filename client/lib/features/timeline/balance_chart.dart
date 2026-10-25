@@ -4774,20 +4774,19 @@ class _BalanceChartPainter extends CustomPainter {
         }
       }
       if (m == 0) continue;
-      // The exact closing balance through a stack of 2+ lanes (a single
-      // lane is centred on it already), stepping at the day edge.
-      if (m >= 2 || mn >= 2) {
-        if (m >= 2) truth.add(Rect.fromLTRB(p.x0, yb - 1.0, p.x1, yb + 1.0));
-        if (next != null && mn > 0 && (yn - yb).abs() > 0.5) {
-          truth.add(
-            Rect.fromLTRB(
-              p.x1 - 1.0,
-              math.min(yb, yn) - 1.0,
-              p.x1 + 1.0,
-              math.max(yb, yn) + 1.0,
-            ),
-          );
-        }
+      // The balance line itself, drawn over the lanes so it can be traced
+      // end to end: this level (the stack's centre), and its step into the
+      // next stack at the day edge.
+      truth.add(Rect.fromLTRB(p.x0, yb - 1.0, p.x1, yb + 1.0));
+      if (next != null && mn > 0 && (yn - yb).abs() > 0.5) {
+        truth.add(
+          Rect.fromLTRB(
+            p.x1 - 1.0,
+            math.min(yb, yn) - 1.0,
+            p.x1 + 1.0,
+            math.max(yb, yn) + 1.0,
+          ),
+        );
       }
       final top0 = laneTop(yb, 0, m, h);
       debugRibbon?.call(
@@ -4845,7 +4844,6 @@ class _BalanceChartPainter extends CustomPainter {
       }
     }
 
-    canvas.drawPath(riser, Paint()..color = _lineColor);
     if (collapse) {
       canvas.drawPath(band, Paint()..color = const Color(0xFF4A6285));
     } else {
@@ -4860,58 +4858,33 @@ class _BalanceChartPainter extends CustomPainter {
     canvas.drawPath(thin, Paint()..color = _lineColor);
     canvas.drawPath(loss, Paint()..color = AppTheme.debitColor);
 
-    // Text is laid out first so the true line can break around it.
-    final textRects = <Rect>[];
+    // The balance line over every lane (and the opening riser), with a dark
+    // outline so it reads on any lane colour; lane text and pills, dots and
+    // chips are drawn over it.
+    final halo = Path(), core = Path()..addPath(riser, Offset.zero);
+    for (final r in truth) {
+      halo.addRect(r.inflate(1.4));
+      core.addRect(r);
+      debugTrueLine?.call(r);
+    }
+    const outline = Color(0xF00B1017);
+    canvas.drawPath(
+      riser,
+      Paint()
+        ..color = outline
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.8,
+    );
+    canvas.drawPath(halo, Paint()..color = outline);
+    canvas.drawPath(core, Paint()..color = _lineColor);
+
     final drawText = <void Function()>[];
     if (showText) {
-      _layoutLaneTexts(canvas, layout, texts, h, textRects, drawText);
-    }
-    if (truth.isNotEmpty && !collapse) {
-      // Break the line around lane text (an odd stack's middle lane).
-      final halo = Path(), core = Path();
-      for (final r in _gapsAround(truth, textRects)) {
-        halo.addRect(r.inflate(1.4));
-        core.addRect(r);
-        debugTrueLine?.call(r);
-      }
-      canvas.drawPath(halo, Paint()..color = const Color(0xF00B1017));
-      canvas.drawPath(core, Paint()..color = _lineColor);
+      _layoutLaneTexts(canvas, layout, texts, h, truth, drawText);
     }
     for (final d in drawText) {
       d();
     }
-  }
-
-  /// [pieces] less the x-ranges of any [holes] (padded) they cross.
-  static List<Rect> _gapsAround(List<Rect> pieces, List<Rect> holes) {
-    if (holes.isEmpty) return pieces;
-    final out = <Rect>[];
-    for (final r in pieces) {
-      // Steps sit on day edges, by the dots, clear of the text.
-      if (r.height > r.width) {
-        out.add(r);
-        continue;
-      }
-      final cuts = [
-        for (final hole in holes)
-          if (hole.top - 2 < r.bottom && hole.bottom + 2 > r.top)
-            (hole.left - 3, hole.right + 3),
-      ]..sort((a, b) => a.$1.compareTo(b.$1));
-      var x = r.left;
-      for (final (a, b) in cuts) {
-        if (b <= x) continue;
-        if (a > x + 1) {
-          out.add(Rect.fromLTRB(x, r.top, math.min(a, r.right), r.bottom));
-        }
-
-        x = math.max(x, b);
-        if (x >= r.right) break;
-      }
-      if (x < r.right - 1) {
-        out.add(Rect.fromLTRB(x, r.top, r.right, r.bottom));
-      }
-    }
-    return out;
   }
 
   void _layoutLaneTexts(
@@ -4919,7 +4892,7 @@ class _BalanceChartPainter extends CustomPainter {
     ChartLayout layout,
     List<({int lane, double x0, double x1, double top, double edge})> texts,
     double h,
-    List<Rect> rects,
+    List<Rect> line,
     List<void Function()> draws,
   ) {
     final plot = layout.plot;
@@ -4929,8 +4902,16 @@ class _BalanceChartPainter extends CustomPainter {
       height: 1.0,
       fontWeight: FontWeight.w600,
       color: const Color(0xF2FFFFFF),
+      // A soft dark edge keeps a name readable where the line runs under it.
+      shadows: const [
+        Shadow(color: Color(0xCC0B1017), blurRadius: 2),
+        Shadow(color: Color(0x990B1017), blurRadius: 1, offset: Offset(0, 0.5)),
+      ],
     );
-    final amountStyle = style.copyWith(fontWeight: FontWeight.w800);
+    final amountStyle = style.copyWith(
+      fontWeight: FontWeight.w800,
+      shadows: const [],
+    );
     final strip = ChartLayout.laneNameWidth(layout.size.width);
     for (final t in texts) {
       // Names stay in view as the lane's left end scrolls off: they start
@@ -4967,8 +4948,18 @@ class _BalanceChartPainter extends CustomPainter {
           maxWidth: maxW,
         );
         final at = Offset(startX, cy - painter.height / 2);
-        rects.add(at & painter.size);
+        final plate = (at & painter.size).inflate(2.5);
+        final crossed = line.any((r) => r.overlaps(plate));
+        final plateColor = laneColor(lane.colorIndex).withValues(alpha: 0.82);
         draws.add(() {
+          // Where the balance line runs under a name, a soft lane-coloured
+          // plate keeps the name legible while the line still shows through.
+          if (crossed) {
+            canvas.drawRRect(
+              RRect.fromRectAndRadius(plate, const Radius.circular(3)),
+              Paint()..color = plateColor,
+            );
+          }
           painter.paint(canvas, at);
           debugLaneName?.call(lane.name, at & painter.size);
         });
@@ -4977,7 +4968,6 @@ class _BalanceChartPainter extends CustomPainter {
         Rect.fromLTWH(right - pillW, cy - (h - 3) / 2, pillW, h - 3),
         const Radius.circular(3),
       );
-      rects.add(pill.outerRect);
       draws.add(() {
         canvas.drawRRect(pill, Paint()..color = const Color(0xD90E1420));
         debugLaneAmount?.call(
