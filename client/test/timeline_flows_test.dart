@@ -23,9 +23,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
-import 'package:budget_client/features/timeline/date_heatmap.dart';
 import 'package:budget_client/features/timeline/fit_ranges.dart';
-import 'package:budget_client/theme/app_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'chip_taps.dart';
@@ -1023,8 +1021,8 @@ void main() {
       expect(m.top, lessThanOrEqualTo(nameRect.center.dy));
       expect(m.bottom, greaterThanOrEqualTo(nameRect.center.dy));
       final touch = kind == PointerDeviceKind.touch;
-      expect(m.width, touch ? 44 : 28);
-      expect(m.height, touch ? 44 : 28);
+      expect(m.width, closeTo(touch ? 44 : 28, 0.01));
+      expect(m.height, closeTo(touch ? 44 : 28, 0.01));
       // A tap on the card itself (not ⋮) does nothing and keeps it up.
       final card = tester.getRect(tip);
       await tester.tapAt(card.topLeft + const Offset(20, 12), kind: kind);
@@ -1759,7 +1757,7 @@ void main() {
     }
   });
 
-  // ── Header row: every action, More (⋮) last · heatmap date range ──
+  // ── Header row: every action, More (⋮) last · the chart right under it ──
 
   for (final (size, wide, mid, desk, tiny) in const [
     (Size(320, 640), false, false, false, true),
@@ -1770,7 +1768,8 @@ void main() {
   ]) {
     testWidgets('${size.width.toInt()}px header: every action in the top row, '
         'Reminders · Events (plain list) · View · More at the right '
-        'end; the date heatmap alone spans the second row', (tester) async {
+        'end; the chart fills the body under it (no date range or tips '
+        'rows)', (tester) async {
       final w = size.width;
       await _pump(tester, size: size);
       expect(tester.takeException(), isNull);
@@ -1914,18 +1913,24 @@ void main() {
       ].where((l) => l >= name.right - 0.5).reduce(math.min);
       expect(firstAction - name.right, lessThanOrEqualTo(26));
       expect(find.byKey(const ValueKey('open-plan')), findsNothing);
-      // Second row: the heatmap alone, the timeline's full width.
-      final heat = r('jump-to-date');
+      // No date range / heat map row and no tips row: the chart takes the
+      // whole body, from just under the header to just above the bottom.
+      for (final gone in [
+        'jump-to-date',
+        'range-heatmap',
+        'range-start',
+        'range-end',
+        'tips-bar',
+      ]) {
+        expect(find.byKey(ValueKey(gone)), findsNothing, reason: gone);
+      }
+      expect(find.textContaining('for actions'), findsNothing);
+      expect(find.textContaining('to zoom'), findsNothing);
       final chart = tester.getRect(find.byType(BalanceChart));
-      expect(heat.top, greaterThan(bar.bottom - 1));
-      expect(heat.bottom, lessThan(chart.top));
-      expect(heat.left, closeTo(chart.left - 1, 1.5));
-      expect(heat.right, closeTo(chart.right + 1, 1.5));
-      expect(r('range-start').left, lessThan(r('range-heatmap').left));
-      expect(r('range-end').right, greaterThan(r('range-heatmap').right));
-      // 0.3: two-digit start days ("10 Oct") are one test-font glyph wider
-      // than "9 Oct"; 0.35 failed on those days at 320px.
-      expect(r('range-heatmap').width, greaterThan(w * 0.3));
+      expect(chart.top - bar.bottom, inInclusiveRange(0, 14));
+      expect(size.height - chart.bottom, inInclusiveRange(0, 14));
+      expect(chart.left, lessThanOrEqualTo(17));
+      expect(chart.width, greaterThan(w - 34));
       // What overflowed is in More (Stream settings first when it is there).
       await tester.tap(find.byKey(const ValueKey('timeline-more')));
       await tester.pumpAndSettle();
@@ -1975,120 +1980,6 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('open-events')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('panel-new-event')), findsOneWidget);
-    });
-  }
-
-  test('heatmap buckets: one cell per day when they fit, else summed runs', () {
-    final a = DateTime(2026, 10, 1);
-    final k = dayCoord(a).round();
-    final nets = {k: 100.0, k + 1: -40.0, k + 29: 5.0};
-    final daily = heatmapBuckets(nets, a, DateTime(2026, 10, 30), 1000);
-    expect(daily.length, 30);
-    expect(daily[0], 100);
-    expect(daily[1], -40);
-    expect(daily[29], 5);
-    final b = heatmapBuckets(nets, a, DateTime(2026, 10, 30), 10);
-    expect(b.length, 10);
-    expect(b[0], 60); // days 1-3 summed
-    expect(b[9], 5);
-    // Colour: gains credit-ish, losses debit-ish, zero neutral, stronger
-    // for bigger magnitudes (sqrt keeps small ones visible).
-    expect(heatmapColor(0, 100), heatmapNeutral);
-    final gain = heatmapColor(100, 100), loss = heatmapColor(-100, 100);
-    expect(gain, AppTheme.creditColor);
-    expect(loss, AppTheme.debitColor);
-    final small = heatmapColor(1, 100);
-    expect(small, isNot(heatmapNeutral));
-    double dist(Color c, Color d) =>
-        (c.r - d.r).abs() + (c.g - d.g).abs() + (c.b - d.b).abs();
-    expect(
-      dist(small, heatmapNeutral),
-      lessThan(dist(heatmapColor(50, 100), heatmapNeutral)),
-    );
-  });
-
-  test('heatmap blend: one gradient stop per cell centre; an active day '
-      'keeps its colour, quiet neighbours get a fading glow', () {
-    final cells = [0.0, 0.0, 0.0, 100.0, 0.0, 0.0, 0.0, 0.0, -50.0, 0.0, 30.0];
-    final c = heatmapBlend(cells);
-    expect(c.length, cells.length);
-    double dist(Color x) =>
-        (x.r - heatmapNeutral.r).abs() +
-        (x.g - heatmapNeutral.g).abs() +
-        (x.b - heatmapNeutral.b).abs();
-    bool greenish(Color x) => x.g > x.r + 0.02;
-    expect(c[3], AppTheme.creditColor, reason: 'active day exact');
-    expect(c[8], heatmapColor(-50, 100));
-    expect(greenish(c[2]) && greenish(c[4]), isTrue);
-    expect(dist(c[4]), lessThan(dist(c[3])));
-    expect(dist(c[5]), lessThan(dist(c[4])));
-    expect(dist(c[5]), greaterThan(0));
-    expect(c[0], heatmapNeutral, reason: '3 cells away: neutral');
-    // Between a loss and a gain the glows cancel towards neutral.
-    expect(dist(c[9]), lessThan(dist(c[7]) * 0.5));
-    final p = HeatmapPainter(colors: c);
-    expect(p.gradient!.colors, c);
-    expect(p.stops.length, c.length);
-    expect(p.stops.first, closeTo(0.5 / c.length, 1e-9));
-    expect(p.stops.last, closeTo(1 - 0.5 / c.length, 1e-9));
-    for (var i = 1; i < p.stops.length; i++) {
-      expect(p.stops[i], greaterThan(p.stops[i - 1]));
-    }
-    expect(HeatmapPainter(colors: [heatmapNeutral]).gradient, isNull);
-  });
-
-  for (final size in const [Size(390, 844), Size(1440, 900)]) {
-    testWidgets('${size.width.toInt()}px heatmap: a cell per visible day, '
-        'coloured by the day net (Rent red, Salary green), live on zoom; '
-        'tap opens the date picker', (tester) async {
-      await _pump(tester, size: size);
-      HeatmapPainter painter() =>
-          tester
-                  .widget<CustomPaint>(
-                    find.byKey(const ValueKey('range-heatmap')),
-                  )
-                  .painter!
-              as HeatmapPainter;
-      final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
-      final colors = painter().colors;
-      // One cell per day from the first clear day to the last visible one.
-      final start = tester
-          .widget<Text>(find.byKey(const ValueKey('range-start')))
-          .data!;
-      expect(start, isNotEmpty);
-      expect(colors.length, greaterThan(10));
-      expect(colors.length, lessThan(chart.visibleDays + 2));
-      // Exactly the day nets of what the chart shows (footer rule), each
-      // cell gain-green / loss-red / neutral by sign.
-      final nets = dayNetTotals(chart.series);
-      final total = nets.values.fold<double>(0, (a, b) => a + b.abs());
-      expect(total, greaterThan(0));
-      bool greenish(Color c) => c.g > c.r + 0.05;
-      bool reddish(Color c) => c.r > c.g + 0.05;
-      final gains = colors.where(greenish).length;
-      expect(gains, greaterThan(0), reason: 'Salary (net +) days');
-      expect(colors.where(reddish), isEmpty, reason: 'no net-loss days here');
-      expect(colors.where((c) => c == heatmapNeutral), isNotEmpty);
-      // One continuous gradient: a stop per day centre, not blocks.
-      final g = painter().gradient!;
-      expect(g.colors, colors);
-      expect(g.stops, painter().stops);
-      expect(g.stops!.length, colors.length);
-      expect(painter().todayFraction, isNotNull, reason: 'today marker');
-      // Zooming out changes the cells live.
-      final n0 = colors.length;
-      tester
-          .widget<BalanceChart>(find.byType(BalanceChart))
-          .onViewportChanged(chart.viewStart, chart.visibleDays * 3);
-      await tester.pumpAndSettle();
-      expect(painter().colors.length, isNot(n0));
-      // Tap: the date picker, as before.
-      await tester.tap(find.byKey(const ValueKey('jump-to-date')));
-      await tester.pumpAndSettle();
-      expect(find.byType(DatePickerDialog), findsOneWidget);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
     });
   }
 
@@ -2229,16 +2120,13 @@ void main() {
     Size(800, 900),
     Size(1440, 900),
   ]) {
-    testWidgets('toolbar at ${size.width.toInt()}px: no step buttons, date '
-        'range kept, fits; logo left of the stream name', (tester) async {
+    testWidgets('toolbar at ${size.width.toInt()}px: no step buttons, no '
+        'date range row, fits; logo left of the stream name', (tester) async {
       await _pump(tester, size: size);
       expect(tester.takeException(), isNull);
       expect(find.byKey(const ValueKey('shift-left')), findsNothing);
       expect(find.byKey(const ValueKey('shift-right')), findsNothing);
-      final range = tester.getRect(find.byKey(const ValueKey('jump-to-date')));
-      expect(range.left, greaterThanOrEqualTo(0));
-      expect(range.right, lessThanOrEqualTo(size.width));
-      expect(range.width, greaterThan(90));
+      expect(find.byKey(const ValueKey('jump-to-date')), findsNothing);
       // Budgie icon: left side of the header, after back, before the name.
       final logo = tester.getRect(find.byKey(const ValueKey('timeline-brand')));
       final back = tester.getRect(find.byKey(const ValueKey('timeline-back')));
@@ -2255,8 +2143,8 @@ void main() {
     });
   }
 
-  testWidgets('desktop: Today, Seed and the date picker put the day at the '
-      'left edge', (tester) async {
+  testWidgets('desktop: Today, Seed and View › Go to date… put the day at '
+      'the left edge', (tester) async {
     await _pump(tester);
     await tester.tap(find.byKey(const ValueKey('go-seed')));
     await tester.pumpAndSettle();
@@ -2264,18 +2152,20 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('go-today')));
     await tester.pumpAndSettle();
     expectAtLeft(tester, _day, 'today');
-    // Date picker: opens on the first visible day; pick the 15th.
-    // The range label now starts on today (the first day clear of the
-    // left strip); the picker opens there.
+    // Go to date…: opens on the first visible day (today, the first day
+    // clear of the left strip); pick the 15th.
     expect(_rangeStart(tester), DateFormat('d MMM').format(_day));
     final initial = _day;
-    await tester.tap(find.byKey(const ValueKey('jump-to-date')));
+    await tester.tap(find.byKey(const ValueKey('fit-menu')));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('view-go-to-date')));
+    await tester.pumpAndSettle();
+    expect(find.text('Go to date'), findsOneWidget);
     await tester.tap(find.text('15'));
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
     expectAtLeft(tester, DateTime(initial.year, initial.month, 15), 'picked');
-    // …and the range label starts on it.
+    // …and the view starts on it.
     expect(
       _rangeStart(tester),
       DateFormat('d MMM').format(DateTime(initial.year, initial.month, 15)),
@@ -2653,56 +2543,24 @@ void main() {
     (Size(390, 844), PointerDeviceKind.touch),
     (Size(1440, 900), PointerDeviceKind.mouse),
   ]) {
-    testWidgets('${size.width.toInt()}px ${kind.name}: start / end labels '
-        'edit that end of the view; past the other end the span is kept', (
-      tester,
-    ) async {
+    testWidgets('${size.width.toInt()}px ${kind.name}: View › Go to date… '
+        'opens on the first visible day and shows the picked day from the '
+        'left, keeping the span', (tester) async {
       final store = await _pump(tester, size: size);
-      final handle = tester.ensureSemantics();
-      String startText() =>
-          tester.widget<Text>(find.byKey(const ValueKey('range-start'))).data!;
-      String endText() =>
-          tester.widget<Text>(find.byKey(const ValueKey('range-end'))).data!;
-      String d(DateTime x, {bool year = false}) => year
-          ? '${DateFormat('d MMM').format(x)} ’${DateFormat('yy').format(x)}'
-          : DateFormat('d MMM').format(x);
+      store.calls.clear();
       BalanceChart chart() =>
           tester.widget<BalanceChart>(find.byType(BalanceChart));
-      DateTime first() => DateFormat('d MMM y').parse(
-        '${startText().split(' ').take(2).join(' ')} ${_firstYear(tester)}',
-      );
-      DateTime last() => lastVisibleDay(chart().viewStart, chart().visibleDays);
-      // Clear tap targets, three separate screen-reader buttons.
-      for (final k in ['range-start-button', 'range-end-button']) {
-        expect(
-          tester.getSize(find.byKey(ValueKey(k))).height,
-          greaterThanOrEqualTo(44),
+      DateTime first() => _firstDay(tester);
+      Future<void> goTo(DateTime day) async {
+        await tester.tap(find.byKey(const ValueKey('fit-menu')), kind: kind);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('view-go-to-date')),
+          kind: kind,
         );
-      }
-      expect(
-        find.bySemanticsLabel(RegExp(r'^Start date: .*Edit start date$')),
-        findsOneWidget,
-      );
-      expect(
-        find.bySemanticsLabel(RegExp(r'^End date: .*Edit end date$')),
-        findsOneWidget,
-      );
-      expect(
-        find.bySemanticsLabel(RegExp(r'^Jump to a date: ')),
-        findsOneWidget,
-      );
-      handle.dispose();
-
-      Future<void> pick(
-        String key,
-        String help,
-        DateTime initial,
-        DateTime day,
-      ) async {
-        await tester.tap(find.byKey(ValueKey(key)), kind: kind);
         await tester.pumpAndSettle();
         expect(find.byType(DatePickerDialog), findsOneWidget);
-        expect(find.text(help), findsOneWidget);
+        expect(find.text('Go to date'), findsOneWidget);
         await tester.tap(find.byTooltip('Switch to input'));
         await tester.pumpAndSettle();
         final field = find.descendant(
@@ -2711,53 +2569,40 @@ void main() {
         );
         expect(
           tester.widget<TextField>(field).controller!.text,
-          DateFormat('MM/dd/yyyy').format(initial),
-          reason: 'opens on the tapped date',
+          DateFormat('MM/dd/yyyy').format(first()),
+          reason: 'opens on the first visible day',
         );
         await tester.enterText(field, DateFormat('MM/dd/yyyy').format(day));
         await tester.tap(find.text('OK'));
         await tester.pumpAndSettle();
       }
 
-      // Start earlier: the end stays, the span grows.
-      final e0 = last();
-      final s1 = _plus(first(), -9);
-      await pick('range-start-button', 'Start date', first(), s1);
-      expect(first(), s1);
-      expect(last(), e0);
-      // End later: the start stays.
-      final e1 = _plus(e0, 12);
-      await pick('range-end-button', 'End date', e0, e1);
-      expect(first(), s1);
-      expect(last(), e1);
-      // End before the start: same span, ending on that day.
       final span = chart().visibleDays;
-      final e2 = _plus(s1, -20);
-      await pick('range-end-button', 'End date', e1, e2);
-      expect(last(), e2);
-      expect(chart().visibleDays, closeTo(span, 1e-6));
-      // Start on / after the end: same span, starting on that day.
-      final s3 = _plus(last(), 40);
-      await pick('range-start-button', 'Start date', first(), s3);
-      expect(first(), s3);
-      expect(chart().visibleDays, closeTo(span, 1e-6));
-      // The strip between the labels opens the start picker.
+      for (final day in [_plus(first(), -40), _plus(first(), 75)]) {
+        await goTo(day);
+        expect(first(), day);
+        expect(chart().visibleDays, closeTo(span, 1e-6));
+      }
+      // Cancel leaves the view alone.
+      final before = chart().viewStart;
+      await tester.tap(find.byKey(const ValueKey('fit-menu')), kind: kind);
+      await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const ValueKey('range-heatmap-button')),
+        find.byKey(const ValueKey('view-go-to-date')),
         kind: kind,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Start date'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(endText(), d(last(), year: true));
+      expect(chart().viewStart, before);
       expect(
         store.calls.where(
           (c) => c.startsWith('create') || c.startsWith('update'),
         ),
         isEmpty,
-        reason: 'taps never create or edit',
+        reason: 'going to a date never creates or edits',
       );
+      expect(tester.takeException(), isNull);
     });
   }
 
@@ -3119,22 +2964,19 @@ void main() {
   });
 }
 
-/// The heatmap's start label without any year ("9 Oct").
-String _rangeStart(WidgetTester tester) => tester
-    .widget<Text>(find.byKey(const ValueKey('range-start')))
-    .data!
-    .split(' ')
-    .take(2)
-    .join(' ');
-
-/// Year of the heatmap's start day (from the chart's view).
-int _firstYear(WidgetTester tester) {
+/// The first day clear of the left strip (what Go to date… opens on).
+DateTime _firstDay(WidgetTester tester) {
   final c = tester.widget<BalanceChart>(find.byType(BalanceChart));
   final w = tester.getSize(find.byType(BalanceChart)).width;
   final inset = ChartLayout.laneNameWidth(w) * c.visibleDays / w;
-  return dateFromDayCoord((dayCoord(c.viewStart) + inset - 1e-6).ceilToDouble())
-      .year;
+  return dateFromDayCoord(
+    (dayCoord(c.viewStart) + inset - 1e-6).ceilToDouble(),
+  );
 }
+
+/// [_firstDay] as "9 Oct".
+String _rangeStart(WidgetTester tester) =>
+    DateFormat('d MMM').format(_firstDay(tester));
 
 DateTime _plus(DateTime x, int days) => DateTime(x.year, x.month, x.day + days);
 

@@ -40,7 +40,6 @@ import 'trim.dart';
 import '../../widgets/confirm_dialog.dart';
 import 'chart_geometry.dart';
 import 'combined.dart';
-import 'date_heatmap.dart';
 import 'view_menu.dart';
 import '../../state/auth_providers.dart';
 import '../../state/stream_cleanup.dart';
@@ -979,8 +978,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         : MediaQuery.sizeOf(context).width - 32;
   }
 
-  /// First day fully clear of the left strip: what the date range label
-  /// starts on (so a jumped-to day reads as the range start).
+  /// First day fully clear of the left strip: where "Go to date…" opens
+  /// (a jumped-to day is shown from there).
   DateTime get _firstClearDay {
     final w = _chartWidth;
     final inset = ChartLayout.laneNameWidth(w) * _visibleDays / w;
@@ -1154,7 +1153,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final events =
             ref.watch(eventsProvider(widget.streamId)).valueOrNull ??
             const <BudgetEvent>[];
-        final eventsById = {for (final t in events) t.id: t};
 
         final width = MediaQuery.sizeOf(context).width;
         final compact = width < 600;
@@ -1195,42 +1193,17 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                   stream,
                   Column(
                     children: [
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          compact ? 8 : 16,
-                          compact ? 6 : 12,
-                          compact ? 8 : 16,
-                          0,
-                        ),
-                        // The second row is the date range heatmap alone,
-                        // full width.
-                        child: DateRangeHeatmap(
-                          from: _firstClearDay,
-                          to: lastVisibleDay(_viewStart, _visibleDays),
-                          today: DateTime.now(),
-                          height: 44,
-                          nets: shown == null
-                              ? const {}
-                              : dayNetTotals(
-                                  shown,
-                                  enabledOf: (id) =>
-                                      (eventsById[id] ?? combo?.events[id])
-                                          ?.enabled,
-                                ),
-                          // The strip between the labels: the start picker, as
-                          // the whole control did before (least surprising).
-                          onTap: () => _pickRangeEnd(context, start: true),
-                          onStartTap: () => _pickRangeEnd(context, start: true),
-                          onEndTap: () => _pickRangeEnd(context, start: false),
-                        ),
-                      ),
                       Expanded(
                         child: Padding(
+                          // The chart takes the whole body under the header
+                          // (no date range row, no tips row), clear of the
+                          // home indicator.
                           padding: EdgeInsets.fromLTRB(
                             compact ? 8 : 16,
-                            compact ? 6 : 10,
+                            compact ? 6 : 12,
                             compact ? 8 : 16,
-                            6,
+                            (compact ? 8 : 12) +
+                                MediaQuery.viewPaddingOf(context).bottom,
                           ),
                           child: DecoratedBox(
                             decoration: BoxDecoration(
@@ -1402,7 +1375,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                           ),
                         ),
                       ),
-                      if (!_planOpen || !compact) _TipsBar(compact: compact),
                     ],
                   ),
                 ),
@@ -1742,6 +1714,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       combined: _combine,
       onToday: () => _goToAndSelect(DateTime.now()),
       onSeed: () => _goToAndSelect(stream.seedDate),
+      onGoToDate: () => _goToDate(context),
       onToggleStream: _toggleCombine,
       builder: (context, open) => icon
           ? IconButton(
@@ -1821,53 +1794,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// Start / end label of the date-range row: pick that end of the view.
-  /// A start before the end (or an end on / after the start) moves just that
-  /// end, so the span changes; otherwise the span is kept and the view
-  /// shifts to the picked day. The balance range is refitted, as for every
-  /// "go to a date" action.
-  Future<void> _pickRangeEnd(
-    BuildContext context, {
-    required bool start,
-  }) async {
-    final first = _firstClearDay;
-    final last = lastVisibleDay(_viewStart, _visibleDays);
+  /// View menu "Go to date…": pick a day, then show it from the left edge
+  /// and select it, like Today / Seed. Keeps the span; refits the balance.
+  Future<void> _goToDate(BuildContext context) async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: start ? first : last,
+      initialDate: _firstClearDay,
       firstDate: DateTime(1970),
       lastDate: DateTime(2100),
-      helpText: start ? 'Start date' : 'End date',
+      helpText: 'Go to date',
     );
     if (picked == null || !mounted) return;
-    final day = dateOnly(picked);
-    final w = _chartWidth;
-    final (DateTime, double) view;
-    if (start) {
-      if (!day.isBefore(last)) return _showFrom(day);
-      view = viewForRange(
-        day,
-        last,
-        w,
-        stripWidth: ChartLayout.laneNameWidth(w),
-      );
-    } else {
-      if (day.isBefore(first)) {
-        // Keep the span: [day] becomes the last visible day.
-        view = (addDays(day, 1 - _visibleDays), _visibleDays);
-      } else {
-        view = viewForRange(
-          first,
-          day,
-          w,
-          stripWidth: ChartLayout.laneNameWidth(w),
-          anchorEnd: true,
-        );
-      }
-    }
-    _setUnit(ViewUnit.nearest(view.$2));
-    _onViewport(view.$1, view.$2);
-    setState(() => _fitToken++);
+    _goToAndSelect(dateOnly(picked));
   }
 
   Future<void> _showShortcuts(BuildContext context) {
@@ -1917,13 +1855,19 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 row(['Scroll'], 'Pan balance (sideways or Shift: time)'),
                 row(['⌘ / ⌥ / Ctrl', 'Scroll'], 'Zoom at the cursor'),
                 row(['+', '−'], 'Smaller / larger view unit'),
+                row(['View', 'Go to date…'], 'Show a day from the left edge'),
                 row(['[', ']'], 'Back / forward one unit'),
                 head('Fit'),
                 row(['F'], 'Fit balance to what is in view'),
                 row(['A'], 'Fit all data'),
                 row(['H'], 'Fit all data horizontally'),
                 head('Events'),
-                row(['Click dot'], 'Show that occurrence’s details'),
+                row(
+                  ['Lane', 'Dot'],
+                  'Hover / tap an event lane, then its dot: new event, '
+                  'trim or edit from that day',
+                ),
+                row(['Net chip'], 'That day’s events'),
                 row(['Hover day', '+'], 'Add a one-off on that day'),
                 row(['Drag dates'], 'Drag along the date axis, release to add'),
                 row(['Tap dates'], 'Add a one-off on that day'),
@@ -2275,73 +2219,6 @@ class _BalanceError extends StatelessWidget {
       label: const Text('Retry'),
     ),
   );
-}
-
-/// One-line, low-key reminder of the main interactions.
-class _TipsBar extends StatelessWidget {
-  const _TipsBar({this.compact = false});
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.labelSmall;
-    Widget tip(IconData icon, String text) => Padding(
-      padding: const EdgeInsets.only(right: 18),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: AppTheme.textFaint),
-          const SizedBox(width: 5),
-          Text(text, style: style),
-        ],
-      ),
-    );
-    final tips = [
-      if (compact) ...[
-        tip(
-          Icons.ads_click_rounded,
-          'Tap an event lane, then its dot, for actions',
-        ),
-        tip(Icons.add_circle_outline_rounded, 'Tap or drag the dates to add'),
-        tip(Icons.touch_app_outlined, 'Drag near dots for details'),
-        tip(Icons.pinch_outlined, 'Pinch to zoom'),
-      ] else ...[
-        tip(
-          Icons.ads_click_rounded,
-          'Hover an event lane, click its dot for actions',
-        ),
-        tip(Icons.swipe_right_alt_rounded, 'Drag or tap the dates to add'),
-        tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
-        tip(Icons.view_week_rounded, 'Pinch or − / + change unit, [ ] step'),
-        tip(
-          Icons.mouse_outlined,
-          'Scroll to pan · ⌘/⌥/Ctrl+scroll or pinch to zoom',
-        ),
-        tip(Icons.keyboard_rounded, 'Keyboard icon for all shortcuts'),
-      ],
-    ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-      child: compact
-          ? SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: tips),
-            )
-          // Desktop: one line of whole tips; those that don't fit wrap onto
-          // a clipped second line (hidden) instead of being cut mid-word.
-          : SizedBox(
-              key: const ValueKey('tips-bar'),
-              height: 18,
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: Alignment.topLeft,
-                  maxHeight: double.infinity,
-                  child: Wrap(children: tips),
-                ),
-              ),
-            ),
-    );
-  }
 }
 
 /// Opening view: one [unit] wide, centred on [today].

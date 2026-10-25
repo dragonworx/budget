@@ -19,6 +19,7 @@ class ViewMenu extends StatefulWidget {
     required this.combined,
     required this.onToday,
     required this.onSeed,
+    required this.onGoToDate,
     required this.onToggleStream,
     required this.builder,
   });
@@ -28,6 +29,9 @@ class ViewMenu extends StatefulWidget {
   final Set<String> combined;
   final VoidCallback onToday;
   final VoidCallback onSeed;
+
+  /// "Go to date…": a date picker, then that day from the left edge.
+  final VoidCallback onGoToDate;
   final ValueChanged<String> onToggleStream;
 
   /// The trigger; call `open` to toggle the menu.
@@ -139,8 +143,16 @@ class _ViewMenuState extends State<ViewMenu> {
           onPressed: widget.onSeed,
           child: const Text('Go to seed date'),
         ),
-        const Divider(height: 8),
       ],
+      MenuItemButton(
+        key: const ValueKey('view-go-to-date'),
+        focusNode: widget.compact ? null : _first,
+        style: _style,
+        leadingIcon: const Icon(Icons.event_rounded, size: 18),
+        onPressed: widget.onGoToDate,
+        child: const Text('Go to date…'),
+      ),
+      const Divider(height: 8),
       Padding(
         key: const ValueKey('combine-heading'),
         padding: const EdgeInsets.fromLTRB(14, 6, 14, 4),
@@ -161,12 +173,10 @@ class _ViewMenuState extends State<ViewMenu> {
         ),
       // Keys on a wrapper: CheckboxMenuButton hands its key to its inner
       // MenuItemButton too.
-      for (final (i, p) in widget.streams.indexed)
+      for (final p in widget.streams)
         KeyedSubtree(
           key: ValueKey('combine-${p.id}'),
           child: CheckboxMenuButton(
-            // Desktop: the first stream row takes focus on open.
-            focusNode: !widget.compact && i == 0 ? _first : null,
             style: _style,
             closeOnActivate: false,
             value: widget.combined.contains(p.id),

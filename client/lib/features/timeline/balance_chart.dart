@@ -13,7 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
 import 'chart_geometry.dart';
 import 'combined.dart';
-import 'date_heatmap.dart';
+import 'day_totals.dart';
 import 'duration_format.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
@@ -2124,7 +2124,7 @@ class _BalanceChartState extends State<BalanceChart>
           o.date.day != d.day) {
         continue;
       }
-      // Same rule as the toolbar heatmap's day nets.
+      // Same rule as [dayNetTotals].
       if (!countsInDayTotals(o, enabled: _txOf(o.eventId)?.enabled)) {
         continue;
       }

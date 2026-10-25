@@ -5,7 +5,7 @@ import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/combined.dart';
-import 'package:budget_client/features/timeline/date_heatmap.dart';
+import 'package:budget_client/features/timeline/day_totals.dart';
 import 'package:budget_client/features/timeline/fit_ranges.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/state/auth_providers.dart';
@@ -342,7 +342,10 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('fit-menu')));
     await tester.pumpAndSettle();
-    // First stream row takes focus (no alert-line option any more).
+    // Go to date… takes focus first; the stream rows follow it.
+    expect(focusedOn('view-go-to-date'), isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
     expect(focusedOn('combine-b'), isTrue);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
@@ -551,38 +554,18 @@ void main() {
     await tester.pump(const Duration(seconds: 6));
   });
 
-  testWidgets('date heatmap uses the combined day nets: a transfer between '
-      'ticked streams nets out (neutral), alone it is a loss (red)', (
-    tester,
-  ) async {
+  testWidgets('day nets follow the combined view: a transfer between '
+      'ticked streams nets out, alone it is a loss', (tester) async {
     await _pump(tester);
-    List<Color> cells() =>
-        (tester
-                    .widget<CustomPaint>(
-                      find.byKey(const ValueKey('range-heatmap')),
-                    )
-                    .painter!
-                as HeatmapPainter)
-            .colors;
-    int cellOf(DateTime day) {
-      final c = _chart(tester);
-      final w = tester.getSize(find.byType(BalanceChart)).width;
-      final inset = ChartLayout.laneNameWidth(w) * c.visibleDays / w;
-      final first = (dayCoord(c.viewStart) + inset - 1e-6).ceilToDouble();
-      return (dayCoord(day) - first).round();
-    }
-
-    bool reddish(Color c) => c.r > c.g + 0.05;
-    final transferDay = cellOf(_d(3));
-    expect(transferDay, inInclusiveRange(0, cells().length - 1));
-    expect(reddish(cells()[transferDay]), isTrue, reason: 'Everyday alone');
+    double net(DateTime day) =>
+        dayNetTotals(_chart(tester).series)[dayCoord(day).round()] ?? 0;
+    expect(net(_d(3)), lessThan(0), reason: 'Everyday alone');
     await _toggleByTap(tester, 'b');
-    expect(cells()[transferDay], heatmapNeutral, reason: 'nets out');
-    // Kids' pocket money (a loss) shows once Kids is ticked.
-    final pocket = cellOf(_d(6));
-    expect(cells()[pocket], heatmapNeutral);
+    expect(net(_d(3)).abs(), lessThan(0.005), reason: 'nets out');
+    // Kids' pocket money (a loss) counts once Kids is ticked.
+    expect(net(_d(6)), 0);
     await _toggleByTap(tester, 'c');
-    expect(reddish(cells()[pocket]), isTrue, reason: 'Kids pocket money');
+    expect(net(_d(6)), lessThan(0), reason: 'Kids pocket money');
   });
 
   for (final (name, size) in const [

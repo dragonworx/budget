@@ -169,6 +169,14 @@ void main() {
         'remembered', (tester) async {
       await _pump(tester, size);
       expect(_dockedPanel, findsOneWidget);
+      // Docked too, the chart fills the height under the header: no date
+      // range / heat map row, no tips row.
+      final bar = tester.getRect(find.byType(AppBar));
+      final chartR = tester.getRect(find.byType(BalanceChart));
+      expect(chartR.top - bar.bottom, inInclusiveRange(0, 14));
+      expect(size.height - chartR.bottom, inInclusiveRange(0, 14));
+      expect(find.byKey(const ValueKey('jump-to-date')), findsNothing);
+      expect(find.textContaining('for actions'), findsNothing);
       final panelW = dockedListWidth(size.width);
       expect(tester.getSize(_docked).width, panelW + 16);
       final open = _view(tester);
