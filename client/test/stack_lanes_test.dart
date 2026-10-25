@@ -399,8 +399,8 @@ void main() {
           layout.plot.bottom -
           (v - range.min) / (range.max - range.min) * layout.plot.height;
       final r = risers.single;
-      expect(r.bottom - 1.2, closeTo(yOf(400), 0.01));
-      expect(r.top + 1.2, closeTo(yOf(1000), 0.01));
+      expect(r.bottom - 1.8, closeTo(yOf(400), 0.01));
+      expect(r.top + 1.8, closeTo(yOf(1000), 0.01));
       expect(r.center.dx, closeTo(seen[_start]!.left, 0.01));
     });
 
@@ -422,7 +422,7 @@ void main() {
       final steps = pieces.where((r) => r.height > 4).toList();
       expect(levels.map((r) => r.center.dy).toSet().length, 2);
       for (final r in levels) {
-        expect(r.height, closeTo(2, 0.01));
+        expect(r.height, closeTo(3, 0.01));
         final y = r.center.dy;
         expect(
           (y - yOf(1000)).abs() < 0.01 || (y - yOf(1500)).abs() < 0.01,
@@ -441,8 +441,8 @@ void main() {
       final step = steps.single;
       final edge = ribbons[_start.add(const Duration(days: 7))]!.left;
       expect(step.center.dx, closeTo(edge, 0.01));
-      expect(step.top + 1, closeTo(yOf(1500), 0.01));
-      expect(step.bottom - 1, closeTo(yOf(1000), 0.01));
+      expect(step.top + 1.5, closeTo(yOf(1500), 0.01));
+      expect(step.bottom - 1.5, closeTo(yOf(1000), 0.01));
     });
 
     testWidgets('the balance line paints over the lanes and their text, '

@@ -4634,7 +4634,7 @@ class _BalanceChartPainter extends CustomPainter {
         Paint()
           ..color = loss ? AppTheme.debitColor : _lineColor
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.4
+          ..strokeWidth = 3.6
           ..strokeJoin = StrokeJoin.round
           ..strokeCap = StrokeCap.round,
       );
@@ -4729,10 +4729,10 @@ class _BalanceChartPainter extends CustomPainter {
         final y0 = scale.yOf(seedBal), y1 = scale.yOf(p.balance);
         if ((y0 - y1).abs() > 0.5) {
           final r = Rect.fromLTRB(
-            p.x0 - 1.2,
-            math.min(y0, y1) - 1.2,
-            p.x0 + 1.2,
-            math.max(y0, y1) + 1.2,
+            p.x0 - 1.8,
+            math.min(y0, y1) - 1.8,
+            p.x0 + 1.8,
+            math.max(y0, y1) + 1.8,
           );
           riser.addRect(r);
           debugRiser?.call(r);
@@ -4758,17 +4758,17 @@ class _BalanceChartPainter extends CustomPainter {
       if (m == 0 || (next != null && mn == 0)) {
         // The plain line: this level, and the rise or fall into the next.
         if (m == 0) {
-          thin.addRect(Rect.fromLTRB(p.x0, yb - 1.2, p.x1, yb + 1.2));
+          thin.addRect(Rect.fromLTRB(p.x0, yb - 1.8, p.x1, yb + 1.8));
         }
         if (next != null && (m == 0 || mn == 0)) {
           final y0 = m == 0 ? yb : laneTop(yb, 0, m, h) + m * h / 2;
           final y1 = mn == 0 ? yn : laneTop(yn, 0, mn, h) + mn * h / 2;
           thin.addRect(
             Rect.fromLTRB(
-              p.x1 - 1.2,
-              math.min(y0, y1) - 1.2,
-              p.x1 + 1.2,
-              math.max(y0, y1) + 1.2,
+              p.x1 - 1.8,
+              math.min(y0, y1) - 1.8,
+              p.x1 + 1.8,
+              math.max(y0, y1) + 1.8,
             ),
           );
         }
@@ -4777,14 +4777,14 @@ class _BalanceChartPainter extends CustomPainter {
       // The balance line itself, drawn over the lanes so it can be traced
       // end to end: this level (the stack's centre), and its step into the
       // next stack at the day edge.
-      truth.add(Rect.fromLTRB(p.x0, yb - 1.0, p.x1, yb + 1.0));
+      truth.add(Rect.fromLTRB(p.x0, yb - 1.5, p.x1, yb + 1.5));
       if (next != null && mn > 0 && (yn - yb).abs() > 0.5) {
         truth.add(
           Rect.fromLTRB(
-            p.x1 - 1.0,
-            math.min(yb, yn) - 1.0,
-            p.x1 + 1.0,
-            math.max(yb, yn) + 1.0,
+            p.x1 - 1.5,
+            math.min(yb, yn) - 1.5,
+            p.x1 + 1.5,
+            math.max(yb, yn) + 1.5,
           ),
         );
       }
@@ -4872,7 +4872,7 @@ class _BalanceChartPainter extends CustomPainter {
     // later, sit above it.
     final halo = Path(), core = Path()..addPath(riser, Offset.zero);
     for (final r in truth) {
-      halo.addRect(r.inflate(1.4));
+      halo.addRect(r.inflate(2.1));
       core.addRect(r);
       debugTrueLine?.call(r);
     }
@@ -4882,7 +4882,7 @@ class _BalanceChartPainter extends CustomPainter {
       Paint()
         ..color = outline
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.8,
+        ..strokeWidth = 4.2,
     );
     canvas.drawPath(halo, Paint()..color = outline);
     canvas.drawPath(core, Paint()..color = _lineColor);
