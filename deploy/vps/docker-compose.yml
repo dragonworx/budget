@@ -23,6 +23,35 @@ x-api-env: &api-env
   API_HOST: 0.0.0.0
   API_PORT: "8080"
 
+# One-shot DB snapshot around migrations (runs on every deploy):
+#   backups/<utc>-before.dump + .counts.txt before migrate, <utc>-after.counts.txt after.
+# Counts are row counts only (no personal data). Old or new table names.
+x-db-snapshot: &db-snapshot |
+  set -eu
+  umask 077
+  f=/backups/$$(date -u +%Y%m%dT%H%M%SZ)-$$SNAP
+  if [ "$$SNAP" = before ]; then pg_dump -Fc -f "$$f.dump"; test -s "$$f.dump"; fi
+  psql -v ON_ERROR_STOP=1 -At -F ' ' -c "
+    SELECT t, (xpath('/row/c/text()', query_to_xml(format(
+      'SELECT count(*) AS c FROM %s', r), false, true, '')))[1]::text
+    FROM (VALUES
+      ('users', to_regclass('public.users')),
+      ('sessions', to_regclass('public.sessions')),
+      ('allowed_emails', to_regclass('public.allowed_emails')),
+      ('invites', to_regclass('public.invites')),
+      ('audit_log', to_regclass('public.audit_log')),
+      ('scenarios', to_regclass('public.scenarios')),
+      ('streams', coalesce(to_regclass('public.streams'), to_regclass('public.pools'))),
+      ('events', coalesce(to_regclass('public.events'), to_regclass('public.transactions'))),
+      ('stream_shares', coalesce(to_regclass('public.stream_shares'), to_regclass('public.pool_shares'))),
+      ('stream_views', coalesce(to_regclass('public.stream_views'), to_regclass('public.pool_views'))),
+      ('skipped_occurrences', to_regclass('public.skipped_occurrences')),
+      ('occurrence_overrides', to_regclass('public.occurrence_overrides'))
+    ) v(t, r) WHERE r IS NOT NULL
+    UNION ALL SELECT 'admins', count(*)::text FROM users WHERE is_admin
+    UNION ALL SELECT 'latest_migration', max(id) FROM schema_migrations" | tee "$$f.counts.txt"
+  echo "snapshot $$SNAP: $$f"
+
 services:
   db:
     image: postgres:16-alpine
@@ -40,6 +69,23 @@ services:
       retries: 20
       start_period: 10s
 
+  backup:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGUSER: budget
+      PGDATABASE: budget
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      SNAP: before
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: [*db-snapshot]
+
   migrate:
     image: ghcr.io/dragonworx/budget-api:${IMAGE_TAG:-latest}
     command: ["/app/bin/migrate"]
@@ -47,7 +93,26 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      backup:
+        condition: service_completed_successfully
     restart: "no"
+
+  counts-after:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGUSER: budget
+      PGDATABASE: budget
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      SNAP: after
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "-c"]
+    command: [*db-snapshot]
 
   api:
     image: ghcr.io/dragonworx/budget-api:${IMAGE_TAG:-latest}
