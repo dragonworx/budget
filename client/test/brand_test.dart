@@ -196,19 +196,52 @@ void main() {
       expect(big.center.dy, closeTo(400, 1));
       expect(big.width, closeTo(240, 1));
 
-      // Coin: above its resting spot early in the drop, lands in the slot.
+      // Slogan under the logo, fading in with the drop.
+      final slogan = find.descendant(
+        of: overlay,
+        matching: find.text(LandingIntro.slogan, findRichText: true),
+      );
+      expect(LandingIntro.slogan, 'Tweet your budget right');
+      expect(slogan, findsOneWidget);
+      final sloganRect = tester.getRect(slogan);
+      expect(sloganRect.top, greaterThan(big.bottom));
+      expect(sloganRect.center.dx, closeTo(640, 1));
+      double sloganOpacity() => tester
+          .widget<Opacity>(
+            find.ancestor(of: slogan, matching: find.byType(Opacity)).first,
+          )
+          .opacity;
+      expect(sloganOpacity(), greaterThan(0.5));
+
+      // Coin: above the icon early in the drop, then sinks into the slot,
+      // masked at the slot line (only the part above it shows).
       final coin = find.descendant(
         of: overlay,
-        matching: find.byType(BudgieCoin),
+        matching: find.byKey(const ValueKey('landing-coin')),
       );
+      final mask = tester.getRect(
+        find.byKey(const ValueKey('landing-slot-mask')),
+      );
+      final slotLine = big.top + 240 * Brand.slotY;
+      expect(mask.bottom, closeTo(slotLine, 1));
       final early = tester.getRect(coin).top;
+      expect(early, lessThan(big.top + 240 * Brand.coinTop));
       await tester.pump(const Duration(milliseconds: 500)); // t=900
-      final landed = tester.getRect(coin).top;
-      expect(early, lessThan(landed - 50));
-      expect(landed, closeTo(big.top + 240 * Brand.coinTop, 1));
+      final sinking = tester.getRect(coin);
+      // Past its resting spot, partly inside the slot: cut by the mask.
+      expect(sinking.top, greaterThan(big.top + 240 * Brand.coinTop + 5));
+      expect(sinking.top, lessThan(slotLine));
+      expect(sinking.bottom, greaterThan(mask.bottom + 20));
+      expect(sloganOpacity(), 1);
+      await tester.pump(const Duration(milliseconds: 220)); // t=1120
+      // Fully inside: gone.
+      expect(coin, findsNothing);
+      expect(slogan, findsOneWidget);
 
-      // Mid-glide: smaller and on the way to the header icon.
-      await tester.pump(const Duration(milliseconds: 475));
+      // Mid-glide: smaller and on the way to the header icon; the slogan
+      // has faded out with the backdrop.
+      await tester.pump(const Duration(milliseconds: 450)); // t=1570
+      expect(slogan, findsNothing);
       final target = tester.getRect(anchor);
       final mid = tester.getRect(noCoin);
       expect(mid.width, lessThan(240));
@@ -231,7 +264,7 @@ void main() {
       expect(_opacityOf(tester, anchor), 1);
     });
 
-    testWidgets('reduced motion skips straight to the end state', (
+    testWidgets('reduced motion: static logo + slogan, then the app', (
       tester,
     ) async {
       page.prefersReducedMotionForTest = true;
@@ -240,12 +273,33 @@ void main() {
       await tester.pumpAndSettle();
       LandingIntro.play();
       await tester.pump();
-      expect(find.byKey(const ValueKey('landing-intro')), findsNothing);
+      final overlay = find.byKey(const ValueKey('landing-intro'));
+      expect(overlay, findsOneWidget);
+      // Still: the full logo (coin on) and the slogan, no animation.
+      expect(
+        find.descendant(
+          of: overlay,
+          matching: find.byWidgetPredicate((w) => w is BudgieIcon && !w.noCoin),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(BudgieCoin), findsNothing);
+      expect(
+        find.text(LandingIntro.slogan, findRichText: true),
+        findsOneWidget,
+      );
+      expect(tester.hasRunningAnimations, isFalse);
+      await tester.pump(
+        const Duration(milliseconds: LandingIntro.reducedHold + 10),
+      );
+      await tester.pump();
+      expect(overlay, findsNothing);
+      expect(find.text(LandingIntro.slogan, findRichText: true), findsNothing);
       expect(LandingIntro.phase.value, IntroPhase.off);
       expect(_opacityOf(tester, find.byType(BrandAnchor)), 1);
     });
 
-    testWidgets('MediaQuery.disableAnimations also skips it', (tester) async {
+    testWidgets('MediaQuery.disableAnimations: static too', (tester) async {
       tester.platformDispatcher.accessibilityFeaturesTestValue =
           const FakeAccessibilityFeatures(disableAnimations: true);
       addTearDown(
@@ -255,6 +309,14 @@ void main() {
       await _pumpApp(tester, user: adminUser);
       await tester.pumpAndSettle();
       LandingIntro.play();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('landing-coin')), findsNothing);
+      expect(
+        find.text(LandingIntro.slogan, findRichText: true),
+        findsOneWidget,
+      );
+      // A tap skips it.
+      await tester.tap(find.byKey(const ValueKey('landing-intro')));
       await tester.pump();
       expect(find.byKey(const ValueKey('landing-intro')), findsNothing);
       expect(LandingIntro.phase.value, IntroPhase.off);
