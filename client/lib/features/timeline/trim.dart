@@ -32,3 +32,50 @@ BudgetEvent trimmedEvent(BudgetEvent t, DateTime day) => t.copyWith(
   endDate: dateOnly(day),
   clearOccurrenceCount: true,
 );
+
+/// What "Trim From Here" on a dot's day does to its event.
+///
+/// End dates are inclusive (the editor's "On date" end and the server's
+/// `until_date`: a series occurs on or before its endDate), so trimming
+/// from [day] ends the series on the day before: [day]'s occurrence and
+/// every later one go, earlier ones stay. On a ring dot (the series runs
+/// through [day] but does not occur on it) the same rule keeps everything
+/// before [day]. A transfer's peer row mirrors the new end (the server
+/// mirrors schedule edits and deletes onto both sides).
+class TrimPlan {
+  const TrimPlan.end(BudgetEvent this.trimmed, DateTime this.end)
+    : deletes = false;
+  const TrimPlan.delete() : trimmed = null, end = null, deletes = true;
+
+  /// The event with its new (inclusive) end; null when [deletes].
+  final BudgetEvent? trimmed;
+
+  /// The new last day of the series; null when [deletes].
+  final DateTime? end;
+
+  /// Nothing before the trim day would remain (a once-off, or trimming
+  /// from the first occurrence): trimming deletes the event.
+  final bool deletes;
+}
+
+/// [t] trimmed from [day] (see [TrimPlan]); null when nothing of [t]
+/// occurs on or after [day], so there is nothing to trim.
+TrimPlan? trimFromHere(BudgetEvent t, DateTime day) {
+  final d = dateOnly(day);
+  final start = dateOnly(t.startDate);
+  if (t.recurrenceMode != RecurrenceMode.every) {
+    return start.isBefore(d) ? null : const TrimPlan.delete();
+  }
+  if (t.endMode == EndMode.untilDate &&
+      t.endDate != null &&
+      dateOnly(t.endDate!).isBefore(d)) {
+    return null;
+  }
+  if (t.endMode == EndMode.count) {
+    final dates = estimateOccurrenceDates(t, maxCount: t.occurrenceCount ?? 1);
+    if (!dates.any((x) => !dateOnly(x).isBefore(d))) return null;
+  }
+  final end = DateTime(d.year, d.month, d.day - 1);
+  if (end.isBefore(start)) return const TrimPlan.delete();
+  return TrimPlan.end(trimmedEvent(t, end), end);
+}

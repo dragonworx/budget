@@ -37,6 +37,7 @@ import '../events/event_editor.dart';
 import '../events/events_panel.dart';
 import 'balance_chart.dart';
 import 'trim.dart';
+import '../../widgets/confirm_dialog.dart';
 import 'chart_geometry.dart';
 import 'combined.dart';
 import 'date_heatmap.dart';
@@ -2048,10 +2049,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     if (left && context.mounted) context.go('/');
   }
 
-  /// The dot popup's Trim: end the series on [day] (that occurrence is
-  /// now the last). No dialog: the explicit tap is the ask and the 5s
-  /// "Series trimmed" tip has Undo (old end + the once-offs it dropped;
-  /// the server prunes overrides past the new end on the same update).
+  /// A dot's "Trim From Here": [t] keeps only what occurs before [day]
+  /// ([trimFromHere]: the series now ends the day before, end dates being
+  /// inclusive). No dialog for a series that keeps earlier occurrences: the
+  /// explicit pick is the ask and the 5s "Series trimmed" tip has Undo (old
+  /// end + the once-offs it dropped; the server prunes overrides past the
+  /// new end on the same update). When nothing would remain (a once-off,
+  /// or trimming from the first occurrence) it asks, then deletes, with
+  /// the usual "Deleted" Undo. A transfer's other side follows (the server
+  /// mirrors the end date and the delete).
   Future<void> _trimAt(
     BuildContext context,
     BudgetEvent t,
@@ -2064,9 +2070,49 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             ?.where((x) => x.id == t.id)
             .firstOrNull ??
         t;
+    final plan = trimFromHere(current, day);
+    if (plan == null) return;
+    final n = ref.read(eventsProvider(widget.streamId).notifier);
+    final name = current.name.isEmpty ? 'this event' : current.name;
     try {
-      final n = ref.read(eventsProvider(widget.streamId).notifier);
-      final trimmed = trimmedEvent(current, day);
+      if (plan.deletes) {
+        final once = current.recurrenceMode == RecurrenceMode.once;
+        final ok = await showConfirmDialog(
+          context,
+          title: 'Delete $name?',
+          message:
+              (once
+                  ? 'This is a once-off event, so trimming it deletes it.'
+                  : 'Trimming from its first occurrence leaves nothing, so '
+                        'the whole series is deleted.') +
+              (current.isTransfer
+                  ? ' Both sides of the transfer are deleted.'
+                  : ''),
+        );
+        if (!ok || !context.mounted) return;
+        final order = ref
+            .read(streamProvider(widget.streamId))
+            .valueOrNull
+            ?.eventOrder;
+        final skips = _skipsFor(current.id);
+        await n.delete(current.id);
+        _invalidateBalance();
+        if (!context.mounted) return;
+        reportEditorOutcome(
+          context,
+          ref,
+          streamId: widget.streamId,
+          outcome: EditorOutcome(
+            action: EditorAction.deleted,
+            event: current,
+            skippedBefore: skips,
+          ),
+          onChanged: _invalidateBalance,
+          orderBefore: order,
+        );
+        return;
+      }
+      final trimmed = plan.trimmed!;
       final r = await saveWithConflictCheck(
         context,
         save: (force) => n.updateEvent(trimmed, force: force),
@@ -2080,7 +2126,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           action: EditorAction.trimmed,
           event: trimmed,
           previous: current,
-          date: dateOnly(day),
+          date: plan.end,
         ),
       );
     } catch (error) {
@@ -2252,12 +2298,18 @@ class _TipsBar extends StatelessWidget {
     );
     final tips = [
       if (compact) ...[
-        tip(Icons.ads_click_rounded, 'Tap an event lane for details'),
+        tip(
+          Icons.ads_click_rounded,
+          'Tap an event lane, then its dot, for actions',
+        ),
         tip(Icons.add_circle_outline_rounded, 'Tap or drag the dates to add'),
         tip(Icons.touch_app_outlined, 'Drag near dots for details'),
         tip(Icons.pinch_outlined, 'Pinch to zoom'),
       ] else ...[
-        tip(Icons.ads_click_rounded, 'Hover an event lane for details'),
+        tip(
+          Icons.ads_click_rounded,
+          'Hover an event lane, click its dot for actions',
+        ),
         tip(Icons.swipe_right_alt_rounded, 'Drag or tap the dates to add'),
         tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
         tip(Icons.view_week_rounded, 'Pinch or − / + change unit, [ ] step'),

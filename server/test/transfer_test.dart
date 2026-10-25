@@ -169,4 +169,85 @@ void main() {
       }
     }
   });
+
+  test(
+      'Trim From Here on a transfer: the inclusive end (the day before the '
+      'dot) mirrors to the other side; from the first occurrence the client '
+      'deletes, which removes both', () async {
+    final c = conn;
+    if (c == null) {
+      markTestSkipped('no test database');
+      return;
+    }
+    final owner = await testOwnerId(c);
+    final made = <String>[];
+    try {
+      Future<String> acct(String name) async {
+        await c.execute(
+            Sql.named('DELETE FROM streams WHERE owner_id = @o::uuid '
+                'AND name = @n'),
+            parameters: {'o': owner, 'n': name});
+        final id = (await StreamRepo(c).create(
+                ownerId: owner,
+                name: name,
+                seedBalance: Decimal.zero,
+                seedDate: DateTime.utc(2026, 10, 1),
+                lossThreshold: Decimal.zero))
+            .id;
+        made.add(id);
+        return id;
+      }
+
+      final a = await acct('Trim A');
+      final b = await acct('Trim B');
+      final streams = buildStreamsApi(c).call;
+      final txs = eventsRouter(c).call;
+      final src = (await call(streams, 'POST', '/$a/events', {
+        'name': 'Top up',
+        'direction': 'debit',
+        'amount': '10',
+        'startDate': '2026-10-05',
+        'recurrenceMode': 'every',
+        'interval': 1,
+        'unit': 'weeks',
+        'endMode': 'never',
+        'transferToStreamId': b,
+      }))
+          .json;
+      final peerId = src['transfer']['peerEventId'] as String;
+
+      Future<List<String>> dates(String stream) async {
+        final bal = (await call(streams, 'GET',
+                '/$stream/balance?from=2026-10-01&to=2026-11-30'))
+            .json;
+        return [
+          for (final o in bal['occurrences'] as List)
+            if (o['skipped'] != true) o['date'] as String,
+        ];
+      }
+
+      expect(await dates(b), contains('2026-10-26'));
+      // Trim from the 19 Oct dot: the series now ends on the 18th.
+      final trimmed = await call(txs, 'PATCH', '/${src['id']}',
+          {'endMode': 'until_date', 'endDate': '2026-10-18'});
+      expect(trimmed.status, 200);
+      final peer = (await call(txs, 'GET', '/$peerId')).json;
+      expect(peer['endMode'], 'until_date');
+      expect(peer['endDate'], '2026-10-18');
+      for (final s in [a, b]) {
+        expect(await dates(s), ['2026-10-05', '2026-10-12'], reason: s);
+      }
+      // Trimming from the first occurrence leaves nothing: the client
+      // deletes instead (after asking), and both sides go.
+      expect((await call(txs, 'DELETE', '/${src['id']}')).status, 204);
+      expect((await call(txs, 'GET', '/$peerId')).status, 404);
+      expect(await dates(a), isEmpty);
+      expect(await dates(b), isEmpty);
+    } finally {
+      for (final id in made) {
+        await c.execute(Sql.named('DELETE FROM streams WHERE id = @a::uuid'),
+            parameters: {'a': id});
+      }
+    }
+  });
 }

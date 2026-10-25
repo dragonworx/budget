@@ -54,8 +54,8 @@ typedef EditOccurrence = void Function(BudgetEvent event, DateTime date);
 /// (however far up) just keeps tracking the day: there is no drag-to-
 /// cancel. "+" is the bubble's only action: a pinned line goes on any
 /// press (or tap) elsewhere on the chart, Esc, or a view navigation (Esc
-/// mid-drag drops the pick). (Trimming a series lives in the dot popup's
-/// ⋮ menu, [onTrimOccurrence].)
+/// mid-drag drops the pick). (Trimming lives in a lane dot's menu and the
+/// day popup's ⋮ menu, [onTrimOccurrence].)
 /// With focus: arrow keys pan, +/- zoom time, F fits balances.
 /// Test hook: after each paint, every in-plot vertex as (name, x, labelled).
 @visibleForTesting
@@ -187,9 +187,11 @@ class BalanceChart extends StatefulWidget {
   /// "+" (viewers). Only a tap on that button calls it.
   final CreateOnDay? onNewOnDay;
 
-  /// "Trim" on a recurring row of the dot popup: end that series on the
-  /// tapped occurrence (it becomes the last one). Null: no Trim (viewers).
-  /// Only the current stream's own series get it; only that tap calls it.
+  /// "Trim From Here" (a lane dot's menu, a day popup row's ⋮): drop the
+  /// event's occurrences from that day on (the page ends the series the day
+  /// before, or asks then deletes when nothing would remain; see
+  /// [trimFromHere]). Null: disabled / hidden (viewers). Only the current
+  /// stream's own events get it; only that pick calls it.
   final EditOccurrence? onTrimOccurrence;
 
   /// "Plan…" in the selection card: opens the goal planner pre-filled with
@@ -1291,6 +1293,14 @@ class _BalanceChartState extends State<BalanceChart>
   void _showTapTip(Offset pos, double hitRadius) {
     _tapTipTimer?.cancel();
     final layout = _layout;
+    // A tap / click on a lane's (revealed) dot opens its action menu.
+    final hit = layout.plot.contains(pos)
+        ? _laneDotHit(layout, pos, touch: _touchDown)
+        : null;
+    if (hit != null) {
+      _openDotMenu(hit);
+      return;
+    }
     // A tap anywhere on an event's lane opens that lane's dot (as hover
     // does); a net chip, then the always-drawn dots, otherwise.
     final chip = !layout.plot.contains(pos) || _laneSet().isEmpty
@@ -1719,8 +1729,8 @@ class _BalanceChartState extends State<BalanceChart>
                           dataFrom: widget.dataFrom,
                           dataThrough: widget.dataThrough,
                           yRange: yRange,
-                          highlightY: _tipShown(tip)
-                              ? _highlightDot(tip!).balanceY
+                          highlightY: _tipShown(tip) && !_isLaneTip(tip!)
+                              ? _highlightDot(tip).balanceY
                               : null,
                           revealDot: _tipShown(tip) ? _revealOf(tip!) : null,
                         ),
@@ -1751,10 +1761,14 @@ class _BalanceChartState extends State<BalanceChart>
                 ValueListenableBuilder<_DotTip?>(
                   valueListenable: _hoverDots,
                   builder: (context, tip, _) {
-                    if (!_tipShown(tip)) return const SizedBox.shrink();
+                    // A lane's dot is only revealed (no popup): clicking
+                    // it opens its action menu.
+                    if (!_tipShown(tip) || _isLaneTip(tip!)) {
+                      return const SizedBox.shrink();
+                    }
                     return Stack(
                       children: [
-                        ..._yHighlight(theme, tip!),
+                        ..._yHighlight(theme, tip),
                         ..._xHighlight(theme, tip),
                         _tooltip(theme, tip),
                       ],
@@ -3188,6 +3202,47 @@ class _BalanceChartState extends State<BalanceChart>
   /// into the card ([_headingForCard]) waits a moment before switching.
   void _updateDotHover(ChartLayout layout, Offset pos) {
     _touchUi = false;
+    try {
+      _updateDotHoverInner(layout, pos);
+    } finally {
+      _syncOverDot(layout, pos);
+    }
+  }
+
+  /// The click cursor: on a revealed lane dot (its 32px target), or on
+  /// any other hovered target (net chip, opening diamond).
+  void _syncOverDot(ChartLayout layout, Offset pos) {
+    final tip = _hoverDots.value;
+    final over =
+        tip != null &&
+        (_isLaneTip(tip)
+            ? _onRevealedDot(layout, tip.dots.first, pos, mouseDotHitRadius)
+            : !_tapTip);
+    if (over != _overDot) setState(() => _overDot = over);
+  }
+
+  /// [pos] is within [r] of lane dot [d] (its clickable target).
+  bool _onRevealedDot(ChartLayout layout, _Dot d, Offset pos, double r) {
+    final a = _tipAnchor(layout, d);
+    return (a - pos).distance <= r;
+  }
+
+  void _updateDotHoverInner(ChartLayout layout, Offset pos) {
+    // On the revealed dot (its generous target reaches into the previous
+    // step and the lanes beside it): keep it, so it can be clicked.
+    final shown = _hoverDots.value;
+    if (shown != null && _isLaneTip(shown) && !_tapTip) {
+      final d = shown.dots.first;
+      final a = _tipAnchor(layout, d);
+      final lanes = _laneSet();
+      final half = lanes.isEmpty ? 4.0 : _laneHeight(lanes, layout) / 2;
+      if ((a.dx - pos.dx).abs() <= mouseDotHitRadius &&
+          (a.dy - pos.dy).abs() <= math.max(half, 4) &&
+          layout.plot.contains(pos)) {
+        _aimFrom = pos;
+        return;
+      }
+    }
     final chip = _laneSet().isEmpty ? null : _labelDotAt(layout, pos, slop: 0);
     final lane = chip == null ? _laneDotAt(layout, pos) : null;
     final nearest =
@@ -3255,10 +3310,8 @@ class _BalanceChartState extends State<BalanceChart>
     if (overlapping.isEmpty) {
       // A tooltip pinned by a click stays until its timeout or next click.
       if (_hoverDots.value != null && !_tapTip) _hoverDots.value = null;
-      if (_overDot) setState(() => _overDot = false);
       return;
     }
-    if (!_overDot) setState(() => _overDot = true);
     final current = _hoverDots.value;
     if (!force && current != null && listEquals(current.dots, overlapping)) {
       return;
@@ -3326,6 +3379,153 @@ class _BalanceChartState extends State<BalanceChart>
   /// The day a popup row is about: its occurrence's (or the seed's).
   DateTime _rowDay(Occurrence? o) => dateOnly(o?.date ?? widget.seedDate);
 
+  /// A lone lane dot: revealed by hover / tap, with no popup card.
+  static bool _isLaneTip(_DotTip tip) =>
+      tip.dots.length == 1 &&
+      tip.dots.first.txId != null &&
+      !tip.dots.first.wholeDay &&
+      tip.dots.first.day != null;
+
+  /// The lane dot a tap / click at [pos] hits: the revealed one, within
+  /// its generous target (32px mouse, 44px touch). A mouse may also click
+  /// a dot straight away (hover reveals it as the pointer arrives); touch
+  /// first taps the lane to reveal the dot, then taps the dot.
+  _Dot? _laneDotHit(ChartLayout layout, Offset pos, {required bool touch}) {
+    final r = touch ? touchDotHitRadius : mouseDotHitRadius;
+    final shown = _hoverDots.value;
+    if (shown != null && _isLaneTip(shown)) {
+      final d = shown.dots.first;
+      if ((_tipAnchor(layout, d) - pos).distance <= r) return d;
+    }
+    if (touch) return null;
+    // Just left of a step's edge is the previous step's lane: try the
+    // next step's dot too.
+    for (final probe in [pos, pos + Offset(r, 0)]) {
+      final d = _laneDotAt(layout, probe, slop: 2);
+      if (d != null && (_tipAnchor(layout, d) - pos).distance <= r) return d;
+    }
+    return null;
+  }
+
+  /// Opens lane dot [d]'s action menu at the dot: New Event From Here,
+  /// then Trim From Here and Edit Event / Edit Series. Items the user
+  /// cannot use (a viewer, another stream they cannot edit, nothing left
+  /// to trim) show disabled. Only a picked item acts.
+  Future<void> _openDotMenu(_Dot d) async {
+    final layout = _layout;
+    final day = d.day!, id = d.txId!;
+    _tapTipTimer?.cancel();
+    _tapTip = true;
+    final anchor = _tipAnchor(layout, d);
+    _hoverDots.value = _DotTip([d], anchor);
+    final own = widget.events[id];
+    final other = own == null ? widget.otherEvents[id] : null;
+    final event = own ?? other;
+    final otherStream = other == null
+        ? null
+        : widget.combinedStreams[other.streamId];
+    final VoidCallback? newHere = widget.onNewOnDay == null
+        ? null
+        : () => widget.onNewOnDay?.call(day);
+    final VoidCallback? trim =
+        own != null &&
+            widget.onTrimOccurrence != null &&
+            trimFromHere(own, day) != null
+        ? () => widget.onTrimOccurrence?.call(own, day)
+        : null;
+    final VoidCallback? edit = own != null
+        ? (widget.onEditEvent == null
+              ? null
+              : () => widget.onEditEvent?.call(own, day))
+        : other != null &&
+              otherStream != null &&
+              otherStream.canEdit &&
+              widget.onOpenOtherEvent != null
+        ? () => widget.onOpenOtherEvent?.call(otherStream, other, day)
+        : null;
+    final once = event?.recurrenceMode == RecurrenceMode.once;
+    final me = context.findRenderObject()! as RenderBox;
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final at = me.localToGlobal(anchor, ancestor: overlay);
+    final itemH = _touchDown ? 44.0 : 36.0;
+    PopupMenuItem<int> item(
+      String key,
+      IconData icon,
+      String label,
+      int v,
+      VoidCallback? run,
+    ) => PopupMenuItem<int>(
+      key: ValueKey(key),
+      value: v,
+      enabled: run != null,
+      height: itemH,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 18,
+            color: run != null ? AppTheme.accent : AppTheme.textMuted,
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+    _rowMenuOpen = true;
+    final actions = [newHere, trim, edit];
+    final picked = await showMenu<int>(
+      context: context,
+      // Just under the dot (kept on screen by the menu layout), so the
+      // dot it acts on stays in sight above its corner.
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(at.dx - 8, at.dy + 10, 16, 0),
+        Offset.zero & overlay.size,
+      ),
+      color: AppTheme.overlay,
+      menuPadding: const EdgeInsets.symmetric(vertical: 4),
+      // No staggered fade-in: Safari can leave the canvas on a mid-fade
+      // frame (a dimmed last row) until the next input.
+      popUpAnimationStyle: AnimationStyle.noAnimation,
+      items: [
+        item(
+          'dot-menu-new',
+          Icons.add_rounded,
+          'New Event From Here',
+          0,
+          newHere,
+        ),
+        const PopupMenuDivider(height: 9),
+        item(
+          'dot-menu-trim',
+          Icons.content_cut_rounded,
+          'Trim From Here',
+          1,
+          trim,
+        ),
+        item(
+          'dot-menu-edit',
+          Icons.edit_outlined,
+          once ? 'Edit Event' : 'Edit Series',
+          2,
+          edit,
+        ),
+      ],
+    );
+    if (!mounted) return;
+    _rowMenuOpen = false;
+    if (picked == null) {
+      // Dismissed: the dot stays revealed (touch) / follows the mouse.
+      if (!_touchDown) _armTapTipTimer();
+      return;
+    }
+    _hideTip();
+    actions[picked]?.call();
+  }
+
   /// A row's ⋮ menu entries, in order: New (an event on that day), Trim
   /// series here (own recurring series, when trimmable), Edit (own) or
   /// "Edit in stream" (another stream's row I can edit). Empty: no ⋮.
@@ -3349,12 +3549,13 @@ class _BalanceChartState extends State<BalanceChart>
     if (o == null) return actions;
     final own = widget.events[o.eventId];
     if (own != null) {
-      if (widget.onTrimOccurrence != null && canTrimAtOccurrence(own, o.date)) {
+      if (widget.onTrimOccurrence != null &&
+          trimFromHere(own, trimDay) != null) {
         actions.add(
           _RowAction(
             'tip-menu-trim-${own.id}',
             Icons.content_cut_rounded,
-            'Trim',
+            'Trim From Here',
             () => widget.onTrimOccurrence?.call(own, trimDay),
           ),
         );

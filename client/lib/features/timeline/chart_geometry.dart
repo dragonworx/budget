@@ -597,6 +597,11 @@ const double scrubStartRadius = touchVertexHitRadius;
 /// Hit radius around a vertex for a finger tap / scrub start (a fingertip
 /// target, ~44 logical px) and for a precise mouse click.
 const double touchVertexHitRadius = 44;
+
+/// A revealed lane dot's click / tap target radius: 32px across for a
+/// mouse, 44px for a finger.
+const double mouseDotHitRadius = 16;
+const double touchDotHitRadius = 22;
 const double mouseVertexHitRadius = 18;
 
 /// Vertex hit radius for a pointer of [kind]: generous for touch / stylus,

@@ -11,6 +11,7 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'chip_taps.dart';
@@ -42,6 +43,39 @@ BudgetEvent _t(
   occurrenceCount: count,
   enabled: enabled,
 );
+
+RecurrenceMode _mode(Set<String> once, String id) =>
+    once.contains(id) ? RecurrenceMode.once : RecurrenceMode.every;
+
+String _ymd(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+    '${d.day.toString().padLeft(2, '0')}';
+
+/// Every menu item's label, top to bottom (the divider has none).
+List<String> _menuLabels(WidgetTester tester) {
+  final items = find.byWidgetPredicate((w) => w is PopupMenuItem);
+  final rows = items.evaluate().toList()
+    ..sort(
+      (x, y) => tester
+          .getCenter(find.byWidget(x.widget))
+          .dy
+          .compareTo(tester.getCenter(find.byWidget(y.widget)).dy),
+    );
+  return [
+    for (final e in rows)
+      tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byWidget(e.widget),
+              matching: find.byType(Text),
+            ),
+          )
+          .data!,
+  ];
+}
+
+bool _enabled(WidgetTester tester, String key) =>
+    tester.widget<PopupMenuItem<int>>(find.byKey(ValueKey(key))).enabled;
 
 void main() {
   tearDown(() {
@@ -243,6 +277,9 @@ void main() {
       void Function(DateTime)? onCreate,
       bool actions = false,
       Set<String>? only,
+      List<String>? log,
+      Set<String> once = const {},
+      bool canEdit = true,
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -288,17 +325,34 @@ void main() {
                 laneOrder: order,
                 events: {
                   for (final e in {
-                    'a': _t('a', 'Rent'),
-                    'b': _t('b', 'Salary', direction: EventDirection.credit),
-                    'c': _t('c', 'Gym'),
+                    'a': _t('a', 'Rent', mode: _mode(once, 'a')),
+                    'b': _t(
+                      'b',
+                      'Salary',
+                      direction: EventDirection.credit,
+                      mode: _mode(once, 'b'),
+                    ),
+                    'c': _t('c', 'Gym', mode: _mode(once, 'c')),
                   }.entries)
                     if (only == null || only.contains(e.key)) e.key: e.value,
                 },
                 onViewportChanged: (_, _) {},
                 onCreateOnDay: onCreate ?? (_) {},
-                onNewOnDay: actions ? (_) {} : null,
-                onEditEvent: actions ? (_, _) {} : null,
-                onTrimOccurrence: actions ? (_, _) {} : null,
+                onNewOnDay: log != null && canEdit
+                    ? (d) => log.add('new ${_ymd(d)}')
+                    : actions
+                    ? (_) {}
+                    : null,
+                onEditEvent: log != null && canEdit
+                    ? (t, d) => log.add('edit ${t.id} ${_ymd(d)}')
+                    : actions
+                    ? (_, _) {}
+                    : null,
+                onTrimOccurrence: log != null && canEdit
+                    ? (t, d) => log.add('trim ${t.id} ${_ymd(d)}')
+                    : actions
+                    ? (_, _) {}
+                    : null,
               ),
             ),
           ),
@@ -341,84 +395,242 @@ void main() {
       expect(find.byKey(const ValueKey('occurrence-tooltip')), findsNothing);
     });
 
-    testWidgets('hovering anywhere on a lane shows its dot and opens its '
-        'popup on the dot\'s left', (tester) async {
+    /// Each lane's dot centres, by step (left to right), from the first
+    /// paint.
+    Map<String, List<Offset>> steps(Map<String?, List<Offset>> dots) => {
+      for (final id in ['a', 'b', 'c'])
+        id: (dots[id]!.take(2).toList()..sort((x, y) => x.dx.compareTo(y.dx))),
+    };
+
+    final day0 = _ymd(_start), day7 = _ymd(_start.add(const Duration(days: 7)));
+
+    testWidgets('hovering anywhere on a lane shows only its dot, with no '
+        'popup; clicking the dot opens its action menu', (tester) async {
       final painted = <(String?, Offset)>[];
       debugLaneDotPainted = (id, c, _) => painted.add((id, c));
-      final dots = await pump(tester, ['a', 'b', 'c'], actions: true);
+      final log = <String>[];
+      final at = steps(await pump(tester, ['a', 'b', 'c'], log: log));
       final origin = tester.getTopLeft(find.byType(BalanceChart));
       final layout = ChartLayout.of(const Size(1440, 800), 30);
       final dayPx = layout.plot.width / 30;
       final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      final menu = find.byWidgetPredicate((w) => w is PopupMenuItem);
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: origin + const Offset(1300, 760));
       addTearDown(mouse.removePointer);
       await tester.pump();
       for (final id in ['a', 'b', 'c']) {
         // Mid-step, well right of the (hidden) dot: still its lane.
-        final dot = dots[id]!.last;
+        final dot = at[id]![1];
         painted.clear();
         await mouse.moveTo(origin + dot + Offset(dayPx * 3.4, 1));
         await tester.pump();
-        expect(tip, findsOneWidget, reason: id);
-        for (final e in names.entries) {
-          expect(
-            find.descendant(of: tip, matching: find.text(e.value)),
-            e.key == id ? findsWidgets : findsNothing,
-            reason: '${e.value} (hovering $id)',
-          );
-        }
+        expect(tip, findsNothing, reason: 'no hover popup ($id)');
+        expect(menu, findsNothing);
         // Only the hovered lane's dot, at its step's left edge.
         expect(painted, isNotEmpty);
         expect(painted.map((p) => p.$1).toSet(), {id});
         expect(painted.last.$2.dx, closeTo(dot.dx, 0.01));
         expect(painted.last.$2.dy, closeTo(dot.dy, 0.01));
-        // The card opens on the dot's left, clear of the pointer.
-        expect(tester.getRect(tip).right, lessThan(origin.dx + dot.dx));
       }
-      // Another step of the same lane moves the dot there (near the left
-      // edge the card falls back to the dot's right, above its row).
-      final later = dots['a']!.first;
+      // Onto the revealed dot (a few px off centre: a 32px target), click.
+      final dot = at['a']![1];
+      Future<void> clickDot() async {
+        await mouse.moveTo(origin + dot + Offset(dayPx * 2, 1));
+        await tester.pump();
+        await mouse.moveTo(origin + dot + const Offset(10, 6));
+        await tester.pump();
+        await mouse.down(origin + dot + const Offset(10, 6));
+        await mouse.up();
+        await tester.pumpAndSettle();
+      }
+
+      await clickDot();
       painted.clear();
-      await mouse.moveTo(origin + later + Offset(dayPx * 2, 1));
+      tester
+          .renderObjectList<RenderCustomPaint>(
+            find.descendant(
+              of: find.byType(BalanceChart),
+              matching: find.byType(CustomPaint),
+            ),
+          )
+          .forEach((r) => r.markNeedsPaint());
       await tester.pump();
-      expect(tip, findsOneWidget);
-      expect(painted.last.$2.dx, closeTo(later.dx, 0.01));
-      expect(tester.getRect(tip).bottom, lessThan(origin.dy + later.dy));
-      // Leaving the lanes closes it (after a short grace).
+      expect(painted.map((p) => p.$1).toSet(), {
+        'a',
+      }, reason: 'the dot stays shown under its menu');
+      expect(tip, findsNothing);
+      expect(_menuLabels(tester), [
+        'New Event From Here',
+        'Trim From Here',
+        'Edit Series',
+      ]);
+      expect(find.byType(PopupMenuDivider), findsOneWidget);
+      // Between New and Trim.
+      final div = tester.getCenter(find.byType(PopupMenuDivider)).dy;
+      expect(
+        div,
+        inExclusiveRange(
+          tester.getCenter(find.byKey(const ValueKey('dot-menu-new'))).dy,
+          tester.getCenter(find.byKey(const ValueKey('dot-menu-trim'))).dy,
+        ),
+      );
+      // Anchored at the dot, inside the screen.
+      final m = tester.getRect(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('dot-menu-new')),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect((m.topLeft - (origin + dot)).distance, lessThan(60));
+      expect(m.right, lessThanOrEqualTo(1440));
+      expect(m.bottom, lessThanOrEqualTo(800));
+      // Esc closes it without acting.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(log, isEmpty);
+      for (final (key, want) in [
+        ('dot-menu-new', 'new $day7'),
+        ('dot-menu-trim', 'trim a $day7'),
+        ('dot-menu-edit', 'edit a $day7'),
+      ]) {
+        await tester.pump(const Duration(milliseconds: 400));
+        await clickDot();
+        await tester.tap(find.byKey(ValueKey(key)));
+        await tester.pumpAndSettle();
+        expect(menu, findsNothing);
+        expect(log.last, want);
+      }
+      expect(log, hasLength(3));
+      // Leaving the lanes hides the dot again (after a short grace).
       await mouse.moveTo(origin + const Offset(1300, 760));
       await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump();
-      expect(tip, findsNothing);
+      await tester.pump(const Duration(seconds: 6));
       painted.clear();
-      await tester.pump(const Duration(milliseconds: 16));
+      tester
+          .renderObjectList<RenderCustomPaint>(
+            find.descendant(
+              of: find.byType(BalanceChart),
+              matching: find.byType(CustomPaint),
+            ),
+          )
+          .forEach((r) => r.markNeedsPaint());
+      await tester.pump();
       expect(painted, isEmpty, reason: 'dots hidden again');
     });
 
-    testWidgets('a tap anywhere on a lane shows its dot and popup, never '
-        'creating', (tester) async {
+    testWidgets('the menu says Edit Event for a once-off, Edit Series for '
+        'a series', (tester) async {
+      final log = <String>[];
+      final at = steps(
+        await pump(tester, ['a', 'b', 'c'], log: log, once: {'c'}),
+      );
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      for (final (id, want) in [('c', 'Edit Event'), ('a', 'Edit Series')]) {
+        await tester.tapAt(origin + at[id]![0], kind: PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+        expect(_menuLabels(tester), [
+          'New Event From Here',
+          'Trim From Here',
+          want,
+        ], reason: id);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+      // The once-off's Trim goes to the page (which asks, then deletes).
+      await tester.tapAt(origin + at['c']![0], kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(_enabled(tester, 'dot-menu-trim'), isTrue);
+      await tester.tap(find.byKey(const ValueKey('dot-menu-trim')));
+      await tester.pumpAndSettle();
+      expect(log, ['trim c $day0']);
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets('viewers see the menu with every action disabled', (
+      tester,
+    ) async {
+      final log = <String>[];
+      final at = steps(
+        await pump(tester, ['a', 'b', 'c'], log: log, canEdit: false),
+      );
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      await tester.tapAt(origin + at['b']![1], kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(_menuLabels(tester), [
+        'New Event From Here',
+        'Trim From Here',
+        'Edit Series',
+      ]);
+      for (final k in ['dot-menu-new', 'dot-menu-trim', 'dot-menu-edit']) {
+        expect(_enabled(tester, k), isFalse, reason: k);
+      }
+      await tester.tap(
+        find.byKey(const ValueKey('dot-menu-new')),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      expect(log, isEmpty);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets('touch: a tap on a lane only reveals its dot (no popup, '
+        'never creating); a tap on that dot opens the menu', (tester) async {
       final painted = <String?>{};
       debugLaneDotPainted = (id, _, _) => painted.add(id);
       var created = 0;
-      final dots = await pump(tester, [
-        'a',
-        'b',
-        'c',
-      ], onCreate: (_) => created++);
+      final log = <String>[];
+      final at = steps(
+        await pump(
+          tester,
+          ['a', 'b', 'c'],
+          size: const Size(390, 844),
+          onCreate: (_) => created++,
+          log: log,
+        ),
+      );
       final origin = tester.getTopLeft(find.byType(BalanceChart));
-      final dayPx = ChartLayout.of(const Size(1440, 800), 30).plot.width / 30;
+      final dayPx = ChartLayout.of(const Size(390, 844), 30).plot.width / 30;
       final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      final menu = find.byWidgetPredicate((w) => w is PopupMenuItem);
+      final dot = at['c']![0];
       await tester.tapAt(
-        origin + dots['c']!.first + Offset(dayPx * 4, 0),
+        origin + dot + Offset(dayPx * 4, 0),
         kind: PointerDeviceKind.touch,
       );
       await tester.pump();
-      expect(tip, findsOneWidget);
-      expect(
-        find.descendant(of: tip, matching: find.text('Gym')),
-        findsWidgets,
-      );
+      expect(tip, findsNothing);
+      expect(menu, findsNothing);
       expect(painted, {'c'});
+      expect(created, 0);
+      // Clear of the double-tap window, tap the dot (a 44px target).
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tapAt(
+        origin + dot + const Offset(14, 8),
+        kind: PointerDeviceKind.touch,
+      );
+      await tester.pumpAndSettle();
+      expect(tip, findsNothing);
+      expect(_menuLabels(tester), [
+        'New Event From Here',
+        'Trim From Here',
+        'Edit Series',
+      ]);
+      // Touch rows are 44px tall.
+      expect(
+        tester.getSize(find.byKey(const ValueKey('dot-menu-trim'))).height,
+        greaterThanOrEqualTo(44),
+      );
+      await tester.tap(find.byKey(const ValueKey('dot-menu-new')));
+      await tester.pumpAndSettle();
+      expect(log, ['new $day0']);
+      expect(menu, findsNothing);
       expect(created, 0);
       await tester.pump(const Duration(seconds: 6));
     });
@@ -701,28 +913,28 @@ void main() {
       expect(dots['c']!.first.dy - dots['c']!.last.dy, closeTo(shift, 0.01));
     });
 
-    testWidgets('a lane dot inspects only its own event', (tester) async {
-      final dots = await pump(tester, ['a', 'b', 'c']);
+    testWidgets('a lane dot\'s menu acts on its own event only', (
+      tester,
+    ) async {
+      final log = <String>[];
+      final at = steps(await pump(tester, ['a', 'b', 'c'], log: log));
       final origin = tester.getTopLeft(find.byType(BalanceChart));
-      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
       for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
         for (final id in ['a', 'b', 'c']) {
-          await tester.tapAt(origin + dots[id]!.first, kind: kind);
-          await tester.pump();
-          expect(tip, findsOneWidget, reason: 'lane $id');
-          for (final e in names.entries) {
-            expect(
-              find.descendant(of: tip, matching: find.text(e.value)),
-              e.key == id ? findsWidgets : findsNothing,
-              reason: '${e.value} (tapped $id, $kind)',
-            );
+          log.clear();
+          // A mouse clicks the dot at once; a finger first reveals it.
+          for (var i = 0; i < (kind == PointerDeviceKind.touch ? 2 : 1); i++) {
+            await tester.tapAt(origin + at[id]![0], kind: kind);
+            await tester.pump(const Duration(milliseconds: 400));
           }
-          // One event has no day net, only the balance after.
-          expect(find.byKey(const ValueKey('day-net')), findsNothing);
-          await tester.tapAt(
-            origin + const Offset(700, 780),
-            kind: PointerDeviceKind.mouse,
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('occurrence-tooltip')),
+            findsNothing,
           );
+          await tester.tap(find.byKey(const ValueKey('dot-menu-edit')));
+          await tester.pumpAndSettle();
+          expect(log, ['edit $id $day0'], reason: '$id ($kind)');
           await tester.pump(const Duration(seconds: 6));
         }
       }
@@ -760,6 +972,7 @@ void main() {
       Size size = const Size(1440, 800),
       void Function(DateTime)? onCreate,
       bool actions = false,
+      List<String>? log,
     }) async {
       final all = <({String? id, Offset c, bool idle})>[];
       await pump(
@@ -769,6 +982,7 @@ void main() {
         occurs: occurs,
         onCreate: onCreate,
         actions: actions,
+        log: log,
       );
       // Repaint with both hooks collecting.
       debugLaneIdleDot = (id, c) => all.add((id: id, c: c, idle: true));
@@ -876,9 +1090,10 @@ void main() {
       expect(at(7, ['a', 'b']), [('a', false), ('b', false)]);
     });
 
-    testWidgets('a dot for an event that does not occur inspects only '
-        'that event, and never creates or edits', (tester) async {
+    testWidgets('a ring dot (the event not occurring there) opens the same '
+        'menu; its Trim is from that step; never creates', (tester) async {
       final created = <DateTime>[];
+      final log = <String>[];
       final steps = await allDots(
         tester,
         ['a', 'b', 'c'],
@@ -887,53 +1102,38 @@ void main() {
           7: ['c'],
         },
         onCreate: created.add,
-        actions: true,
+        log: log,
       );
       final origin = tester.getTopLeft(find.byType(BalanceChart));
       final xs = steps.keys.toList()..sort();
       final tip = find.byKey(const ValueKey('occurrence-tooltip'));
       for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
         // Rent (a) is idle on the second step; Gym (c) is idle on the first.
-        for (final (x, id) in [(xs[1], 'a'), (xs[0], 'c'), (xs[1], 'b')]) {
+        for (final (x, id, day) in [
+          (xs[1], 'a', day7),
+          (xs[0], 'c', day0),
+          (xs[1], 'b', day7),
+        ]) {
           final dot = steps[x]!.firstWhere((d) => d.id == id);
           expect(dot.idle, isTrue);
-          await tester.tapAt(origin + dot.c, kind: kind);
-          await tester.pump();
-          expect(tip, findsOneWidget, reason: '$id idle dot ($kind)');
-          for (final e in names.entries) {
-            expect(
-              find.descendant(of: tip, matching: find.text(e.value)),
-              e.key == id ? findsWidgets : findsNothing,
-              reason: '${e.value} (tapped idle $id, $kind)',
-            );
+          log.clear();
+          for (var i = 0; i < (kind == PointerDeviceKind.touch ? 2 : 1); i++) {
+            await tester.tapAt(origin + dot.c, kind: kind);
+            await tester.pump(const Duration(milliseconds: 400));
           }
-          expect(
-            find.descendant(
-              of: tip,
-              matching: find.textContaining(
-                'Ring dot: not occurring on this day',
-                findRichText: true,
-              ),
-            ),
-            findsOneWidget,
-          );
-          expect(
-            find.descendant(
-              of: tip,
-              matching: find.textContaining('Prev ', findRichText: true),
-            ),
-            findsOneWidget,
-          );
-          expect(find.byKey(const ValueKey('day-net')), findsNothing);
-          expect(find.byKey(ValueKey('tip-menu-$id')), findsOneWidget);
-          await tester.tapAt(
-            origin + const Offset(700, 780),
-            kind: PointerDeviceKind.mouse,
-          );
+          await tester.pumpAndSettle();
+          expect(tip, findsNothing);
+          expect(_menuLabels(tester), [
+            'New Event From Here',
+            'Trim From Here',
+            'Edit Series',
+          ], reason: '$id ring ($kind)');
+          await tester.tap(find.byKey(const ValueKey('dot-menu-trim')));
+          await tester.pumpAndSettle();
+          expect(log, ['trim $id $day'], reason: '$id ring ($kind)');
           await tester.pump(const Duration(seconds: 6));
         }
       }
-      // Taps only inspect.
       expect(created, isEmpty);
     });
 
@@ -1123,20 +1323,32 @@ void main() {
     testWidgets('a touch near a thin lane still picks the nearest dot', (
       tester,
     ) async {
-      final dots = await pump(tester, [
-        'a',
-        'b',
-        'c',
-      ], size: const Size(390, 844));
-      final origin = tester.getTopLeft(find.byType(BalanceChart));
-      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
-      // 20px right of the lane dot: inside the 44px touch radius.
-      await tester.tapAt(
-        origin + dots['b']!.first + const Offset(20, 0),
-        kind: PointerDeviceKind.touch,
+      final painted = <String?>{};
+      debugLaneDotPainted = (id, _, _) => painted.add(id);
+      final log = <String>[];
+      final at = steps(
+        await pump(
+          tester,
+          ['a', 'b', 'c'],
+          size: const Size(390, 844),
+          log: log,
+        ),
       );
-      await tester.pump();
-      expect(tip, findsOneWidget);
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      // 20px right of the lane dot: reveals it, then opens its menu (inside
+      // the 44px touch target).
+      for (var i = 0; i < 2; i++) {
+        await tester.tapAt(
+          origin + at['b']![0] + const Offset(20, 0),
+          kind: PointerDeviceKind.touch,
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+        if (i == 0) expect(painted, {'b'});
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('dot-menu-edit')));
+      await tester.pumpAndSettle();
+      expect(log, ['edit b $day0']);
       await tester.pump(const Duration(seconds: 6));
     });
 
@@ -1195,8 +1407,10 @@ void main() {
         origin + dots['t30']!.first,
         kind: PointerDeviceKind.mouse,
       );
-      await tester.pump();
-      expect(find.byKey(const ValueKey('occurrence-tooltip')), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('dot-menu-edit')), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 6));
     });
   });

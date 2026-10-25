@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
+import 'package:budget_client/features/timeline/occurrence_dates.dart';
 import 'package:budget_client/features/timeline/occurrence_info.dart';
 import 'package:budget_client/features/timeline/trim.dart';
 import 'package:decimal/decimal.dart';
@@ -233,5 +234,60 @@ void main() {
       expect(created, hasLength(1));
       await tester.pump(const Duration(seconds: 1));
     }
+  });
+
+  group('trimFromHere (end dates are inclusive)', () {
+    DateTime d(int n) => _start.add(Duration(days: n));
+
+    test('a series ends the day before: that occurrence and later go, '
+        'earlier stay', () {
+      final t = _tx('w');
+      final plan = trimFromHere(t, d(14))!;
+      expect(plan.deletes, isFalse);
+      expect(plan.end, d(13));
+      final out = plan.trimmed!;
+      expect(out.endMode, EndMode.untilDate);
+      expect(out.endDate, d(13));
+      expect(out.occurrenceCount, isNull);
+      expect(out.version, t.version);
+      expect(estimateOccurrenceDates(out, maxCount: 50), [d(0), d(7)]);
+    });
+
+    test('a ring day (no occurrence there) keeps the one before it', () {
+      final plan = trimFromHere(_tx('w'), d(10))!;
+      expect(plan.end, d(9));
+      expect(estimateOccurrenceDates(plan.trimmed!, maxCount: 50), [
+        d(0),
+        d(7),
+      ]);
+    });
+
+    test('from the first occurrence (or a once-off) nothing would remain: '
+        'delete', () {
+      expect(trimFromHere(_tx('w'), d(0))!.deletes, isTrue);
+      final once = _tx('o', mode: RecurrenceMode.once);
+      expect(trimFromHere(once, d(0))!.deletes, isTrue);
+      // A once-off has nothing from a later day.
+      expect(trimFromHere(once, d(3)), isNull);
+    });
+
+    test('nothing on or after the day: no trim', () {
+      final until = _tx('u', end: EndMode.untilDate, endDate: d(10));
+      expect(trimFromHere(until, d(14)), isNull);
+      expect(trimFromHere(until, d(7))!.end, d(6));
+      final count = _tx('c', end: EndMode.count, count: 2);
+      expect(trimFromHere(count, d(14)), isNull);
+      final c = trimFromHere(count, d(7))!;
+      expect(c.trimmed!.endMode, EndMode.untilDate);
+      expect(estimateOccurrenceDates(c.trimmed!, maxCount: 50), [d(0)]);
+    });
+
+    test('a transfer keeps its link (the server mirrors the peer)', () {
+      final t = _tx('t')
+          .copyWith(transfer: const TransferLink(peerStreamId: 'savings'));
+      final out = trimFromHere(t, d(7))!.trimmed!;
+      expect(out.transfer?.peerStreamId, 'savings');
+      expect(out.endDate, d(6));
+    });
   });
 }

@@ -255,30 +255,20 @@ Future<_Store> _pump(
   return store;
 }
 
-/// Taps (touch or mouse click) across the plot until a dot popup shows;
+/// Taps (touch or mouse click) across the plot until a popup (a net
+/// chip's: lanes only reveal their dot) shows;
 /// returns where.
-Future<Offset> _revealTip(WidgetTester tester, PointerDeviceKind kind) async {
-  final plot = tester.getRect(find.byType(BalanceChart));
-  final tip = find.byKey(const ValueKey('occurrence-tooltip'));
-  for (var fy = 0.02; fy < 0.98; fy += 0.03) {
-    for (var fx = 0.3; fx < 0.98; fx += 0.04) {
-      final p = Offset(
-        plot.left + plot.width * fx,
-        plot.top + plot.height * fy,
-      );
-      await tester.tapAt(p, kind: kind);
-      await tester.pump();
-      if (tip.evaluate().isNotEmpty) {
-        // Ring (continuing-lane) dots also open a popup; these probes want
-        // an occurrence.
-        final ring = find.textContaining('Ring dot', findRichText: true);
-        if (ring.evaluate().isEmpty) return p;
-        await tester.pump(const Duration(seconds: 6));
-      }
-    }
-  }
-  fail('a tap should reveal some dot');
-}
+Future<Offset> _revealTip(WidgetTester tester, PointerDeviceKind kind) =>
+    // Lanes only reveal their dot (its click opens the action menu): the
+    // popup comes from a day's net chip.
+    revealDayTip(
+      tester,
+      kind,
+      shown: () => find
+          .byKey(const ValueKey('occurrence-tooltip'))
+          .evaluate()
+          .isNotEmpty,
+    );
 
 /// Salary a day after Rent, so every dot holds one event.
 void _singles(_Store s) {
@@ -387,9 +377,8 @@ void main() {
     );
   });
 
-  testWidgets('mouse hover near a dot shows the info popup; away hides it', (
-    tester,
-  ) async {
+  testWidgets('mouse hover on a net chip (or an always-drawn dot) shows '
+      'the info popup; away hides it', (tester) async {
     final store = await _pump(tester);
     final box = tester.getRect(find.byType(BalanceChart));
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
@@ -432,6 +421,91 @@ void main() {
     expect(store.calls.where((c) => !c.startsWith('balance')), isEmpty);
     await mouse.removePointer();
   });
+
+  for (final (size, kind) in const [
+    (Size(1440, 900), PointerDeviceKind.mouse),
+    (Size(390, 844), PointerDeviceKind.touch),
+  ]) {
+    testWidgets('${kind.name}: an event lane reveals its dot with no popup; '
+        'the dot\'s menu New Event From Here opens the editor on that day '
+        'and only Save creates', (tester) async {
+      final placed = <(String?, Offset)>[];
+      debugLaneDot = (id, c) => placed.add((id, c));
+      addTearDown(() => debugLaneDot = null);
+      final store = await _pump(tester, size: size, setup: _singles);
+      debugLaneDot = null;
+      store.calls.clear();
+      final chart = tester.getRect(find.byType(BalanceChart));
+      final rentDates = estimateOccurrenceDates(
+        store.txs['rent']!,
+        maxCount: 400,
+      );
+      // A Rent dot clear of the edges.
+      final dot = placed
+          .where(
+            (p) =>
+                p.$1 == 'rent' &&
+                p.$2.dx > chart.width * 0.3 &&
+                p.$2.dx < chart.width * 0.8,
+          )
+          .first
+          .$2;
+      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      final at = chart.topLeft + dot;
+      if (kind == PointerDeviceKind.mouse) {
+        final mouse = await tester.createGesture(kind: kind);
+        await mouse.addPointer(location: at + const Offset(30, 1));
+        addTearDown(mouse.removePointer);
+        await tester.pump();
+        expect(tip, findsNothing, reason: 'no hover popup');
+        await mouse.moveTo(at);
+        await tester.pump();
+        await mouse.down(at);
+        await mouse.up();
+      } else {
+        await tester.tapAt(at + const Offset(4, 0), kind: kind);
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(tip, findsNothing, reason: 'a lane tap only reveals');
+        await tester.tapAt(at, kind: kind);
+      }
+      await tester.pumpAndSettle();
+      expect(tip, findsNothing);
+      expect(find.text('New Event From Here'), findsOneWidget);
+      expect(find.text('Trim From Here'), findsOneWidget);
+      expect(find.text('Edit Series'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('dot-menu-new')), kind: kind);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+      // The start is one of Rent's days (the dot's).
+      final shown = [
+        for (final d in rentDates)
+          if (find.text(formatOccurrenceDate(d)).evaluate().isNotEmpty) d,
+      ];
+      expect(shown, hasLength(1), reason: 'start pre-filled to the dot');
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-name')),
+          matching: find.byType(TextField),
+        ),
+        'Coffee',
+      );
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-amount')),
+          matching: find.byType(TextField),
+        ),
+        '4',
+      );
+      await tester.ensureVisible(find.byKey(const ValueKey('editor-save')));
+      await tester.tap(find.byKey(const ValueKey('editor-save')));
+      await tester.pumpAndSettle();
+      expect(store.calls, contains('create Coffee'));
+      final made = store.txs.values.firstWhere((t) => t.name == 'Coffee');
+      expect(made.startDate, shown.single);
+      await tester.pump(const Duration(seconds: 6));
+    });
+  }
 
   testWidgets('taps on the chart never create or edit', (tester) async {
     final store = await _pump(tester);
@@ -855,20 +929,18 @@ void main() {
       final line = find.byKey(const ValueKey('x-highlight-line'));
       final col = find.byKey(const ValueKey('x-highlight-day'));
       final yPill = find.byKey(const ValueKey('y-highlight'));
-      Future<void> reveal() async {
-        for (var fy = 0.02; fy < 0.98; fy += 0.03) {
-          for (var fx = 0.3; fx < 0.98; fx += 0.04) {
-            final p = Offset(
-              chart.left + chart.width * fx,
-              chart.top + chart.height * fy,
-            );
-            await tester.tapAt(p, kind: kind);
-            await tester.pump();
-            if (tip.evaluate().isNotEmpty) return;
-          }
-        }
-        fail('a tap should reveal some dot');
-      }
+      // A net chip's popup (lane reveals draw no guides).
+      // (one clear of the edges, so the pill is not clamped).
+      Future<void> reveal() => revealDayTip(
+        tester,
+        kind,
+        shown: () {
+          if (tip.evaluate().isEmpty || col.evaluate().isEmpty) return false;
+          final x = tester.getCenter(col).dx;
+          return x > chart.left + chart.width * 0.3 &&
+              x < chart.right - chart.width * 0.3;
+        },
+      );
 
       expect(pill, findsNothing);
       await reveal();
@@ -979,8 +1051,8 @@ void main() {
         tester.getCenter(items[1]).dy,
         lessThan(tester.getCenter(items[2]).dy),
       );
-      expect(find.text('Trim'), findsOneWidget);
-      expect(find.text('Trim series here'), findsNothing);
+      expect(find.text('Trim From Here'), findsOneWidget);
+      expect(find.text('Trim'), findsNothing);
       expect(
         find.descendant(
           of: _keyStarts('tip-menu-new-'),
@@ -2420,26 +2492,38 @@ void main() {
     });
   }
 
-  testWidgets('popup Trim ends that row\'s series at the tapped occurrence; '
-      'the 5s tip\'s Undo restores the end and once-offs', (tester) async {
+  testWidgets('popup Trim From Here ends that row\'s series the day before '
+      'the tapped occurrence; the 5s tip\'s Undo restores the end and '
+      'once-offs', (tester) async {
     final far = _day.add(const Duration(days: 70));
     for (final (size, kind) in const [
       (Size(390, 844), PointerDeviceKind.touch),
       (Size(1440, 900), PointerDeviceKind.mouse),
     ]) {
+      // Both start well before the view, so no shown day is a first
+      // occurrence (that would delete).
+      final early = _day.subtract(const Duration(days: 140));
       final store = await _pump(
         tester,
         size: size,
-        setup: (s) => s.txs['rent'] = _withOverrides(s.txs['rent']!, {
-          far: OccurrenceOverride(
-            direction: EventDirection.debit,
-            amount: Decimal.fromInt(99),
-          ),
-        }),
+        setup: (s) {
+          s.txs['rent'] = _withOverrides(
+            s.txs['rent']!.copyWith(startDate: early),
+            {
+              far: OccurrenceOverride(
+                direction: EventDirection.debit,
+                amount: Decimal.fromInt(99),
+              ),
+            },
+          );
+          s.txs['salary'] = s.txs['salary']!.copyWith(startDate: early);
+        },
       );
+      final before = store.txs['rent']!;
+      final dates = estimateOccurrenceDates(before, maxCount: 400);
       store.calls.clear();
       await revealDayTip(tester, kind);
-      // Rent and Salary share each dot: each row's ⋮ has its own Trim.
+      // Rent and Salary share each day: each row's ⋮ has its own Trim.
       await _openRowMenu(tester, 'salary', kind);
       expect(
         find.byKey(const ValueKey('tip-menu-trim-salary')),
@@ -2450,18 +2534,22 @@ void main() {
       await _openRowMenu(tester, 'rent', kind);
       final trimRent = find.byKey(const ValueKey('tip-menu-trim-rent'));
       expect(trimRent, findsOneWidget);
+      expect(
+        find.descendant(of: trimRent, matching: find.text('Trim From Here')),
+        findsOneWidget,
+      );
       expect(store.calls.where((c) => !c.startsWith('balance')), isEmpty);
       await tester.tap(trimRent, kind: kind);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(AlertDialog), findsNothing, reason: 'no ask');
       final rent = store.txs['rent']!;
       expect(rent.endMode, EndMode.untilDate);
       final end = rent.endDate!;
-      expect(
-        estimateOccurrenceDates(rent, maxCount: 400).last,
-        end,
-        reason: 'the tapped occurrence is the last one',
-      );
+      final tapped = end.add(const Duration(days: 1));
+      expect(dates, contains(tapped), reason: 'ends the day before the dot');
+      final kept = estimateOccurrenceDates(rent, maxCount: 400);
+      expect(kept, dates.where((d) => d.isBefore(tapped)).toList());
       expect(rent.overrides, isEmpty, reason: 'once-off past the end goes');
       expect(store.txs['salary']!.endMode, EndMode.never);
       expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
@@ -2482,13 +2570,13 @@ void main() {
     }
   });
 
-  testWidgets('popup Trim: none for viewers, nor on a series\' last '
-      'occurrence', (tester) async {
+  testWidgets('popup Trim: none for viewers; from a series\' only '
+      'occurrence it asks, then deletes (Undo brings it back)', (tester) async {
     await _pump(tester, setup: (s) => s.role = Role.viewer);
     await _revealTip(tester, PointerDeviceKind.mouse);
     expect(_keyStarts('tip-menu'), findsNothing);
-    // Every dot is Rent's last (and only) occurrence: no Trim for it.
-    await _pump(
+    // Every day is Rent's only occurrence: trimming from it leaves nothing.
+    final store = await _pump(
       tester,
       size: const Size(390, 844),
       setup: (s) {
@@ -2505,14 +2593,36 @@ void main() {
       },
     );
     await revealDayTip(tester, PointerDeviceKind.touch);
-    for (final id in ['rent', 'salary']) {
-      await _openRowMenu(tester, id, PointerDeviceKind.touch);
-      expect(find.byKey(ValueKey('tip-menu-trim-$id')), findsNothing);
-      expect(find.byKey(ValueKey('tip-menu-edit-$id')), findsOneWidget);
-      expect(find.byKey(ValueKey('tip-menu-new-$id')), findsOneWidget);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    Future<void> trimRent() async {
+      await _openRowMenu(tester, 'rent', PointerDeviceKind.touch);
+      expect(find.byKey(const ValueKey('tip-menu-edit-rent')), findsOneWidget);
+      expect(find.byKey(const ValueKey('tip-menu-new-rent')), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('tip-menu-trim-rent')),
+        kind: PointerDeviceKind.touch,
+      );
       await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text('Delete Rent?'), findsOneWidget);
     }
+
+    await trimRent();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(store.txs['rent'], isNotNull, reason: 'Cancel keeps it');
+    expect(store.calls.where((c) => c.startsWith('delete')), isEmpty);
+    await revealDayTip(tester, PointerDeviceKind.touch);
+    await trimRent();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(store.txs.containsKey('rent'), isFalse);
+    expect(store.calls, contains('delete rent'));
+    await tester.tap(find.text('Undo'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(store.txs.values.map((t) => t.name), contains('Rent'));
+    await tester.pump(const Duration(seconds: 6));
   });
 
   test('viewForRange: picked first day clear of the strip, picked last day '
@@ -2726,17 +2836,18 @@ void main() {
       await tester.pump();
       await settle();
       expect(tip, findsNothing);
-      // The day's net chip lists the whole day; a dot only its own
-      // event (the lane's), with no day net.
+      // The day's net chip lists the whole day; a dot never opens the
+      // info popup (lanes reveal it; its click opens the action menu).
       expect(byLabel, containsAll(['Rent', 'Salary']));
       expect(byLabel.any((t) => t.startsWith('Net')), isTrue);
       expect(rectByLabel, isNotNull);
       await tester.tapAt(origin + dot!, kind: kind);
       await tester.pump();
-      expect(tip, findsOneWidget);
-      final byDot = texts();
-      expect(byDot.where((t) => t == 'Rent' || t == 'Salary'), hasLength(1));
-      expect(byDot.any((t) => t.startsWith('Net')), isFalse);
+      expect(tip, findsNothing);
+      if (find.byKey(const ValueKey('dot-menu-new')).evaluate().isNotEmpty) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+      }
       await settle();
       expect(find.byKey(const ValueKey('editor-name')), findsNothing);
       expect(
@@ -3052,7 +3163,8 @@ void popupSizeProbe() {
     final touch = kind == PointerDeviceKind.touch;
     for (final (rows, setup, maxH) in [
       (1, _singles, touch ? 96.0 : 80.0),
-      (3, _three, touch ? 140.0 : 110.0),
+      // A day popup: three rows plus its net footer.
+      (3, _three, touch ? 180.0 : 135.0),
     ]) {
       testWidgets('popup is compact: ${size.width.toInt()} ${kind.name} '
           '$rows row(s)', (tester) async {
