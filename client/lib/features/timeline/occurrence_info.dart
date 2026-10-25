@@ -37,7 +37,7 @@ String formatSelectedDate(DateTime date, {DateTime? now}) {
 
 /// Human recurrence summary: "One-off", "Every 2 weeks, ends 30 Jun 2027",
 /// "Every month, 12 times".
-String describeRecurrence(Transaction t) {
+String describeRecurrence(BudgetEvent t) {
   if (t.recurrenceMode == RecurrenceMode.once) return 'One-off';
   final n = t.interval ?? 1;
   final unit = (t.unit ?? RecurrenceUnit.months).name;
@@ -55,7 +55,7 @@ String describeRecurrence(Transaction t) {
 
 /// "Occurrence 3 of 12" for counted schedules (null otherwise or when
 /// [date] is not one of its dates).
-String? occurrenceOrdinal(Transaction t, DateTime date) {
+String? occurrenceOrdinal(BudgetEvent t, DateTime date) {
   if (t.recurrenceMode != RecurrenceMode.every ||
       t.endMode != EndMode.count ||
       t.occurrenceCount == null) {

@@ -1,4 +1,4 @@
-// Transaction labels: no accent bar, left edge flush with the dot's left
+// Event labels: no accent bar, left edge flush with the dot's left
 // edge, directly above the dot or (when above has no room) directly below;
 // on a crowded chart, possibly pushed a little further away instead.
 import 'package:budget_client/data/models.dart';
@@ -29,11 +29,7 @@ Future<List<(String, Offset, double, Rect)>> _labels(
       final id = '$name$i';
       names[id] = name;
       occ.add(
-        Occurrence(
-          transactionId: id,
-          date: d,
-          signedDelta: Decimal.fromInt(delta),
-        ),
+        Occurrence(eventId: id, date: d, signedDelta: Decimal.fromInt(delta)),
       );
       bal += delta;
     }
@@ -54,7 +50,7 @@ Future<List<(String, Offset, double, Rect)>> _labels(
             seedDate: _start.subtract(const Duration(days: 60)),
             viewStart: _start,
             visibleDays: days,
-            transactionNames: names,
+            eventNames: names,
             onViewportChanged: (_, _) {},
             onCreateOnDay: (_) {},
           ),

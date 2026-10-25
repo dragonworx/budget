@@ -55,7 +55,11 @@ class RoleChip extends StatelessWidget {
       ),
       child: Text(
         role.label,
-        style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

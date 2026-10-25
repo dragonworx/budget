@@ -90,7 +90,7 @@ class _DockSplitState extends State<DockSplit> {
       children: [
         Expanded(child: widget.timeline),
         SizeTransition(
-          key: const ValueKey('docked-transactions'),
+          key: const ValueKey('docked-events'),
           sizeFactor: widget.reveal,
           axis: Axis.horizontal,
           alignment: Alignment.centerLeft,
@@ -133,7 +133,7 @@ class _DockSplitState extends State<DockSplit> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: Semantics(
-        label: 'Resize the transactions list',
+        label: 'Resize the events list',
         hint: 'Drag; double-tap to reset',
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,

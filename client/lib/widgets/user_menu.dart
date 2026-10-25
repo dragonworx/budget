@@ -129,7 +129,10 @@ class UserMenu extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          children: [const RealtimeDot(), UserAvatar(user: user)],
+          children: [
+            const RealtimeDot(),
+            UserAvatar(user: user),
+          ],
         ),
       ),
     );

@@ -1,4 +1,4 @@
-// Test helper: with stacked lanes a dot inspects one transaction, while the
+// Test helper: with stacked lanes a dot inspects one event, while the
 // day's net chip speaks for the whole day. These taps find the chips.
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:flutter/gestures.dart';

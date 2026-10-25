@@ -56,11 +56,11 @@ void main() {
   });
 
   test('daily and weekly previews stay on the right date across DST', () {
-    final weekly = Transaction(
+    final weekly = BudgetEvent(
       id: 't',
-      poolId: 'a',
+      streamId: 'a',
       name: 'Groceries',
-      direction: TransactionDirection.debit,
+      direction: EventDirection.debit,
       amount: Decimal.one,
       startDate: DateTime(2026, 3, 2),
       recurrenceMode: RecurrenceMode.every,

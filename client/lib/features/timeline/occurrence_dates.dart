@@ -3,28 +3,27 @@ import 'zoom_level.dart';
 
 /// Client-side occurrence date estimate for editor / solve preview (§3.3).
 List<DateTime> estimateOccurrenceDates(
-  Transaction transaction, {
+  BudgetEvent event, {
   int maxCount = 8,
   DateTime? through,
 }) {
-  if (!transaction.enabled && maxCount > 0) {
+  if (!event.enabled && maxCount > 0) {
     // Still preview schedule for editing; enabled only affects balance.
   }
 
-  final start = dateOnly(transaction.startDate);
-  if (transaction.recurrenceMode == RecurrenceMode.once) {
+  final start = dateOnly(event.startDate);
+  if (event.recurrenceMode == RecurrenceMode.once) {
     if (through != null && start.isAfter(dateOnly(through))) return const [];
     return [start];
   }
 
-  final interval = transaction.interval ?? 1;
-  final unit = transaction.unit ?? RecurrenceUnit.days;
-  final limit = transaction.endMode == EndMode.count
-      ? (transaction.occurrenceCount ?? maxCount).clamp(1, maxCount)
+  final interval = event.interval ?? 1;
+  final unit = event.unit ?? RecurrenceUnit.days;
+  final limit = event.endMode == EndMode.count
+      ? (event.occurrenceCount ?? maxCount).clamp(1, maxCount)
       : maxCount;
-  final endCap =
-      transaction.endMode == EndMode.untilDate && transaction.endDate != null
-      ? dateOnly(transaction.endDate!)
+  final endCap = event.endMode == EndMode.untilDate && event.endDate != null
+      ? dateOnly(event.endDate!)
       : through != null
       ? dateOnly(through)
       : null;
@@ -36,9 +35,9 @@ List<DateTime> estimateOccurrenceDates(
     if (endCap != null && cursor.isAfter(endCap)) break;
     out.add(cursor);
     i++;
-    if (transaction.endMode == EndMode.count &&
-        transaction.occurrenceCount != null &&
-        i >= transaction.occurrenceCount!) {
+    if (event.endMode == EndMode.count &&
+        event.occurrenceCount != null &&
+        i >= event.occurrenceCount!) {
       break;
     }
     // Anchored on the start (as the server does), so Jan 31 monthly gives

@@ -120,7 +120,7 @@ class GoalRequest {
       };
 }
 
-/// Daily closing balances of the existing transactions from [from]
+/// Daily closing balances of the existing events from [from]
 /// (inclusive); [opening] is the balance before [from].
 class GoalBaseline {
   GoalBaseline({
@@ -214,7 +214,7 @@ String _m(double v) => v.toStringAsFixed(2);
 
 /// Solves one balance-goal unknown against [baseline] (§4.5). The balance
 /// from the start date is: opening (or the start balance), then each day
-/// interest, the existing transactions' change, the one-off (start day)
+/// interest, the existing events' change, the one-off (start day)
 /// and plan payments. All amounts enter linearly, so start balance,
 /// amount and one-off are solved exactly; dates, count, frequency and
 /// rate are found by search.
@@ -290,9 +290,9 @@ class GoalSolver {
 
   List<DateTime> _payments(_Params p, DateTime end) {
     if (p.amount == 0 || p.count == 0) return const [];
-    final probe = Transaction(
+    final probe = BudgetEvent(
       id: 'goal',
-      poolId: '',
+      streamId: '',
       name: '',
       direction: Direction.credit,
       amount: Decimal.one,
@@ -305,7 +305,7 @@ class GoalSolver {
       enabled: true,
       createdAt: DateTime.utc(2000),
     );
-    return OccurrenceGenerator.datesForTransaction(probe, p.start, end);
+    return OccurrenceGenerator.datesForEvent(probe, p.start, end);
   }
 
   /// Closing balances from the start date through [end] (inclusive).

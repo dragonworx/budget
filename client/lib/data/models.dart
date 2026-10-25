@@ -86,15 +86,15 @@ class UserRef {
   }
 }
 
-class Pool {
-  const Pool({
+class BudgetStream {
+  const BudgetStream({
     required this.id,
     this.ownerId = '',
     required this.name,
     required this.seedBalance,
     required this.seedDate,
     required this.lossThreshold,
-    this.transactionOrder = const [],
+    this.eventOrder = const [],
     this.displayOrder = 0,
     this.currencyScale = defaultCurrencyScale,
     this.version,
@@ -105,13 +105,13 @@ class Pool {
 
   final int? version;
 
-  /// Effective role: owner for my own pools, else the share's role.
+  /// Effective role: owner for my own streams, else the share's role.
   final Role role;
 
-  /// Someone else owns this pool and shared it with me.
+  /// Someone else owns this stream and shared it with me.
   final bool shared;
 
-  /// Who owns it (reported in pool lists).
+  /// Who owns it (reported in stream lists).
   final UserRef? owner;
 
   /// Currency scale choices: dollars per y-axis grid step, with labels.
@@ -141,7 +141,7 @@ class Pool {
 
   final String id;
 
-  /// The owning user's id (pools are top level).
+  /// The owning user's id (streams are top level).
   final String ownerId;
   final String name;
   final Decimal seedBalance;
@@ -149,21 +149,20 @@ class Pool {
 
   /// Closing balances below this value are a loss (equal is not).
   final Decimal lossThreshold;
-  final List<String> transactionOrder;
+  final List<String> eventOrder;
   final int displayOrder;
 
-  factory Pool.fromJson(Map<String, dynamic> json) {
-    final order =
-        json['transactionOrder'] ?? json['transaction_order'] ?? const [];
+  factory BudgetStream.fromJson(Map<String, dynamic> json) {
+    final order = json['eventOrder'] ?? json['event_order'] ?? const [];
     final loss = json['lossThreshold'] ?? json['loss_threshold'];
-    return Pool(
+    return BudgetStream(
       id: json['id'] as String,
       ownerId: (json['ownerId'] ?? json['owner_id'] ?? '') as String,
       name: json['name'] as String,
       seedBalance: parseMoney(json['seedBalance'] ?? json['seed_balance']),
       seedDate: parseDate(json['seedDate'] ?? json['seed_date']),
       lossThreshold: loss == null ? Decimal.zero : parseMoney(loss),
-      transactionOrder: (order as List).map((e) => e.toString()).toList(),
+      eventOrder: (order as List).map((e) => e.toString()).toList(),
       displayOrder: (json['displayOrder'] ?? json['display_order'] ?? 0) as int,
       currencyScale:
           (json['currencyScale'] ??
@@ -185,7 +184,7 @@ class Pool {
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
     'currencyScale': currencyScale,
-    'transactionOrder': transactionOrder,
+    'eventOrder': eventOrder,
     'displayOrder': displayOrder,
   };
 
@@ -203,25 +202,25 @@ class Pool {
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
     'currencyScale': currencyScale,
-    'transactionOrder': transactionOrder,
+    'eventOrder': eventOrder,
     if (version != null) 'version': version,
   };
 
-  Pool copyWith({
+  BudgetStream copyWith({
     String? id,
     String? ownerId,
     String? name,
     Decimal? seedBalance,
     DateTime? seedDate,
     Decimal? lossThreshold,
-    List<String>? transactionOrder,
+    List<String>? eventOrder,
     int? displayOrder,
     int? currencyScale,
     int? version,
     bool clearVersion = false,
     Role? role,
   }) {
-    return Pool(
+    return BudgetStream(
       version: clearVersion ? null : (version ?? this.version),
       role: role ?? this.role,
       shared: shared,
@@ -232,23 +231,23 @@ class Pool {
       seedBalance: seedBalance ?? this.seedBalance,
       seedDate: seedDate ?? this.seedDate,
       lossThreshold: lossThreshold ?? this.lossThreshold,
-      transactionOrder: transactionOrder ?? this.transactionOrder,
+      eventOrder: eventOrder ?? this.eventOrder,
       displayOrder: displayOrder ?? this.displayOrder,
       currencyScale: currencyScale ?? this.currencyScale,
     );
   }
 }
 
-extension PoolSharing on Pool {
+extension StreamSharing on BudgetStream {
   /// [this] with the sharing fields (shared, owner) of [from].
-  Pool withSharing(Pool from) => Pool(
+  BudgetStream withSharing(BudgetStream from) => BudgetStream(
     id: id,
     ownerId: ownerId,
     name: name,
     seedBalance: seedBalance,
     seedDate: seedDate,
     lossThreshold: lossThreshold,
-    transactionOrder: transactionOrder,
+    eventOrder: eventOrder,
     displayOrder: displayOrder,
     currencyScale: currencyScale,
     version: version,
@@ -258,12 +257,12 @@ extension PoolSharing on Pool {
   );
 }
 
-enum TransactionDirection {
+enum EventDirection {
   credit,
   debit;
 
-  static TransactionDirection fromJson(String value) {
-    return TransactionDirection.values.byName(value);
+  static EventDirection fromJson(String value) {
+    return EventDirection.values.byName(value);
   }
 
   String toJson() => name;
@@ -324,10 +323,10 @@ enum EndMode {
   }
 }
 
-class Transaction {
-  const Transaction({
+class BudgetEvent {
+  const BudgetEvent({
     required this.id,
-    required this.poolId,
+    required this.streamId,
     required this.name,
     required this.direction,
     required this.amount,
@@ -356,7 +355,7 @@ class Transaction {
 
   /// Signed amount of the series (positive in, negative out).
   Decimal get signedAmount =>
-      direction == TransactionDirection.credit ? amount : -amount;
+      direction == EventDirection.credit ? amount : -amount;
 
   /// Signed amount of the occurrence on [date] (its override, else the
   /// series amount).
@@ -364,11 +363,11 @@ class Transaction {
       overrideOn(date)?.signed ?? signedAmount;
 
   final String id;
-  final String poolId;
+  final String streamId;
   final String name;
-  final TransactionDirection direction;
+  final EventDirection direction;
 
-  /// Set when this series is one side of a transfer between pools.
+  /// Set when this series is one side of a transfer between streams.
   final TransferLink? transfer;
   bool get isTransfer => transfer != null;
   final Decimal amount;
@@ -381,7 +380,7 @@ class Transaction {
   final int? occurrenceCount;
   final bool enabled;
 
-  factory Transaction.fromJson(Map<String, dynamic> json) {
+  factory BudgetEvent.fromJson(Map<String, dynamic> json) {
     final recurrence = json['recurrence'];
     final endRule = json['endRule'] ?? json['end_rule'];
 
@@ -428,11 +427,11 @@ class Transaction {
           (json['occurrenceCount'] ?? json['occurrence_count']) as int?;
     }
 
-    return Transaction(
+    return BudgetEvent(
       id: json['id'] as String,
-      poolId: (json['poolId'] ?? json['pool_id']) as String,
+      streamId: (json['streamId'] ?? json['stream_id']) as String,
       name: (json['name'] as String?) ?? '',
-      direction: TransactionDirection.fromJson(json['direction'] as String),
+      direction: EventDirection.fromJson(json['direction'] as String),
       amount: parseMoney(json['amount']),
       startDate: parseDate(json['startDate'] ?? json['start_date']),
       recurrenceMode: recurrenceMode,
@@ -449,7 +448,7 @@ class Transaction {
       overrides: {
         for (final o in (json['overrides'] as List?) ?? const [])
           parseDate((o as Map)['date']): OccurrenceOverride(
-            direction: TransactionDirection.fromJson(o['direction'] as String),
+            direction: EventDirection.fromJson(o['direction'] as String),
             amount: parseMoney(o['amount']),
           ),
       },
@@ -458,7 +457,7 @@ class Transaction {
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'poolId': poolId,
+    'streamId': streamId,
     'name': name,
     'direction': direction.toJson(),
     'amount': moneyToJson(amount),
@@ -486,14 +485,14 @@ class Transaction {
     if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
     'enabled': enabled,
     // Always sent: null on a patch turns a transfer back into a plain series.
-    'transferToPoolId': transfer?.peerPoolId,
+    'transferToStreamId': transfer?.peerStreamId,
   };
 
-  Transaction copyWith({
+  BudgetEvent copyWith({
     String? id,
-    String? poolId,
+    String? streamId,
     String? name,
-    TransactionDirection? direction,
+    EventDirection? direction,
     Decimal? amount,
     DateTime? startDate,
     RecurrenceMode? recurrenceMode,
@@ -512,11 +511,11 @@ class Transaction {
     int? version,
     bool clearVersion = false,
   }) {
-    return Transaction(
+    return BudgetEvent(
       version: clearVersion ? null : (version ?? this.version),
       transfer: clearTransfer ? null : (transfer ?? this.transfer),
       id: id ?? this.id,
-      poolId: poolId ?? this.poolId,
+      streamId: streamId ?? this.streamId,
       name: name ?? this.name,
       direction: direction ?? this.direction,
       amount: amount ?? this.amount,
@@ -539,11 +538,10 @@ class Transaction {
 class OccurrenceOverride {
   const OccurrenceOverride({required this.direction, required this.amount});
 
-  final TransactionDirection direction;
+  final EventDirection direction;
   final Decimal amount;
 
-  Decimal get signed =>
-      direction == TransactionDirection.credit ? amount : -amount;
+  Decimal get signed => direction == EventDirection.credit ? amount : -amount;
 
   @override
   bool operator ==(Object other) =>
@@ -559,53 +557,53 @@ class OccurrenceOverride {
 class TransferLink {
   const TransferLink({
     this.id,
-    this.peerTransactionId,
-    required this.peerPoolId,
-    this.peerPoolName,
+    this.peerEventId,
+    required this.peerStreamId,
+    this.peerStreamName,
     this.peerReadable = true,
   });
 
-  /// False when I can't see the other pool (its names are withheld).
+  /// False when I can't see the other stream (its names are withheld).
   final bool peerReadable;
 
   final String? id;
-  final String? peerTransactionId;
-  final String peerPoolId;
-  final String? peerPoolName;
+  final String? peerEventId;
+  final String peerStreamId;
+  final String? peerStreamName;
 
   factory TransferLink.fromJson(Map<String, dynamic> json) => TransferLink(
     id: json['id'] as String?,
-    peerTransactionId: json['peerTransactionId'] as String?,
-    peerPoolId: (json['peerPoolId'] as String?) ?? '',
-    peerPoolName: json['peerPoolName'] as String?,
+    peerEventId: json['peerEventId'] as String?,
+    peerStreamId: (json['peerStreamId'] as String?) ?? '',
+    peerStreamName: json['peerStreamName'] as String?,
     peerReadable: json['peerReadable'] as bool? ?? true,
   );
 
   Map<String, dynamic> toJson() => {
     'id': id,
-    'peerTransactionId': peerTransactionId,
-    'peerPoolId': peerPoolId,
-    'peerPoolName': peerPoolName,
+    'peerEventId': peerEventId,
+    'peerStreamId': peerStreamId,
+    'peerStreamName': peerStreamName,
     'peerReadable': peerReadable,
   };
 
-  String get poolLabel =>
-      !peerReadable ? 'Private pool' : (peerPoolName ?? 'another pool');
+  String get streamLabel =>
+      !peerReadable ? 'Private stream' : (peerStreamName ?? 'another stream');
 }
 
-/// The other pool of a transfer, from this side: "From: Everyday"
+/// The other stream of a transfer, from this side: "From: Everyday"
 /// (money in) / "To: Savings" (money out).
-String transferPhrase(Transaction t) {
+String transferPhrase(BudgetEvent t) {
   final link = t.transfer;
   if (link == null) return '';
-  final dir = t.direction == TransactionDirection.debit ? 'To' : 'From';
-  return '$dir: ${link.poolLabel}';
+  final dir = t.direction == EventDirection.debit ? 'To' : 'From';
+  return '$dir: ${link.streamLabel}';
 }
 
-/// Timeline / popup label: transfers add the other pool, e.g.
+/// Timeline / popup label: transfers add the other stream, e.g.
 /// "Top up · From: Everyday" (in) / "Top up · To: Savings" (out); an
 /// unnamed transfer is just "From: Everyday".
-String transactionLabel(Transaction t) {
+String eventLabel(BudgetEvent t) {
   if (t.transfer == null) return t.name;
   final name = t.name.trim();
   final tail = transferPhrase(t);
@@ -633,40 +631,39 @@ class BalancePoint {
 
 class Occurrence {
   const Occurrence({
-    required this.transactionId,
+    required this.eventId,
     required this.date,
     required this.signedDelta,
     this.skipped = false,
-    this.poolId,
+    this.streamId,
     this.netted = false,
   });
 
-  final String transactionId;
+  final String eventId;
   final DateTime date;
   final Decimal signedDelta;
   final bool skipped;
 
-  /// Combined view: the other pool this occurrence belongs to (null: the
-  /// pool being viewed).
-  final String? poolId;
+  /// Combined view: the other stream this occurrence belongs to (null: the
+  /// stream being viewed).
+  final String? streamId;
 
-  /// Combined view: a transfer between two included pools. It still shows,
+  /// Combined view: a transfer between two included streams. It still shows,
   /// but nets out of the day's money in / out.
   final bool netted;
 
-  Occurrence tagged({String? poolId, bool netted = false}) => Occurrence(
-    transactionId: transactionId,
+  Occurrence tagged({String? streamId, bool netted = false}) => Occurrence(
+    eventId: eventId,
     date: date,
     signedDelta: signedDelta,
     skipped: skipped,
-    poolId: poolId,
+    streamId: streamId,
     netted: netted,
   );
 
   factory Occurrence.fromJson(Map<String, dynamic> json) {
     return Occurrence(
-      transactionId:
-          (json['transactionId'] ?? json['transaction_id']) as String,
+      eventId: (json['eventId'] ?? json['event_id']) as String,
       date: parseDate(json['date']),
       signedDelta: parseMoney(
         json['signedDelta'] ?? json['signed_delta'] ?? '0',
@@ -727,7 +724,7 @@ enum RoundingMode {
   }
 }
 
-/// The six transaction-planning variables the solver can fill in (§4.1).
+/// The six event-planning variables the solver can fill in (§4.1).
 enum SolveVar {
   startDate,
   endDate,
@@ -769,12 +766,12 @@ class SolveRequest {
     this.rounding = RoundingMode.nearest,
   });
 
-  /// Balance target mode: the pool balance wanted on [endDate]; the
+  /// Balance target mode: the stream balance wanted on [endDate]; the
   /// server sets the total to `target − projected balance`.
   final Decimal? targetBalance;
 
   final String name;
-  final TransactionDirection direction;
+  final EventDirection direction;
   final RecurrenceUnit unit;
   final DateTime? startDate;
   final DateTime? endDate;
@@ -858,7 +855,7 @@ class SolveValues {
 
 class SolveResult {
   const SolveResult({
-    this.transaction,
+    this.event,
     this.previewOccurrences = const [],
     this.values = const SolveValues(),
     this.solved = const {},
@@ -873,35 +870,35 @@ class SolveResult {
   /// gap the plan covers.
   final BalanceTargetInfo? balanceTarget;
 
-  /// Balance target already met without a new transaction.
+  /// Balance target already met without a new event.
   final bool onTrack;
 
-  /// Null while the inputs are not yet enough to determine a transaction.
-  final Transaction? transaction;
+  /// Null while the inputs are not yet enough to determine an event.
+  final BudgetEvent? event;
   final List<Occurrence> previewOccurrences;
   final SolveValues values;
 
   /// Variables the server calculated rather than received.
   final Set<SolveVar> solved;
 
-  /// How many more values the user must fill in, when [transaction] is null.
+  /// How many more values the user must fill in, when [event] is null.
   final int needsMore;
   final List<SolveVar> needsOneOf;
   final String? message;
 
-  bool get isComplete => transaction != null;
+  bool get isComplete => event != null;
 
   factory SolveResult.fromJson(Map<String, dynamic> json) {
     List<SolveVar> vars(String key) => [
       for (final raw in (json[key] as List? ?? const []))
         ?SolveVar.tryParse(raw.toString()),
     ];
-    final transactionJson = json['transaction'];
+    final eventJson = json['event'];
     final valuesJson = json['values'];
     final previewRaw = json['previewOccurrences'] as List? ?? const [];
     return SolveResult(
-      transaction: transactionJson is Map<String, dynamic>
-          ? Transaction.fromJson(transactionJson)
+      event: eventJson is Map<String, dynamic>
+          ? BudgetEvent.fromJson(eventJson)
           : null,
       previewOccurrences: previewRaw
           .cast<Map<String, dynamic>>()
@@ -941,7 +938,7 @@ class BalanceTargetInfo {
       );
 }
 
-/// Lowest point and runway from `GET /pools/:id/insights`.
+/// Lowest point and runway from `GET /streams/:id/insights`.
 class BalanceInsights {
   const BalanceInsights({
     this.lowestDate,

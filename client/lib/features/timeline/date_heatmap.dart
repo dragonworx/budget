@@ -10,7 +10,7 @@ import 'chart_geometry.dart';
 
 /// Whether [o] counts towards a day's money in / out: the same rule as the
 /// chart footer's day totals (not skipped, not a transfer netted out between
-/// combined pools, and its series enabled).
+/// combined streams, and its series enabled).
 bool countsInDayTotals(Occurrence o, {bool? enabled}) =>
     !o.skipped && !o.netted && enabled != false;
 
@@ -19,11 +19,11 @@ bool countsInDayTotals(Occurrence o, {bool? enabled}) =>
 /// (null: unknown, counted).
 Map<int, double> dayNetTotals(
   BalanceSeries series, {
-  bool? Function(String transactionId)? enabledOf,
+  bool? Function(String eventId)? enabledOf,
 }) {
   final out = <int, double>{};
   for (final o in series.occurrences) {
-    if (!countsInDayTotals(o, enabled: enabledOf?.call(o.transactionId))) {
+    if (!countsInDayTotals(o, enabled: enabledOf?.call(o.eventId))) {
       continue;
     }
     final k = dayCoord(DateTime(o.date.year, o.date.month, o.date.day)).round();

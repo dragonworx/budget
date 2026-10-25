@@ -7,9 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Transaction tx(
+BudgetEvent tx(
   String id, {
-  TransactionDirection dir = TransactionDirection.debit,
+  EventDirection dir = EventDirection.debit,
   String amount = '10',
   DateTime? start,
   RecurrenceMode mode = RecurrenceMode.once,
@@ -18,9 +18,9 @@ Transaction tx(
   EndMode end = EndMode.never,
   int? count,
   bool enabled = true,
-}) => Transaction(
+}) => BudgetEvent(
   id: id,
-  poolId: 'a',
+  streamId: 'a',
   name: id,
   direction: dir,
   amount: Decimal.parse(amount),
@@ -33,7 +33,7 @@ Transaction tx(
   enabled: enabled,
 );
 
-final pool = Pool(
+final stream = BudgetStream(
   id: 'a',
   ownerId: 'u',
   name: 'Everyday',
@@ -64,7 +64,7 @@ void main() {
       to: DateTime(2026, 10, 25),
       skipped: {skipKey('counted', DateTime(2026, 10, 19))},
     );
-    final names = items.map((i) => '${i.transaction.id}@${i.date.day}');
+    final names = items.map((i) => '${i.event.id}@${i.date.day}');
     // 2025-01-06 and 2026-10-19 are both Mondays.
     expect(names, ['weekly@19', 'counted@20', 'once@21']);
   });
@@ -90,12 +90,12 @@ void main() {
   test('groups by day with gain / loss / mixed totals', () {
     final items = expandOccurrences(
       [
-        tx('pay', dir: TransactionDirection.credit, amount: '1000'),
+        tx('pay', dir: EventDirection.credit, amount: '1000'),
         tx('rent', amount: '400'),
         tx('coffee', amount: '5', start: DateTime(2026, 10, 20)),
         tx(
           'gift',
-          dir: TransactionDirection.credit,
+          dir: EventDirection.credit,
           amount: '50',
           start: DateTime(2026, 10, 21),
         ),
@@ -134,13 +134,13 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          transactionsProvider.overrideWith(() => _FakeTx()),
+          eventsProvider.overrideWith(() => _FakeTx()),
           balanceProvider.overrideWith(
             (ref, q) async => const BalanceSeries(points: []),
           ),
         ],
         child: MaterialApp(
-          home: RemindersPage(pool: pool, today: today),
+          home: RemindersPage(stream: stream, today: today),
         ),
       ),
     );
@@ -174,10 +174,10 @@ void main() {
   });
 }
 
-class _FakeTx extends TransactionsNotifier {
+class _FakeTx extends EventsNotifier {
   @override
-  Future<List<Transaction>> build(String arg) async => [
-    tx('pay', dir: TransactionDirection.credit, amount: '1000'),
+  Future<List<BudgetEvent>> build(String arg) async => [
+    tx('pay', dir: EventDirection.credit, amount: '1000'),
     tx('rent', amount: '400'),
   ];
 }

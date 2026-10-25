@@ -14,7 +14,7 @@ import '../data/sharing.dart';
 import '../features/admin/admin_page.dart';
 import 'auth_providers.dart';
 import 'providers.dart';
-import 'pool_cleanup.dart';
+import 'stream_cleanup.dart';
 
 /// App-wide messenger so realtime notices show on any page.
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -41,16 +41,16 @@ final remoteChangesProvider = StateProvider<Map<String, ChangeEvent>>(
   (ref) => const {},
 );
 
-/// Owner / shares / invites of a pool (the owner sees all), or null
+/// Owner / shares / invites of a stream (the owner sees all), or null
 /// when they can't be loaded. Used for the "Shared" badge and actor names.
-final poolPeopleProvider = FutureProvider.family<ShareInfo?, String>((
+final streamPeopleProvider = FutureProvider.family<ShareInfo?, String>((
   ref,
-  poolId,
+  streamId,
 ) async {
   try {
     return await ref
         .read(sharingRepositoryProvider)
-        .load(ShareTarget.pool(poolId, ''));
+        .load(ShareTarget.stream(streamId, ''));
   } catch (_) {
     return null;
   }
@@ -59,17 +59,17 @@ final poolPeopleProvider = FutureProvider.family<ShareInfo?, String>((
 /// Bumped on membership / share / invite events so open share dialogs reload.
 final sharingEpochProvider = StateProvider<int>((ref) => 0);
 
-/// Display name of [userId] as known on [poolId] (null when unknown).
-String? actorName(WidgetRef ref, String? poolId, String? userId) {
-  if (userId == null || poolId == null) return null;
-  final info = ref.watch(poolPeopleProvider(poolId)).valueOrNull;
-  for (final m in [...?info?.members, ...?info?.poolShares]) {
+/// Display name of [userId] as known on [streamId] (null when unknown).
+String? actorName(WidgetRef ref, String? streamId, String? userId) {
+  if (userId == null || streamId == null) return null;
+  final info = ref.watch(streamPeopleProvider(streamId)).valueOrNull;
+  for (final m in [...?info?.members, ...?info?.streamShares]) {
     if (m.userId == userId) return m.user.displayName;
   }
   final a = ref
-      .watch(poolsProvider)
+      .watch(streamsProvider)
       .valueOrNull
-      ?.where((a) => a.id == poolId)
+      ?.where((a) => a.id == streamId)
       .firstOrNull;
   if (a?.owner?.id == userId) return a!.owner!.displayName;
   return null;
@@ -126,20 +126,20 @@ class RealtimeController {
 
   /// Everything cached is stale (resync, error, long disconnect).
   void refreshAll() {
-    ref.invalidate(poolsProvider);
-    ref.invalidate(poolProvider);
-    ref.invalidate(transactionsProvider);
+    ref.invalidate(streamsProvider);
+    ref.invalidate(streamProvider);
+    ref.invalidate(eventsProvider);
     _balances();
     ref.invalidate(scenariosProvider);
     ref.invalidate(myInvitesProvider);
-    ref.invalidate(poolPeopleProvider);
+    ref.invalidate(streamPeopleProvider);
     ref.invalidate(adminUsersProvider);
     ref.invalidate(adminAllowlistProvider);
     ref.read(sharingEpochProvider.notifier).state++;
   }
 
-  void _balances([String? poolId]) {
-    if (poolId == null) {
+  void _balances([String? streamId]) {
+    if (streamId == null) {
       ref.invalidate(balanceProvider);
       ref.invalidate(todayBalanceProvider);
       ref.invalidate(insightsProvider);
@@ -147,52 +147,52 @@ class RealtimeController {
     }
     // Balance queries are keyed by range too: refresh the whole family.
     ref.invalidate(balanceProvider);
-    ref.invalidate(todayBalanceProvider(poolId));
-    ref.invalidate(insightsProvider(poolId));
+    ref.invalidate(todayBalanceProvider(streamId));
+    ref.invalidate(insightsProvider(streamId));
   }
 
-  void _pool(String id) {
-    ref.invalidate(transactionsProvider(id));
+  void _stream(String id) {
+    ref.invalidate(eventsProvider(id));
     _balances(id);
   }
 
   void handle(ChangeEvent e) {
-    final aid = e.poolId;
+    final aid = e.streamId;
     if (e.entityId != null) {
       final n = ref.read(remoteChangesProvider.notifier);
       n.state = {...n.state, e.entityId!: e};
     }
     switch (e.kind) {
-      case 'pool':
-        ref.invalidate(poolsProvider);
+      case 'stream':
+        ref.invalidate(streamsProvider);
         if (aid != null) {
-          ref.invalidate(poolProvider(aid));
-          if (e.action == 'pool.updated') _pool(aid);
-          if (e.action == 'pool.deleted') {
-            _leaveIfOn(poolId: aid, message: 'This pool was deleted');
-            // Its transfers' far sides changed in other pools; its saved
+          ref.invalidate(streamProvider(aid));
+          if (e.action == 'stream.updated') _stream(aid);
+          if (e.action == 'stream.deleted') {
+            _leaveIfOn(streamId: aid, message: 'This stream was deleted');
+            // Its transfers' far sides changed in other streams; its saved
             // view / combine choices in this browser go.
-            forgetDeletedPool(ref.invalidate, aid, userId: _me);
+            forgetDeletedStream(ref.invalidate, aid, userId: _me);
           }
         }
-      case 'transaction':
-      case 'transactions':
+      case 'event':
+      case 'events':
       case 'skip':
-        if (aid != null) _pool(aid);
-        final peer = e.peerPoolId;
-        if (peer != null) _pool(peer);
+        if (aid != null) _stream(aid);
+        final peer = e.peerStreamId;
+        if (peer != null) _stream(peer);
       case 'scenario':
         if (aid != null) {
           ref.invalidate(scenariosProvider(aid));
           ref.invalidate(scenarioResultsProvider(aid));
         }
-      case 'pool_share':
+      case 'stream_share':
       case 'invite':
-        ref.invalidate(poolsProvider);
+        ref.invalidate(streamsProvider);
         ref.invalidate(myInvitesProvider);
         if (aid != null) {
-          ref.invalidate(poolPeopleProvider(aid));
-          ref.invalidate(poolProvider(aid));
+          ref.invalidate(streamPeopleProvider(aid));
+          ref.invalidate(streamProvider(aid));
         }
         ref.read(sharingEpochProvider.notifier).state++;
         final lost =
@@ -202,8 +202,8 @@ class RealtimeController {
             e.subjectUserId == _me &&
             aid != null) {
           _leaveIfOn(
-            poolId: aid,
-            message: 'You no longer have access to that pool',
+            streamId: aid,
+            message: 'You no longer have access to that stream',
           );
         }
       case 'admin':
@@ -212,12 +212,12 @@ class RealtimeController {
     }
   }
 
-  void _leaveIfOn({required String poolId, required String message}) {
+  void _leaveIfOn({required String streamId, required String message}) {
     final router = ref.read(routerProvider);
     final path = router.routerDelegate.currentConfiguration.uri.path;
-    final m = RegExp(r'^/pools/([^/]+)/').firstMatch(path);
-    if (m == null || m.group(1) != poolId) return;
-    router.go(poolsPath);
+    final m = RegExp(r'^/streams/([^/]+)/').firstMatch(path);
+    if (m == null || m.group(1) != streamId) return;
+    router.go(streamsPath);
     _notice(message);
   }
 
@@ -265,10 +265,10 @@ class RealtimeDot extends ConsumerWidget {
   }
 }
 
-/// Is my own [pool] shared with anyone (or a pending invite)?
-bool ownedPoolShared(WidgetRef ref, Pool pool) {
-  if (pool.shared || !pool.role.isOwner) return false;
-  final info = ref.watch(poolPeopleProvider(pool.id)).valueOrNull;
+/// Is my own [stream] shared with anyone (or a pending invite)?
+bool ownedStreamShared(WidgetRef ref, BudgetStream stream) {
+  if (stream.shared || !stream.role.isOwner) return false;
+  final info = ref.watch(streamPeopleProvider(stream.id)).valueOrNull;
   if (info == null) return false;
-  return info.poolShares.isNotEmpty || info.invites.any((i) => i.pending);
+  return info.streamShares.isNotEmpty || info.invites.any((i) => i.pending);
 }

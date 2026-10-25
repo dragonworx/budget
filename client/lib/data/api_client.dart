@@ -57,8 +57,7 @@ class ApiClient {
   /// then reloads into the new build if one is live.
   static void Function()? onOutdatedSuspected;
 
-  static const outdatedMessage =
-      'Budgie was updated. Please reload the page.';
+  static const outdatedMessage = 'Budgie was updated. Please reload the page.';
 
   static bool _looksLikeHtml(String body) {
     final t = body.trimLeft().toLowerCase();

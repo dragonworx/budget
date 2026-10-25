@@ -4,7 +4,7 @@ import 'package:budget_client/data/models.dart';
 import 'package:decimal/decimal.dart';
 
 Occurrence occ(DateTime d, int v, {bool skipped = false}) => Occurrence(
-  transactionId: 't$v',
+  eventId: 't$v',
   date: d,
   signedDelta: Decimal.fromInt(v),
   skipped: skipped,

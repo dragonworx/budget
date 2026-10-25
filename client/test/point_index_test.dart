@@ -92,17 +92,17 @@ void main() {
   test('groupByDay is cached per list and still groups', () {
     final occ = [
       Occurrence(
-        transactionId: 'a',
+        eventId: 'a',
         date: DateTime(2026, 4, 5),
         signedDelta: Decimal.one,
       ),
       Occurrence(
-        transactionId: 'b',
+        eventId: 'b',
         date: DateTime(2026, 4, 4),
         signedDelta: Decimal.one,
       ),
       Occurrence(
-        transactionId: 'c',
+        eventId: 'c',
         date: DateTime(2026, 4, 5, 12),
         signedDelta: Decimal.one,
       ),
@@ -110,7 +110,7 @@ void main() {
     final g = groupByDay(occ);
     expect(identical(g, groupByDay(occ)), isTrue);
     expect(g.map((d) => d.day), [DateTime(2026, 4, 4), DateTime(2026, 4, 5)]);
-    expect(g.last.all.map((o) => o.transactionId), ['a', 'c']);
+    expect(g.last.all.map((o) => o.eventId), ['a', 'c']);
     // Non-list iterables are grouped fresh.
     expect(groupByDay(occ.where((o) => true)).length, 2);
   });

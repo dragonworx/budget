@@ -15,12 +15,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_auth.dart';
-import 'support/fake_pools.dart';
+import 'support/fake_streams.dart';
 
 final _now = DateTime.now();
 final _seed = DateTime(_now.year, _now.month, _now.day - 20);
 
-final _pool = Pool(
+final _stream = BudgetStream(
   id: 'a',
   ownerId: 'u1',
   name: 'Everyday spending',
@@ -30,21 +30,21 @@ final _pool = Pool(
   role: Role.owner,
 );
 
-class _PoolRepo extends PoolRepository {
-  _PoolRepo() : super(ApiClient());
+class _StreamRepo extends StreamRepository {
+  _StreamRepo() : super(ApiClient());
 
   @override
-  Future<PoolList> list() async => PoolList([_pool]);
+  Future<StreamList> list() async => StreamList([_stream]);
 
   @override
-  Future<Pool> get(String id) async => _pool;
+  Future<BudgetStream> get(String id) async => _stream;
 
   @override
   Future<void> markOpened(String id) async {}
 
   @override
   Future<BalanceSeries> balance(
-    String poolId, {
+    String streamId, {
     required DateTime from,
     required DateTime to,
   }) async {
@@ -54,17 +54,17 @@ class _PoolRepo extends PoolRepository {
       !d.isAfter(to);
       d = DateTime(d.year, d.month, d.day + 1)
     ) {
-      points.add(BalancePoint(date: d, closingBalance: _pool.seedBalance));
+      points.add(BalancePoint(date: d, closingBalance: _stream.seedBalance));
     }
     return BalanceSeries(points: points, occurrences: const []);
   }
 }
 
-class _TxRepo extends TransactionRepository {
+class _TxRepo extends EventRepository {
   _TxRepo() : super(ApiClient());
 
   @override
-  Future<List<Transaction>> listForPool(String poolId) async => const [];
+  Future<List<BudgetEvent>> listForStream(String streamId) async => const [];
 }
 
 Future<void> _pumpTimeline(WidgetTester tester, Size size) async {
@@ -76,8 +76,8 @@ Future<void> _pumpTimeline(WidgetTester tester, Size size) async {
       authRepositoryProvider.overrideWithValue(
         FakeAuthRepository(user: adminUser),
       ),
-      poolRepositoryProvider.overrideWithValue(_PoolRepo()),
-      transactionRepositoryProvider.overrideWithValue(_TxRepo()),
+      streamRepositoryProvider.overrideWithValue(_StreamRepo()),
+      eventRepositoryProvider.overrideWithValue(_TxRepo()),
     ],
   );
   addTearDown(c.dispose);
@@ -85,7 +85,7 @@ Future<void> _pumpTimeline(WidgetTester tester, Size size) async {
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: c,
-      child: const MaterialApp(home: TimelinePage(poolId: 'a')),
+      child: const MaterialApp(home: TimelinePage(streamId: 'a')),
     ),
   );
   await tester.pumpAndSettle();
@@ -98,7 +98,7 @@ Future<void> _pumpApp(WidgetTester tester, {AuthUser? user}) async {
         authRepositoryProvider.overrideWithValue(
           FakeAuthRepository(user: user),
         ),
-        poolRepositoryProvider.overrideWithValue(FakePoolRepository()),
+        streamRepositoryProvider.overrideWithValue(FakeStreamRepository()),
       ],
       child: const BudgetApp(),
     ),
@@ -132,7 +132,7 @@ void main() {
     );
     handle.dispose();
     expect(find.text('Budget'), findsNothing);
-    expect(find.text('Sign in to see your pools'), findsOneWidget);
+    expect(find.text('Sign in to see your streams'), findsOneWidget);
   });
 
   for (final width in [320.0, 390.0, 800.0, 1440.0]) {
@@ -147,7 +147,7 @@ void main() {
       expect(find.byKey(const ValueKey('brand-navbar')), findsNothing);
       final r = tester.getRect(icon);
       expect(r.width, width < 600 ? 26 : 32);
-      // Left side: right after the back button, before the pool name.
+      // Left side: right after the back button, before the stream name.
       final back = tester.getRect(find.byKey(const ValueKey('timeline-back')));
       expect(r.left, greaterThanOrEqualTo(back.right - 1));
       expect(r.left, lessThan(back.right + 12));

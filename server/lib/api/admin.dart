@@ -17,7 +17,7 @@ Router buildAdminApi(Session db, Config config, SessionStore sessions) {
     final rows = await db.execute('''
       SELECT u.id::text, u.email, u.name, u.picture_url, u.is_admin, u.disabled,
              u.created_at, u.last_login_at,
-             (SELECT count(*) FROM pools a WHERE a.owner_id = u.id)::int
+             (SELECT count(*) FROM streams a WHERE a.owner_id = u.id)::int
       FROM users u ORDER BY u.created_at
     ''');
     return jsonOk({
@@ -31,7 +31,7 @@ Router buildAdminApi(Session db, Config config, SessionStore sessions) {
                 'disabled': x[5],
                 'createdAt': (x[6] as DateTime).toUtc().toIso8601String(),
                 'lastLoginAt': (x[7] as DateTime?)?.toUtc().toIso8601String(),
-                'ownedPools': x[8],
+                'ownedStreams': x[8],
               })
           .toList(),
     });

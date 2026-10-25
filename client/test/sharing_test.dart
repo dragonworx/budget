@@ -4,7 +4,7 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/data/sharing.dart';
 import 'package:budget_client/features/sharing/share_dialog.dart';
-import 'package:budget_client/features/transactions/transactions_panel.dart';
+import 'package:budget_client/features/events/events_panel.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:budget_client/widgets/conflict_dialog.dart';
@@ -14,13 +14,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'support/fake_pools.dart';
+import 'support/fake_streams.dart';
 import 'support/fake_auth.dart';
 
-const _owner = UserRef(id: 'u1', email: 'musicartscience@gmail.com', name: 'Ali');
+const _owner = UserRef(
+  id: 'u1',
+  email: 'musicartscience@gmail.com',
+  name: 'Ali',
+);
 const _bob = UserRef(id: 'u2', email: 'bob@example.com', name: 'Bob');
 
-Pool _acct(String id, {Role role = Role.owner}) => Pool(
+BudgetStream _acct(String id, {Role role = Role.owner}) => BudgetStream(
   id: id,
   ownerId: 'u1',
   name: 'Everyday',
@@ -35,7 +39,7 @@ class FakeSharing implements SharingRepository {
   ShareInfo info = const ShareInfo(
     role: Role.owner,
     members: [Member(user: _owner, role: Role.owner)],
-    poolShares: [Member(user: _bob, role: Role.viewer)],
+    streamShares: [Member(user: _bob, role: Role.viewer)],
     invites: [Invite(id: 'i1', email: 'carol@example.com', role: Role.editor)],
   );
   InvitePreview? preview_;
@@ -59,7 +63,8 @@ class FakeSharing implements SharingRepository {
   Future<void> setRole(ShareTarget t, String userId, Role role) async =>
       calls.add('role $userId ${role.name}');
   @override
-  Future<void> remove(ShareTarget t, String userId) async => calls.add('remove $userId');
+  Future<void> remove(ShareTarget t, String userId) async =>
+      calls.add('remove $userId');
   @override
   Future<void> leave(ShareTarget t) async => calls.add('leave ${t.id}');
   @override
@@ -82,13 +87,14 @@ class FakeSharing implements SharingRepository {
   Future<AcceptedInvite> accept(String token) async {
     calls.add('accept $token');
     if (acceptError != null) throw acceptError!;
-    return const AcceptedInvite(poolId: 'a9', role: Role.viewer);
+    return const AcceptedInvite(streamId: 'a9', role: Role.viewer);
   }
 
   @override
   Future<List<AdminUser>> users() async => users_;
   @override
-  Future<void> setDisabled(String id, bool d) async => calls.add('disable $id $d');
+  Future<void> setDisabled(String id, bool d) async =>
+      calls.add('disable $id $d');
   @override
   Future<Allowlist> allowlist() async => allow;
   @override
@@ -100,7 +106,7 @@ class FakeSharing implements SharingRepository {
 Future<ProviderContainer> _app(
   WidgetTester tester, {
   required FakeSharing sharing,
-  List<Pool> pools = const [],
+  List<BudgetStream> streams = const [],
   String path = '/',
   Size size = const Size(1200, 900),
 }) async {
@@ -109,9 +115,11 @@ Future<ProviderContainer> _app(
   addTearDown(tester.view.reset);
   final c = ProviderContainer(
     overrides: [
-      authRepositoryProvider.overrideWithValue(FakeAuthRepository(user: adminUser)),
-      poolRepositoryProvider.overrideWithValue(
-        FakePoolRepository(pools: List.of(pools)),
+      authRepositoryProvider.overrideWithValue(
+        FakeAuthRepository(user: adminUser),
+      ),
+      streamRepositoryProvider.overrideWithValue(
+        FakeStreamRepository(streams: List.of(streams)),
       ),
       sharingRepositoryProvider.overrideWithValue(sharing),
     ],
@@ -131,13 +139,19 @@ Future<ProviderContainer> _app(
 String _path(ProviderContainer c) =>
     c.read(routerProvider).routerDelegate.currentConfiguration.uri.toString();
 
-Future<void> _dialog(WidgetTester tester, FakeSharing sharing, {ShareTarget? target}) async {
+Future<void> _dialog(
+  WidgetTester tester,
+  FakeSharing sharing, {
+  ShareTarget? target,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        authRepositoryProvider.overrideWithValue(FakeAuthRepository(user: adminUser)),
+        authRepositoryProvider.overrideWithValue(
+          FakeAuthRepository(user: adminUser),
+        ),
         sharingRepositoryProvider.overrideWithValue(sharing),
-        poolRepositoryProvider.overrideWithValue(FakePoolRepository()),
+        streamRepositoryProvider.overrideWithValue(FakeStreamRepository()),
       ],
       child: MaterialApp(
         home: Scaffold(
@@ -145,7 +159,7 @@ Future<void> _dialog(WidgetTester tester, FakeSharing sharing, {ShareTarget? tar
             builder: (context) => TextButton(
               onPressed: () => showShareDialog(
                 context,
-                target ?? const ShareTarget.pool('a1', 'Home'),
+                target ?? const ShareTarget.stream('a1', 'Home'),
               ),
               child: const Text('open'),
             ),
@@ -160,8 +174,8 @@ Future<void> _dialog(WidgetTester tester, FakeSharing sharing, {ShareTarget? tar
 
 void main() {
   group('models', () {
-    test('pool sharing fields parse', () {
-      final a = Pool.fromJson({
+    test('stream sharing fields parse', () {
+      final a = BudgetStream.fromJson({
         'id': 'a',
         'ownerId': 'u2',
         'name': 'Shared',
@@ -180,8 +194,8 @@ void main() {
       expect(a.toJson().containsKey('projectId'), isFalse);
     });
 
-    test('older payloads default to my own pool', () {
-      final a = Pool.fromJson({
+    test('older payloads default to my own stream', () {
+      final a = BudgetStream.fromJson({
         'id': 'a',
         'projectId': 'p',
         'name': 'n',
@@ -197,27 +211,32 @@ void main() {
         'role': 'owner',
         'owner': {'userId': 'u1', 'email': 'a@b.co'},
         'shares': [
-          {'userId': 'u2', 'email': 'b@b.co', 'role': 'editor', 'poolId': 'a'},
+          {
+            'userId': 'u2',
+            'email': 'b@b.co',
+            'role': 'editor',
+            'streamId': 'a',
+          },
         ],
       });
       expect(i.members.single.role, Role.owner);
       expect(i.members.single.userId, 'u1');
-      expect(i.poolShares.single.role, Role.editor);
+      expect(i.streamShares.single.role, Role.editor);
     });
 
-    test('unreadable transfer peer reads "Private pool"', () {
+    test('unreadable transfer peer reads "Private stream"', () {
       final l = TransferLink.fromJson({
-        'peerPoolId': 'x',
+        'peerStreamId': 'x',
         'peerReadable': false,
-        'peerPoolName': null,
+        'peerStreamName': null,
       });
-      expect(l.poolLabel, 'Private pool');
+      expect(l.streamLabel, 'Private stream');
     });
 
-    test('transaction update sends version unless forced', () {
-      final t = Transaction.fromJson({
+    test('event update sends version unless forced', () {
+      final t = BudgetEvent.fromJson({
         'id': 't',
-        'poolId': 'a',
+        'streamId': 'a',
         'name': 'Rent',
         'direction': 'debit',
         'amount': '10',
@@ -231,45 +250,63 @@ void main() {
   });
 
   group('share dialog', () {
-    testWidgets('owner sees members, changes a role, invites and copies a link',
-        (tester) async {
-      final s = FakeSharing();
-      await _dialog(tester, s);
-      expect(find.byKey(const ValueKey('share-dialog')), findsOneWidget);
-      expect(find.text('Ali (you)'), findsOneWidget);
-      expect(find.text('Bob'), findsOneWidget);
-      expect(find.byKey(const ValueKey('invite-carol@example.com')), findsOneWidget);
+    testWidgets(
+      'owner sees members, changes a role, invites and copies a link',
+      (tester) async {
+        final s = FakeSharing();
+        await _dialog(tester, s);
+        expect(find.byKey(const ValueKey('share-dialog')), findsOneWidget);
+        expect(find.text('Ali (you)'), findsOneWidget);
+        expect(find.text('Bob'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('invite-carol@example.com')),
+          findsOneWidget,
+        );
 
-      await tester.tap(find.byKey(const ValueKey('member-role-bob@example.com')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Editor').last);
-      await tester.pumpAndSettle();
-      expect(s.calls, contains('role u2 editor'));
+        await tester.tap(
+          find.byKey(const ValueKey('member-role-bob@example.com')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Editor').last);
+        await tester.pumpAndSettle();
+        expect(s.calls, contains('role u2 editor'));
 
-      await tester.enterText(find.byKey(const ValueKey('share-email')), 'dan@example.com');
-      await tester.tap(find.byKey(const ValueKey('share-invite')));
-      await tester.pumpAndSettle();
-      expect(s.calls, contains('invite dan@example.com viewer'));
-      expect(find.byKey(const ValueKey('share-link-box')), findsOneWidget);
-      expect(find.textContaining('/invite/tok123'), findsOneWidget);
-    });
+        await tester.enterText(
+          find.byKey(const ValueKey('share-email')),
+          'dan@example.com',
+        );
+        await tester.tap(find.byKey(const ValueKey('share-invite')));
+        await tester.pumpAndSettle();
+        expect(s.calls, contains('invite dan@example.com viewer'));
+        expect(find.byKey(const ValueKey('share-link-box')), findsOneWidget);
+        expect(find.textContaining('/invite/tok123'), findsOneWidget);
+      },
+    );
 
-    testWidgets('revoke and rotate pending invites; remove access', (tester) async {
+    testWidgets('revoke and rotate pending invites; remove access', (
+      tester,
+    ) async {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
         (call) async => null,
       );
       final s = FakeSharing();
       await _dialog(tester, s);
-      await tester.tap(find.byKey(const ValueKey('invite-link-carol@example.com')));
+      await tester.tap(
+        find.byKey(const ValueKey('invite-link-carol@example.com')),
+      );
       await tester.pumpAndSettle();
       expect(find.textContaining('/invite/new'), findsOneWidget);
       expect(s.calls, contains('rotate i1'));
-      await tester.tap(find.byKey(const ValueKey('invite-revoke-carol@example.com')));
+      await tester.tap(
+        find.byKey(const ValueKey('invite-revoke-carol@example.com')),
+      );
       await tester.pumpAndSettle();
       expect(s.calls, contains('revoke i1'));
 
-      await tester.tap(find.byKey(const ValueKey('member-menu-bob@example.com')));
+      await tester.tap(
+        find.byKey(const ValueKey('member-menu-bob@example.com')),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Transfer ownership'), findsNothing);
       await tester.tap(find.text('Remove access'));
@@ -279,13 +316,18 @@ void main() {
       expect(s.calls, contains('remove u2'));
     });
 
-    testWidgets('a viewer sees no invite controls and can leave', (tester) async {
+    testWidgets('a viewer sees no invite controls and can leave', (
+      tester,
+    ) async {
       final s = FakeSharing()
         ..info = const ShareInfo(
           role: Role.viewer,
           members: [Member(user: _bob, role: Role.owner)],
-          poolShares: [
-            Member(user: UserRef(id: 'u1', email: 'me@y.co'), role: Role.viewer),
+          streamShares: [
+            Member(
+              user: UserRef(id: 'u1', email: 'me@y.co'),
+              role: Role.viewer,
+            ),
           ],
         );
       await _dialog(tester, s);
@@ -301,8 +343,14 @@ void main() {
   });
 
   test('invite links (real path) start the router on the invite', () {
-    expect(initialLocationFor(Uri.parse('https://x.dev/invite/abc')), '/invite/abc');
-    expect(initialLocationFor(Uri.parse('https://x.dev/invite/abc#/')), '/invite/abc');
+    expect(
+      initialLocationFor(Uri.parse('https://x.dev/invite/abc')),
+      '/invite/abc',
+    );
+    expect(
+      initialLocationFor(Uri.parse('https://x.dev/invite/abc#/')),
+      '/invite/abc',
+    );
     expect(initialLocationFor(Uri.parse('https://x.dev/#/projects/p')), '/');
     expect(initialLocationFor(Uri.parse('https://x.dev/')), '/');
   });
@@ -312,31 +360,33 @@ void main() {
       id: 'i1',
       email: 'musicartscience@gmail.com',
       role: Role.viewer,
-      poolId: 'a9',
-      poolName: 'Holiday',
+      streamId: 'a9',
+      streamName: 'Holiday',
       invitedBy: _bob,
       status: status,
     );
 
-    testWidgets('preview then accept opens the pool', (tester) async {
-      final s = FakeSharing()..preview_ = InvitePreview(invite: inv(), emailMatches: true);
-      // The pool exists once accepted (a missing one now falls back home).
+    testWidgets('preview then accept opens the stream', (tester) async {
+      final s = FakeSharing()
+        ..preview_ = InvitePreview(invite: inv(), emailMatches: true);
+      // The stream exists once accepted (a missing one now falls back home).
       final c = await _app(
         tester,
         sharing: s,
         path: '/invite/tok',
-        pools: [testPool('a9', 'Holiday', shared: true, role: Role.viewer)],
+        streams: [testStream('a9', 'Holiday', shared: true, role: Role.viewer)],
       );
       expect(find.byKey(const ValueKey('invite-target')), findsOneWidget);
       expect(find.text('Holiday'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('invite-accept')));
       await tester.pumpAndSettle();
       expect(s.calls, contains('accept tok'));
-      expect(_path(c), '/pools/a9/timeline');
+      expect(_path(c), '/streams/a9/timeline');
     });
 
     testWidgets('signed in as someone else', (tester) async {
-      final s = FakeSharing()..preview_ = InvitePreview(invite: inv(), emailMatches: false);
+      final s = FakeSharing()
+        ..preview_ = InvitePreview(invite: inv(), emailMatches: false);
       await _app(tester, sharing: s, path: '/invite/tok');
       expect(find.byKey(const ValueKey('invite-mismatch')), findsOneWidget);
       expect(find.byKey(const ValueKey('invite-accept')), findsNothing);
@@ -345,7 +395,11 @@ void main() {
     testWidgets('expired on accept (410)', (tester) async {
       final s = FakeSharing()
         ..preview_ = InvitePreview(invite: inv(), emailMatches: true)
-        ..acceptError = ApiException('gone', statusCode: 410, body: '{"details":{"status":"expired"}}');
+        ..acceptError = ApiException(
+          'gone',
+          statusCode: 410,
+          body: '{"details":{"status":"expired"}}',
+        );
       await _app(tester, sharing: s, path: '/invite/tok');
       await tester.tap(find.byKey(const ValueKey('invite-accept')));
       await tester.pumpAndSettle();
@@ -354,21 +408,29 @@ void main() {
     });
 
     testWidgets('unknown token (404)', (tester) async {
-      final s = FakeSharing()..previewError = ApiException('not found', statusCode: 404);
+      final s = FakeSharing()
+        ..previewError = ApiException('not found', statusCode: 404);
       await _app(tester, sharing: s, path: '/invite/zzz');
       expect(find.byKey(const ValueKey('invite-invalid')), findsOneWidget);
     });
 
-    testWidgets('signed out: sign-in first, then back to the invite', (tester) async {
+    testWidgets('signed out: sign-in first, then back to the invite', (
+      tester,
+    ) async {
       final auth = FakeAuthRepository(devBypass: true);
-      final s = FakeSharing()..preview_ = InvitePreview(invite: inv(), emailMatches: true);
-      final c = ProviderContainer(overrides: [
-        authRepositoryProvider.overrideWithValue(auth),
-        poolRepositoryProvider.overrideWithValue(FakePoolRepository()),
-        sharingRepositoryProvider.overrideWithValue(s),
-      ]);
+      final s = FakeSharing()
+        ..preview_ = InvitePreview(invite: inv(), emailMatches: true);
+      final c = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(auth),
+          streamRepositoryProvider.overrideWithValue(FakeStreamRepository()),
+          sharingRepositoryProvider.overrideWithValue(s),
+        ],
+      );
       addTearDown(c.dispose);
-      await tester.pumpWidget(UncontrolledProviderScope(container: c, child: const BudgetApp()));
+      await tester.pumpWidget(
+        UncontrolledProviderScope(container: c, child: const BudgetApp()),
+      );
       await tester.pumpAndSettle();
       c.read(routerProvider).go('/invite/tok');
       await tester.pumpAndSettle();
@@ -381,53 +443,74 @@ void main() {
     });
   });
 
-  testWidgets('pools home splits mine and shared, with owner and role', (tester) async {
+  testWidgets('streams home splits mine and shared, with owner and role', (
+    tester,
+  ) async {
     final c = await _app(
       tester,
       sharing: FakeSharing(),
-      path: '/pools',
-      pools: [
-        testPool('a1', 'Mine'),
-        testPool('a2', 'Theirs', shared: true, role: Role.viewer, ownerName: 'Bob'),
+      path: '/streams',
+      streams: [
+        testStream('a1', 'Mine'),
+        testStream(
+          'a2',
+          'Theirs',
+          shared: true,
+          role: Role.viewer,
+          ownerName: 'Bob',
+        ),
       ],
     );
-    expect(_path(c), '/pools');
+    expect(_path(c), '/streams');
     expect(find.byKey(const ValueKey('mine-heading')), findsOneWidget);
     expect(find.byKey(const ValueKey('shared-heading')), findsOneWidget);
     expect(find.byKey(const ValueKey('role-chip-viewer')), findsOneWidget);
     expect(find.text('Shared by Bob'), findsOneWidget);
-    // My own pool is shared with someone -> shared badge.
+    // My own stream is shared with someone -> shared badge.
     expect(find.byKey(const ValueKey('owned-shared-badge')), findsOneWidget);
     expect(find.text('New project'), findsNothing);
-    expect(find.byKey(const ValueKey('new-pool')), findsOneWidget);
+    expect(find.byKey(const ValueKey('new-stream')), findsOneWidget);
   });
 
-  testWidgets('old #/accounts links redirect to pools', (tester) async {
+  testWidgets('old #/accounts links redirect to streams', (tester) async {
     final c = await _app(
       tester,
       sharing: FakeSharing(),
       path: '/accounts',
-      pools: [testPool('a1', 'Mine')],
+      streams: [testStream('a1', 'Mine')],
     );
-    expect(_path(c), '/pools');
-    expect(find.byKey(const ValueKey('new-pool')), findsOneWidget);
+    expect(_path(c), '/streams');
+    expect(find.byKey(const ValueKey('new-stream')), findsOneWidget);
     for (final old in ['/accounts/a1/timeline', '/accounts/a1']) {
       c.read(routerProvider).go(old);
       await tester.pump();
-      expect(_path(c), '/pools/a1/timeline');
+      expect(_path(c), '/streams/a1/timeline');
     }
   });
 
-  testWidgets('viewer gets a read-only transactions panel', (tester) async {
+  testWidgets('old #/pools links redirect to streams', (tester) async {
+    final c = await _app(
+      tester,
+      sharing: FakeSharing(),
+      path: '/pools',
+      streams: [testStream('a1', 'Mine')],
+    );
+    expect(_path(c), '/streams');
+    for (final old in ['/pools/a1/timeline', '/pools/a1']) {
+      c.read(routerProvider).go(old);
+      await tester.pump();
+      expect(_path(c), '/streams/a1/timeline');
+    }
+  });
+
+  testWidgets('viewer gets a read-only events panel', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          transactionRepositoryProvider.overrideWithValue(_NoTx()),
-        ],
+        overrides: [eventRepositoryProvider.overrideWithValue(_NoTx())],
         child: MaterialApp(
           home: Scaffold(
-            body: TransactionsPanel(
-              pool: _acct('a1', role: Role.viewer),
+            body: EventsPanel(
+              stream: _acct('a1', role: Role.viewer),
               skipsFor: (_) => const {},
               onPanelClosed: (_) {},
               onChanged: () {},
@@ -438,33 +521,39 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('panel-view-only')), findsOneWidget);
-    expect(find.byKey(const ValueKey('panel-new-transaction')), findsNothing);
-    expect(find.text('New transaction'), findsNothing);
+    expect(find.byKey(const ValueKey('panel-new-event')), findsNothing);
+    expect(find.text('New event'), findsNothing);
   });
 
   group('version conflict', () {
-    Future<SaveResult?> run(WidgetTester tester, String button, List<bool> saves,
-        List<String> log) async {
+    Future<SaveResult?> run(
+      WidgetTester tester,
+      String button,
+      List<bool> saves,
+      List<String> log,
+    ) async {
       SaveResult? result;
-      await tester.pumpWidget(MaterialApp(
-        home: Builder(
-          builder: (context) => TextButton(
-            onPressed: () async {
-              result = await saveWithConflictCheck(
-                context,
-                save: (force) async {
-                  saves.add(force);
-                  if (!force) {
-                    throw ApiException('version conflict', statusCode: 409);
-                  }
-                },
-                reload: () => log.add('reload'),
-              );
-            },
-            child: const Text('save'),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                result = await saveWithConflictCheck(
+                  context,
+                  save: (force) async {
+                    saves.add(force);
+                    if (!force) {
+                      throw ApiException('version conflict', statusCode: 409);
+                    }
+                  },
+                  reload: () => log.add('reload'),
+                );
+              },
+              child: const Text('save'),
+            ),
           ),
         ),
-      ));
+      );
       await tester.tap(find.text('save'));
       await tester.pumpAndSettle();
       expect(find.text('Changed by someone else'), findsOneWidget);
@@ -490,16 +579,26 @@ void main() {
     });
   });
 
-  testWidgets('admin page: users disable and allowlist add/remove', (tester) async {
+  testWidgets('admin page: users disable and allowlist add/remove', (
+    tester,
+  ) async {
     final s = FakeSharing();
     await _app(tester, sharing: s, path: '/admin');
-    expect(find.byKey(const ValueKey('admin-user-bob@example.com')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('admin-user-enabled-bob@example.com')));
+    expect(
+      find.byKey(const ValueKey('admin-user-bob@example.com')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('admin-user-enabled-bob@example.com')),
+    );
     await tester.pumpAndSettle();
     expect(s.calls, contains('disable u2 true'));
     await tester.tap(find.byKey(const ValueKey('admin-tab-allowlist')));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('allowlist-input')), 'zed@x.com');
+    await tester.enterText(
+      find.byKey(const ValueKey('allowlist-input')),
+      'zed@x.com',
+    );
     await tester.tap(find.byKey(const ValueKey('allowlist-add')));
     await tester.pumpAndSettle();
     expect(s.calls, contains('allow zed@x.com'));
@@ -509,8 +608,8 @@ void main() {
   });
 }
 
-class _NoTx extends TransactionRepository {
+class _NoTx extends EventRepository {
   _NoTx() : super(ApiClient());
   @override
-  Future<List<Transaction>> listForPool(String poolId) async => const [];
+  Future<List<BudgetEvent>> listForStream(String streamId) async => const [];
 }

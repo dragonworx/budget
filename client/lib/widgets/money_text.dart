@@ -1,8 +1,8 @@
 import 'package:decimal/decimal.dart';
 import 'package:intl/intl.dart';
 
-/// The one money symbol. Pools have no currency: every amount shows a
-/// plain "\$" (the pool's currency *scale* is a separate setting).
+/// The one money symbol. Streams have no currency: every amount shows a
+/// plain "\$" (the stream's currency *scale* is a separate setting).
 const String moneySymbol = '\$';
 
 /// Axis and chart labels: "\$2,400", "\$12.50". [decimalDigits] overrides
@@ -15,7 +15,7 @@ String formatMoneyAmount(num amount, {int? decimalDigits}) {
   ).format(amount);
 }
 
-/// A single transaction's amount, signed by direction: "+\$1,830" for a
+/// A single event's amount, signed by direction: "+\$1,830" for a
 /// credit, "−\$22.99" for a debit. Compact ("+\$1.36M") from a million up.
 String formatSignedAmount(num signedAmount) {
   final abs = signedAmount.abs();

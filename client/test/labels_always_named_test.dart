@@ -1,5 +1,5 @@
-// Every transaction label that is drawn shows the day total AND at least one
-// transaction name: never the amount alone, never just "+N more". Checked
+// Every event label that is drawn shows the day total AND at least one
+// event name: never the amount alone, never just "+N more". Checked
 // across widths × heights × zooms on crowded data, together with the label
 // rules (flush left with the dot, never overlapping, never covering a dot).
 import 'package:budget_client/data/models.dart';
@@ -20,7 +20,7 @@ const _long = [
   'Salary',
 ];
 
-/// Crowded data: a transaction most days, several on some days, long names.
+/// Crowded data: an event most days, several on some days, long names.
 List<(int, int, String)> _crowded(int days) => [
   for (var d = 0; d < days; d++) ...[
     if (d % 4 != 3)
@@ -51,11 +51,7 @@ Future<List<_Label>> _labels(
       if (day != i) continue;
       names[name] = name;
       occ.add(
-        Occurrence(
-          transactionId: name,
-          date: d,
-          signedDelta: Decimal.fromInt(delta),
-        ),
+        Occurrence(eventId: name, date: d, signedDelta: Decimal.fromInt(delta)),
       );
       bal += delta;
     }
@@ -78,7 +74,7 @@ Future<List<_Label>> _labels(
             seedDate: _start.subtract(const Duration(days: 60)),
             viewStart: _start,
             visibleDays: days,
-            transactionNames: names,
+            eventNames: names,
             onViewportChanged: (_, _) {},
             onCreateOnDay: (_) {},
           ),
@@ -175,11 +171,11 @@ void main() {
     });
   }
 
-  testWidgets('a single transaction always shows its own name', (tester) async {
+  testWidgets('a single event always shows its own name', (tester) async {
     addTearDown(tester.view.reset);
     final labels = await _labels(tester, const Size(390, 300), [
       for (var d = 0; d < 30; d++)
-        (d, d.isEven ? 300 : -280, 'A rather long transaction name $d'),
+        (d, d.isEven ? 300 : -280, 'A rather long event name $d'),
     ], 30);
     expect(labels, isNotEmpty);
     for (final (lines, _, _, _) in labels) {

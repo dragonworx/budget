@@ -65,7 +65,7 @@ void main() {
     expect(targets, isNotEmpty);
     expect(targets.last.$1, DateTime(2026, 10, 11));
     expect(targets.last.$2, closeTo(1500, 10));
-    expect(created, isEmpty, reason: 'taps never create transactions');
+    expect(created, isEmpty, reason: 'taps never create events');
   });
 
   testWidgets('target tool: dragging moves the target, not the view', (

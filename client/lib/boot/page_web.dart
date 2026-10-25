@@ -84,7 +84,7 @@ bool get prefersReducedMotion =>
 web.HTMLInputElement? _keyboardPrimer;
 
 /// Touch browsers (iOS Safari especially) only raise the soft keyboard
-/// for a focus() made inside the user's tap. A new transaction's Name
+/// for a focus() made inside the user's tap. A new event's Name
 /// field only exists a frame later, so focus a hidden input now, inside
 /// the tap; Flutter's own input then takes over the focus (the keyboard
 /// stays up). The primer removes itself once focus moves on, or after 2s.

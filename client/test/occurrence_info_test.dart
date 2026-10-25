@@ -3,18 +3,18 @@ import 'package:budget_client/features/timeline/occurrence_info.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Transaction tx({
+BudgetEvent tx({
   RecurrenceMode mode = RecurrenceMode.every,
   int interval = 1,
   RecurrenceUnit unit = RecurrenceUnit.months,
   EndMode end = EndMode.never,
   DateTime? endDate,
   int? count,
-}) => Transaction(
+}) => BudgetEvent(
   id: 't',
-  poolId: 'a',
+  streamId: 'a',
   name: 'n',
-  direction: TransactionDirection.debit,
+  direction: EventDirection.debit,
   amount: Decimal.one,
   startDate: DateTime(2026, 1, 31),
   recurrenceMode: mode,

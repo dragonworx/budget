@@ -292,19 +292,17 @@ class GoalResult {
     );
   }
 
-  /// The plan as transactions to add (explicit button only): the
+  /// The plan as events to add (explicit button only): the
   /// recurring payment and/or the one-off.
-  List<Transaction> toTransactions(String poolId, {String name = 'Goal'}) {
+  List<BudgetEvent> toEvents(String streamId, {String name = 'Goal'}) {
     final v = values;
     if (v == null) return const [];
-    final out = <Transaction>[];
-    Transaction base(double signed, String label) => Transaction(
+    final out = <BudgetEvent>[];
+    BudgetEvent base(double signed, String label) => BudgetEvent(
       id: '',
-      poolId: poolId,
+      streamId: streamId,
       name: label,
-      direction: signed >= 0
-          ? TransactionDirection.credit
-          : TransactionDirection.debit,
+      direction: signed >= 0 ? EventDirection.credit : EventDirection.debit,
       amount: Decimal.parse(signed.abs().toStringAsFixed(2)),
       startDate: v.startDate,
       recurrenceMode: RecurrenceMode.once,
@@ -330,9 +328,9 @@ class GoalResult {
   }
 }
 
-/// A saved what-if: a goal request stored per pool. Included scenarios
+/// A saved what-if: a goal request stored per stream. Included scenarios
 /// are overlaid on the chart as coloured ghost lines; they never change the
-/// pool's real transactions.
+/// stream's real events.
 class Scenario {
   const Scenario({
     required this.id,
@@ -371,9 +369,9 @@ String shiftText(int days) {
   return '$sign$a day${a == 1 ? '' : 's'}';
 }
 
-/// Delta of a solved scenario against the pool as it is: the balance
+/// Delta of a solved scenario against the stream as it is: the balance
 /// change at the plan's end and how far the first alert date moves.
-/// [baselineAlert] is the pool's current first alert date (null: none
+/// [baselineAlert] is the stream's current first alert date (null: none
 /// within the horizon). Returns parts like ['+$420 by 1 Mar', 'alert +3 wks'].
 ({double? balance, int? alertShiftDays, bool alertCleared, bool alertNew})
 scenarioDelta(GoalResult r, DateTime? baselineAlert) {

@@ -1,22 +1,22 @@
 import 'package:postgres/postgres.dart';
 
-import 'event.dart';
+import 'live_event.dart';
 
 /// What one user can currently read, for filtering events.
 class AccessSet {
   AccessSet(this.userId,
-      {this.ownedPools = const {},
-      this.sharedPools = const {},
+      {this.ownedStreams = const {},
+      this.sharedStreams = const {},
       this.isAdmin = false,
       this.disabled = false});
 
   final String userId;
 
-  /// Pools the user owns.
-  final Set<String> ownedPools;
+  /// Streams the user owns.
+  final Set<String> ownedStreams;
 
-  /// Pools shared directly with the user.
-  final Set<String> sharedPools;
+  /// Streams shared directly with the user.
+  final Set<String> sharedStreams;
   final bool isAdmin;
   final bool disabled;
 
@@ -24,8 +24,8 @@ class AccessSet {
     final r = await db.execute(
       Sql.named('''
         SELECT
-          ARRAY(SELECT id::text FROM pools WHERE owner_id = @u::uuid),
-          ARRAY(SELECT s.pool_id::text FROM pool_shares s WHERE s.user_id = @u::uuid),
+          ARRAY(SELECT id::text FROM streams WHERE owner_id = @u::uuid),
+          ARRAY(SELECT s.stream_id::text FROM stream_shares s WHERE s.user_id = @u::uuid),
           COALESCE((SELECT is_admin FROM users WHERE id = @u::uuid), false),
           COALESCE((SELECT disabled FROM users WHERE id = @u::uuid), true)
       '''),
@@ -34,23 +34,22 @@ class AccessSet {
     Set<String> set(Object? v) => {for (final x in (v as List)) x.toString()};
     final row = r.first;
     return AccessSet(userId,
-        ownedPools: set(row[0]),
-        sharedPools: set(row[1]),
+        ownedStreams: set(row[0]),
+        sharedStreams: set(row[1]),
         isAdmin: row[2] as bool,
         disabled: row[3] as bool);
   }
 
-  bool canReadPool(String id) =>
-      ownedPools.contains(id) || sharedPools.contains(id);
+  bool canReadStream(String id) =>
+      ownedStreams.contains(id) || sharedStreams.contains(id);
 
-  bool touches(BudgetEvent e) =>
-      e.poolId != null && canReadPool(e.poolId!);
+  bool touches(LiveEvent e) => e.streamId != null && canReadStream(e.streamId!);
 
   /// Whether [e] may be delivered to this user.
-  bool canRead(BudgetEvent e) {
+  bool canRead(LiveEvent e) {
     if (e.subjectUserId == userId) return true;
     if (e.entity == 'admin') return isAdmin;
-    final a = e.poolId;
-    return a != null && canReadPool(a);
+    final a = e.streamId;
+    return a != null && canReadStream(a);
   }
 }

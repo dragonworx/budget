@@ -2,12 +2,12 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:budget_server/api/pools.dart';
+import 'package:budget_server/api/streams.dart';
 import 'package:budget_server/auth/middleware.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
 import 'package:budget_server/domain/models.dart';
-import 'package:budget_server/repo/pool_repo.dart';
+import 'package:budget_server/repo/stream_repo.dart';
 import 'package:budget_server/repo/currency_scale_backfill.dart';
 import 'package:budget_server/repo/user_repo.dart';
 import 'package:decimal/decimal.dart';
@@ -55,34 +55,34 @@ void main() {
       return;
     }
     final owner = await testOwnerId(c, 'currency-scale-test@example.com');
-    await deleteOwnedPools(c, owner);
+    await deleteOwnedStreams(c, owner);
     try {
-      final pool = await PoolRepo(c).create(
+      final stream = await StreamRepo(c).create(
         ownerId: owner,
         name: 'A',
         seedBalance: Decimal.zero,
         seedDate: DateTime.utc(2026, 10, 16),
         lossThreshold: Decimal.zero,
       );
-      expect(pool.currencyScale, 100);
-      expect(pool.toJson()['currencyScale'], 100);
-      final api = buildPoolsApi(c);
+      expect(stream.currencyScale, 100);
+      expect(stream.toJson()['currencyScale'], 100);
+      final api = buildStreamsApi(c);
       Future<Response> patch(Object v) => api.call(Request(
             'PATCH',
-            Uri.parse('http://x/${pool.id}'),
+            Uri.parse('http://x/${stream.id}'),
             body: jsonEncode({'currencyScale': v}),
           ));
       final ok = await patch(1000);
       expect(ok.statusCode, 200);
       expect(jsonDecode(await ok.readAsString())['currencyScale'], 1000);
-      expect((await PoolRepo(c).get(pool.id))!.currencyScale, 1000);
+      expect((await StreamRepo(c).get(stream.id))!.currencyScale, 1000);
       expect((await patch(42)).statusCode, 400);
       // Other edits keep the scale.
-      await api.call(Request('PATCH', Uri.parse('http://x/${pool.id}'),
+      await api.call(Request('PATCH', Uri.parse('http://x/${stream.id}'),
           body: jsonEncode({'name': 'B'})));
-      expect((await PoolRepo(c).get(pool.id))!.currencyScale, 1000);
+      expect((await StreamRepo(c).get(stream.id))!.currencyScale, 1000);
     } finally {
-      await deleteOwnedPools(c, owner);
+      await deleteOwnedStreams(c, owner);
     }
   });
 
@@ -95,9 +95,9 @@ void main() {
       return;
     }
     final owner = await testOwnerId(c, 'currency-backfill-test@example.com');
-    await deleteOwnedPools(c, owner);
+    await deleteOwnedStreams(c, owner);
     try {
-      final repo = PoolRepo(c);
+      final repo = StreamRepo(c);
       final a = await repo.create(
         ownerId: owner,
         name: 'A',
@@ -108,7 +108,7 @@ void main() {
       // Weekly +2000 income for a year pushes the peak past $100k.
       await c.execute(
         Sql.named('''
-          INSERT INTO transactions (id, pool_id, name, direction, amount,
+          INSERT INTO events (id, stream_id, name, direction, amount,
             start_date, recurrence_mode, interval, unit, end_mode)
           VALUES (gen_random_uuid(), @a, 'Pay', 'credit', 2000, '2026-10-02',
             'every', 1, 'weeks', 'never')
@@ -126,7 +126,7 @@ void main() {
       expect((await repo.get(a.id))!.currencyScale, 100000);
       expect((await repo.get(b.id))!.currencyScale, 100);
 
-      final api = buildPoolsApi(c);
+      final api = buildStreamsApi(c);
       final user =
           (await UserRepo(c).byEmail('currency-backfill-test@example.com'))!;
       Future<Map<String, dynamic>> create(Map<String, Object?> body) async {
@@ -142,7 +142,7 @@ void main() {
       }
 
       // No explicit scale: Hundreds, whatever the seed balance.
-      expect(Pool.defaultCurrencyScale, 100);
+      expect(BudgetStream.defaultCurrencyScale, 100);
       expect(
           (await create(
               {'name': 'C', 'seedBalance': '25000'}))['currencyScale'],
@@ -156,7 +156,7 @@ void main() {
           }))['currencyScale'],
           10);
     } finally {
-      await deleteOwnedPools(c, owner);
+      await deleteOwnedStreams(c, owner);
     }
   });
 }

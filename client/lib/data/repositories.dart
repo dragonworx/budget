@@ -5,46 +5,46 @@ import '../features/planning/goal_models.dart';
 import '../features/timeline/saved_view.dart';
 import 'models.dart';
 
-/// `GET /api/pools`: accessible pools (mine first, then shared).
-class PoolList {
-  const PoolList(this.pools, {this.lastPoolId});
-  final List<Pool> pools;
-  final String? lastPoolId;
+/// `GET /api/streams`: accessible streams (mine first, then shared).
+class StreamList {
+  const StreamList(this.streams, {this.lastStreamId});
+  final List<BudgetStream> streams;
+  final String? lastStreamId;
 }
 
-class PoolRepository {
-  PoolRepository(this._api);
+class StreamRepository {
+  StreamRepository(this._api);
 
   final ApiClient _api;
 
-  /// My pools and those shared with me, plus the one I opened last
+  /// My streams and those shared with me, plus the one I opened last
   /// (null when none or no longer accessible).
-  Future<PoolList> list() async {
-    final data = await _api.get('/api/pools');
-    final last = data is Map<String, dynamic> ? data['lastPoolId'] : null;
-    return PoolList(
-      _asList(data).map(Pool.fromJson).toList(),
-      lastPoolId: last?.toString(),
+  Future<StreamList> list() async {
+    final data = await _api.get('/api/streams');
+    final last = data is Map<String, dynamic> ? data['lastStreamId'] : null;
+    return StreamList(
+      _asList(data).map(BudgetStream.fromJson).toList(),
+      lastStreamId: last?.toString(),
     );
   }
 
-  Future<Pool> get(String id) async {
-    final data = await _api.get('/api/pools/$id');
-    return Pool.fromJson(data as Map<String, dynamic>);
+  Future<BudgetStream> get(String id) async {
+    final data = await _api.get('/api/streams/$id');
+    return BudgetStream.fromJson(data as Map<String, dynamic>);
   }
 
-  /// Remember [id] as my last-opened pool (the next sign-in lands there).
+  /// Remember [id] as my last-opened stream (the next sign-in lands there).
   Future<void> markOpened(String id) async {
-    await _api.post('/api/pools/$id/opened');
+    await _api.post('/api/streams/$id/opened');
   }
 
-  /// My saved timeline view of pool [id] (null: none saved yet).
+  /// My saved timeline view of stream [id] (null: none saved yet).
   Future<SavedView?> loadView(String id) async {
-    final data = await _api.get('/api/pools/$id/view');
+    final data = await _api.get('/api/streams/$id/view');
     return data is Map ? SavedView.fromJson(data['view']) : null;
   }
 
-  /// Saves my timeline view of pool [id]. [keepalive]: the page may be
+  /// Saves my timeline view of stream [id]. [keepalive]: the page may be
   /// going away (hide / unload), so the request must outlive it.
   Future<void> saveView(
     String id,
@@ -52,63 +52,63 @@ class PoolRepository {
     bool keepalive = false,
   }) async {
     if (keepalive) {
-      _api.putKeepalive('/api/pools/$id/view', view.toJson());
+      _api.putKeepalive('/api/streams/$id/view', view.toJson());
       return;
     }
-    await _api.put('/api/pools/$id/view', body: view.toJson());
+    await _api.put('/api/streams/$id/view', body: view.toJson());
   }
 
-  Future<Pool> create(Pool draft) async {
-    final data = await _api.post('/api/pools', body: draft.toCreateJson());
-    return Pool.fromJson(data as Map<String, dynamic>);
+  Future<BudgetStream> create(BudgetStream draft) async {
+    final data = await _api.post('/api/streams', body: draft.toCreateJson());
+    return BudgetStream.fromJson(data as Map<String, dynamic>);
   }
 
   /// With [force], the version is left out (last write wins).
-  Future<Pool> update(Pool pool, {bool force = false}) async {
-    final body = pool.toPatchJson();
+  Future<BudgetStream> update(BudgetStream stream, {bool force = false}) async {
+    final body = stream.toPatchJson();
     if (force) body.remove('version');
-    final data = await _api.patch('/api/pools/${pool.id}', body: body);
-    return Pool.fromJson(data as Map<String, dynamic>);
+    final data = await _api.patch('/api/streams/${stream.id}', body: body);
+    return BudgetStream.fromJson(data as Map<String, dynamic>);
   }
 
-  /// Deletes the pool and its transactions; [transfers] says what happens
-  /// to the far side of its transfers in other pools.
+  /// Deletes the stream and its events; [transfers] says what happens
+  /// to the far side of its transfers in other streams.
   Future<void> delete(
     String id, {
-    PoolDeleteTransfers transfers = PoolDeleteTransfers.keep,
-  }) => _api.delete('/api/pools/$id?transfers=${transfers.name}');
+    StreamDeleteTransfers transfers = StreamDeleteTransfers.keep,
+  }) => _api.delete('/api/streams/$id?transfers=${transfers.name}');
 
   Future<BalanceSeries> balance(
-    String poolId, {
+    String streamId, {
     required DateTime from,
     required DateTime to,
   }) async {
     final data = await _api.get(
-      '/api/pools/$poolId/balance',
+      '/api/streams/$streamId/balance',
       query: {'from': formatDate(from), 'to': formatDate(to)},
     );
     return BalanceSeries.fromJson(data);
   }
 
-  Future<Pool> reorderTransactions(
-    String poolId,
-    List<String> transactionIds,
+  Future<BudgetStream> reorderEvents(
+    String streamId,
+    List<String> eventIds,
   ) async {
     final data = await _api.patch(
-      '/api/pools/$poolId/reorder-transactions',
-      body: {'transactionIds': transactionIds},
+      '/api/streams/$streamId/reorder-events',
+      body: {'eventIds': eventIds},
     );
-    return Pool.fromJson(data as Map<String, dynamic>);
+    return BudgetStream.fromJson(data as Map<String, dynamic>);
   }
 
   Future<BalanceInsights> insights(
-    String poolId,
+    String streamId,
     DateTime from, {
     int days = 365,
     int horizonDays = 1825,
   }) async {
     final data = await _api.get(
-      '/api/pools/$poolId/insights',
+      '/api/streams/$streamId/insights',
       query: {
         'from': formatDate(from),
         'days': '$days',
@@ -118,9 +118,9 @@ class PoolRepository {
     return BalanceInsights.fromJson(data as Map<String, dynamic>);
   }
 
-  /// Solves one balance-goal unknown (`POST /pools/:id/goal`).
-  Future<List<Scenario>> scenarios(String poolId) async {
-    final data = await _api.get('/api/pools/$poolId/scenarios');
+  /// Solves one balance-goal unknown (`POST /streams/:id/goal`).
+  Future<List<Scenario>> scenarios(String streamId) async {
+    final data = await _api.get('/api/streams/$streamId/scenarios');
     return [
       for (final j in data as List)
         Scenario.fromJson(Map<String, dynamic>.from(j as Map)),
@@ -128,26 +128,26 @@ class PoolRepository {
   }
 
   Future<Scenario> createScenario(
-    String poolId, {
+    String streamId, {
     required String name,
     required GoalRequest request,
   }) async {
     final data = await _api.post(
-      '/api/pools/$poolId/scenarios',
+      '/api/streams/$streamId/scenarios',
       body: {'name': name, 'request': request.toJson()},
     );
     return Scenario.fromJson(data as Map<String, dynamic>);
   }
 
   Future<Scenario> updateScenario(
-    String poolId,
+    String streamId,
     String id, {
     String? name,
     bool? included,
     GoalRequest? request,
   }) async {
     final data = await _api.patch(
-      '/api/pools/$poolId/scenarios/$id',
+      '/api/streams/$streamId/scenarios/$id',
       body: {
         'name': ?name,
         'included': ?included,
@@ -157,127 +157,121 @@ class PoolRepository {
     return Scenario.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<void> deleteScenario(String poolId, String id) =>
-      _api.delete('/api/pools/$poolId/scenarios/$id');
+  Future<void> deleteScenario(String streamId, String id) =>
+      _api.delete('/api/streams/$streamId/scenarios/$id');
 
-  Future<GoalResult> goal(String poolId, GoalRequest request) async {
+  Future<GoalResult> goal(String streamId, GoalRequest request) async {
     final data = await _api.post(
-      '/api/pools/$poolId/goal',
+      '/api/streams/$streamId/goal',
       body: {...request.toJson(), 'today': formatDate(DateTime.now())},
     );
     return GoalResult.fromJson(data as Map<String, dynamic>);
   }
 
-  /// Balance as if [extra] (unsaved) transactions were added.
+  /// Balance as if [extra] (unsaved) events were added.
   Future<BalanceSeries> project(
-    String poolId,
-    List<Transaction> extra, {
+    String streamId,
+    List<BudgetEvent> extra, {
     required DateTime from,
     required DateTime to,
   }) async {
     final data = await _api.post(
-      '/api/pools/$poolId/project',
+      '/api/streams/$streamId/project',
       body: {
         'from': formatDate(from),
         'to': formatDate(to),
-        'transactions': [for (final t in extra) t.toCreateJson()],
+        'events': [for (final t in extra) t.toCreateJson()],
       },
     );
     return BalanceSeries.fromJson(data);
   }
 
-  Future<SolveResult> solve(String poolId, SolveRequest request) async {
+  Future<SolveResult> solve(String streamId, SolveRequest request) async {
     final data = await _api.post(
-      '/api/pools/$poolId/solve',
+      '/api/streams/$streamId/solve',
       body: request.toJson(),
     );
     return SolveResult.fromJson(data as Map<String, dynamic>);
   }
 }
 
-class TransactionRepository {
-  TransactionRepository(this._api);
+class EventRepository {
+  EventRepository(this._api);
 
   final ApiClient _api;
 
-  Future<List<Transaction>> listForPool(String poolId) async {
-    final data = await _api.get('/api/pools/$poolId/transactions');
-    return _asList(data).map(Transaction.fromJson).toList();
+  Future<List<BudgetEvent>> listForStream(String streamId) async {
+    final data = await _api.get('/api/streams/$streamId/events');
+    return _asList(data).map(BudgetEvent.fromJson).toList();
   }
 
-  Future<Transaction> create(String poolId, Transaction draft) async {
+  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
     final data = await _api.post(
-      '/api/pools/$poolId/transactions',
+      '/api/streams/$streamId/events',
       body: draft.toCreateJson(),
     );
-    return Transaction.fromJson(data as Map<String, dynamic>);
+    return BudgetEvent.fromJson(data as Map<String, dynamic>);
   }
 
   /// Sends the row version unless [force] (then last write wins).
-  Future<Transaction> update(
-    Transaction transaction, {
-    bool force = false,
-  }) async {
+  Future<BudgetEvent> update(BudgetEvent event, {bool force = false}) async {
     final data = await _api.patch(
-      '/api/transactions/${transaction.id}',
+      '/api/events/${event.id}',
       body: {
-        ...transaction.toCreateJson(),
+        ...event.toCreateJson(),
         // A patch keeps omitted fields: send the schedule's unset ones as
         // null so switching end mode (count ↔ date ↔ never) or to once
         // clears the other field instead of failing validation.
-        'interval': transaction.interval,
-        'unit': transaction.unit?.toJson(),
-        'endDate': transaction.endDate == null
-            ? null
-            : formatDate(transaction.endDate!),
-        'occurrenceCount': transaction.occurrenceCount,
-        if (!force && transaction.version != null)
-          'version': transaction.version,
+        'interval': event.interval,
+        'unit': event.unit?.toJson(),
+        'endDate': event.endDate == null ? null : formatDate(event.endDate!),
+        'occurrenceCount': event.occurrenceCount,
+        if (!force && event.version != null) 'version': event.version,
       },
     );
-    return Transaction.fromJson(data as Map<String, dynamic>);
+    return BudgetEvent.fromJson(data as Map<String, dynamic>);
   }
 
   /// Includes / excludes a series in the balance: patches only `enabled`
   /// (no version), so it never clobbers or conflicts with other edits.
-  Future<Transaction> setEnabled(String id, bool enabled) async {
+  Future<BudgetEvent> setEnabled(String id, bool enabled) async {
     final data = await _api.patch(
-      '/api/transactions/$id',
+      '/api/events/$id',
       body: {'enabled': enabled},
     );
-    return Transaction.fromJson(data as Map<String, dynamic>);
+    return BudgetEvent.fromJson(data as Map<String, dynamic>);
   }
 
-  Future<void> delete(String id) => _api.delete('/api/transactions/$id');
+  Future<void> delete(String id) => _api.delete('/api/events/$id');
 
-  /// Bulk import of a pasted `TransactionImport[]` (raw text; fences are
+  /// Bulk import of a pasted `EventImport[]` (raw text; fences are
   /// stripped server-side). Its day offsets count from [root], the day
   /// selected on the timeline; the server validates and resolves them.
   /// With [dryRun] only validates and previews.
   /// Throws [ApiException] (status 400, `details` per-item issues) if invalid.
   Future<Map<String, dynamic>> import(
-    String poolId,
+    String streamId,
     String raw, {
     required DateTime root,
     bool dryRun = false,
   }) async {
     final q = [if (dryRun) 'dryRun=true', 'root=${importRootParam(root)}'];
     final data = await _api.post(
-      '/api/pools/$poolId/transactions/import?${q.join('&')}',
+      '/api/streams/$streamId/events/import?${q.join('&')}',
       body: raw,
     );
     return data as Map<String, dynamic>;
   }
 
   /// Undo of an import: deletes exactly [ids] (its `createdIds`) in one DB
-  /// transaction. Returns `{deleted, deletedIds, missing}`; ids already
+  /// event. Returns `{deleted, deletedIds, missing}`; ids already
   /// gone are listed in `missing`, not an error.
   Future<Map<String, dynamic>> undoImport(
-    String poolId,
+    String streamId,
     List<String> ids,
   ) async {
     final data = await _api.post(
-      '/api/pools/$poolId/transactions/import/undo',
+      '/api/streams/$streamId/events/import/undo',
       body: {'ids': ids},
     );
     return data as Map<String, dynamic>;
@@ -285,44 +279,43 @@ class TransactionRepository {
 
   /// Once-off: [date]'s occurrence takes [amount] / [direction] instead of
   /// the series value. Sends [version] (stale: 409) unless null.
-  Future<Transaction> setOverride(
-    String transactionId,
+  Future<BudgetEvent> setOverride(
+    String eventId,
     DateTime date, {
-    required TransactionDirection direction,
+    required EventDirection direction,
     required Decimal amount,
     int? version,
   }) async {
     final data = await _api.put(
-      '/api/transactions/$transactionId/overrides/${formatDate(date)}',
+      '/api/events/$eventId/overrides/${formatDate(date)}',
       body: {
         'direction': direction.toJson(),
         'amount': moneyToJson(amount),
         'version': ?version,
       },
     );
-    return Transaction.fromJson(data as Map<String, dynamic>);
+    return BudgetEvent.fromJson(data as Map<String, dynamic>);
   }
 
   /// Clears the override on [date] (null: every override of the series),
   /// restoring the natural series value.
-  Future<void> clearOverrides(String transactionId, {DateTime? date}) =>
-      _api.delete(
-        '/api/transactions/$transactionId/overrides'
-        '${date == null ? '' : '/${formatDate(date)}'}',
-      );
+  Future<void> clearOverrides(String eventId, {DateTime? date}) => _api.delete(
+    '/api/events/$eventId/overrides'
+    '${date == null ? '' : '/${formatDate(date)}'}',
+  );
 
   /// "From now on": ends the series the day before [date] and starts a new
   /// one there with [edited]'s name, amount, direction, frequency and
   /// enabled flag, keeping the original end condition. Atomic server-side.
   /// Returns the shortened original and the new series (null when [date]
   /// is the first occurrence: then the whole series was updated).
-  Future<({Transaction original, Transaction? created})> split(
-    Transaction edited,
+  Future<({BudgetEvent original, BudgetEvent? created})> split(
+    BudgetEvent edited,
     DateTime date, {
     bool force = false,
   }) async {
     final data = await _api.post(
-      '/api/transactions/${edited.id}/split',
+      '/api/events/${edited.id}/split',
       body: {
         'date': formatDate(date),
         'name': edited.name,
@@ -336,20 +329,20 @@ class TransactionRepository {
     ) as Map<String, dynamic>;
     final created = data['created'];
     return (
-      original: Transaction.fromJson(data['original'] as Map<String, dynamic>),
+      original: BudgetEvent.fromJson(data['original'] as Map<String, dynamic>),
       created: created is Map<String, dynamic>
-          ? Transaction.fromJson(created)
+          ? BudgetEvent.fromJson(created)
           : null,
     );
   }
 
   Future<void> skipOccurrence(
-    String transactionId,
+    String eventId,
     DateTime date, {
     bool skipped = true,
   }) async {
     await _api.put(
-      '/api/transactions/$transactionId/skips/${formatDate(date)}',
+      '/api/events/$eventId/skips/${formatDate(date)}',
       body: {'skipped': skipped},
     );
   }
@@ -364,8 +357,8 @@ List<Map<String, dynamic>> _asList(dynamic data) {
     final nested =
         data['items'] ??
         data['data'] ??
-        data['pools'] ??
-        data['transactions'] ??
+        data['streams'] ??
+        data['events'] ??
         data['points'] ??
         data['balances'];
     if (nested is List) {
@@ -382,6 +375,6 @@ String importRootParam(DateTime day) =>
     '${day.month.toString().padLeft(2, '0')}-'
     '${day.day.toString().padLeft(2, '0')}';
 
-/// Deleting a pool: the far side of each of its transfers (in another pool)
+/// Deleting a stream: the far side of each of its transfers (in another stream)
 /// is kept there as a plain debit / credit, or deleted.
-enum PoolDeleteTransfers { keep, delete }
+enum StreamDeleteTransfers { keep, delete }

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'support/fake_pools.dart';
+import 'support/fake_streams.dart';
 import 'support/fake_auth.dart';
 
 void main() {
@@ -18,7 +18,7 @@ void main() {
           authRepositoryProvider.overrideWithValue(
             FakeAuthRepository(user: adminUser),
           ),
-          poolRepositoryProvider.overrideWithValue(FakePoolRepository()),
+          streamRepositoryProvider.overrideWithValue(FakeStreamRepository()),
         ],
         child: const BudgetApp(),
       ),

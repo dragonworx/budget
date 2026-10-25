@@ -10,19 +10,19 @@ import 'harness.dart';
 
 /// file -> function name -> mount prefix below /api.
 const _mounts = {
-  'pools.dart': {'buildPoolsApi': 'pools'},
-  'balance.dart': {'attachBalanceRoutes': 'pools'},
-  'goal.dart': {'attachGoalRoutes': 'pools'},
-  'pool_view.dart': {'attachPoolViewRoutes': 'pools'},
-  'solve.dart': {'attachSolveRoutes': 'pools'},
-  'scenarios.dart': {'attachScenarioRoutes': 'pools'},
-  'transactions.dart': {'transactionsRouter': 'transactions'},
+  'streams.dart': {'buildStreamsApi': 'streams'},
+  'balance.dart': {'attachBalanceRoutes': 'streams'},
+  'goal.dart': {'attachGoalRoutes': 'streams'},
+  'stream_view.dart': {'attachStreamViewRoutes': 'streams'},
+  'solve.dart': {'attachSolveRoutes': 'streams'},
+  'scenarios.dart': {'attachScenarioRoutes': 'streams'},
+  'events.dart': {'eventsRouter': 'events'},
   'sharing.dart': {
-    'attachPoolSharingRoutes': 'pools',
+    'attachStreamSharingRoutes': 'streams',
     'buildInvitesApi': 'invites',
   },
   'admin.dart': {'buildAdminApi': 'admin'},
-  'events.dart': {'buildEventsApi': 'events'},
+  'live.dart': {'buildLiveApi': 'live'},
 };
 
 /// All `(METHOD, path-below-/api)` registered on routers in lib/api.
@@ -51,6 +51,9 @@ List<(String, String)> registeredRoutes() {
       out.add((m.group(1)!.toUpperCase(), path));
     }
   }
+  // router.dart also mounts the live (SSE) router at the deprecated
+  // pre-rename path GET /api/events.
+  out.add(('GET', 'events'));
   return out;
 }
 
@@ -78,7 +81,7 @@ void main() {
           p.path.endsWith('/solve') ||
           p.path.endsWith('/goal') ||
           p.path.startsWith('invites/preview') ||
-          // A per-user preference (landing pool), not shared data.
+          // A per-user preference (landing stream), not shared data.
           p.path.endsWith('/opened') ||
           // Each member's own saved timeline view, likewise.
           p.path.endsWith('/view');
@@ -97,11 +100,11 @@ void main() {
       if (!h.ok) return markTestSkipped('no test DB');
       final s = await h.seed('owner', 'Sweep');
       final sc = await h
-          .call('POST', '/api/pools/${s.a}/scenarios', as: 'owner', body: {
+          .call('POST', '/api/streams/${s.a}/scenarios', as: 'owner', body: {
         'name': 'S',
         'request': {'solveFor': 'amount'}
       });
-      final inv = await h.call('POST', '/api/pools/${s.a}/invites',
+      final inv = await h.call('POST', '/api/streams/${s.a}/invites',
           as: 'owner', body: {'email': h.email('pending')});
       final ownerId = await h.userId('owner');
       final ids = {
@@ -136,18 +139,18 @@ void main() {
       expect((await h.call('GET', '/api/secret-debug', as: 'outsider')).status,
           404);
       expect(
-          (await h.call('DELETE', '/api/pools', as: 'outsider')).status, 404);
+          (await h.call('DELETE', '/api/streams', as: 'outsider')).status, 404);
       // Projects are gone: tabs on an old build get 410 "please reload"
       // (shown as is by old builds), signed in or not.
       for (final r in [
         await h.call('GET', '/api/projects', as: 'outsider'),
-        await h.call('GET', '/api/projects/x/pools', as: 'outsider'),
+        await h.call('GET', '/api/projects/x/streams', as: 'outsider'),
         await h
             .call('POST', '/api/projects', as: 'outsider', body: {'name': 'x'}),
         await h.call('GET', '/api/projects'),
-        // Accounts were renamed to pools.
+        // Accounts were renamed to streams.
         await h.call('GET', '/api/accounts', as: 'outsider'),
-        await h.call('GET', '/api/accounts/x/transactions', as: 'outsider'),
+        await h.call('GET', '/api/accounts/x/events', as: 'outsider'),
         await h.call('GET', '/api/accounts'),
       ]) {
         expect(r.status, 410);
@@ -166,16 +169,16 @@ void main() {
       final s = await h.seed('rowner', 'RoleSweep');
       await h.login('rviewer');
       await h.login('reditor');
-      await h.call('POST', '/api/pools/${s.a}/invites',
+      await h.call('POST', '/api/streams/${s.a}/invites',
           as: 'rowner', body: {'email': h.email('rviewer')});
-      await h.call('POST', '/api/pools/${s.a}/invites',
+      await h.call('POST', '/api/streams/${s.a}/invites',
           as: 'rowner', body: {'email': h.email('reditor'), 'role': 'editor'});
       final sc = await h
-          .call('POST', '/api/pools/${s.a}/scenarios', as: 'rowner', body: {
+          .call('POST', '/api/streams/${s.a}/scenarios', as: 'rowner', body: {
         'name': 'S',
         'request': {'solveFor': 'amount'}
       });
-      final inv = await h.call('POST', '/api/pools/${s.a}/invites',
+      final inv = await h.call('POST', '/api/streams/${s.a}/invites',
           as: 'rowner', body: {'email': h.email('rpending')});
       final ids = {
         'a': s.a,
@@ -186,12 +189,12 @@ void main() {
         'd': '2026-01-01',
       };
       final before =
-          (await h.call('GET', '/api/pools/${s.a}/transactions', as: 'rowner'))
+          (await h.call('GET', '/api/streams/${s.a}/events', as: 'rowner'))
               .json;
       var checked = 0;
       for (final p in policies) {
-        if (p.scope != Scope.pool &&
-            p.scope != Scope.transaction &&
+        if (p.scope != Scope.stream &&
+            p.scope != Scope.event &&
             p.scope != Scope.invite) {
           continue;
         }
@@ -212,11 +215,11 @@ void main() {
       }
       expect(checked, greaterThan(20));
       final after =
-          (await h.call('GET', '/api/pools/${s.a}/transactions', as: 'rowner'))
+          (await h.call('GET', '/api/streams/${s.a}/events', as: 'rowner'))
               .json;
       expect(after, before, reason: 'denied writes change nothing');
-      expect(
-          (await h.call('GET', '/api/pools/${s.a}', as: 'rowner')).status, 200);
+      expect((await h.call('GET', '/api/streams/${s.a}', as: 'rowner')).status,
+          200);
     });
   });
 }

@@ -30,7 +30,7 @@ Future<TextSpan> _balanceSpan(WidgetTester tester, double threshold) async {
               points: points,
               occurrences: [
                 Occurrence(
-                  transactionId: 't1',
+                  eventId: 't1',
                   date: _start.add(const Duration(days: 10)),
                   signedDelta: Decimal.fromInt(-300),
                 ),
@@ -40,7 +40,7 @@ Future<TextSpan> _balanceSpan(WidgetTester tester, double threshold) async {
             lossThreshold: threshold,
             viewStart: _start,
             visibleDays: 30,
-            transactionNames: const {'t1': 'Rent'},
+            eventNames: const {'t1': 'Rent'},
             onViewportChanged: (_, _) {},
             onCreateOnDay: (_) {},
           ),

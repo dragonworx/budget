@@ -8,14 +8,16 @@ import 'boot/app_version.dart';
 import 'boot/boot_loader.dart';
 import 'brand/brand.dart';
 import 'data/api_client.dart';
+import 'state/app_prefs.dart';
 import 'state/auth_providers.dart';
 import 'state/realtime_providers.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Pushed routes (e.g. a new pool's timeline) update the browser URL,
+  // Pushed routes (e.g. a new stream's timeline) update the browser URL,
   // so reload and browser back behave.
   GoRouter.optionURLReflectsImperativeAPIs = true;
+  migrateLegacyLocalKeys();
   _watchForUpdates();
   Brand.precache();
   // Landing intro: once per page load, as the boot loader fades.

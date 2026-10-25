@@ -1,4 +1,4 @@
-// Docked Transactions list: wide landscape screens dock it beside the
+// Docked Events list: wide landscape screens dock it beside the
 // timeline (open by default, remembered), the toolbar button eases it
 // in / out without moving the date window or refitting the balance;
 // smaller screens keep the overlay panel.
@@ -10,8 +10,8 @@ import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/dock_split.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
-import 'package:budget_client/features/transactions/transaction_editor.dart';
-import 'package:budget_client/features/transactions/transactions_panel.dart';
+import 'package:budget_client/features/events/event_editor.dart';
+import 'package:budget_client/features/events/events_panel.dart';
 import 'package:budget_client/state/app_prefs.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/theme/app_theme.dart';
@@ -28,7 +28,7 @@ final _now = DateTime.now();
 final _today = DateTime(_now.year, _now.month, _now.day);
 DateTime _d(int o) => DateTime(_today.year, _today.month, _today.day + o);
 
-final _pool = Pool(
+final _stream = BudgetStream(
   id: 'a',
   ownerId: 'u1',
   name: 'Everyday',
@@ -39,11 +39,11 @@ final _pool = Pool(
 );
 
 final _txs = [
-  Transaction(
+  BudgetEvent(
     id: 'rent',
-    poolId: 'a',
+    streamId: 'a',
     name: 'Rent',
-    direction: TransactionDirection.debit,
+    direction: EventDirection.debit,
     amount: Decimal.parse('500'),
     startDate: _d(40),
     recurrenceMode: RecurrenceMode.once,
@@ -51,17 +51,17 @@ final _txs = [
   ),
 ];
 
-class _Repo extends PoolRepository {
+class _Repo extends StreamRepository {
   _Repo() : super(ApiClient());
   @override
-  Future<PoolList> list() async => PoolList([_pool]);
+  Future<StreamList> list() async => StreamList([_stream]);
   @override
-  Future<Pool> get(String id) async => _pool;
+  Future<BudgetStream> get(String id) async => _stream;
   @override
   Future<void> markOpened(String id) async {}
   @override
   Future<BalanceSeries> balance(
-    String poolId, {
+    String streamId, {
     required DateTime from,
     required DateTime to,
   }) async => BalanceSeries(
@@ -79,7 +79,7 @@ class _Repo extends PoolRepository {
     occurrences: [
       if (!_d(40).isBefore(from) && !_d(40).isAfter(to))
         Occurrence(
-          transactionId: 'rent',
+          eventId: 'rent',
           date: _d(40),
           signedDelta: Decimal.parse('-500'),
         ),
@@ -87,10 +87,10 @@ class _Repo extends PoolRepository {
   );
 }
 
-class _TxRepo extends TransactionRepository {
+class _TxRepo extends EventRepository {
   _TxRepo() : super(ApiClient());
   @override
-  Future<List<Transaction>> listForPool(String poolId) async => _txs;
+  Future<List<BudgetEvent>> listForStream(String streamId) async => _txs;
 }
 
 Future<void> _pump(WidgetTester tester, Size size) async {
@@ -104,8 +104,8 @@ Future<void> _pump(WidgetTester tester, Size size) async {
       authRepositoryProvider.overrideWithValue(
         FakeAuthRepository(user: adminUser),
       ),
-      poolRepositoryProvider.overrideWithValue(_Repo()),
-      transactionRepositoryProvider.overrideWithValue(_TxRepo()),
+      streamRepositoryProvider.overrideWithValue(_Repo()),
+      eventRepositoryProvider.overrideWithValue(_TxRepo()),
     ],
   );
   addTearDown(c.dispose);
@@ -114,15 +114,15 @@ Future<void> _pump(WidgetTester tester, Size size) async {
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: c,
-      child: const MaterialApp(home: TimelinePage(poolId: 'a')),
+      child: const MaterialApp(home: TimelinePage(streamId: 'a')),
     ),
   );
   await tester.pumpAndSettle();
 }
 
-final _docked = find.byKey(const ValueKey('docked-transactions'));
+final _docked = find.byKey(const ValueKey('docked-events'));
 Finder get _dockedPanel =>
-    find.descendant(of: _docked, matching: find.byType(TransactionsPanel));
+    find.descendant(of: _docked, matching: find.byType(EventsPanel));
 
 ({double start, double days, double lo, double hi, double width}) _view(
   WidgetTester t,
@@ -175,14 +175,11 @@ void main() {
       expect(open.width, lessThan(size.width - panelW));
       // Open state: the plain list icon is tinted accent (no fill/border).
       Color? txColor() => tester
-          .widget<IconButton>(find.byKey(const ValueKey('open-transactions')))
+          .widget<IconButton>(find.byKey(const ValueKey('open-events')))
           .color;
       expect(txColor(), AppTheme.accent);
 
-      await tester.tap(
-        find.byKey(const ValueKey('open-transactions')),
-        kind: kind,
-      );
+      await tester.tap(find.byKey(const ValueKey('open-events')), kind: kind);
       await tester.pump();
       await tester.pump(dockedListDuration ~/ 2);
       final mid = _view(tester);
@@ -199,19 +196,16 @@ void main() {
         expect(v.days, open.days, reason: 'same days, new scale');
         expect((v.lo, v.hi), (open.lo, open.hi), reason: 'no refit');
       }
-      expect(page.localGet('budget_tx_docked'), '0');
+      expect(page.localGet('budget_events_docked'), '0');
       expect(find.byType(ModalBarrier).evaluate().length, lessThanOrEqualTo(1));
 
       // Remembered for the next visit (this browser).
       await _pump(tester, size);
       expect(tester.getSize(_docked).width, 0);
-      await tester.tap(
-        find.byKey(const ValueKey('open-transactions')),
-        kind: kind,
-      );
+      await tester.tap(find.byKey(const ValueKey('open-events')), kind: kind);
       await tester.pumpAndSettle();
       expect(tester.getSize(_docked).width, panelW + 16);
-      expect(page.localGet('budget_tx_docked'), '1');
+      expect(page.localGet('budget_events_docked'), '1');
       // The panel's own hide button does the same.
       await tester.tap(
         find.descendant(
@@ -239,7 +233,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        find.descendant(of: _docked, matching: find.byType(TransactionEditor)),
+        find.descendant(of: _docked, matching: find.byType(EventEditor)),
         findsOneWidget,
       );
       expect(_view(tester).start, before.start, reason: 'view unchanged');
@@ -255,13 +249,13 @@ void main() {
       await tester.tap(
         find.descendant(
           of: _docked,
-          matching: find.byKey(const ValueKey('panel-new-transaction')),
+          matching: find.byKey(const ValueKey('panel-new-event')),
         ),
         kind: kind,
       );
       await tester.pumpAndSettle();
       expect(
-        find.descendant(of: _docked, matching: find.byType(TransactionEditor)),
+        find.descendant(of: _docked, matching: find.byType(EventEditor)),
         findsOneWidget,
       );
       // ... and its menu offers Plan.
@@ -293,16 +287,16 @@ void main() {
       expect(_docked, findsNothing);
       final full = tester.getSize(find.byType(BalanceChart)).width;
       await tester.tap(
-        find.byKey(const ValueKey('open-transactions')),
+        find.byKey(const ValueKey('open-events')),
         kind: PointerDeviceKind.touch,
       );
       await tester.pumpAndSettle();
-      expect(find.byType(TransactionsPanel), findsOneWidget);
+      expect(find.byType(EventsPanel), findsOneWidget);
       expect(_docked, findsNothing);
       expect(tester.getSize(find.byType(BalanceChart)).width, full);
       await tester.tap(find.byKey(const ValueKey('panel-close')));
       await tester.pumpAndSettle();
-      expect(find.byType(TransactionsPanel), findsNothing);
+      expect(find.byType(EventsPanel), findsNothing);
     });
   }
 
@@ -370,26 +364,20 @@ void main() {
         expect(after.width, closeTo(before.width - 150, 1));
         expect(find.byKey(const ValueKey('selection-band')), findsNothing);
         expect(
-          find.byTooltip(RegExp(r'^Add a transaction on ').pattern),
+          find.byTooltip(RegExp(r'^Add an event on ').pattern),
           findsNothing,
         );
-        expect(find.byType(TransactionEditor), findsNothing);
+        expect(find.byType(EventEditor), findsNothing);
 
         // Reload: restored from the app prefs.
         await _pump(tester, size);
         expect(panelW(tester), closeTo(w0 + 150, 0.5));
         // Hide / show eases back to the saved width.
-        await tester.tap(
-          find.byKey(const ValueKey('open-transactions')),
-          kind: kind,
-        );
+        await tester.tap(find.byKey(const ValueKey('open-events')), kind: kind);
         await tester.pumpAndSettle();
         expect(tester.getSize(_docked).width, 0);
         expect(split, findsNothing);
-        await tester.tap(
-          find.byKey(const ValueKey('open-transactions')),
-          kind: kind,
-        );
+        await tester.tap(find.byKey(const ValueKey('open-events')), kind: kind);
         await tester.pump();
         await tester.pump(dockedListDuration ~/ 2);
         final midW = tester.getSize(_docked).width;

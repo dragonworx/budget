@@ -14,7 +14,7 @@ class SolverException implements Exception {
   String toString() => message;
 }
 
-/// The six transaction-planning variables (§4.1). [interval] is the "every N"
+/// The six event-planning variables (§4.1). [interval] is the "every N"
 /// part of the frequency; the unit is always chosen by the user.
 enum SolveVar {
   startDate,
@@ -67,7 +67,7 @@ class SolveResult {
     required this.known,
     required this.solved,
     required this.values,
-    this.transaction,
+    this.event,
     this.previewOccurrences = const [],
     this.needsMore = 0,
     this.needsOneOf = const [],
@@ -78,7 +78,7 @@ class SolveResult {
   final SolveValues values;
 
   /// Null until every variable is determined.
-  final Transaction? transaction;
+  final BudgetEvent? event;
   final List<Occurrence> previewOccurrences;
 
   /// Minimum number of extra known values needed to finish solving.
@@ -87,7 +87,7 @@ class SolveResult {
   /// Variables that could be filled in (any one of, when [needsMore] is 1).
   final List<SolveVar> needsOneOf;
 
-  bool get isComplete => transaction != null;
+  bool get isComplete => event != null;
 
   Map<String, Object?> toJson() => {
         'status': isComplete ? 'solved' : 'incomplete',
@@ -102,7 +102,7 @@ class SolveResult {
         'values': values.toJson(),
         if (!isComplete) 'needsMore': needsMore,
         if (!isComplete) 'needsOneOf': [for (final v in needsOneOf) v.name],
-        if (transaction != null) 'transaction': transaction!.toJson(),
+        if (event != null) 'event': event!.toJson(),
         'previewOccurrences':
             previewOccurrences.map((o) => o.toJson()).toList(),
       };
@@ -155,14 +155,14 @@ class _Step {
   final List<SolveVar> inputs;
 }
 
-/// Fills in whichever transaction variables can be derived from the known ones
+/// Fills in whichever event variables can be derived from the known ones
 /// (§4). Two relations tie the variables together:
 ///
 /// * total:    `T = A × N`
 /// * schedule: `S`, `F`, `N`, `E` — any three determine the fourth
 ///
-/// so any four independent knowns determine the whole transaction.
-class TransactionSolver {
+/// so any four independent knowns determine the whole event.
+class EventSolver {
   static final _uuid = Uuid();
 
   static const maxCount = 10000;
@@ -251,11 +251,11 @@ class TransactionSolver {
       );
     }
 
-    final transaction = _buildTransaction(req, v,
-        endDateKnown: known.contains(SolveVar.endDate));
-    v.lastDate = OccurrenceGenerator.nthDate(transaction, v.count!);
+    final event =
+        _buildEvent(req, v, endDateKnown: known.contains(SolveVar.endDate));
+    v.lastDate = OccurrenceGenerator.nthDate(event, v.count!);
     final preview = OccurrenceGenerator.generate(
-      transactions: [transaction],
+      events: [event],
       from: v.startDate!,
       to: v.lastDate ?? v.startDate!,
     );
@@ -263,7 +263,7 @@ class TransactionSolver {
       known: known,
       solved: solved,
       values: v,
-      transaction: transaction,
+      event: event,
       previewOccurrences: preview,
     );
   }
@@ -418,11 +418,11 @@ class TransactionSolver {
     }
   }
 
-  static Transaction _probe(
+  static BudgetEvent _probe(
           DateTime start, int interval, RecurrenceUnit unit) =>
-      Transaction(
+      BudgetEvent(
         id: 'probe',
-        poolId: 'probe',
+        streamId: 'probe',
         name: '',
         direction: Direction.credit,
         amount: Decimal.one,
@@ -538,14 +538,14 @@ class TransactionSolver {
     };
   }
 
-  static Transaction _buildTransaction(
+  static BudgetEvent _buildEvent(
     SolveRequest req,
     SolveValues v, {
     required bool endDateKnown,
   }) {
-    final base = Transaction(
+    final base = BudgetEvent(
       id: _uuid.v4(),
-      poolId: '', // filled by API layer
+      streamId: '', // filled by API layer
       name: req.name,
       direction: req.direction,
       amount: v.amount!,

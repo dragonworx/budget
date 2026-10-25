@@ -85,32 +85,34 @@ void main() {
       httpClient: MockClient((r) async => f(r)),
     );
 
-    test('410 client_outdated shows "please reload" and triggers a check',
-        () async {
-      final a = api(
-        (_) => http.Response(
-          '{"error":"Budgie was updated. Please reload the page.",'
-          '"details":{"code":"client_outdated"}}',
-          410,
-        ),
-      );
-      await expectLater(
-        a.get('/api/projects'),
-        throwsA(
-          isA<ApiException>().having(
-            (e) => e.message,
-            'message',
-            contains('reload'),
+    test(
+      '410 client_outdated shows "please reload" and triggers a check',
+      () async {
+        final a = api(
+          (_) => http.Response(
+            '{"error":"Budgie was updated. Please reload the page.",'
+            '"details":{"code":"client_outdated"}}',
+            410,
           ),
-        ),
-      );
-      expect(suspected, 1);
-    });
+        );
+        await expectLater(
+          a.get('/api/projects'),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.message,
+              'message',
+              contains('reload'),
+            ),
+          ),
+        );
+        expect(suspected, 1);
+      },
+    );
 
     test('HTML instead of JSON reads "please reload", not raw HTML', () async {
       final a = api((_) => http.Response('<!DOCTYPE html><html></html>', 200));
       await expectLater(
-        a.get('/api/pools'),
+        a.get('/api/streams'),
         throwsA(
           isA<ApiException>().having(
             (e) => e.message,

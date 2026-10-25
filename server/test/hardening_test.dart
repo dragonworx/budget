@@ -71,15 +71,15 @@ void main() {
           (await get('/api/auth/config', ip: '203.0.113.2')).statusCode, 200);
       for (var i = 0; i < 3; i++) {
         expect(
-            (await get('/api/pools', cookie: 'budget_session=aaa'))
+            (await get('/api/streams', cookie: 'budget_session=aaa'))
                 .statusCode,
             200);
       }
       expect(
-          (await get('/api/pools', cookie: 'budget_session=aaa')).statusCode,
+          (await get('/api/streams', cookie: 'budget_session=aaa')).statusCode,
           429);
       expect(
-          (await get('/api/pools', cookie: 'budget_session=bbb')).statusCode,
+          (await get('/api/streams', cookie: 'budget_session=bbb')).statusCode,
           200);
       // Non-API paths are never limited.
       expect((await get('/index.html')).statusCode, 200);
@@ -119,7 +119,7 @@ void main() {
               sessionSecret: 'x' * 40),
           log: Log(lines.add));
       final res = await h(Request(
-          'GET', Uri.parse('http://x/api/pools?since=SECRET'),
+          'GET', Uri.parse('http://x/api/streams?since=SECRET'),
           headers: {
             'cookie': 'budget_session=TOPSECRETTOKEN',
             'authorization': 'Bearer ALSOSECRET',
@@ -136,7 +136,7 @@ void main() {
           .map((l) => jsonDecode(l) as Map<String, dynamic>)
           .firstWhere((m) => m['msg'] == 'request');
       expect(log['reqId'], 'req-abc');
-      expect(log['path'], '/api/pools');
+      expect(log['path'], '/api/streams');
       expect(log['status'], 401);
       expect(log['ms'], isA<num>());
       final all = lines.join('\n');
@@ -212,12 +212,12 @@ void main() {
           parameters: {'h': TypedValue(Type.byteArray, store.hash(dead))});
       final p = await conn!.execute(
           Sql.named(
-              "INSERT INTO pools (id, name, owner_id, seed_balance, seed_date) VALUES (gen_random_uuid(), gen_random_uuid()::text, @u::uuid, 0, '2026-01-01') RETURNING id::text"),
+              "INSERT INTO streams (id, name, owner_id, seed_balance, seed_date) VALUES (gen_random_uuid(), gen_random_uuid()::text, @u::uuid, 0, '2026-01-01') RETURNING id::text"),
           parameters: {'u': u.id});
       Future<void> invite(String email, String expires,
               {bool accepted = false}) =>
           conn!.execute(Sql.named('''
-            INSERT INTO invites (id, token_hash, email, pool_id, role, invited_by, expires_at, accepted_at)
+            INSERT INTO invites (id, token_hash, email, stream_id, role, invited_by, expires_at, accepted_at)
             VALUES (gen_random_uuid(), gen_random_uuid()::text::bytea, @e, @p::uuid, 'viewer', @u::uuid,
                     now() + @x::interval, CASE WHEN @acc THEN now() END)'''),
               parameters: {
@@ -238,7 +238,7 @@ void main() {
       expect(await store.lookup(dead), isNull);
       final left = await conn!.execute(
           Sql.named(
-              "SELECT email FROM invites WHERE pool_id = @p::uuid ORDER BY email"),
+              "SELECT email FROM invites WHERE stream_id = @p::uuid ORDER BY email"),
           parameters: {'p': p.first[0]});
       expect(left.map((x) => x[0]),
           ['acc@hard.authtest.example', 'recent@hard.authtest.example']);

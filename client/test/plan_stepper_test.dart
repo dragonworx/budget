@@ -1,4 +1,4 @@
-// Plan panels use the transaction editor's Every [− N +] [unit ▾] control:
+// Plan panels use the event editor's Every [− N +] [unit ▾] control:
 // the Payment (solve) sheet, where a blank N is calculated (✦), and the
 // Goal panel's frequency. Defaults map losslessly to N + unit.
 import 'package:budget_client/data/api_client.dart';
@@ -6,7 +6,7 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/planning/goal_models.dart';
 import 'package:budget_client/features/planning/goal_panel.dart';
-import 'package:budget_client/features/transactions/solve_sheet.dart';
+import 'package:budget_client/features/events/solve_sheet.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:budget_client/widgets/recurrence_interval_field.dart';
 import 'package:decimal/decimal.dart';
@@ -15,11 +15,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _Solve extends PoolRepository {
+class _Solve extends StreamRepository {
   _Solve() : super(ApiClient());
   final requests = <SolveRequest>[];
   @override
-  Future<SolveResult> solve(String poolId, SolveRequest request) async {
+  Future<SolveResult> solve(String streamId, SolveRequest request) async {
     requests.add(request);
     // The spacing is calculated whenever it's left blank.
     return SolveResult.fromJson({
@@ -32,11 +32,11 @@ class _Solve extends PoolRepository {
   }
 }
 
-class _Goal extends PoolRepository {
+class _Goal extends StreamRepository {
   _Goal() : super(ApiClient());
   final requests = <GoalRequest>[];
   @override
-  Future<GoalResult> goal(String poolId, GoalRequest request) async {
+  Future<GoalResult> goal(String streamId, GoalRequest request) async {
     requests.add(request);
     return GoalResult.fromJson({
       'status': 'incomplete',
@@ -46,7 +46,7 @@ class _Goal extends PoolRepository {
   }
 }
 
-final _pool = Pool(
+final _stream = BudgetStream(
   id: 'acc',
   ownerId: 'u',
   name: 'A',
@@ -91,14 +91,10 @@ Future<_Solve> _pumpSolve(WidgetTester tester, SolveRequest initial) async {
   final repo = _Solve();
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [poolRepositoryProvider.overrideWithValue(repo)],
+      overrides: [streamRepositoryProvider.overrideWithValue(repo)],
       child: MaterialApp(
         home: Scaffold(
-          body: SolveSheet(
-            poolId: 'acc',
-            initial: initial,
-            creditOnly: true,
-          ),
+          body: SolveSheet(streamId: 'acc', initial: initial, creditOnly: true),
         ),
       ),
     ),
@@ -158,7 +154,7 @@ void main() {
         tester,
         SolveRequest(
           name: 'Plan',
-          direction: TransactionDirection.credit,
+          direction: EventDirection.credit,
           unit: unit,
           interval: n,
         ),
@@ -178,12 +174,12 @@ void main() {
     final key = GlobalKey<GoalPanelState>();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
+        overrides: [streamRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: GoalPanel(
               key: key,
-              pool: _pool,
+              stream: _stream,
               initial: const GoalRequest(
                 solveFor: GoalVar.amount,
                 unit: RecurrenceUnit.months,

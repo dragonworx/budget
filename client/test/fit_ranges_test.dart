@@ -5,18 +5,18 @@ import 'package:budget_client/features/timeline/fit_ranges.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Transaction tx(
+BudgetEvent tx(
   DateTime start, {
   RecurrenceMode mode = RecurrenceMode.every,
   EndMode end = EndMode.never,
   DateTime? endDate,
   int? count,
   bool enabled = true,
-}) => Transaction(
+}) => BudgetEvent(
   id: 'x',
-  poolId: 'a',
+  streamId: 'a',
   name: 'n',
-  direction: TransactionDirection.values.first,
+  direction: EventDirection.values.first,
   amount: Decimal.one,
   startDate: start,
   recurrenceMode: mode,
@@ -84,15 +84,15 @@ void main() {
     }
   });
 
-  test('pool data range uses seed, finite ends and open-ended horizon', () {
+  test('stream data range uses seed, finite ends and open-ended horizon', () {
     final today = DateTime(2026, 10, 15);
     final seed = DateTime(2026, 3, 1);
-    var r = poolDataRange(seedDate: seed, transactions: [], today: today);
+    var r = streamDataRange(seedDate: seed, events: [], today: today);
     expect((r.first, r.last), (seed, seed));
-    r = poolDataRange(
+    r = streamDataRange(
       seedDate: seed,
       today: today,
-      transactions: [
+      events: [
         tx(DateTime(2026, 2, 10), mode: RecurrenceMode.once),
         tx(
           DateTime(2026, 4, 1),
@@ -105,10 +105,10 @@ void main() {
     );
     expect(r.first, DateTime(2026, 1, 31));
     expect(r.last, DateTime(2027, 6, 30));
-    r = poolDataRange(
+    r = streamDataRange(
       seedDate: seed,
       today: today,
-      transactions: [tx(DateTime(2026, 4, 1))],
+      events: [tx(DateTime(2026, 4, 1))],
     );
     expect(r.last, DateTime(2027, 10, 15));
   });

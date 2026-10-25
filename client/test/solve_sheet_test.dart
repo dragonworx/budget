@@ -1,20 +1,20 @@
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
-import 'package:budget_client/features/transactions/solve_sheet.dart';
+import 'package:budget_client/features/events/solve_sheet.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _FakeRepo extends PoolRepository {
+class _FakeRepo extends StreamRepository {
   _FakeRepo() : super(ApiClient());
 
   final requests = <SolveRequest>[];
 
   @override
-  Future<SolveResult> solve(String poolId, SolveRequest request) async {
+  Future<SolveResult> solve(String streamId, SolveRequest request) async {
     requests.add(request);
     if (request.amount == null) {
       return SolveResult.fromJson({
@@ -39,10 +39,10 @@ class _FakeRepo extends PoolRepository {
         'unit': 'weeks',
         'count': 13,
       },
-      'transaction': {
+      'event': {
         'id': 's1',
-        'poolId': 'acc',
-        'name': 'Planned transaction',
+        'streamId': 'acc',
+        'name': 'Planned event',
         'direction': 'debit',
         'amount': '75',
         'startDate': '2026-10-12',
@@ -68,14 +68,14 @@ void main() {
     final repo = _FakeRepo();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
+        overrides: [streamRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: SolveSheet(
-              poolId: 'acc',
+              streamId: 'acc',
               initial: SolveRequest(
-                name: 'Planned transaction',
-                direction: TransactionDirection.debit,
+                name: 'Planned event',
+                direction: EventDirection.debit,
                 unit: RecurrenceUnit.weeks,
                 interval: 1,
                 startDate: DateTime(2026, 10, 12),
@@ -92,7 +92,7 @@ void main() {
       find.text('Fill in one more: end date, increment amount or count.'),
       findsOneWidget,
     );
-    final create = find.widgetWithText(FilledButton, 'Create transaction');
+    final create = find.widgetWithText(FilledButton, 'Create event');
     expect(tester.widget<FilledButton>(create).onPressed, isNull);
 
     await tester.enterText(
@@ -119,15 +119,15 @@ void main() {
     final repo = _FakeRepo();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
+        overrides: [streamRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: SolveSheet(
-              poolId: 'acc',
+              streamId: 'acc',
               creditOnly: true,
               initial: SolveRequest(
                 name: 'Planned income',
-                direction: TransactionDirection.debit,
+                direction: EventDirection.debit,
                 unit: RecurrenceUnit.weeks,
               ),
             ),
@@ -141,7 +141,7 @@ void main() {
     expect(find.text('Plan income'), findsOneWidget);
     expect(repo.requests, isNotEmpty);
     expect(
-      repo.requests.every((r) => r.direction == TransactionDirection.credit),
+      repo.requests.every((r) => r.direction == EventDirection.credit),
       isTrue,
     );
   });

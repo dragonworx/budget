@@ -45,13 +45,13 @@ Future<_H> _pump(WidgetTester tester, {bool canAdd = true}) async {
                 points: points,
                 occurrences: [
                   Occurrence(
-                    transactionId: 'bonus',
+                    eventId: 'bonus',
                     date: DateTime(2026, 10, 15),
                     signedDelta: Decimal.fromInt(1000),
                   ),
                 ],
               ),
-              transactionNames: const {'bonus': 'Bonus'},
+              eventNames: const {'bonus': 'Bonus'},
               seedDate: _start.subtract(const Duration(days: 30)),
               viewStart: h.viewStart,
               visibleDays: h.visibleDays,

@@ -26,11 +26,7 @@ void main() {
         final delta = r.isEven ? 2400 - r * 300 : -(180 + r * 90);
         names[id] = '${['Salary', 'Groceries', 'Rent', 'Car rego'][r]} $i';
         occ.add(
-          Occurrence(
-            transactionId: id,
-            date: d,
-            signedDelta: Decimal.fromInt(delta),
-          ),
+          Occurrence(eventId: id, date: d, signedDelta: Decimal.fromInt(delta)),
         );
         bal += delta;
       }
@@ -46,7 +42,7 @@ void main() {
             seedDate: _start.subtract(const Duration(days: 60)),
             viewStart: viewStart,
             visibleDays: 30,
-            transactionNames: names,
+            eventNames: names,
             onViewportChanged: (_, _) {},
             onCreateOnDay: (_) {},
           ),

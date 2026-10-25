@@ -15,7 +15,7 @@ class ChangeEvent {
     required this.action,
     this.entity,
     this.entityId,
-    this.poolId,
+    this.streamId,
     this.actorId,
     this.subjectUserId,
     this.clientId,
@@ -26,14 +26,14 @@ class ChangeEvent {
   final String action;
   final String? entity;
   final String? entityId;
-  final String? poolId;
+  final String? streamId;
   final String? actorId;
   final String? subjectUserId;
   final String? clientId;
   final Map<String, dynamic> detail;
 
   String get kind => action.split('.').first;
-  String? get peerPoolId => detail['peerPoolId']?.toString();
+  String? get peerStreamId => detail['peerStreamId']?.toString();
   int? get version => (detail['version'] as num?)?.toInt();
 
   factory ChangeEvent.fromJson(Map<String, dynamic> j) => ChangeEvent(
@@ -41,11 +41,13 @@ class ChangeEvent {
     action: (j['action'] ?? '').toString(),
     entity: j['entity']?.toString(),
     entityId: j['entityId']?.toString(),
-    poolId: j['poolId']?.toString(),
+    streamId: j['streamId']?.toString(),
     actorId: j['actorId']?.toString(),
     subjectUserId: j['subjectUserId']?.toString(),
     clientId: j['clientId']?.toString(),
-    detail: j['detail'] is Map ? Map<String, dynamic>.from(j['detail'] as Map) : const {},
+    detail: j['detail'] is Map
+        ? Map<String, dynamic>.from(j['detail'] as Map)
+        : const {},
   );
 }
 
@@ -126,7 +128,7 @@ class SseParser {
 
 typedef Sleep = Future<void> Function(Duration);
 
-/// SSE client for `GET /api/events`: resumes with Last-Event-ID / `?since`,
+/// SSE client for `GET /api/live`: resumes with Last-Event-ID / `?since`,
 /// reconnects with backoff (honouring `retry:`), de-dupes by id, skips this
 /// tab's own echoes, and reports goodbye / resync to its owner.
 class RealtimeService {
@@ -235,15 +237,19 @@ class RealtimeService {
     final base = _retry.inMilliseconds * pow(2, min(_failures, 6));
     final capped = min(base.toDouble(), maxBackoff.inMilliseconds.toDouble());
     final jitter = _failures == 0 ? 0 : _random.nextDouble() * 0.3 * capped;
-    return Duration(milliseconds: (capped + jitter).round().clamp(0, maxBackoff.inMilliseconds));
+    return Duration(
+      milliseconds: (capped + jitter).round().clamp(
+        0,
+        maxBackoff.inMilliseconds,
+      ),
+    );
   }
 
   /// One connection. Returns true when it must not reconnect (goodbye/401).
   Future<bool> _connectOnce() async {
     final since = lastEventId;
-    final uri = Uri.parse('$baseUrl/api/events').replace(
-      queryParameters: since == null ? null : {'since': '$since'},
-    );
+    final uri = Uri.parse('$baseUrl/api/live')
+        .replace(queryParameters: since == null ? null : {'since': '$since'});
     final req = http.Request('GET', uri)
       ..headers.addAll({
         'Accept': 'text/event-stream',
@@ -322,7 +328,9 @@ class RealtimeService {
         _lostAt = null;
         _failures = 0;
         status.value = RealtimeStatus.connected;
-        if (_connectedOnce && lost != null && _now().difference(lost) >= longDisconnect) {
+        if (_connectedOnce &&
+            lost != null &&
+            _now().difference(lost) >= longDisconnect) {
           onResync?.call('long disconnect');
         }
         _connectedOnce = true;

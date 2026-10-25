@@ -1,6 +1,6 @@
 # Deploying Budget
 
-The whole site (every user's pools, i.e. all tenants) runs as one Docker Compose stack:
+The whole site (every user's streams, i.e. all tenants) runs as one Docker Compose stack:
 
 ```
 browser ──https──> caddy ──/api/*, /health──> api ×N (stateless) ──> db (Postgres 16, volume)
@@ -76,7 +76,7 @@ requires it); `PUBLIC_ORIGIN` must be the public https URL.
 
 ## 6. Operations
 
-- **Health**: `/health` is liveness (process + DB). `/ready` is readiness: 200 only when the DB pool
+- **Health**: `/health` is liveness (process + DB). `/ready` is readiness: 200 only when the DB stream
   and the LISTEN connection are healthy and the replica is not draining (503 otherwise). The compose
   healthcheck uses `/ready`; Caddy only routes to healthy replicas (switching Caddy's `health_uri`
   to `/ready` is recommended) and discovers replicas via Docker DNS every 5 s.
@@ -85,9 +85,9 @@ requires it); `PUBLIC_ORIGIN` must be the public https URL.
   `SESSION_CACHE_TTL_SECONDS` [10, 0 disables], `SHUTDOWN_GRACE_SECONDS` [10],
   `CLEANUP_INTERVAL_MINUTES` [60]. Rate limits are in memory **per replica**, so the effective limit is
   roughly N× with N replicas. On SIGTERM a replica stops accepting, sends SSE clients a `reconnect`
-  event, drains in-flight requests, then closes the pool. Logs are JSON lines with reqId/userId/ms.
+  event, drains in-flight requests, then closes the stream. Logs are JSON lines with reqId/userId/ms.
 - **Scale**: `API_REPLICAS=4 docker compose ... up -d` (stateless; sessions live in Postgres).
-- **Real-time**: Caddy uses `flush_interval -1`, so `/api/events` (SSE) streams without buffering.
+- **Real-time**: Caddy uses `flush_interval -1`, so `/api/live` (SSE) streams without buffering.
 - **Logs**: `docker compose -f deploy/docker-compose.prod.yml logs -f api caddy`.
 - **Upgrade**: `git pull && docker compose ... up -d --build`. `migrate` re-runs first and only applies
   new files; api replicas restart after it succeeds.

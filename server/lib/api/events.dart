@@ -1,216 +1,268 @@
-import 'dart:async';
-import 'dart:convert';
-
+import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
-import '../auth/middleware.dart';
-import '../auth/session_store.dart';
-import '../realtime/access_set.dart';
-import '../realtime/event.dart';
-import '../realtime/event_bus.dart';
+import '../domain/enums.dart';
+import '../domain/models.dart';
+import '../repo/event_repo.dart';
 import 'json_helpers.dart';
 
-class EventsSettings {
-  const EventsSettings({
-    this.heartbeat = const Duration(seconds: 25),
-    this.retention = const Duration(hours: 24),
-    this.maxReplay = 1000,
-  });
-
-  /// Comment ping + session re-validation interval.
-  final Duration heartbeat;
-
-  /// Catch-up older than this (or more than [maxReplay] events) -> `resync`.
-  final Duration retention;
-  final int maxReplay;
-}
-
-/// `GET /api/events` — Server-Sent Events of committed changes the user can
-/// read. See docs/plan-auth-multitenant.md §4c for the contract.
-Router buildEventsApi(Session db, SessionStore sessions, EventBus? bus,
-    {EventsSettings settings = const EventsSettings()}) {
+Router eventsRouter(Session conn) {
+  final events = EventRepo(conn);
   final router = Router();
-  router.get('/', (Request r) async {
-    final auth = requireAuth(r);
-    if (bus == null) return jsonError(503, 'realtime unavailable');
-    final sinceRaw =
-        r.headers['last-event-id'] ?? r.url.queryParameters['since'];
-    final since = sinceRaw == null ? null : int.tryParse(sinceRaw.trim());
-    if (sinceRaw != null && since == null) {
-      return jsonError(400, 'invalid Last-Event-ID / since');
-    }
-    final stream = _EventStream(db, sessions, bus, auth, settings);
-    await stream.start(since);
-    return Response.ok(
-      stream.output,
-      headers: {
-        'content-type': 'text/event-stream; charset=utf-8',
-        'cache-control': 'no-cache, no-transform',
-        'x-accel-buffering': 'no',
-        'connection': 'keep-alive',
-      },
-      context: {'shelf.io.buffer_output': false},
-    );
+
+  router.get('/<id>', (Request request, String id) async {
+    final event = await events.get(id);
+    if (event == null) return jsonError(404, 'event not found');
+    return jsonOk(event.toJson());
   });
+
+  router.patch('/<id>', (Request request, String id) async {
+    try {
+      final body = await readJsonObject(request);
+      final existing = await events.get(id);
+      if (existing == null) return jsonError(404, 'event not found');
+
+      RecurrenceMode? recurrenceMode;
+      if (body.containsKey('recurrenceMode')) {
+        recurrenceMode =
+            RecurrenceMode.parse(requireString(body, 'recurrenceMode'));
+      }
+      EndMode? endMode;
+      if (body.containsKey('endMode')) {
+        endMode = EndMode.parse(requireString(body, 'endMode'));
+      }
+      RecurrenceUnit? unit;
+      if (body.containsKey('unit')) {
+        final u = body['unit'];
+        unit = u == null ? null : RecurrenceUnit.parse(u.toString());
+      }
+
+      final clearInterval =
+          body.containsKey('interval') && body['interval'] == null;
+      final clearUnit = body.containsKey('unit') && body['unit'] == null;
+      final clearEndDate =
+          body.containsKey('endDate') && body['endDate'] == null;
+      final clearCount = body.containsKey('occurrenceCount') &&
+          body['occurrenceCount'] == null;
+
+      final event = await txOf(conn).runTx((tx) async {
+        final events = EventRepo(tx);
+        var updated = (await events.update(
+          id,
+          name: optionalString(body, 'name'),
+          direction: body.containsKey('direction')
+              ? Direction.parse(requireString(body, 'direction'))
+              : null,
+          amount:
+              body.containsKey('amount') ? parseDecimal(body['amount']) : null,
+          startDate: body.containsKey('startDate')
+              ? parseDate(requireString(body, 'startDate'))
+              : null,
+          recurrenceMode: recurrenceMode,
+          interval: optionalInt(body, 'interval'),
+          unit: unit,
+          endMode: endMode,
+          endDate: body.containsKey('endDate') && body['endDate'] != null
+              ? parseDate(body['endDate'].toString())
+              : null,
+          occurrenceCount: optionalInt(body, 'occurrenceCount'),
+          enabled: optionalBool(body, 'enabled'),
+          clearInterval: clearInterval,
+          clearUnit: clearUnit,
+          clearEndDate: clearEndDate,
+          clearOccurrenceCount: clearCount,
+        ))!;
+        // Transfers: retarget / link / unlink, then mirror onto the peer.
+        if (body.containsKey('transferToStreamId')) {
+          final to = body['transferToStreamId']?.toString();
+          if (to == null) {
+            if (updated.transfer != null) await events.unlink(updated);
+          } else if (updated.transfer?.peerId != null) {
+            await events.movePeer(updated, to);
+          } else {
+            await events.linkNewPeer(updated, to);
+          }
+          updated = (await events.get(id))!;
+        }
+        // A schedule change can orphan overrides: drop those that no
+        // longer sit on an occurrence.
+        await events.pruneOverrides(id);
+        await events.syncPeer(updated);
+        return (await events.get(id))!;
+      });
+      return jsonOk(event.toJson());
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  router.delete('/<id>', (Request request, String id) async {
+    final ok = await txOf(conn).runTx((tx) => EventRepo(tx).delete(id));
+    if (!ok) return jsonError(404, 'event not found');
+    return Response(204);
+  });
+
+  router.put('/<id>/skips/<date>',
+      (Request request, String id, String date) async {
+    try {
+      final event = await events.get(id);
+      if (event == null) return jsonError(404, 'event not found');
+      final body = await readJsonObject(request);
+      final skipped = body['skipped'];
+      if (skipped is! bool) {
+        return jsonError(400, 'skipped must be a boolean');
+      }
+      final d = parseDate(date);
+      await txOf(conn).runTx((tx) async {
+        final repo = EventRepo(tx);
+        await repo.setSkip(id, d, skipped);
+        final peerId = event.transfer?.peerId;
+        if (peerId != null) await repo.setSkip(peerId, d, skipped);
+      });
+      return jsonOk({
+        'eventId': id,
+        'date': formatDate(d),
+        'skipped': skipped,
+      });
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  // Once-off override of one occurrence's amount / direction.
+  router.put('/<id>/overrides/<date>',
+      (Request request, String id, String date) async {
+    try {
+      if (await events.get(id) == null) {
+        return jsonError(404, 'event not found');
+      }
+      final body = await readJsonObject(request);
+      final amount = parseDecimal(body['amount']);
+      final direction = Direction.parse(requireString(body, 'direction'));
+      final d = parseDate(date);
+      final t = await txOf(conn).runTx((tx) => EventRepo(tx)
+          .setOverride(id, d, direction: direction, amount: amount));
+      return jsonOk(t.toJson());
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  // Clear one override (restores the natural series value).
+  router.delete('/<id>/overrides/<date>',
+      (Request request, String id, String date) async {
+    try {
+      if (await events.get(id) == null) {
+        return jsonError(404, 'event not found');
+      }
+      final d = parseDate(date);
+      final t = await txOf(conn).runTx((tx) async {
+        final repo = EventRepo(tx);
+        await repo.clearOverrides(id, date: d);
+        return (await repo.get(id))!;
+      });
+      return jsonOk(t.toJson());
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  // Clear every override of the series.
+  router.delete('/<id>/overrides', (Request request, String id) async {
+    if (await events.get(id) == null) {
+      return jsonError(404, 'event not found');
+    }
+    final (t, removed) = await txOf(conn).runTx((tx) async {
+      final repo = EventRepo(tx);
+      final n = await repo.clearOverrides(id);
+      return ((await repo.get(id))!, n);
+    });
+    return jsonOk({...t.toJson(), 'cleared': removed});
+  });
+
+  // "From now on": split the series at an occurrence, atomically.
+  router.post('/<id>/split', (Request request, String id) async {
+    try {
+      if (await events.get(id) == null) {
+        return jsonError(404, 'event not found');
+      }
+      final body = await readJsonObject(request);
+      final date = parseDate(requireString(body, 'date'));
+      final unit = body['unit'] == null
+          ? null
+          : RecurrenceUnit.parse(body['unit'].toString());
+      final r = await txOf(conn).runTx((tx) => EventRepo(tx).splitAt(
+            id,
+            date,
+            name: requireString(body, 'name'),
+            direction: Direction.parse(requireString(body, 'direction')),
+            amount: parseDecimal(body['amount']),
+            interval: optionalInt(body, 'interval'),
+            unit: unit,
+            enabled: optionalBool(body, 'enabled'),
+          ));
+      return jsonOk({
+        ...r.original.toJson(),
+        'original': r.original.toJson(),
+        'created': r.created?.toJson(),
+      });
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
   return router;
 }
 
-class _EventStream {
-  _EventStream(this.db, this.sessions, this.bus, this.auth, this.settings);
+class ParsedEventBody {
+  ParsedEventBody({
+    required this.name,
+    required this.direction,
+    required this.amount,
+    required this.startDate,
+    required this.recurrenceMode,
+    this.interval,
+    this.unit,
+    required this.endMode,
+    this.endDate,
+    this.occurrenceCount,
+    required this.enabled,
+  });
 
-  final Session db;
-  final SessionStore sessions;
-  final EventBus bus;
-  final AuthContext auth;
-  final EventsSettings settings;
+  final String name;
+  final Direction direction;
+  final Decimal amount;
+  final DateTime startDate;
+  final RecurrenceMode recurrenceMode;
+  final int? interval;
+  final RecurrenceUnit? unit;
+  final EndMode endMode;
+  final DateTime? endDate;
+  final int? occurrenceCount;
+  final bool enabled;
+}
 
-  late final StreamController<List<int>> _out =
-      StreamController<List<int>>(onCancel: _close);
-  Stream<List<int>> get output => _out.stream;
+ParsedEventBody parseEventBody(Map<String, dynamic> body) {
+  final recurrenceMode =
+      RecurrenceMode.parse(optionalString(body, 'recurrenceMode') ?? 'once');
+  final endMode = EndMode.parse(optionalString(body, 'endMode') ?? 'never');
+  final unitRaw = optionalString(body, 'unit');
 
-  late AccessSet _access;
-  final _subs = <StreamSubscription<Object?>>[];
-  Timer? _heartbeat;
-  bool _closed = false;
-  int _cursor = 0;
-  final _seen = <int>{};
-  final _seenOrder = <int>[];
-
-  // Events are processed strictly in order (access reloads are async).
-  Future<void> _chain = Future.value();
-  void _enqueue(Future<void> Function() job) {
-    _chain = _chain.then((_) => _closed ? null : job()).catchError((Object e) {
-      _send('error', {'error': 'internal'});
-    });
-  }
-
-  String get _uid => auth.user.id;
-
-  Future<void> start(int? since) async {
-    bus.addSubscriber();
-    _access = await AccessSet.load(db, _uid);
-    _write('retry: 3000\n\n');
-    // Subscribe first so nothing committed during catch-up is missed;
-    // the queue holds live events until catch-up has run.
-    _subs.add(bus.events.listen((e) => _enqueue(() => _handle(e))));
-    _subs.add(bus.gaps.listen((_) => _enqueue(() => _catchUp(_cursor))));
-    _subs.add(bus.shutdowns.listen((reason) => unawaited(_reconnect(reason))));
-    if (since == null) {
-      _enqueue(() async {
-        final max = await _maxId();
-        _cursor = max;
-        _send('ready', {'lastEventId': max, 'userId': _uid}, id: max);
-      });
-    } else {
-      _enqueue(() async {
-        await _catchUp(since);
-        _send('ready', {'lastEventId': _cursor, 'userId': _uid}, id: _cursor);
-      });
-    }
-    _heartbeat = Timer.periodic(settings.heartbeat, (_) => _ping());
-  }
-
-  Future<int> _maxId() async {
-    final r = await db.execute('SELECT COALESCE(max(id), 0) FROM audit_log');
-    return (r.first[0] as num).toInt();
-  }
-
-  Future<void> _catchUp(int from) async {
-    final max = await _maxId();
-    if (from > max) return _resync(max, 'cursor ahead of the log');
-    final rows = await db.execute(
-      Sql.named('SELECT ${BudgetEvent.columns} FROM audit_log '
-          'WHERE id > @f ORDER BY id LIMIT @n'),
-      parameters: {'f': from, 'n': settings.maxReplay + 1},
-    );
-    if (rows.length > settings.maxReplay) {
-      return _resync(max, 'too many missed events');
-    }
-    final events = rows.map(BudgetEvent.fromRow).toList();
-    if (events.isNotEmpty &&
-        events.first.at
-            .isBefore(DateTime.now().toUtc().subtract(settings.retention))) {
-      return _resync(max, 'missed events are too old');
-    }
-    if (_cursor < from) _cursor = from;
-    for (final e in events) {
-      await _handle(e);
-    }
-  }
-
-  Future<void> _resync(int max, String reason) async {
-    _access = await AccessSet.load(db, _uid);
-    _cursor = max;
-    _send('resync', {'lastEventId': max, 'reason': reason}, id: max);
-  }
-
-  Future<void> _handle(BudgetEvent e) async {
-    if (_closed || _seen.contains(e.id)) return;
-    _markSeen(e.id);
-    var delivered = false;
-    if (_access.canRead(e)) {
-      _deliver(e);
-      delivered = true;
-    }
-    final affectsMe = e.subjectUserId == _uid || e.actorId == _uid;
-    if (e.changesAccess && (affectsMe || _access.touches(e))) {
-      _access = await AccessSet.load(db, _uid);
-      if (!delivered && _access.canRead(e)) _deliver(e);
-      if (_access.disabled) return _goodbye('account disabled');
-    }
-  }
-
-  void _markSeen(int id) {
-    _seen.add(id);
-    _seenOrder.add(id);
-    if (_seenOrder.length > 5000) _seen.remove(_seenOrder.removeAt(0));
-    if (id > _cursor) _cursor = id;
-  }
-
-  void _deliver(BudgetEvent e) => _send('change', e.toJson(), id: e.id);
-
-  Future<void> _ping() async {
-    if (_closed) return;
-    _write(': ping\n\n');
-    final info = await sessions.lookup(auth.token);
-    if (info == null) await _goodbye('session ended');
-  }
-
-  Future<void> _goodbye(String reason) async {
-    if (_closed) return;
-    _send('goodbye', {'reason': reason});
-    await _close();
-    await _out.close();
-  }
-
-  /// Server shutdown: ask the client to reconnect soon (another replica will
-  /// serve it; Last-Event-ID resumes without loss), then close.
-  Future<void> _reconnect(String reason) async {
-    if (_closed) return;
-    _write('retry: 1000\n\n');
-    _send('reconnect', {'reason': reason, 'lastEventId': _cursor});
-    await _close();
-    await _out.close();
-  }
-
-  void _send(String event, Object data, {int? id}) {
-    _write('${id != null ? 'id: $id\n' : ''}event: $event\n'
-        'data: ${jsonEncode(data)}\n\n');
-  }
-
-  void _write(String s) {
-    if (!_closed && !_out.isClosed) _out.add(utf8.encode(s));
-  }
-
-  Future<void> _close() async {
-    if (_closed) return;
-    _closed = true;
-    _heartbeat?.cancel();
-    for (final s in _subs) {
-      await s.cancel();
-    }
-    bus.removeSubscriber();
-  }
+  return ParsedEventBody(
+    name: optionalString(body, 'name') ?? '',
+    direction: Direction.parse(requireString(body, 'direction')),
+    amount: parseDecimal(body['amount']),
+    startDate: parseDate(requireString(body, 'startDate')),
+    recurrenceMode: recurrenceMode,
+    interval: optionalInt(body, 'interval'),
+    unit: unitRaw == null ? null : RecurrenceUnit.parse(unitRaw),
+    endMode: endMode,
+    endDate: optionalString(body, 'endDate') == null
+        ? null
+        : parseDate(body['endDate'].toString()),
+    occurrenceCount: optionalInt(body, 'occurrenceCount'),
+    enabled: optionalBool(body, 'enabled') ?? true,
+  );
 }

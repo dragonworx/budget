@@ -7,13 +7,13 @@ import 'zoom_level.dart';
 
 /// What the timeline's Fit menu fits.
 enum FitMode {
-  /// Time to all of the pool's data, balance to that data's min/max.
+  /// Time to all of the stream's data, balance to that data's min/max.
   all('Fit all', 'A'),
 
   /// Balance to the data in the visible time range.
   vertical('Fit vertical', 'F'),
 
-  /// Time to all of the pool's data; balance untouched.
+  /// Time to all of the stream's data; balance untouched.
   horizontal('Fit horizontal', 'H');
 
   const FitMode(this.label, this.shortcut);
@@ -61,20 +61,20 @@ TimeSpan monthContaining(DateTime moment) {
   return TimeSpan(start, calendarDaysBetween(start, next).toDouble());
 }
 
-/// Day range [first, last] (inclusive) covering a pool's data: the seed
-/// date and every enabled transaction's occurrences. Open-ended schedules
+/// Day range [first, last] (inclusive) covering a stream's data: the seed
+/// date and every enabled event's occurrences. Open-ended schedules
 /// have no last occurrence, so they extend the range to [openEndedHorizon]
 /// days past the later of today and the last finite date.
-({DateTime first, DateTime last}) poolDataRange({
+({DateTime first, DateTime last}) streamDataRange({
   required DateTime seedDate,
-  required Iterable<Transaction> transactions,
+  required Iterable<BudgetEvent> events,
   required DateTime today,
   int openEndedHorizon = 365,
 }) {
   var first = dateOnly(seedDate);
   var last = first;
   var openEnded = false;
-  for (final t in transactions) {
+  for (final t in events) {
     if (!t.enabled) continue;
     final start = dateOnly(t.startDate);
     if (start.isBefore(first)) first = start;

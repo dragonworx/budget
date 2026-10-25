@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 final _start = DateTime(2031, 3, 1);
 
-Transaction _tx(
+BudgetEvent _tx(
   String id, {
   RecurrenceMode mode = RecurrenceMode.every,
   EndMode end = EndMode.never,
@@ -18,11 +18,11 @@ Transaction _tx(
   DateTime? start,
   int? count,
   bool enabled = true,
-}) => Transaction(
+}) => BudgetEvent(
   id: id,
-  poolId: 'a',
+  streamId: 'a',
   name: 'Tx $id',
-  direction: TransactionDirection.debit,
+  direction: EventDirection.debit,
   amount: Decimal.fromInt(100),
   startDate: start ?? _start,
   recurrenceMode: mode,
@@ -36,7 +36,7 @@ Transaction _tx(
 );
 
 Occurrence _occ(String id, int day, [int delta = -100]) => Occurrence(
-  transactionId: id,
+  eventId: id,
   date: _start.add(Duration(days: day)),
   signedDelta: Decimal.fromInt(delta),
 );
@@ -92,7 +92,7 @@ void main() {
 
   test('trimmed series ends on the day (inclusive), version kept', () {
     final day = DateTime(2031, 3, 14, 12);
-    final t = trimmedTransaction(_tx('c', end: EndMode.count, count: 9), day);
+    final t = trimmedEvent(_tx('c', end: EndMode.count, count: 9), day);
     expect(t.endMode, EndMode.untilDate);
     expect(t.endDate, DateTime(2031, 3, 14));
     expect(t.occurrenceCount, isNull);
@@ -136,8 +136,8 @@ void main() {
               seedDate: _start.subtract(const Duration(days: 5)),
               viewStart: _start,
               visibleDays: 30,
-              transactions: {'rent': rent},
-              transactionNames: const {'rent': 'Rent'},
+              events: {'rent': rent},
+              eventNames: const {'rent': 'Rent'},
               onViewportChanged: (_, _) {},
               onCreateOnDay: created.add,
               // Editors: the popup's ⋮ Trim is wired, the drag ignores it.

@@ -4,7 +4,7 @@ import 'package:budget_server/engine/balance_projection.dart';
 import 'package:decimal/decimal.dart';
 import 'package:test/test.dart';
 
-Pool _pool() => Pool(
+BudgetStream _stream() => BudgetStream(
       id: 'a',
       ownerId: 'p',
       name: 'A',
@@ -12,12 +12,12 @@ Pool _pool() => Pool(
       seedDate: DateTime.utc(2026, 1, 1),
       lossThreshold: Decimal.zero,
       displayOrder: 0,
-      transactionOrder: const [],
+      eventOrder: const [],
     );
 
-Transaction _weekly(String amount, Direction d) => Transaction(
+BudgetEvent _weekly(String amount, Direction d) => BudgetEvent(
       id: 't$amount',
-      poolId: 'a',
+      streamId: 'a',
       name: 'w',
       direction: d,
       amount: Decimal.parse(amount),
@@ -31,10 +31,10 @@ Transaction _weekly(String amount, Direction d) => Transaction(
     );
 
 void main() {
-  test('closeOn includes existing transactions up to the date', () {
+  test('closeOn includes existing events up to the date', () {
     final close = BalanceProjection.closeOn(
-      pool: _pool(),
-      transactions: [_weekly('100', Direction.credit)],
+      stream: _stream(),
+      events: [_weekly('100', Direction.credit)],
       date: DateTime.utc(2026, 1, 26), // 4 Mondays: 5, 12, 19, 26
     );
     expect(close, Decimal.parse('1400'));
@@ -42,8 +42,8 @@ void main() {
 
   test('before the seed date the seed balance is used', () {
     final close = BalanceProjection.closeOn(
-      pool: _pool(),
-      transactions: [_weekly('100', Direction.debit)],
+      stream: _stream(),
+      events: [_weekly('100', Direction.debit)],
       date: DateTime.utc(2025, 6, 1),
     );
     expect(close, Decimal.parse('1000'));

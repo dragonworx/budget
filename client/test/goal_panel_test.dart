@@ -36,13 +36,13 @@ Map<String, dynamic> _solved(String solveFor, {String amount = '280.00'}) => {
   ],
 };
 
-class _Repo extends PoolRepository {
+class _Repo extends StreamRepository {
   _Repo({this.result}) : super(ApiClient());
   final requests = <GoalRequest>[];
   final Map<String, dynamic>? result;
 
   @override
-  Future<GoalResult> goal(String poolId, GoalRequest request) async {
+  Future<GoalResult> goal(String streamId, GoalRequest request) async {
     requests.add(request);
     if (request.targetBalance == null || request.endDate == null) {
       return GoalResult.fromJson({
@@ -58,7 +58,7 @@ class _Repo extends PoolRepository {
   }
 }
 
-final _pool = Pool(
+final _stream = BudgetStream(
   id: 'acc',
   ownerId: 'u',
   name: 'A',
@@ -88,7 +88,7 @@ void main() {
     expect(back.startDate, DateTime(2026, 2, 1));
   });
 
-  test('a solved goal becomes a recurring and a one-off transaction', () {
+  test('a solved goal becomes a recurring and a one-off event', () {
     final r = GoalResult.fromJson({
       ..._solved('amount'),
       'values': {
@@ -96,12 +96,12 @@ void main() {
         'oneOff': '-250.00',
       },
     });
-    final txs = r.toTransactions('acc');
+    final txs = r.toEvents('acc');
     expect(txs.length, 2);
     expect(txs[0].recurrenceMode, RecurrenceMode.every);
     expect(txs[0].occurrenceCount, 5);
-    expect(txs[0].direction, TransactionDirection.credit);
-    expect(txs[1].direction, TransactionDirection.debit);
+    expect(txs[0].direction, EventDirection.credit);
+    expect(txs[1].direction, EventDirection.debit);
     expect(txs[1].amount, Decimal.parse('250.00'));
   });
 
@@ -113,12 +113,12 @@ void main() {
     final key = GlobalKey<GoalPanelState>();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
+        overrides: [streamRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
             body: GoalPanel(
               key: key,
-              pool: _pool,
+              stream: _stream,
               onResult: (_, r) => last = r,
             ),
           ),
@@ -168,10 +168,10 @@ void main() {
     final key = GlobalKey<GoalPanelState>();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [poolRepositoryProvider.overrideWithValue(repo)],
+        overrides: [streamRepositoryProvider.overrideWithValue(repo)],
         child: MaterialApp(
           home: Scaffold(
-            body: GoalPanel(key: key, pool: _pool, onResult: (_, _) {}),
+            body: GoalPanel(key: key, stream: _stream, onResult: (_, _) {}),
           ),
         ),
       ),

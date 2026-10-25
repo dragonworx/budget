@@ -8,8 +8,8 @@ import '../engine/balance_engine.dart';
 import '../engine/calendar_math.dart';
 import '../engine/goal_solver.dart';
 import '../engine/solver.dart' show SolverException;
-import '../repo/pool_repo.dart';
-import '../repo/transaction_repo.dart';
+import '../repo/stream_repo.dart';
+import '../repo/event_repo.dart';
 import 'balance.dart' show checkBalanceRange;
 import 'json_helpers.dart';
 
@@ -43,10 +43,10 @@ GoalRequest parseGoalRequest(Map<String, dynamic> body) {
   );
 }
 
-/// Daily baseline (existing transactions only) for a goal request.
+/// Daily baseline (existing events only) for a goal request.
 GoalBaseline goalBaseline({
-  required Pool pool,
-  required List<Transaction> transactions,
+  required BudgetStream stream,
+  required List<BudgetEvent> events,
   required Map<String, Set<DateTime>> skipped,
   required GoalRequest request,
   required DateTime today,
@@ -63,12 +63,12 @@ GoalBaseline goalBaseline({
       : CalendarMath.dateOnly(request.endDate!);
   final end = CalendarMath.compare(to, from) < 0 ? from : to;
   final dayBefore = from.subtract(const Duration(days: 1));
-  checkBalanceRange(dayBefore, end, seed: pool.seedDate);
+  checkBalanceRange(dayBefore, end, seed: stream.seedDate);
   final series = BalanceEngine.compute(
-    seedBalance: pool.seedBalance,
-    seedDate: pool.seedDate,
-    transactions: transactions,
-    transactionOrder: pool.transactionOrder,
+    seedBalance: stream.seedBalance,
+    seedDate: stream.seedDate,
+    events: events,
+    eventOrder: stream.eventOrder,
     from: dayBefore,
     to: end,
     skipped: skipped,
@@ -76,7 +76,7 @@ GoalBaseline goalBaseline({
   final byDay = {
     for (final p in series.points) p.date: p.closingBalance.toDouble(),
   };
-  final seed = pool.seedBalance.toDouble();
+  final seed = stream.seedBalance.toDouble();
   final opening = byDay[dayBefore] ?? seed;
   final n = CalendarMath.daysBetween(from, end) + 1;
   var last = opening;
@@ -88,30 +88,30 @@ GoalBaseline goalBaseline({
   return GoalBaseline(from: from, opening: opening, closes: closes);
 }
 
-/// Registers `POST /<poolId>/goal` on [router].
+/// Registers `POST /<streamId>/goal` on [router].
 void attachGoalRoutes(Router router, Session conn) {
-  final pools = PoolRepo(conn);
-  final transactions = TransactionRepo(conn);
+  final streams = StreamRepo(conn);
+  final events = EventRepo(conn);
 
-  router.post('/<poolId>/goal', (Request request, String poolId) async {
+  router.post('/<streamId>/goal', (Request request, String streamId) async {
     try {
-      final pool = await pools.get(poolId);
-      if (pool == null) return jsonError(404, 'pool not found');
+      final stream = await streams.get(streamId);
+      if (stream == null) return jsonError(404, 'stream not found');
       final body = await readJsonObject(request);
       final goal = parseGoalRequest(body);
       final today = body['today'] == null
           ? DateTime.now().toUtc()
           : parseDate(body['today'].toString());
       final baseline = goalBaseline(
-        pool: pool,
-        transactions: await transactions.listByPool(poolId),
-        skipped: await transactions.skipsForPool(poolId),
+        stream: stream,
+        events: await events.listByStream(streamId),
+        skipped: await events.skipsForStream(streamId),
         request: goal,
         today: today,
       );
       final result = GoalSolver(
         baseline: baseline,
-        threshold: pool.lossThreshold.toDouble(),
+        threshold: stream.lossThreshold.toDouble(),
         today: today,
       ).solve(goal);
       return jsonOk(result.toJson());

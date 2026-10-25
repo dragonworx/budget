@@ -3,11 +3,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:budget_server/api/pools.dart';
+import 'package:budget_server/api/streams.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
 import 'package:budget_server/engine/calendar_math.dart';
-import 'package:budget_server/repo/pool_repo.dart';
+import 'package:budget_server/repo/stream_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
@@ -43,9 +43,9 @@ void main() {
       return;
     }
     final owner = await testOwnerId(c, 'seed-shift-test@example.com');
-    await deleteOwnedPools(c, owner);
+    await deleteOwnedStreams(c, owner);
     try {
-      final pool = await PoolRepo(c).create(
+      final stream = await StreamRepo(c).create(
         ownerId: owner,
         name: 'A',
         seedBalance: Decimal.zero,
@@ -54,13 +54,13 @@ void main() {
       );
       final t = await c.execute(
         Sql.named('''
-          INSERT INTO transactions (id, pool_id, name, direction, amount,
+          INSERT INTO events (id, stream_id, name, direction, amount,
             start_date, recurrence_mode, interval, unit, end_mode, end_date)
           VALUES (gen_random_uuid(), @a, 'Rent', 'debit', 100, '2026-10-20',
             'every', 1, 'weeks', 'until_date', '2026-12-01')
           RETURNING id::text
         '''),
-        parameters: {'a': pool.id},
+        parameters: {'a': stream.id},
       );
       final tid = t.first[0] as String;
       for (final d in ['2026-10-27', '2026-11-03']) {
@@ -71,16 +71,16 @@ void main() {
           parameters: {'t': tid, 'd': d},
         );
       }
-      final api = buildPoolsApi(c);
+      final api = buildStreamsApi(c);
       final res = await api.call(Request(
         'PATCH',
-        Uri.parse('http://x/${pool.id}'),
+        Uri.parse('http://x/${stream.id}'),
         body: jsonEncode({'seedDate': '2026-10-23'}),
       ));
       expect(res.statusCode, 200);
       final row = await c.execute(
         Sql.named(
-          'SELECT start_date::text, end_date::text FROM transactions WHERE id = @t::uuid',
+          'SELECT start_date::text, end_date::text FROM events WHERE id = @t::uuid',
         ),
         parameters: {'t': tid},
       );
@@ -88,7 +88,7 @@ void main() {
       expect(row.first[1], '2026-12-08');
       final skipped = await c.execute(
         Sql.named(
-          'SELECT date::text FROM skipped_occurrences WHERE transaction_id = @t::uuid ORDER BY date',
+          'SELECT date::text FROM skipped_occurrences WHERE event_id = @t::uuid ORDER BY date',
         ),
         parameters: {'t': tid},
       );
@@ -97,17 +97,16 @@ void main() {
       // A patch without seedDate moves nothing.
       await api.call(Request(
         'PATCH',
-        Uri.parse('http://x/${pool.id}'),
+        Uri.parse('http://x/${stream.id}'),
         body: jsonEncode({'name': 'B'}),
       ));
       final again = await c.execute(
-        Sql.named(
-            'SELECT start_date::text FROM transactions WHERE id = @t::uuid'),
+        Sql.named('SELECT start_date::text FROM events WHERE id = @t::uuid'),
         parameters: {'t': tid},
       );
       expect(again.first[0], '2026-10-27');
     } finally {
-      await deleteOwnedPools(c, owner);
+      await deleteOwnedStreams(c, owner);
     }
   });
 }

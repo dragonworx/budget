@@ -25,7 +25,7 @@ const srv = http.createServer((req, res) => {
   const up = http.request({ host: '127.0.0.1', port: isApi(req.url) ? API : WEB, method: req.method, path: req.url,
     headers: { ...req.headers, 'x-forwarded-for': (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'] + ', ' : '') + req.socket.remoteAddress } },
     r => {
-      // Server-Sent Events (/api/events): stream every chunk immediately, never time out.
+      // Server-Sent Events (/api/live): stream every chunk immediately, never time out.
       if (String(r.headers['content-type'] || '').startsWith('text/event-stream')) {
         req.socket.setTimeout(0); req.socket.setNoDelay(true); req.socket.setKeepAlive(true);
         res.writeHead(r.statusCode, { ...r.headers, 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no' });

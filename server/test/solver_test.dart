@@ -4,9 +4,9 @@ import 'package:decimal/decimal.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('TransactionSolver', () {
+  group('EventSolver', () {
     test('start, total, weekly alone asks for one of amount/count/end', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.weeks,
@@ -24,7 +24,7 @@ void main() {
     });
 
     test('start, total, weekly, amount → count and end date', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.weeks,
@@ -38,13 +38,13 @@ void main() {
       expect(result.solved, {SolveVar.count, SolveVar.endDate});
       expect(result.values.count, 10);
       expect(result.values.endDate, DateTime.utc(2026, 3, 9));
-      expect(result.transaction!.endMode, EndMode.count);
-      expect(result.transaction!.occurrenceCount, 10);
+      expect(result.event!.endMode, EndMode.count);
+      expect(result.event!.occurrenceCount, 10);
       expect(result.previewOccurrences, hasLength(10));
     });
 
     test('start, total, weekly, end date → count and amount', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.weeks,
@@ -57,12 +57,12 @@ void main() {
       expect(result.solved, {SolveVar.count, SolveVar.amount});
       expect(result.values.count, 4);
       expect(result.values.amount, Decimal.parse('250'));
-      expect(result.transaction!.endMode, EndMode.untilDate);
-      expect(result.transaction!.endDate, DateTime.utc(2026, 1, 26));
+      expect(result.event!.endMode, EndMode.untilDate);
+      expect(result.event!.endDate, DateTime.utc(2026, 1, 26));
     });
 
     test('start, total, weekly, count → amount and end date', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.weeks,
@@ -77,7 +77,7 @@ void main() {
     });
 
     test('amount, count, start → total and end date', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.credit,
           unit: RecurrenceUnit.months,
@@ -93,7 +93,7 @@ void main() {
     });
 
     test('end date, count, monthly, amount → start date', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.months,
@@ -109,7 +109,7 @@ void main() {
     });
 
     test('start, end, amount, total → frequency interval', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.credit,
           unit: RecurrenceUnit.weeks,
@@ -126,7 +126,7 @@ void main() {
 
     test('frequency with no exact interval explains the closest options', () {
       expect(
-        () => TransactionSolver.solve(
+        () => EventSolver.solve(
           SolveRequest(
             direction: Direction.credit,
             unit: RecurrenceUnit.weeks,
@@ -146,8 +146,8 @@ void main() {
       );
     });
 
-    test('single occurrence becomes a once transaction', () {
-      final result = TransactionSolver.solve(
+    test('single occurrence becomes a once event', () {
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.weeks,
@@ -157,12 +157,12 @@ void main() {
           targetTotal: Decimal.parse('100'),
         ),
       );
-      expect(result.transaction!.recurrenceMode, RecurrenceMode.once);
+      expect(result.event!.recurrenceMode, RecurrenceMode.once);
       expect(result.values.endDate, DateTime.utc(2024, 1, 1));
     });
 
     test('rounding atLeast for count', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.days,
@@ -179,7 +179,7 @@ void main() {
     });
 
     test('rounding amount to cents', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.months,
@@ -194,7 +194,7 @@ void main() {
     });
 
     test('consistent over-specified input is accepted', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.weeks,
@@ -210,7 +210,7 @@ void main() {
 
     test('conflicting total is rejected', () {
       expect(
-        () => TransactionSolver.solve(
+        () => EventSolver.solve(
           SolveRequest(
             direction: Direction.debit,
             unit: RecurrenceUnit.weeks,
@@ -227,7 +227,7 @@ void main() {
 
     test('conflicting schedule is rejected', () {
       expect(
-        () => TransactionSolver.solve(
+        () => EventSolver.solve(
           SolveRequest(
             direction: Direction.debit,
             unit: RecurrenceUnit.weeks,
@@ -242,7 +242,7 @@ void main() {
     });
 
     test('only start and frequency needs two more values', () {
-      final result = TransactionSolver.solve(
+      final result = EventSolver.solve(
         SolveRequest(
           direction: Direction.debit,
           unit: RecurrenceUnit.weeks,
@@ -255,7 +255,7 @@ void main() {
 
     test('rejects amount = 0', () {
       expect(
-        () => TransactionSolver.solve(
+        () => EventSolver.solve(
           SolveRequest(
             direction: Direction.credit,
             unit: RecurrenceUnit.days,
@@ -271,7 +271,7 @@ void main() {
 
     test('rejects end before start', () {
       expect(
-        () => TransactionSolver.solve(
+        () => EventSolver.solve(
           SolveRequest(
             direction: Direction.credit,
             unit: RecurrenceUnit.days,
@@ -287,7 +287,7 @@ void main() {
 
     test('rejects interval < 1', () {
       expect(
-        () => TransactionSolver.solve(
+        () => EventSolver.solve(
           SolveRequest(
             direction: Direction.credit,
             unit: RecurrenceUnit.days,

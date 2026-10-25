@@ -1,5 +1,5 @@
-// Dot labels: the day's net transaction total (no "A" country prefix) on
-// top, then each transaction's name in the order added; no count badge;
+// Dot labels: the day's net event total (no "A" country prefix) on
+// top, then each event's name in the order added; no count badge;
 // "+N more" when the list doesn't fit. Labels never overlap.
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
@@ -12,11 +12,11 @@ final _start = DateTime(2031, 3, 1);
 
 typedef _Txn = (int day, int delta, String name, {bool skipped});
 
-Transaction _t(String id, String name) => Transaction(
+BudgetEvent _t(String id, String name) => BudgetEvent(
   id: id,
-  poolId: 'a',
+  streamId: 'a',
   name: name,
-  direction: TransactionDirection.debit,
+  direction: EventDirection.debit,
   amount: Decimal.fromInt(10),
   startDate: _start,
   recurrenceMode: RecurrenceMode.once,
@@ -44,7 +44,7 @@ Future<List<(Rect, List<String>)>> _labels(
       names[name] = name;
       occ.add(
         Occurrence(
-          transactionId: name,
+          eventId: name,
           date: d,
           signedDelta: Decimal.fromInt(delta),
           skipped: skipped,
@@ -68,8 +68,8 @@ Future<List<(Rect, List<String>)>> _labels(
             seedDate: _start.subtract(const Duration(days: 60)),
             viewStart: _start,
             visibleDays: 30,
-            transactionNames: names,
-            transactions: {
+            eventNames: names,
+            events: {
               for (final id in creationOrder ?? const <String>[])
                 id: _t(id, id),
             },
@@ -174,7 +174,7 @@ void main() {
     ]);
   });
 
-  testWidgets('crowded multi-transaction days never overlap', (tester) async {
+  testWidgets('crowded multi-event days never overlap', (tester) async {
     addTearDown(tester.view.reset);
     for (final size in const [Size(390, 700), Size(1440, 800)]) {
       final labels = await _labels(tester, size, [

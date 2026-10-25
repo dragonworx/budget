@@ -6,7 +6,7 @@ void main() {
   test('target balance replaces target total in the request', () {
     final json = SolveRequest(
       name: 'Save',
-      direction: TransactionDirection.credit,
+      direction: EventDirection.credit,
       unit: RecurrenceUnit.weeks,
       endDate: DateTime(2027, 6, 1),
       targetTotal: Decimal.parse('100'),

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
-import '../transactions/solve_sheet.dart';
+import '../events/solve_sheet.dart';
 import 'goal_models.dart';
 import 'goal_panel.dart';
 import 'scenarios_panel.dart';
@@ -11,12 +11,12 @@ enum PlanTab { goal, payment, scenarios }
 
 /// Non-blocking planning panel docked beside (desktop) or under (phone)
 /// the chart, so the chart and its live preview line stay visible.
-/// "Plan a goal" solves balance goals; "Plan a payment" is the transaction
+/// "Plan a goal" solves balance goals; "Plan a payment" is the event
 /// calculator.
 class PlanPanel extends StatelessWidget {
   const PlanPanel({
     super.key,
-    required this.pool,
+    required this.stream,
     required this.tab,
     required this.onTab,
     required this.onClose,
@@ -42,11 +42,11 @@ class PlanPanel extends StatelessWidget {
   final ValueChanged<GoalRequest>? onSaveScenario;
   final ValueChanged<Scenario>? onLoadScenario;
 
-  final Pool pool;
+  final BudgetStream stream;
   final PlanTab tab;
   final ValueChanged<PlanTab> onTab;
   final VoidCallback onClose;
-  final ValueChanged<Transaction?> onPreview;
+  final ValueChanged<BudgetEvent?> onPreview;
   final ValueChanged<SolveResult> onDone;
   final void Function(GoalRequest, GoalResult?) onGoalResult;
   final GlobalKey<GoalPanelState>? goalKey;
@@ -138,22 +138,22 @@ class PlanPanel extends StatelessWidget {
               children: [
                 GoalPanel(
                   key: goalKey,
-                  pool: pool,
+                  stream: stream,
                   initial: goalInitial,
                   onResult: onGoalResult,
                   onSaveScenario: onSaveScenario,
                 ),
                 SolveSheet(
-                  key: ValueKey('plan-payment-${pool.id}'),
-                  poolId: pool.id,
+                  key: ValueKey('plan-payment-${stream.id}'),
+                  streamId: stream.id,
                   initial: defaultPlanRequest(),
                   creditOnly: true,
-                  readOnly: !pool.role.canEdit,
+                  readOnly: !stream.role.canEdit,
                   onPreview: onPreview,
                   onDone: onDone,
                 ),
                 ScenariosPanel(
-                  pool: pool,
+                  stream: stream,
                   onLoad: (s) => onLoadScenario?.call(s),
                 ),
               ],

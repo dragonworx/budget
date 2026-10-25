@@ -7,16 +7,16 @@ import 'occurrence_dates.dart';
 import 'zoom_level.dart';
 
 /// Stacked lanes: the balance line drawn as one ribbon made of a thin lane
-/// per transaction.
+/// per event.
 ///
-/// * A lane exists for a transaction over the days it is *active*: from its
+/// * A lane exists for an event over the days it is *active*: from its
 ///   first occurrence (its start date) to its last (the end date, or the
 ///   date of its final counted occurrence), or for ever when it never ends.
 ///   A once-off is a lane one day wide.
-/// * The lanes active on a day are stacked in the Transactions list's order
+/// * The lanes active on a day are stacked in the Events list's order
 ///   (first = top) with no gaps, and the stack's centre sits on the balance
 ///   line, so the whole ribbon rises and falls with the balance.
-/// * Excluded (Include in balance off) transactions have no occurrences and
+/// * Excluded (Include in balance off) events have no occurrences and
 ///   no lane.
 class StackLane {
   const StackLane({
@@ -27,7 +27,7 @@ class StackLane {
     required this.colorIndex,
     required this.start,
     required this.end,
-    this.poolId,
+    this.streamId,
   });
 
   final String id;
@@ -36,7 +36,7 @@ class StackLane {
   /// Money in (vs out).
   final bool credit;
 
-  /// The transaction's own amount, signed (money out is negative); shown
+  /// The event's own amount, signed (money out is negative); shown
   /// after its name inside the lane.
   final double amount;
   final int colorIndex;
@@ -47,8 +47,8 @@ class StackLane {
   /// Last day (inclusive); null: never ends.
   final DateTime? end;
 
-  /// Combined view: the other pool it belongs to (null: the viewed pool).
-  final String? poolId;
+  /// Combined view: the other stream it belongs to (null: the viewed stream).
+  final String? streamId;
 
   bool activeOn(DateTime day) =>
       !day.isBefore(start) && (end == null || !day.isAfter(end!));
@@ -64,8 +64,8 @@ class LaneSet {
 
   static final LaneSet empty = LaneSet(const []);
 
-  /// In stack order (the Transactions list's order; in a combined view the
-  /// viewed pool's lanes, then each other pool's, in the pools' order).
+  /// In stack order (the Events list's order; in a combined view the
+  /// viewed stream's lanes, then each other stream's, in the streams' order).
   final List<StackLane> lanes;
   final Map<String, int> _index;
 
@@ -118,40 +118,40 @@ class LaneSet {
   }
 }
 
-/// The lanes for [transactions] (the viewed pool, by id) and [others]
-/// (combined view, by id), in [order] (viewed pool: the Transactions list's
-/// order), then anything [order] misses, the viewed pool's first. Names are
-/// the transaction's own, trimmed.
+/// The lanes for [events] (the viewed stream, by id) and [others]
+/// (combined view, by id), in [order] (viewed stream: the Events list's
+/// order), then anything [order] misses, the viewed stream's first. Names are
+/// the event's own, trimmed.
 LaneSet buildLaneSet({
   required List<String> order,
-  required Map<String, Transaction> transactions,
-  Map<String, Transaction> others = const {},
+  required Map<String, BudgetEvent> events,
+  Map<String, BudgetEvent> others = const {},
   List<String> otherOrder = const [],
 }) {
   final seen = <String>{};
   final lanes = <StackLane>[];
-  void add(String id, Transaction? t, {required bool other}) {
+  void add(String id, BudgetEvent? t, {required bool other}) {
     if (t == null || !t.enabled || !seen.add(id)) return;
     final span = _span(t);
     final name = t.name.trim();
     lanes.add(
       StackLane(
         id: id,
-        name: name.isEmpty ? 'Transaction' : name,
-        credit: t.direction == TransactionDirection.credit,
+        name: name.isEmpty ? 'Event' : name,
+        credit: t.direction == EventDirection.credit,
         amount: t.signedAmount.toDouble(),
         colorIndex: lanes.length,
         start: span.$1,
         end: span.$2,
-        poolId: other ? t.poolId : null,
+        streamId: other ? t.streamId : null,
       ),
     );
   }
 
   for (final id in order) {
-    add(id, transactions[id], other: false);
+    add(id, events[id], other: false);
   }
-  for (final e in transactions.entries) {
+  for (final e in events.entries) {
     add(e.key, e.value, other: false);
   }
   for (final id in otherOrder) {
@@ -163,7 +163,7 @@ LaneSet buildLaneSet({
   return LaneSet(lanes);
 }
 
-(DateTime, DateTime?) _span(Transaction t) {
+(DateTime, DateTime?) _span(BudgetEvent t) {
   final start = dateOnly(t.startDate);
   if (t.recurrenceMode == RecurrenceMode.once) return (start, start);
   switch (t.endMode) {
@@ -308,27 +308,27 @@ double laneTop(double balanceY, int slot, int n, double thickness) =>
 /// on its day's left edge, where the dots sit).
 double stackConnectorWidth(double plateauPx) => math.min(3.0, plateauPx / 2);
 
-/// One transaction's dot on a day: where it sits in the ribbon.
+/// One event's dot on a day: where it sits in the ribbon.
 class LaneDot {
   const LaneDot({required this.txId, required this.y, required this.own});
 
-  /// The transaction (null: occurrences with no lane, drawn together on the
+  /// The event (null: occurrences with no lane, drawn together on the
   /// ribbon's centre).
   final String? txId;
 
   /// Dot centre, vertically (x is the day's left edge).
   final double y;
 
-  /// That transaction's occurrences on the day (empty: the transaction has
+  /// That event's occurrences on the day (empty: the event has
   /// a lane here but does not occur on this step).
   final List<Occurrence> own;
 
-  /// A lane's dot at a step its transaction does not occur on.
+  /// A lane's dot at a step its event does not occur on.
   bool get idle => own.isEmpty && txId != null;
 }
 
 /// The dots of day [group]: one in EVERY lane active that day (vertically
-/// centred in it), in lane order from the top. A lane whose transaction
+/// centred in it), in lane order from the top. A lane whose event
 /// occurs that day gets its occurrences; the others get an [LaneDot.idle]
 /// dot. Any occurrence with no lane that day gets its own dot on the balance.
 /// [balanceY] is the ribbon's centre (the day's closing balance), [thickness]
@@ -344,7 +344,7 @@ class LaneDot {
   final n = active.length;
   final byTx = <String, List<Occurrence>>{};
   for (final o in group.all) {
-    (byTx[o.transactionId] ??= []).add(o);
+    (byTx[o.eventId] ??= []).add(o);
   }
   final placed = <(int, LaneDot)>[];
   final orphans = <MapEntry<String, List<Occurrence>>>[];
@@ -380,7 +380,7 @@ class LaneDot {
   return (
     dots: [
       for (final (_, d) in placed) d,
-      // A transaction with no lane that day: its own dot on the balance (a
+      // An event with no lane that day: its own dot on the balance (a
       // few of them fan out around it).
       for (final (i, e) in orphans.indexed)
         LaneDot(
@@ -395,7 +395,7 @@ class LaneDot {
 }
 
 /// Lane dots are drawn (and tappable) from this many pixels per day: past
-/// that, a heavy pool would put thousands on screen.
+/// that, a heavy stream would put thousands on screen.
 const double laneDotsMinDayPx = 1.5;
 
 /// A lane dot's radius: the day-width radius, no bigger than its lane.

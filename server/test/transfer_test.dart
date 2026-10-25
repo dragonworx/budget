@@ -3,11 +3,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:budget_server/api/pools.dart';
-import 'package:budget_server/api/transactions.dart';
+import 'package:budget_server/api/streams.dart';
+import 'package:budget_server/api/events.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
-import 'package:budget_server/repo/pool_repo.dart';
+import 'package:budget_server/repo/stream_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
@@ -51,10 +51,10 @@ void main() {
     try {
       Future<String> acct(String name) async {
         await c.execute(
-            Sql.named('DELETE FROM pools WHERE owner_id = @o::uuid '
+            Sql.named('DELETE FROM streams WHERE owner_id = @o::uuid '
                 'AND name = @n'),
             parameters: {'o': owner, 'n': name});
-        final id = (await PoolRepo(c).create(
+        final id = (await StreamRepo(c).create(
                 ownerId: owner,
                 name: name,
                 seedBalance: Decimal.zero,
@@ -67,23 +67,21 @@ void main() {
 
       final a = await acct('A');
       final b = await acct('B');
-      final pools = buildPoolsApi(c).call;
-      final txs = transactionsRouter(c).call;
+      final streams = buildStreamsApi(c).call;
+      final txs = eventsRouter(c).call;
 
       // Self-transfer rejected, nothing written.
-      final bad = await call(pools, 'POST', '/$a/transactions', {
+      final bad = await call(streams, 'POST', '/$a/events', {
         'direction': 'debit',
         'amount': '10',
         'startDate': '2026-10-05',
-        'transferToPoolId': a,
+        'transferToStreamId': a,
       });
       expect(bad.status, 400);
       expect(
-          (await call(pools, 'GET', '/$a/transactions'))
-              .json['transactions'],
-          isEmpty);
+          (await call(streams, 'GET', '/$a/events')).json['events'], isEmpty);
 
-      final created = await call(pools, 'POST', '/$a/transactions', {
+      final created = await call(streams, 'POST', '/$a/events', {
         'name': 'Savings',
         'direction': 'debit',
         'amount': '10',
@@ -93,27 +91,27 @@ void main() {
         'unit': 'weeks',
         'endMode': 'until_date',
         'endDate': '2026-11-30',
-        'transferToPoolId': b,
+        'transferToStreamId': b,
       });
       expect(created.status, 201);
       final src = created.json;
-      expect(src['transfer']['peerPoolId'], b);
-      expect(src['transfer']['peerPoolName'], 'B');
+      expect(src['transfer']['peerStreamId'], b);
+      expect(src['transfer']['peerStreamName'], 'B');
       expect(src['transfer'].containsKey('peerProjectName'), isFalse);
-      final peerId = src['transfer']['peerTransactionId'] as String;
+      final peerId = src['transfer']['peerEventId'] as String;
 
-      final bList = (await call(pools, 'GET', '/$b/transactions'))
-          .json['transactions'] as List;
+      final bList =
+          (await call(streams, 'GET', '/$b/events')).json['events'] as List;
       expect(bList, hasLength(1));
       expect(bList.first['id'], peerId);
       expect(bList.first['direction'], 'credit');
       expect(bList.first['amount'], '10');
       expect(bList.first['endDate'], '2026-11-30');
-      expect(bList.first['transfer']['peerPoolId'], a);
+      expect(bList.first['transfer']['peerStreamId'], a);
 
       // B's balance gets +10 on the transfer date.
       final bal = await call(
-          pools, 'GET', '/$b/balance?from=2026-10-05&to=2026-10-05');
+          streams, 'GET', '/$b/balance?from=2026-10-05&to=2026-10-05');
       expect(jsonEncode(bal.json), contains('"10"'));
 
       // Edit the destination side: source mirrors with inverted sign.
@@ -131,18 +129,18 @@ void main() {
           txs, 'PUT', '/${src['id']}/skips/2026-10-13', {'skipped': true});
       final skips = await c.execute(
           Sql.named(
-              'SELECT count(*) FROM skipped_occurrences WHERE transaction_id = @p::uuid'),
+              'SELECT count(*) FROM skipped_occurrences WHERE event_id = @p::uuid'),
           parameters: {'p': peerId});
       expect(skips.first[0], 1);
 
       // Seed shift of A moves the pair together (+3 days).
-      await call(pools, 'PATCH', '/$a', {'seedDate': '2026-10-04'});
+      await call(streams, 'PATCH', '/$a', {'seedDate': '2026-10-04'});
       final peerNow = (await call(txs, 'GET', '/$peerId')).json;
       expect(peerNow['startDate'], '2026-10-09');
       expect(peerNow['endDate'], '2026-12-03');
       final peerSkip = await c.execute(
           Sql.named(
-              'SELECT date::text FROM skipped_occurrences WHERE transaction_id = @p::uuid'),
+              'SELECT date::text FROM skipped_occurrences WHERE event_id = @p::uuid'),
           parameters: {'p': peerId});
       expect(peerSkip.first[0], '2026-10-16');
 
@@ -150,25 +148,23 @@ void main() {
       expect((await call(txs, 'DELETE', '/$peerId')).status, 204);
       expect((await call(txs, 'GET', '/${src['id']}')).status, 404);
       expect(
-          (await call(pools, 'GET', '/$a/transactions'))
-              .json['transactions'],
-          isEmpty);
+          (await call(streams, 'GET', '/$a/events')).json['events'], isEmpty);
 
-      // Deleting a pool turns the surviving side into a plain row.
-      final again = (await call(pools, 'POST', '/$a/transactions', {
+      // Deleting a stream turns the surviving side into a plain row.
+      final again = (await call(streams, 'POST', '/$a/events', {
         'direction': 'debit',
         'amount': '5',
         'startDate': '2026-10-05',
-        'transferToPoolId': b,
+        'transferToStreamId': b,
         'skippedDates': [],
       }))
           .json;
-      await PoolRepo(c).delete(b);
+      await StreamRepo(c).delete(b);
       final left = (await call(txs, 'GET', '/${again['id']}')).json;
       expect(left['transfer'], isNull);
     } finally {
       for (final id in made) {
-        await c.execute(Sql.named('DELETE FROM pools WHERE id = @a::uuid'),
+        await c.execute(Sql.named('DELETE FROM streams WHERE id = @a::uuid'),
             parameters: {'a': id});
       }
     }

@@ -10,31 +10,31 @@ import '../../boot/page_stub.dart'
     as page;
 import '../../brand/brand.dart';
 import '../../app.dart';
-import '../pools/pools_page.dart';
+import '../streams/streams_page.dart';
 
 import '../../data/api_client.dart';
 import '../../data/models.dart';
-import '../../data/repositories.dart' show PoolRepository;
+import '../../data/repositories.dart' show StreamRepository;
 import '../../widgets/conflict_dialog.dart';
 import '../../data/sharing.dart';
 import '../sharing/share_dialog.dart';
 import '../../state/realtime_providers.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/pool_dialog.dart';
+import '../../widgets/stream_dialog.dart';
 import '../../widgets/list_glyph.dart';
-import '../../widgets/pool_picker.dart';
+import '../../widgets/stream_picker.dart';
 import '../../widgets/ui.dart';
-import '../transactions/editor_outcome.dart';
-import '../transactions/import_dialog.dart';
+import '../events/editor_outcome.dart';
+import '../events/import_dialog.dart';
 import '../planning/goal_models.dart';
 import '../planning/scenarios_panel.dart' show scenarioColor;
 import 'selection_period.dart';
 import '../planning/goal_panel.dart';
 import '../planning/plan_panel.dart';
 import '../reminders/reminders_page.dart';
-import '../transactions/transaction_editor.dart';
-import '../transactions/transactions_panel.dart';
+import '../events/event_editor.dart';
+import '../events/events_panel.dart';
 import 'balance_chart.dart';
 import 'trim.dart';
 import 'chart_geometry.dart';
@@ -42,7 +42,7 @@ import 'combined.dart';
 import 'date_heatmap.dart';
 import 'view_menu.dart';
 import '../../state/auth_providers.dart';
-import '../../state/pool_cleanup.dart';
+import '../../state/stream_cleanup.dart';
 import '../../state/app_prefs.dart';
 import 'dock_split.dart';
 import 'fit_ranges.dart';
@@ -53,15 +53,15 @@ import 'zoom_level.dart';
 import 'occurrence_info.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
-  const TimelinePage({super.key, required this.poolId});
+  const TimelinePage({super.key, required this.streamId});
 
-  final String poolId;
+  final String streamId;
 
   @override
   ConsumerState<TimelinePage> createState() => _TimelinePageState();
 }
 
-/// Docked Transactions list: wide landscape screens (desktop, landscape
+/// Docked Events list: wide landscape screens (desktop, landscape
 /// tablet) only; smaller ones keep the overlay panel.
 const double dockedListMinWidth = 1024;
 
@@ -88,9 +88,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   double _animFromDays = 1;
   double _animToDays = 1;
 
-  // ---- Docked Transactions list (wide landscape screens). ----
+  // ---- Docked Events list (wide landscape screens). ----
 
-  static const _dockStoreKey = 'budget_tx_docked';
+  // Was `budget_tx_docked` (moved by migrateLegacyLocalKeys).
+  static const _dockStoreKey = 'budget_events_docked';
 
   /// Open / closed, remembered per browser.
   late bool _dockOpen = switch (page.localGet(_dockStoreKey)) {
@@ -138,7 +139,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// [child] (the timeline) with the docked list on its right. The panel
   /// keeps its width and is revealed / clipped, so only the timeline
   /// relayouts while it eases; the date window and balance range stay.
-  Widget _withDockedList(BuildContext context, Pool pool, Widget child) {
+  Widget _withDockedList(
+    BuildContext context,
+    BudgetStream stream,
+    Widget child,
+  ) {
     if (!_dockable(context)) return child;
     // The splitter sits in the 16px gap between the timeline card and the
     // list (the timeline's own right padding, no chart under it) and slides
@@ -167,7 +172,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             ),
             child: TickerMode(
               enabled: _dockOpen || _dockAnim.isAnimating,
-              child: _transactionsPanel(context, pool, docked: true),
+              child: _eventsPanel(context, stream, docked: true),
             ),
           ),
         ),
@@ -185,27 +190,27 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     super.dispose();
   }
 
-  // ---- Saved view: each member's last view of each pool (server, per
-  // user per pool; cached in local storage for an instant restore). ----
+  // ---- Saved view: each member's last view of each stream (server, per
+  // user per stream; cached in local storage for an instant restore). ----
 
   static const _viewStore = SavedViewStore();
 
   /// How long the view must stay still before it is saved.
   static const viewSaveDelay = Duration(seconds: 1);
 
-  late final PoolRepository _viewRepo;
+  late final StreamRepository _viewRepo;
   Object? _hiddenHandle;
   Timer? _viewSaveTimer;
 
-  /// The pool / user the view state below belongs to.
-  String? _viewPoolId;
+  /// The stream / user the view state below belongs to.
+  String? _viewStreamId;
   String? _viewUid;
 
   /// Last view saved or restored (or the untouched default): a view equal
   /// to it is not saved again.
   SavedView? _viewSaved;
 
-  /// The view was moved since this pool opened (a late server copy no
+  /// The view was moved since this stream opened (a late server copy no
   /// longer replaces it).
   bool _viewTouched = false;
 
@@ -227,7 +232,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// The view changed: save it once it has been still for [viewSaveDelay]
   /// (a drag / pinch / ease keeps pushing the save back; never per frame).
   void _viewChanged() {
-    if (_viewPoolId == null) return;
+    if (_viewStreamId == null) return;
     _viewSaveTimer?.cancel();
     if (_currentView.sameAs(_viewSaved)) return;
     _viewSaveTimer = Timer(viewSaveDelay, () => _flushView());
@@ -238,21 +243,21 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   void _flushView({bool keepalive = false}) {
     _viewSaveTimer?.cancel();
     _viewSaveTimer = null;
-    final poolId = _viewPoolId, uid = _viewUid;
-    // A deleted pool's view is not written back as its page closes.
-    if (poolId == null || isForgottenPool(poolId)) return;
+    final streamId = _viewStreamId, uid = _viewUid;
+    // A deleted stream's view is not written back as its page closes.
+    if (streamId == null || isForgottenStream(streamId)) return;
     final view = _currentView;
     if (view.sameAs(_viewSaved)) return;
     _viewSaved = view;
-    if (uid != null) _viewStore.save(uid, poolId, view);
+    if (uid != null) _viewStore.save(uid, streamId, view);
     _viewRepo
-        .saveView(poolId, view, keepalive: keepalive)
+        .saveView(streamId, view, keepalive: keepalive)
         .catchError((Object _) {});
   }
 
   void _onChartY(BalanceExtents y) {
     _chartY = y;
-    // The first fit of an untouched default view is not a change: a pool
+    // The first fit of an untouched default view is not a change: a stream
     // never moved keeps opening on today.
     if (_viewSaved == null && !_viewTouched) {
       _viewSaved = _currentView;
@@ -278,15 +283,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// The server's copy (another device may have moved it since this
   /// browser's copy). Replaces the view only while it is untouched.
-  Future<void> _fetchSavedView(String poolId) async {
+  Future<void> _fetchSavedView(String streamId) async {
     try {
-      final v = await _viewRepo.loadView(poolId);
-      if (!mounted || v == null || _viewPoolId != poolId || _viewTouched) {
+      final v = await _viewRepo.loadView(streamId);
+      if (!mounted || v == null || _viewStreamId != streamId || _viewTouched) {
         return;
       }
       if (v.sameAs(_viewSaved)) return;
       final uid = _viewUid;
-      if (uid != null) _viewStore.save(uid, poolId, v);
+      if (uid != null) _viewStore.save(uid, streamId, v);
       _viewAnim.stop();
       setState(() => _applySavedView(v));
     } catch (_) {
@@ -315,7 +320,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _viewAnim.forward(from: 0);
   }
 
-  /// Selected view unit per pool (kept while the app is open).
+  /// Selected view unit per stream (kept while the app is open).
 
   /// Always one selected; − / + step through [ViewUnit.values].
   ViewUnit _unit = ViewUnit.month;
@@ -324,20 +329,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   late DateTime _dataTo;
   late DateTime _viewStart;
   double _visibleDays = ZoomLevel.week.visibleDays.toDouble();
-  String? _windowPoolId;
+  String? _windowStreamId;
   BalanceSeries? _seriesCache;
 
   /// Window [_seriesCache] was fetched for; shown while a wider one loads.
   BalanceQuery? _seriesCacheQuery;
 
-  /// Other pools combined into this timeline (View menu), remembered per
-  /// user per pool by [CombineStore].
+  /// Other streams combined into this timeline (View menu), remembered per
+  /// user per stream by [CombineStore].
   Set<String> _combine = {};
   String? _combineLoadedFor;
   static const _combineStore = CombineStore();
 
   /// Last complete combined view and the selection + window it was built
-  /// for: kept on screen while a pan / zoom refetches the other pools.
+  /// for: kept on screen while a pan / zoom refetches the other streams.
   _Combined? _combinedCache;
   String? _combinedCacheKey;
 
@@ -404,9 +409,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     if (name == null || name.trim().isEmpty) return;
     try {
       await ref
-          .read(poolRepositoryProvider)
-          .createScenario(widget.poolId, name: name.trim(), request: req);
-      ref.invalidate(scenariosProvider(widget.poolId));
+          .read(streamRepositoryProvider)
+          .createScenario(widget.streamId, name: name.trim(), request: req);
+      ref.invalidate(scenariosProvider(widget.streamId));
       if (mounted) setState(() => _planTab = PlanTab.scenarios);
     } catch (e) {
       if (context.mounted) {
@@ -489,7 +494,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   List<GhostLine> get _ghosts => [
     for (final (sc, r)
-        in ref.watch(scenarioResultsProvider(widget.poolId)).valueOrNull ??
+        in ref.watch(scenarioResultsProvider(widget.streamId)).valueOrNull ??
             const <(Scenario, GoalResult?)>[])
       if (sc.included && r != null && r.values != null)
         GhostLine(
@@ -503,7 +508,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   ];
 
   /// Projects the balance with the would-be [t] and shows it dashed.
-  Future<void> _onPlanPreview(Transaction? t) async {
+  Future<void> _onPlanPreview(BudgetEvent? t) async {
     final seq = ++_previewSeq;
     if (t == null) {
       if (_planGhost != null) setState(() => _planGhost = null);
@@ -514,9 +519,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     final to = _dataTo.isAfter(horizon) ? _dataTo : horizon;
     try {
       final series = await ref
-          .read(poolRepositoryProvider)
+          .read(streamRepositoryProvider)
           .project(
-            widget.poolId,
+            widget.streamId,
             [t],
             from: addCalendarDays(start, -1),
             to: to,
@@ -538,7 +543,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   @override
   void initState() {
     super.initState();
-    _viewRepo = ref.read(poolRepositoryProvider);
+    _viewRepo = ref.read(streamRepositoryProvider);
     _hiddenHandle = page.onPageHidden(() => _flushView(keepalive: true));
     final today = dateOnly(DateTime.now());
     _viewStart = addCalendarDays(today, -7);
@@ -546,21 +551,21 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _dataTo = addCalendarDays(today, 120);
   }
 
-  /// Server-side "last opened" (the pool may come from cache, so the GET
+  /// Server-side "last opened" (the stream may come from cache, so the GET
   /// alone is not enough). Best effort.
   void _markOpened(String id) {
-    final notifier = ref.read(poolsProvider.notifier);
-    notifier.lastPoolId = id;
-    ref.read(poolRepositoryProvider).markOpened(id).catchError((Object _) {});
+    final notifier = ref.read(streamsProvider.notifier);
+    notifier.lastStreamId = id;
+    ref.read(streamRepositoryProvider).markOpened(id).catchError((Object _) {});
   }
 
   String? get _userId => ref.read(authProvider).valueOrNull?.user?.id;
 
-  void _loadCombine(String poolId) {
-    if (_combineLoadedFor == poolId) return;
-    _combineLoadedFor = poolId;
+  void _loadCombine(String streamId) {
+    if (_combineLoadedFor == streamId) return;
+    _combineLoadedFor = streamId;
     final uid = _userId;
-    _combine = uid == null ? {} : _combineStore.load(uid, poolId);
+    _combine = uid == null ? {} : _combineStore.load(uid, streamId);
     _combinedCache = null;
     _combinedCacheKey = null;
   }
@@ -571,42 +576,43 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       if (!_combine.remove(otherId)) _combine.add(otherId);
     });
     final uid = _userId;
-    if (uid != null && !isForgottenPool(widget.poolId)) {
-      _combineStore.save(uid, widget.poolId, _combine);
+    if (uid != null && !isForgottenStream(widget.streamId)) {
+      _combineStore.save(uid, widget.streamId, _combine);
     }
   }
 
-  /// Every pool I can open other than this one, in my pools order, each
+  /// Every stream I can open other than this one, in my streams order, each
   /// with its stable tint.
-  List<CombinedPool> _otherPools(String currentId) {
-    final all = ref.watch(poolsProvider).valueOrNull ?? const <Pool>[];
+  List<CombinedStream> _otherStreams(String currentId) {
+    final all =
+        ref.watch(streamsProvider).valueOrNull ?? const <BudgetStream>[];
     final others = [
       for (final p in all)
         if (p.id != currentId) p,
     ];
     return [
       for (final (i, p) in others.indexed)
-        CombinedPool(
+        CombinedStream(
           id: p.id,
           name: p.name,
-          color: combinedPoolColor(i),
+          color: combinedStreamColor(i),
           canEdit: p.role.canEdit,
         ),
     ];
   }
 
-  /// Combined view: the other pools' transaction ids for the stacked lanes,
-  /// pool by pool in the pools' order, each in that pool's list order (its
+  /// Combined view: the other streams' event ids for the stacked lanes,
+  /// stream by stream in the streams' order, each in that stream's list order (its
   /// saved order, then the rest as loaded).
   List<String> _otherLaneOrder(_Combined combo) {
     final out = <String>[];
-    for (final p in combo.pools.values) {
+    for (final p in combo.streams.values) {
       final order =
-          ref.watch(poolProvider(p.id)).valueOrNull?.transactionOrder ??
+          ref.watch(streamProvider(p.id)).valueOrNull?.eventOrder ??
           const <String>[];
       final own = {
-        for (final e in combo.transactions.entries)
-          if (e.value.poolId == p.id) e.key,
+        for (final e in combo.events.entries)
+          if (e.value.streamId == p.id) e.key,
       };
       out.addAll([
         for (final id in order)
@@ -617,34 +623,34 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     return out;
   }
 
-  /// The combined view for the checked pools, or null when none are
-  /// checked (or the current series has not loaded). Pools whose data is
+  /// The combined view for the checked streams, or null when none are
+  /// checked (or the current series has not loaded). Streams whose data is
   /// still loading are waited for (the last complete view stays up).
-  _Combined? _combined(Pool pool, BalanceSeries? series) {
+  _Combined? _combined(BudgetStream stream, BalanceSeries? series) {
     final q = _seriesCacheQuery;
     if (series == null || q == null || _combine.isEmpty) return null;
     final picked = [
-      for (final p in _otherPools(pool.id))
+      for (final p in _otherStreams(stream.id))
         if (_combine.contains(p.id)) p,
     ];
     if (picked.isEmpty) return null;
     final current = CombinedPart(
-      poolId: pool.id,
-      seedDate: pool.seedDate,
+      streamId: stream.id,
+      seedDate: stream.seedDate,
       series: series,
-      transactions:
-          ref.watch(transactionsProvider(pool.id)).valueOrNull ??
-          const <Transaction>[],
+      events:
+          ref.watch(eventsProvider(stream.id)).valueOrNull ??
+          const <BudgetEvent>[],
     );
     final parts = <CombinedPart>[];
-    final used = <CombinedPool>[];
+    final used = <CombinedStream>[];
     var loading = false;
     for (final p in picked) {
       final b = ref.watch(
-        balanceProvider(BalanceQuery(poolId: p.id, from: q.from, to: q.to)),
+        balanceProvider(BalanceQuery(streamId: p.id, from: q.from, to: q.to)),
       );
-      final txs = ref.watch(transactionsProvider(p.id));
-      final full = ref.watch(poolProvider(p.id));
+      final txs = ref.watch(eventsProvider(p.id));
+      final full = ref.watch(streamProvider(p.id));
       if (b.hasError || txs.hasError || full.hasError) continue; // lost access
       final bv = b.valueOrNull, tv = txs.valueOrNull, pv = full.valueOrNull;
       if (bv == null || tv == null || pv == null || b.isLoading) {
@@ -654,10 +660,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       used.add(p);
       parts.add(
         CombinedPart(
-          poolId: p.id,
+          streamId: p.id,
           seedDate: pv.seedDate,
           series: bv,
-          transactions: tv,
+          events: tv,
         ),
       );
     }
@@ -668,19 +674,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         return cached.copyWith(loading: true);
       }
       if (parts.isEmpty) {
-        return _Combined.waiting(series, pool.seedDate, picked.length + 1);
+        return _Combined.waiting(series, stream.seedDate, picked.length + 1);
       }
     }
     // Same inputs (by identity) as last time: reuse, so pans and zooms
     // don't re-sum every frame.
     final inputs = <Object>[
       current.series,
-      current.transactions,
-      for (final part in parts) ...[
-        part.series,
-        part.transactions,
-        part.seedDate,
-      ],
+      current.events,
+      for (final part in parts) ...[part.series, part.events, part.seedDate],
       for (final p in used) p,
     ];
     final memo = _comboMemo;
@@ -700,10 +702,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     final c = _Combined(
       series: combineSeries(current, parts),
       lineStart: combinedLineStart(current, parts),
-      pools: {for (final p in used) p.id: p},
-      transactions: {
+      streams: {for (final p in used) p.id: p},
+      events: {
         for (final part in parts)
-          for (final t in part.transactions) t.id: t,
+          for (final t in part.events) t.id: t,
       },
       count: picked.length + 1,
       loading: loading,
@@ -718,11 +720,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   (List<Object>, _Combined)? _comboMemo;
 
-  /// "Edit in `pool`" from a combined dot (only offered with edit rights).
+  /// "Edit in `stream`" from a combined dot (only offered with edit rights).
   Future<void> _openOther(
     BuildContext context,
-    CombinedPool other,
-    Transaction t,
+    CombinedStream other,
+    BudgetEvent t,
     DateTime date,
   ) async {
     final q = _seriesCacheQuery;
@@ -731,18 +733,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         : ref
               .read(
                 balanceProvider(
-                  BalanceQuery(poolId: other.id, from: q.from, to: q.to),
+                  BalanceQuery(streamId: other.id, from: q.from, to: q.to),
                 ),
               )
               .valueOrNull;
-    final result = await showTransactionEditor(
+    final result = await showEventEditor(
       context,
-      poolId: other.id,
+      streamId: other.id,
       existing: t,
       focusDate: date,
       skippedDates: {
         for (final o in otherSeries?.occurrences ?? const <Occurrence>[])
-          if (o.transactionId == t.id && o.skipped) dateOnly(o.date),
+          if (o.eventId == t.id && o.skipped) dateOnly(o.date),
       },
     );
     ref.invalidate(balanceProvider);
@@ -752,33 +754,33 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     reportEditorOutcome(
       context,
       ref,
-      poolId: other.id,
+      streamId: other.id,
       outcome: result,
       onChanged: () => ref.invalidate(balanceProvider),
     );
   }
 
-  void _ensureWindow(Pool pool) {
-    _loadCombine(pool.id);
-    if (_windowPoolId == pool.id) return;
-    _windowPoolId = pool.id;
-    _markOpened(pool.id);
+  void _ensureWindow(BudgetStream stream) {
+    _loadCombine(stream.id);
+    if (_windowStreamId == stream.id) return;
+    _windowStreamId = stream.id;
+    _markOpened(stream.id);
     _viewAnim.stop();
     _seriesCache = null;
     _seriesCacheQuery = null;
-    // Leaving another pool: save where it was left first.
+    // Leaving another stream: save where it was left first.
     _flushView();
-    _viewPoolId = pool.id;
+    _viewStreamId = stream.id;
     _viewUid = _userId;
     _viewSaved = null;
     _viewTouched = false;
     _chartY = null;
     _restoreY = null;
-    // Reopening restores my last view of this pool (this browser's copy
+    // Reopening restores my last view of this stream (this browser's copy
     // now, the server's when it arrives). Otherwise: today at the default
     // unit, $0 a third of the way up.
     final uid = _viewUid;
-    final cached = uid == null ? null : _viewStore.load(uid, pool.id);
+    final cached = uid == null ? null : _viewStore.load(uid, stream.id);
     if (cached != null) {
       _applySavedView(cached);
     } else {
@@ -791,11 +793,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       final horizon = math.max(120, _visibleDays.ceil());
       _dataTo = addCalendarDays(today, horizon);
     }
-    _fetchSavedView(pool.id);
+    _fetchSavedView(stream.id);
   }
 
   BalanceQuery get _query =>
-      BalanceQuery(poolId: widget.poolId, from: _dataFrom, to: _dataTo);
+      BalanceQuery(streamId: widget.streamId, from: _dataFrom, to: _dataTo);
 
   /// The day selected on the date lane (pinned pick bubble): the date root
   /// imports count their day offsets from. Null when none is selected.
@@ -822,14 +824,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Import needs a selected day (the root of its day offsets); without one
   /// it only explains how to select one.
-  Future<void> _openImport(BuildContext context, Pool pool) async {
+  Future<void> _openImport(BuildContext context, BudgetStream stream) async {
     final root = _pinnedDay;
     if (root == null) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text(importNeedsDayHint)));
       return;
     }
-    final result = await showImportDialog(context, poolId: pool.id, root: root);
+    final result = await showImportDialog(
+      context,
+      streamId: stream.id,
+      root: root,
+    );
     if (result == null || !mounted) return;
     _refreshAfterImport();
     // The undo bar says what happened and stays up (no timeout) until Undo
@@ -837,7 +843,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     setState(() {
       _importUndo = result.createdIds.isEmpty
           ? null
-          : _ImportUndo(widget.poolId, result);
+          : _ImportUndo(widget.streamId, result);
       _importUndoError = null;
     });
     if (result.createdIds.isEmpty && context.mounted) {
@@ -847,20 +853,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   void _refreshAfterImport() {
-    ref.invalidate(transactionsProvider(widget.poolId));
-    ref.invalidate(poolProvider(widget.poolId));
+    ref.invalidate(eventsProvider(widget.streamId));
+    ref.invalidate(streamProvider(widget.streamId));
     _invalidateBalance();
   }
 
   /// The last import, while its undo bar is up. Page state, so leaving this
-  /// pool's timeline (another pool, the pool list) dismisses it: its Undo
-  /// only ever acts on the pool on screen.
+  /// stream's timeline (another stream, the stream list) dismisses it: its Undo
+  /// only ever acts on the stream on screen.
   _ImportUndo? _importUndo;
   bool _undoingImport = false;
   String? _importUndoError;
 
   /// Undo: one bulk delete of exactly the ids that import created (one DB
-  /// transaction server-side: all of them or none).
+  /// event server-side: all of them or none).
   Future<void> _undoImport() async {
     final u = _importUndo;
     if (u == null || _undoingImport) return;
@@ -871,8 +877,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     });
     try {
       final res = await ref
-          .read(transactionRepositoryProvider)
-          .undoImport(u.poolId, u.result.createdIds);
+          .read(eventRepositoryProvider)
+          .undoImport(u.streamId, u.result.createdIds);
       if (!mounted) return;
       final deleted = res['deleted'] as int? ?? 0;
       final missing = (res['missing'] as List?)?.length ?? 0;
@@ -906,7 +912,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   Widget _withImportUndo(Widget page) {
     final u = _importUndo;
-    final show = u != null && u.poolId == widget.poolId;
+    final show = u != null && u.streamId == widget.streamId;
     final pad = MediaQuery.viewPaddingOf(context).bottom;
     // Always the same Stack (the page keeps its element and state when the
     // bar comes and goes).
@@ -938,15 +944,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// Bumped by every user edit of this pool's data; see
+  /// Bumped by every user edit of this stream's data; see
   /// [BalanceChart.dataEditToken].
   int _dataEditToken = 0;
 
   void _invalidateBalance() {
     _dataEditToken++;
     ref.invalidate(balanceProvider(_query));
-    ref.invalidate(todayBalanceProvider(widget.poolId));
-    ref.invalidate(insightsProvider(widget.poolId));
+    ref.invalidate(todayBalanceProvider(widget.streamId));
+    ref.invalidate(insightsProvider(widget.streamId));
   }
 
   final _chartAreaKey = GlobalKey();
@@ -983,7 +989,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   /// Every "go to a date" action (date picker, Today, Seed, locate from the
-  /// transactions list): [day] at the left edge, then refit the balance.
+  /// events list): [day] at the left edge, then refit the balance.
   void _showFrom(DateTime day) {
     _onViewport(leftAlignedStart(day, _visibleDays, _chartWidth), _visibleDays);
     setState(() => _fitToken++);
@@ -1035,19 +1041,19 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// Applies a Fit menu choice. Time fits go through [_onViewport], which
   /// widens the fetched window to cover the new view; the chart then refits
   /// the balance range once that data has loaded.
-  void _fit(FitMode mode, Pool pool) {
+  void _fit(FitMode mode, BudgetStream stream) {
     TimeSpan? span;
     switch (mode) {
       case FitMode.vertical:
         break;
       case FitMode.all:
       case FitMode.horizontal:
-        final transactions =
-            ref.read(transactionsProvider(widget.poolId)).valueOrNull ??
-            const <Transaction>[];
-        final range = poolDataRange(
-          seedDate: pool.seedDate,
-          transactions: transactions,
+        final events =
+            ref.read(eventsProvider(widget.streamId)).valueOrNull ??
+            const <BudgetEvent>[];
+        final range = streamDataRange(
+          seedDate: stream.seedDate,
+          events: events,
           today: DateTime.now(),
         );
         span = dataTimeSpan(range.first, range.last);
@@ -1098,13 +1104,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   @override
   Widget build(BuildContext context) {
-    final poolAsync = ref.watch(poolProvider(widget.poolId));
+    final streamAsync = ref.watch(streamProvider(widget.streamId));
 
-    return poolAsync.when(
+    return streamAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (error, _) => _isGone(error)
-          ? _PoolGone(poolId: widget.poolId)
+          ? _StreamGone(streamId: widget.streamId)
           : Scaffold(
               appBar: AppBar(
                 leading: IconButton(
@@ -1123,8 +1129,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 ),
               ),
             ),
-      data: (pool) {
-        _ensureWindow(pool);
+      data: (stream) {
+        _ensureWindow(stream);
         final balanceAsync = ref.watch(balanceProvider(_query));
         final liveSeries = balanceAsync.asData?.value;
         if (liveSeries != null) {
@@ -1132,22 +1138,22 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           _seriesCacheQuery = _query;
         }
         final series = _seriesCache;
-        final combo = _combined(pool, series);
+        final combo = _combined(stream, series);
         final shown = combo?.series ?? series;
-        // Transaction names label the occurrence dots on the chart.
-        final transactionNames = {
-          for (final t in combo?.transactions.values ?? const <Transaction>[])
-            t.id: transactionLabel(t),
-          for (final transaction
-              in ref.watch(transactionsProvider(widget.poolId)).asData?.value ??
-                  const <Transaction>[])
-            transaction.id: transactionLabel(transaction),
+        // Event names label the occurrence dots on the chart.
+        final eventNames = {
+          for (final t in combo?.events.values ?? const <BudgetEvent>[])
+            t.id: eventLabel(t),
+          for (final event
+              in ref.watch(eventsProvider(widget.streamId)).asData?.value ??
+                  const <BudgetEvent>[])
+            event.id: eventLabel(event),
         };
 
-        final transactions =
-            ref.watch(transactionsProvider(widget.poolId)).valueOrNull ??
-            const <Transaction>[];
-        final transactionsById = {for (final t in transactions) t.id: t};
+        final events =
+            ref.watch(eventsProvider(widget.streamId)).valueOrNull ??
+            const <BudgetEvent>[];
+        final eventsById = {for (final t in events) t.id: t};
 
         final width = MediaQuery.sizeOf(context).width;
         final compact = width < 600;
@@ -1158,11 +1164,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               appBar: AppBar(
                 toolbarHeight: compact ? 56 : 60,
                 // Below 360 the back button's slot tightens (56 → 48) so the
-                // pool name keeps room next to the full action row.
+                // stream name keeps room next to the full action row.
                 leadingWidth: width < 360 ? 48 : null,
                 leading: IconButton(
                   key: const ValueKey('timeline-back'),
-                  tooltip: 'All pools',
+                  tooltip: 'All streams',
                   icon: const Icon(Icons.arrow_back_rounded),
                   onPressed: () => _goBack(context),
                 ),
@@ -1174,18 +1180,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                     // arrow sits at the far right and the empty space after
                     // the name opens it too.
                     Expanded(
-                      child: _PoolHeader(pool: pool, compact: compact),
+                      child: _StreamHeader(stream: stream, compact: compact),
                     ),
                   ],
                 ),
-                actions: _headerActions(context, pool, width, transactions),
+                actions: _headerActions(context, stream, width, events),
               ),
               body: _withPlanPanel(
                 context,
                 compact: compact,
                 child: _withDockedList(
                   context,
-                  pool,
+                  stream,
                   Column(
                     children: [
                       Padding(
@@ -1207,8 +1213,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                               : dayNetTotals(
                                   shown,
                                   enabledOf: (id) =>
-                                      (transactionsById[id] ??
-                                              combo?.transactions[id])
+                                      (eventsById[id] ?? combo?.events[id])
                                           ?.enabled,
                                 ),
                           // The strip between the labels: the start picker, as
@@ -1249,40 +1254,40 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                   : Stack(
                                       children: [
                                         BalanceChart(
-                                          key: ValueKey(pool.id),
+                                          key: ValueKey(stream.id),
                                           fitToken: _fitToken,
                                           combineKey: combo == null
                                               ? ''
-                                              : (combo.pools.keys.toList()
+                                              : (combo.streams.keys.toList()
                                                       ..sort())
                                                     .join(','),
                                           zeroToken: _zeroToken,
                                           onFitRequested: (mode) =>
-                                              _fit(mode, pool),
+                                              _fit(mode, stream),
                                           onZoomStep: _zoomStep,
                                           onShift: _shift,
                                           series: shown!,
-                                          seedDate: pool.seedDate,
+                                          seedDate: stream.seedDate,
                                           // Combined: no opening diamond (the
                                           // line is a sum, not this seed).
                                           seedBalance: combo != null
                                               ? null
-                                              : pool.seedBalance.toDouble(),
+                                              : stream.seedBalance.toDouble(),
                                           lineStart: combo?.lineStart,
-                                          combinedPools:
-                                              combo?.pools ?? const {},
-                                          otherTransactions:
-                                              combo?.transactions ?? const {},
-                                          onOpenOtherTransaction:
-                                              (other, t, date) => _openOther(
+                                          combinedStreams:
+                                              combo?.streams ?? const {},
+                                          otherEvents:
+                                              combo?.events ?? const {},
+                                          onOpenOtherEvent: (other, t, date) =>
+                                              _openOther(
                                                 context,
                                                 other,
                                                 t,
                                                 date,
                                               ),
-                                          lossThreshold: pool.lossThreshold
+                                          lossThreshold: stream.lossThreshold
                                               .toDouble(),
-                                          currencyScale: pool.currencyScale
+                                          currencyScale: stream.currencyScale
                                               .toDouble(),
                                           viewStart: _viewStart,
                                           visibleDays: _visibleDays,
@@ -1295,36 +1300,35 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           selectDayToken: _selectDayToken,
                                           dataEditToken: _dataEditToken,
                                           onCreateOnDay: (day) =>
-                                              pool.role.canEdit
+                                              stream.role.canEdit
                                               ? _createOnceOnDay(context, day)
                                               : _viewOnlyToast(context),
-                                          onTrimOccurrence: pool.role.canEdit
+                                          onTrimOccurrence: stream.role.canEdit
                                               ? (t, day) =>
                                                     _trimAt(context, t, day)
                                               : null,
-                                          onNewOnDay: pool.role.canEdit
+                                          onNewOnDay: stream.role.canEdit
                                               ? (day) => _openEditor(
                                                   context,
-                                                  pool,
+                                                  stream,
                                                   initialDate: day,
                                                 )
                                               : null,
-                                          onEditTransaction: pool.role.canEdit
+                                          onEditEvent: stream.role.canEdit
                                               ? (t, date) => _openEditor(
                                                   context,
-                                                  pool,
+                                                  stream,
                                                   existing: t,
                                                   focusDate: date,
                                                 )
                                               : null,
-                                          transactionNames: transactionNames,
-                                          laneOrder: pool.transactionOrder,
+                                          eventNames: eventNames,
+                                          laneOrder: stream.eventOrder,
                                           otherLaneOrder: combo == null
                                               ? const []
                                               : _otherLaneOrder(combo),
-                                          transactions: {
-                                            for (final t in transactions)
-                                              t.id: t,
+                                          events: {
+                                            for (final t in events) t.id: t,
                                           },
                                           dataFrom: _seriesCacheQuery?.from,
                                           dataThrough: _seriesCacheQuery?.to,
@@ -1335,17 +1339,17 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           targetMode:
                                               _goalActive && _targetMode,
                                           onTargetChanged: _onTargetDrag,
-                                          onAddForPeriod: pool.role.canEdit
+                                          onAddForPeriod: stream.role.canEdit
                                               ? (start, end) => _openEditor(
                                                   context,
-                                                  pool,
+                                                  stream,
                                                   initialDate: start,
                                                   initialEndDate: end,
                                                 )
                                               : null,
                                           onPlanPeriod: (p) => _planPeriod(
                                             p,
-                                            pool.lossThreshold.toDouble(),
+                                            stream.lossThreshold.toDouble(),
                                           ),
                                         ),
                                         if (_goalActive)
@@ -1378,7 +1382,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                             right: 8,
                                             child: _CombinedLegend(
                                               combo: combo,
-                                              poolName: pool.name,
+                                              streamName: stream.name,
                                             ),
                                           ),
                                         if (balanceAsync.isLoading ||
@@ -1415,8 +1419,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// viewport survive switching to "Show on chart" and back.
   Widget _withFullPlan(BuildContext context, Widget page) {
     if (!_planFull(context)) return page;
-    final pool = ref.read(poolProvider(widget.poolId)).valueOrNull;
-    if (pool == null) return page;
+    final stream = ref.read(streamProvider(widget.streamId)).valueOrNull;
+    if (stream == null) return page;
     final goal = _planTab == PlanTab.goal;
     return Stack(
       children: [
@@ -1458,7 +1462,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               top: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                child: _planPanel(context, pool, compact: true, full: true),
+                child: _planPanel(context, stream, compact: true, full: true),
               ),
             ),
           ),
@@ -1473,9 +1477,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     required Widget child,
   }) {
     if (!_planOpen || _planFull(context)) return child;
-    final pool = ref.read(poolProvider(widget.poolId)).valueOrNull;
-    if (pool == null) return child;
-    final panel = _planPanel(context, pool, compact: compact);
+    final stream = ref.read(streamProvider(widget.streamId)).valueOrNull;
+    if (stream == null) return child;
+    final panel = _planPanel(context, stream, compact: compact);
     if (compact) {
       final h = MediaQuery.sizeOf(context).height;
       return Column(
@@ -1502,7 +1506,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   Widget _planPanel(
     BuildContext context,
-    Pool pool, {
+    BudgetStream stream, {
     required bool compact,
     bool full = false,
   }) {
@@ -1516,7 +1520,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               _targetMode = false;
             })
           : null,
-      pool: pool,
+      stream: stream,
       tab: _planTab,
       onTab: (t) => setState(() => _planTab = t),
       compact: compact,
@@ -1537,30 +1541,30 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   // ---------------------------------------------------------------- header
 
-  /// Every timeline action lives in the header row, right of the pool
-  /// name. The right end is always Reminders (prominent) · Transactions
+  /// Every timeline action lives in the header row, right of the stream
+  /// name. The right end is always Reminders (prominent) · Events
   /// (plain list icon) · View · More (⋮, rightmost, takes what does not
   /// fit); the rest sits left of Reminders:
   ///
-  /// * ≥1240px: Today, Seed (labelled) · Share · Pool settings · Reminders
-  ///   (labelled) · Transactions · View · More (Import, Gestures &
+  /// * ≥1240px: Today, Seed (labelled) · Share · Stream settings · Reminders
+  ///   (labelled) · Events · View · More (Import, Gestures &
   ///   shortcuts).
   /// * 960–1240px: the same with icon-only Today / Seed.
   /// * 600–960px: Today, Seed (icons) · Reminders (tonal icon) ·
-  ///   Transactions · View (icon) · More (Pool settings, Share, Import,
+  ///   Events · View (icon) · More (Stream settings, Share, Import,
   ///   shortcuts).
-  /// * <600px: Reminders · Transactions · View (with Go to today / seed) ·
-  ///   More. Transactions stays in the header at every width; below 360px
+  /// * <600px: Reminders · Events · View (with Go to today / seed) ·
+  ///   More. Events stays in the header at every width; below 360px
   ///   the back slot, logo gap and View button tighten so it fits.
   List<Widget> _headerActions(
     BuildContext context,
-    Pool pool,
+    BudgetStream stream,
     double width,
-    List<Transaction> transactions,
+    List<BudgetEvent> events,
   ) {
     final desk = width >= 600, mid = width >= 960, wide = width >= 1240;
     final tiny = width < 360;
-    final canEdit = pool.role.canEdit, owner = pool.role.isOwner;
+    final canEdit = stream.role.canEdit, owner = stream.role.isOwner;
     Widget icon(String key, String tip, Widget glyph, VoidCallback f) =>
         IconButton(
           key: ValueKey(key),
@@ -1570,10 +1574,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           icon: glyph,
         );
     void today() => _goToAndSelect(DateTime.now());
-    void seed() => _goToAndSelect(pool.seedDate);
+    void seed() => _goToAndSelect(stream.seedDate);
     final seedIcon = const Icon(Icons.flag_rounded, color: AppTheme.violet);
 
-    // More, in order: Pool settings first, then whatever overflowed.
+    // More, in order: Stream settings first, then whatever overflowed.
     final more = <PopupMenuEntry<String>>[
       if (canEdit && !mid)
         const PopupMenuItem(
@@ -1581,7 +1585,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           value: 'settings',
           child: ListTile(
             leading: Icon(Icons.tune_rounded),
-            title: Text('Pool settings'),
+            title: Text('Stream settings'),
           ),
         ),
       if (owner && !mid)
@@ -1590,7 +1594,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           value: 'share',
           child: ListTile(
             leading: Icon(Icons.person_add_alt_1_outlined),
-            title: Text('Share pool'),
+            title: Text('Share stream'),
           ),
         ),
       if (canEdit)
@@ -1601,7 +1605,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           child: ListTile(
             enabled: _pinnedDay != null,
             leading: const Icon(Icons.file_upload_outlined),
-            title: const Text('Import transactions'),
+            title: const Text('Import events'),
             subtitle: _pinnedDay == null
                 ? const Text(
                     importNeedsDayHint,
@@ -1656,24 +1660,24 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       ],
       if (mid && owner)
         icon(
-          'pool-share',
-          'Share pool',
+          'stream-share',
+          'Share stream',
           const Icon(Icons.person_add_alt_1_outlined),
-          () => _share(context, pool),
+          () => _share(context, stream),
         ),
       if (mid && canEdit)
         icon(
-          'pool-settings',
-          'Pool settings: seed balance, date, threshold',
+          'stream-settings',
+          'Stream settings: seed balance, date, threshold',
           const Icon(Icons.tune_rounded),
-          () => _editPool(context, pool),
+          () => _editStream(context, stream),
         ),
       SizedBox(width: mid ? 6 : 2),
       // The prominent header action: the reminders calendar.
       if (mid)
         FilledButton.tonalIcon(
           key: const ValueKey('open-reminders'),
-          onPressed: () => showReminders(context, pool),
+          onPressed: () => showReminders(context, stream),
           icon: const Icon(Icons.calendar_month_rounded, size: 18),
           label: const Text(
             'Reminders',
@@ -1684,14 +1688,14 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         IconButton.filledTonal(
           key: const ValueKey('open-reminders'),
           tooltip: 'Reminders calendar',
-          onPressed: () => showReminders(context, pool),
+          onPressed: () => showReminders(context, stream),
           icon: const Icon(Icons.calendar_month_rounded),
         ),
       SizedBox(width: mid ? 4 : 0),
       // Always in the header, at every width (320 included): below 360 the
       // left side and View tighten instead so it fits.
-      _transactionsButton(context, pool, count: transactions.length),
-      _fitMenu(pool, compact: !desk, iconOnly: !mid, tight: tiny),
+      _eventsButton(context, stream, count: events.length),
+      _fitMenu(stream, compact: !desk, iconOnly: !mid, tight: tiny),
       // Always the rightmost item.
       PopupMenuButton<String>(
         key: const ValueKey('timeline-more'),
@@ -1700,13 +1704,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         onSelected: (v) {
           switch (v) {
             case 'import':
-              _openImport(context, pool);
+              _openImport(context, stream);
             case 'settings':
-              _editPool(context, pool);
+              _editStream(context, stream);
             case 'shortcuts':
               _showShortcuts(context);
             case 'share':
-              _share(context, pool);
+              _share(context, stream);
           }
         },
         itemBuilder: (context) => more,
@@ -1715,29 +1719,29 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     ];
   }
 
-  /// View options: Combine with other pools and, on phones, Go to today /
+  /// View options: Combine with other streams and, on phones, Go to today /
   /// seed date. The fit modes are keyboard-only (F / A / H, listed in the
   /// shortcuts sheet) and never stretch to the alert line.
   Widget _fitMenu(
-    Pool pool, {
+    BudgetStream stream, {
     required bool compact,
     bool? iconOnly,
     bool tight = false,
   }) {
     final icon = iconOnly ?? compact;
-    final others = _otherPools(pool.id);
+    final others = _otherStreams(stream.id);
     final combined = others.where((p) => _combine.contains(p.id)).length;
     final small = Theme.of(context).textTheme.labelSmall;
     final tip = combined > 0
-        ? 'View options · combined with $combined other pool${combined == 1 ? '' : 's'}'
+        ? 'View options · combined with $combined other stream${combined == 1 ? '' : 's'}'
         : 'View options';
     return ViewMenu(
       compact: compact,
-      pools: others,
+      streams: others,
       combined: _combine,
       onToday: () => _goToAndSelect(DateTime.now()),
-      onSeed: () => _goToAndSelect(pool.seedDate),
-      onTogglePool: _toggleCombine,
+      onSeed: () => _goToAndSelect(stream.seedDate),
+      onToggleStream: _toggleCombine,
       builder: (context, open) => icon
           ? IconButton(
               key: const ValueKey('fit-menu'),
@@ -1796,22 +1800,22 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// The transactions list: a plain bulleted-list icon (no box, border or
+  /// The events list: a plain bulleted-list icon (no box, border or
   /// fill) between Reminders and the View menu; the count is in its
   /// tooltip. On wide screens it toggles the docked list, and the icon is
   /// tinted accent while that list is open.
-  Widget _transactionsButton(
+  Widget _eventsButton(
     BuildContext context,
-    Pool pool, {
+    BudgetStream stream, {
     required int count,
   }) {
     final docked = _dockable(context) && _dockOpen;
     return IconButton(
-      key: const ValueKey('open-transactions'),
-      tooltip: 'Transactions ($count)',
+      key: const ValueKey('open-events'),
+      tooltip: 'Events ($count)',
       constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       color: docked ? AppTheme.accent : null,
-      onPressed: () => _openTransactionsPanel(context, pool),
+      onPressed: () => _openEventsPanel(context, stream),
       icon: const ListGlyph(key: ValueKey('tx-list-glyph')),
     );
   }
@@ -1917,7 +1921,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 row(['F'], 'Fit balance to what is in view'),
                 row(['A'], 'Fit all data'),
                 row(['H'], 'Fit all data horizontally'),
-                head('Transactions'),
+                head('Events'),
                 row(['Click dot'], 'Show that occurrence’s details'),
                 row(['Hover day', '+'], 'Add a one-off on that day'),
                 row(['Drag dates'], 'Drag along the date axis, release to add'),
@@ -1938,27 +1942,27 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  // ----------------------------------------------------------- transactions
+  // ----------------------------------------------------------- events
 
-  Set<DateTime> _skipsFor(String transactionId) => {
+  Set<DateTime> _skipsFor(String eventId) => {
     for (final o in _seriesCache?.occurrences ?? const <Occurrence>[])
-      if (o.transactionId == transactionId && o.skipped) dateOnly(o.date),
+      if (o.eventId == eventId && o.skipped) dateOnly(o.date),
   };
 
   /// One place every create / edit path goes through, so the timeline
   /// always refreshes afterwards (skips can change even on cancel).
   Future<void> _openEditor(
     BuildContext context,
-    Pool pool, {
-    Transaction? existing,
+    BudgetStream stream, {
+    BudgetEvent? existing,
     DateTime? initialDate,
     DateTime? initialEndDate,
     DateTime? focusDate,
     bool onceOnly = false,
   }) async {
-    final result = await showTransactionEditor(
+    final result = await showEventEditor(
       context,
-      poolId: widget.poolId,
+      streamId: widget.streamId,
       existing: existing,
       initialDate: initialDate,
       initialEndDate: initialEndDate,
@@ -1975,7 +1979,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     reportEditorOutcome(
       context,
       ref,
-      poolId: widget.poolId,
+      streamId: widget.streamId,
       outcome: outcome,
       onChanged: _invalidateBalance,
     );
@@ -1986,40 +1990,37 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       SnackBar(
         content: Text(
           result.message ??
-              'Created ${result.transaction?.name.isNotEmpty == true ? result.transaction!.name : 'transaction'}',
+              'Created ${result.event?.name.isNotEmpty == true ? result.event!.name : 'event'}',
         ),
       ),
     );
     _closePlan();
-    ref.invalidate(transactionsProvider(widget.poolId));
+    ref.invalidate(eventsProvider(widget.streamId));
     _invalidateBalance();
   }
 
-  Future<void> _editPool(BuildContext context, Pool pool) async {
-    final edited = await showPoolDialog(
+  Future<void> _editStream(BuildContext context, BudgetStream stream) async {
+    final edited = await showStreamDialog(
       context,
-      existing: pool,
-      transactionCount: ref
-          .read(transactionsProvider(widget.poolId))
-          .valueOrNull
-          ?.length,
+      existing: stream,
+      eventCount: ref.read(eventsProvider(widget.streamId)).valueOrNull?.length,
     );
     if (edited == null || !context.mounted) return;
     try {
-      final n = ref.read(poolsProvider.notifier);
+      final n = ref.read(streamsProvider.notifier);
       final r = await saveWithConflictCheck(
         context,
-        save: (force) => n.updatePool(edited, force: force),
+        save: (force) => n.updateStream(edited, force: force),
         reload: n.refresh,
       );
       if (r == SaveResult.cancelled) return;
-      ref.invalidate(poolProvider(widget.poolId));
+      ref.invalidate(streamProvider(widget.streamId));
       // A seed move shifts every schedule on the server.
-      ref.invalidate(transactionsProvider(widget.poolId));
+      ref.invalidate(eventsProvider(widget.streamId));
       _invalidateBalance();
       if (context.mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Pool updated')));
+            .showSnackBar(const SnackBar(content: Text('Stream updated')));
       }
     } catch (error) {
       if (context.mounted) {
@@ -2029,20 +2030,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     }
   }
 
-  void _goBack(BuildContext context) => context.go(poolsPath);
+  void _goBack(BuildContext context) => context.go(streamsPath);
 
   void _viewOnlyToast(BuildContext context) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('View only: you have viewer access to this pool'),
+        content: Text('View only: you have viewer access to this stream'),
       ),
     );
   }
 
-  Future<void> _share(BuildContext context, Pool pool) async {
+  Future<void> _share(BuildContext context, BudgetStream stream) async {
     final left = await showShareDialog(
       context,
-      ShareTarget.pool(pool.id, pool.name),
+      ShareTarget.stream(stream.id, stream.name),
     );
     if (left && context.mounted) context.go('/');
   }
@@ -2053,22 +2054,22 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// the server prunes overrides past the new end on the same update).
   Future<void> _trimAt(
     BuildContext context,
-    Transaction t,
+    BudgetEvent t,
     DateTime day,
   ) async {
     final current =
         ref
-            .read(transactionsProvider(widget.poolId))
+            .read(eventsProvider(widget.streamId))
             .valueOrNull
             ?.where((x) => x.id == t.id)
             .firstOrNull ??
         t;
     try {
-      final n = ref.read(transactionsProvider(widget.poolId).notifier);
-      final trimmed = trimmedTransaction(current, day);
+      final n = ref.read(eventsProvider(widget.streamId).notifier);
+      final trimmed = trimmedEvent(current, day);
       final r = await saveWithConflictCheck(
         context,
-        save: (force) => n.updateTransaction(trimmed, force: force),
+        save: (force) => n.updateEvent(trimmed, force: force),
         reload: n.refresh,
       );
       _invalidateBalance();
@@ -2077,7 +2078,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         context,
         EditorOutcome(
           action: EditorAction.trimmed,
-          transaction: trimmed,
+          event: trimmed,
           previous: current,
           date: dateOnly(day),
         ),
@@ -2091,35 +2092,38 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   Future<void> _createOnceOnDay(BuildContext context, DateTime day) async {
-    final pool = ref.read(poolProvider(widget.poolId)).valueOrNull;
-    if (pool == null) return;
-    await _openEditor(context, pool, initialDate: day, onceOnly: true);
+    final stream = ref.read(streamProvider(widget.streamId)).valueOrNull;
+    if (stream == null) return;
+    await _openEditor(context, stream, initialDate: day, onceOnly: true);
   }
 
-  /// The toolbar's Transactions: shows / hides the docked list on wide
+  /// The toolbar's Events: shows / hides the docked list on wide
   /// landscape screens, else opens it over the timeline.
-  Future<void> _openTransactionsPanel(BuildContext context, Pool pool) async {
+  Future<void> _openEventsPanel(
+    BuildContext context,
+    BudgetStream stream,
+  ) async {
     if (_dockable(context)) return _toggleDock();
     await showSidePanel<void>(
       context,
       width: 520,
-      label: 'Transactions',
-      builder: (panelContext) => _transactionsPanel(
+      label: 'Events',
+      builder: (panelContext) => _eventsPanel(
         context,
-        pool,
+        stream,
         docked: false,
         close: () => Navigator.of(panelContext).pop(),
       ),
     );
   }
 
-  Widget _transactionsPanel(
+  Widget _eventsPanel(
     BuildContext context,
-    Pool pool, {
+    BudgetStream stream, {
     required bool docked,
     VoidCallback? close,
-  }) => TransactionsPanel(
-    pool: pool,
+  }) => EventsPanel(
+    stream: stream,
     skipsFor: _skipsFor,
     onClose: docked ? _toggleDock : null,
     onPanelClosed: (outcome) {
@@ -2136,10 +2140,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   );
 }
 
-class _PoolHeader extends StatelessWidget {
-  const _PoolHeader({required this.pool, this.compact = false});
+class _StreamHeader extends StatelessWidget {
+  const _StreamHeader({required this.stream, this.compact = false});
 
-  final Pool pool;
+  final BudgetStream stream;
   final bool compact;
 
   @override
@@ -2150,29 +2154,29 @@ class _PoolHeader extends StatelessWidget {
     // and ellipsises, the arrow sits at the right end, and the whole area,
     // empty space included, is one tap target with its ink.
     return SizedBox(
-      key: const ValueKey('header-pool-area'),
+      key: const ValueKey('header-stream-area'),
       width: double.infinity,
-      child: PoolPicker(
+      child: StreamPicker(
         keyPrefix: 'nav',
-        title: 'Jump to pool',
+        title: 'Jump to stream',
         mineHeader: false,
-        currentPoolId: pool.id,
+        currentStreamId: stream.id,
         onSelected: (a) {
-          if (a.id == pool.id) return;
-          context.pushReplacement('/pools/${a.id}/timeline');
+          if (a.id == stream.id) return;
+          context.pushReplacement('/streams/${a.id}/timeline');
         },
-        onNewPool: () async {
-          final created = await createPool(context);
+        onNewStream: () async {
+          final created = await createStream(context);
           if (created != null && context.mounted) {
-            context.go('/pools/${created.id}/timeline');
+            context.go('/streams/${created.id}/timeline');
           }
         },
         builder: (context, open) => InkWell(
-          key: const ValueKey('header-pool-picker'),
+          key: const ValueKey('header-stream-picker'),
           borderRadius: BorderRadius.circular(8),
           onTap: open,
           child: Tooltip(
-            message: 'Jump to another pool',
+            message: 'Jump to another stream',
             waitDuration: const Duration(milliseconds: 500),
             // Opaque: a tap anywhere in the stretched area hits, not only
             // on the glyphs.
@@ -2184,7 +2188,7 @@ class _PoolHeader extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        pool.name,
+                        stream.name,
                         style: compact
                             ? theme.textTheme.titleMedium
                             : theme.textTheme.titleLarge,
@@ -2194,7 +2198,7 @@ class _PoolHeader extends StatelessWidget {
                     ),
                     const Icon(
                       Icons.arrow_drop_down_rounded,
-                      key: ValueKey('header-pool-arrow'),
+                      key: ValueKey('header-stream-arrow'),
                       color: AppTheme.textMuted,
                     ),
                   ],
@@ -2299,45 +2303,45 @@ class _Combined {
   const _Combined({
     required this.series,
     required this.lineStart,
-    required this.pools,
-    required this.transactions,
+    required this.streams,
+    required this.events,
     required this.count,
     this.loading = false,
   });
 
-  /// Nothing loaded yet for the checked pools: the current pool alone,
+  /// Nothing loaded yet for the checked streams: the current stream alone,
   /// with the indicator and a progress bar.
   _Combined.waiting(this.series, DateTime seedDate, this.count)
     : lineStart = seedDate,
-      pools = const {},
-      transactions = const {},
+      streams = const {},
+      events = const {},
       loading = true;
 
   final BalanceSeries series;
   final DateTime lineStart;
-  final Map<String, CombinedPool> pools;
-  final Map<String, Transaction> transactions;
+  final Map<String, CombinedStream> streams;
+  final Map<String, BudgetEvent> events;
 
-  /// Pools in the view, this one included ("Combined: 3 pools").
+  /// Streams in the view, this one included ("Combined: 3 streams").
   final int count;
   final bool loading;
 
   _Combined copyWith({required bool loading}) => _Combined(
     series: series,
     lineStart: lineStart,
-    pools: pools,
-    transactions: transactions,
+    streams: streams,
+    events: events,
     count: count,
     loading: loading,
   );
 }
 
-/// "Combined: N pools" over the chart, with each pool's tint (legend).
+/// "Combined: N streams" over the chart, with each stream's tint (legend).
 class _CombinedLegend extends StatelessWidget {
-  const _CombinedLegend({required this.combo, required this.poolName});
+  const _CombinedLegend({required this.combo, required this.streamName});
 
   final _Combined combo;
-  final String poolName;
+  final String streamName;
 
   @override
   Widget build(BuildContext context) {
@@ -2348,11 +2352,11 @@ class _CombinedLegend extends StatelessWidget {
       margin: const EdgeInsets.only(right: 4),
       decoration: BoxDecoration(color: c, shape: BoxShape.circle),
     );
-    final names = [poolName, for (final p in combo.pools.values) p.name];
+    final names = [streamName, for (final p in combo.streams.values) p.name];
     return Tooltip(
       message:
           'Balance line is the sum of: ${names.join(', ')}.\n'
-          'Transfers between them net out. + and Trim add to $poolName.',
+          'Transfers between them net out. + and Trim add to $streamName.',
       child: Container(
         key: const ValueKey('combined-indicator'),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2367,12 +2371,12 @@ class _CombinedLegend extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              'Combined: ${combo.count} pools',
+              'Combined: ${combo.count} streams',
               style: small.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(width: 8),
             dot(AppTheme.accent),
-            for (final p in combo.pools.values) dot(p.color),
+            for (final p in combo.streams.values) dot(p.color),
           ],
         ),
       ),
@@ -2381,7 +2385,7 @@ class _CombinedLegend extends StatelessWidget {
 }
 
 /// The Budgie icon (rounded tile, no wordmark) at the left of the
-/// timeline header, between the back button and the pool name: sized to
+/// timeline header, between the back button and the stream name: sized to
 /// the header row, a little smaller on phones. The landing intro glides
 /// into it.
 class _HeaderBrand extends StatelessWidget {
@@ -2389,7 +2393,7 @@ class _HeaderBrand extends StatelessWidget {
 
   final bool compact;
 
-  /// Below 360px: a smaller gap before the pool name, and the sync dot on
+  /// Below 360px: a smaller gap before the stream name, and the sync dot on
   /// the logo.
   final bool tight;
 
@@ -2403,7 +2407,7 @@ class _HeaderBrand extends StatelessWidget {
         key: const ValueKey('timeline-brand'),
         child: tight
             // Below 360px the sync dot rides on the logo's corner, so the
-            // action row (with Transactions) and the pool name both fit.
+            // action row (with Events) and the stream name both fit.
             ? Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -2423,12 +2427,12 @@ class _HeaderBrand extends StatelessWidget {
 
 /// The import an undo bar can roll back.
 class _ImportUndo {
-  _ImportUndo(this.poolId, this.result);
-  final String poolId;
+  _ImportUndo(this.streamId, this.result);
+  final String streamId;
   final ImportResult result;
 }
 
-/// Floating "Imported N transactions · Undo · ×" bar. Unlike the 5 s undo
+/// Floating "Imported N events · Undo · ×" bar. Unlike the 5 s undo
 /// tip it never times out: it stays until Undo or the close box.
 class _ImportUndoBar extends StatelessWidget {
   const _ImportUndoBar({
@@ -2494,46 +2498,46 @@ class _ImportUndoBar extends StatelessWidget {
   }
 }
 
-/// The pool no longer exists for me (deleted, or my access was removed).
+/// The stream no longer exists for me (deleted, or my access was removed).
 bool _isGone(Object error) =>
     error is ApiException &&
     (error.statusCode == 404 || error.statusCode == 403);
 
-/// A deep link / last-opened / stale tab on a pool that is gone: back to
-/// the pools home with a note, and this browser forgets the pool.
-class _PoolGone extends ConsumerStatefulWidget {
-  const _PoolGone({required this.poolId});
-  final String poolId;
+/// A deep link / last-opened / stale tab on a stream that is gone: back to
+/// the streams home with a note, and this browser forgets the stream.
+class _StreamGone extends ConsumerStatefulWidget {
+  const _StreamGone({required this.streamId});
+  final String streamId;
   @override
-  ConsumerState<_PoolGone> createState() => _PoolGoneState();
+  ConsumerState<_StreamGone> createState() => _StreamGoneState();
 }
 
-class _PoolGoneState extends ConsumerState<_PoolGone> {
+class _StreamGoneState extends ConsumerState<_StreamGone> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      forgetPoolLocally(
-        widget.poolId,
+      forgetStreamLocally(
+        widget.streamId,
         userId: ref.read(authProvider).valueOrNull?.user?.id,
       );
-      ref.invalidate(poolsProvider);
+      ref.invalidate(streamsProvider);
       // Already on the way out (the realtime "deleted" notice did it).
       final router = GoRouter.of(context);
       final path = router.routerDelegate.currentConfiguration.uri.path;
-      if (!path.startsWith('/pools/${widget.poolId}/')) return;
+      if (!path.startsWith('/streams/${widget.streamId}/')) return;
       final messenger = ScaffoldMessenger.maybeOf(context);
-      context.go(poolsPath);
+      context.go(streamsPath);
       messenger?.showSnackBar(
-        const SnackBar(content: Text('That pool no longer exists')),
+        const SnackBar(content: Text('That stream no longer exists')),
       );
     });
   }
 
   @override
   Widget build(BuildContext context) => const Scaffold(
-    key: ValueKey('pool-gone'),
+    key: ValueKey('stream-gone'),
     body: Center(child: CircularProgressIndicator()),
   );
 }

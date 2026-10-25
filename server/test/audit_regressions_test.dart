@@ -36,7 +36,7 @@ void main() {
       if (!h.ok) return markTestSkipped('no test DB');
       final s = await h.seed('owner', 'Ranges');
       final ok = await h.call(
-          'GET', '/api/pools/${s.a}/balance?from=2026-01-01&to=2125-12-31',
+          'GET', '/api/streams/${s.a}/balance?from=2026-01-01&to=2125-12-31',
           as: 'owner');
       expect(ok.status, 200);
       for (final q in [
@@ -45,24 +45,24 @@ void main() {
         'from=9000-01-01&to=9000-02-01',
       ]) {
         final r =
-            await h.call('GET', '/api/pools/${s.a}/balance?$q', as: 'owner');
+            await h.call('GET', '/api/streams/${s.a}/balance?$q', as: 'owner');
         expect(r.status, 400, reason: q);
       }
-      final p = await h.call('POST', '/api/pools/${s.a}/project',
+      final p = await h.call('POST', '/api/streams/${s.a}/project',
           as: 'owner',
-          body: {'from': '0001-01-01', 'to': '9999-12-31', 'transactions': []});
+          body: {'from': '0001-01-01', 'to': '9999-12-31', 'events': []});
       expect(p.status, 400);
       expect(p.json['error'], contains('range too long'));
       final ins = await h.call(
-          'GET', '/api/pools/${s.a}/insights?from=9000-01-01',
+          'GET', '/api/streams/${s.a}/insights?from=9000-01-01',
           as: 'owner');
       expect(ins.status, 400);
       expect(
-          (await h.call('GET', '/api/pools/${s.a}/insights', as: 'owner'))
+          (await h.call('GET', '/api/streams/${s.a}/insights', as: 'owner'))
               .status,
           200);
       final g =
-          await h.call('POST', '/api/pools/${s.a}/goal', as: 'owner', body: {
+          await h.call('POST', '/api/streams/${s.a}/goal', as: 'owner', body: {
         'solveFor': 'amount',
         'startDate': '9000-01-01',
         'endDate': '9000-06-01',
@@ -70,7 +70,7 @@ void main() {
       });
       expect(g.status, 400, reason: '${g.json}');
       final sv =
-          await h.call('POST', '/api/pools/${s.a}/solve', as: 'owner', body: {
+          await h.call('POST', '/api/streams/${s.a}/solve', as: 'owner', body: {
         'direction': 'credit',
         'unit': 'weeks',
         'targetBalance': '100',
@@ -79,7 +79,7 @@ void main() {
       expect(sv.status, 400, reason: '${sv.json}');
       // Normal goals still solve.
       final ok2 =
-          await h.call('POST', '/api/pools/${s.a}/goal', as: 'owner', body: {
+          await h.call('POST', '/api/streams/${s.a}/goal', as: 'owner', body: {
         'solveFor': 'amount',
         'startDate': '2026-02-01',
         'endDate': '2026-12-01',
@@ -88,17 +88,17 @@ void main() {
       expect(ok2.status, 200, reason: '${ok2.json}');
     });
 
-    test('reorder keeps only the pool\'s own transaction ids', () async {
+    test('reorder keeps only the stream\'s own event ids', () async {
       if (!h.ok) return markTestSkipped('no test DB');
       final s = await h.seed('owner', 'Reorder');
       final other = await h.seed('owner', 'ReorderOther');
-      final r = await h.call('PATCH', '/api/pools/${s.a}/reorder-transactions',
+      final r = await h.call('PATCH', '/api/streams/${s.a}/reorder-events',
           as: 'owner',
           body: {
-            'transactionIds': [other.t, s.t, s.t, 'not-a-uuid']
+            'eventIds': [other.t, s.t, s.t, 'not-a-uuid']
           });
       expect(r.status, 200, reason: '${r.json}');
-      expect(r.json['transactionOrder'], [s.t]);
+      expect(r.json['eventOrder'], [s.t]);
     });
   });
 }

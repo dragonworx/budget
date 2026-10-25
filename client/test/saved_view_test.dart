@@ -1,4 +1,4 @@
-// Saved timeline view: reopening a pool restores my last view of it
+// Saved timeline view: reopening a stream restores my last view of it
 // (horizontal + balance range), saves are debounced (never per drag
 // frame), flushed on page hide, and explicit actions become the new view.
 import 'dart:async';
@@ -25,12 +25,12 @@ final _now = DateTime.now();
 final _today = DateTime(_now.year, _now.month, _now.day);
 DateTime _d(int o) => DateTime(_today.year, _today.month, _today.day + o);
 
-class _Repo extends PoolRepository {
+class _Repo extends StreamRepository {
   _Repo() : super(ApiClient());
 
-  final pools = {
+  final streams = {
     for (final id in ['a', 'b'])
-      id: Pool(
+      id: BudgetStream(
         id: id,
         ownerId: 'u1',
         name: id == 'a' ? 'Everyday' : 'Savings',
@@ -47,10 +47,10 @@ class _Repo extends PoolRepository {
   Completer<void>? loadGate;
 
   @override
-  Future<PoolList> list() async => PoolList(pools.values.toList());
+  Future<StreamList> list() async => StreamList(streams.values.toList());
 
   @override
-  Future<Pool> get(String id) async => pools[id]!;
+  Future<BudgetStream> get(String id) async => streams[id]!;
 
   @override
   Future<void> markOpened(String id) async {}
@@ -73,11 +73,11 @@ class _Repo extends PoolRepository {
 
   @override
   Future<BalanceSeries> balance(
-    String poolId, {
+    String streamId, {
     required DateTime from,
     required DateTime to,
   }) async {
-    final seed = pools[poolId]!.seedBalance.toDouble();
+    final seed = streams[streamId]!.seedBalance.toDouble();
     return BalanceSeries(
       points: [
         for (
@@ -97,22 +97,22 @@ class _Repo extends PoolRepository {
   }
 }
 
-class _TxRepo extends TransactionRepository {
+class _TxRepo extends EventRepository {
   _TxRepo() : super(ApiClient());
   @override
-  Future<List<Transaction>> listForPool(String poolId) async => const [];
+  Future<List<BudgetEvent>> listForStream(String streamId) async => const [];
 }
 
 late _Repo _repo;
 late ProviderContainer _c;
 
-Future<void> _open(WidgetTester tester, {String pool = 'a'}) async {
+Future<void> _open(WidgetTester tester, {String stream = 'a'}) async {
   await tester.pumpWidget(const SizedBox());
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: _c,
       child: MaterialApp(
-        home: TimelinePage(key: ValueKey(pool), poolId: pool),
+        home: TimelinePage(key: ValueKey(stream), streamId: stream),
       ),
     ),
   );
@@ -134,8 +134,8 @@ Future<void> _setUp(
       authRepositoryProvider.overrideWithValue(
         FakeAuthRepository(user: adminUser),
       ),
-      poolRepositoryProvider.overrideWithValue(_repo),
-      transactionRepositoryProvider.overrideWithValue(_TxRepo()),
+      streamRepositoryProvider.overrideWithValue(_repo),
+      eventRepositoryProvider.overrideWithValue(_TxRepo()),
     ],
   );
   addTearDown(_c.dispose);
@@ -206,7 +206,7 @@ void main() {
     await _open(tester);
     await tester.pump(const Duration(seconds: 3));
     expect(_repo.saves, isEmpty);
-    await _open(tester, pool: 'b'); // leave (dispose flush): still nothing
+    await _open(tester, stream: 'b'); // leave (dispose flush): still nothing
     await tester.pump(const Duration(seconds: 3));
     expect(_repo.saves, isEmpty);
   });
@@ -231,7 +231,7 @@ void main() {
     expect(_repo.saves.single.$3, isFalse);
 
     // Reopen in this browser (local copy): identical, no re-save.
-    await _open(tester, pool: 'b');
+    await _open(tester, stream: 'b');
     await _open(tester);
     final again = _snap(tester);
     expect(again.start, closeTo(after.start, 1e-9));
@@ -240,7 +240,7 @@ void main() {
 
     // Another device / cleared storage: the server copy restores it.
     page.clearLocal();
-    await _open(tester, pool: 'b');
+    await _open(tester, stream: 'b');
     await _open(tester);
     final remote = _snap(tester);
     expect(remote.start, closeTo(after.start, 1e-9));
@@ -277,7 +277,7 @@ void main() {
     // Moved before the server answers: mine wins.
     _repo.loadGate = Completer<void>();
     page.clearLocal();
-    await _open(tester, pool: 'b');
+    await _open(tester, stream: 'b');
     await _open(tester);
     await _drag(tester, steps: 5);
     final mine = _snap(tester);

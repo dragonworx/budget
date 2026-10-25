@@ -6,7 +6,7 @@ import '../boot/page_stub.dart'
 /// not synced to the server. Keys live under a versioned prefix so a later
 /// format change can move to `v2` without reading stale values.
 ///
-/// Per-pool view state keeps its own storage (SavedViewStore etc.).
+/// Per-stream view state keeps its own storage (SavedViewStore etc.).
 class AppPrefs {
   const AppPrefs();
 
@@ -35,8 +35,36 @@ class AppPrefs {
 
 const appPrefs = AppPrefs();
 
+/// One-time move of this browser's stored keys from the Pools/Transactions
+/// era to Streams/Events names (e.g. `budget_tx_docked` ->
+/// `budget_events_docked`). Values are kept; an existing new key wins.
+/// Safe to call on every start.
+void migrateLegacyLocalKeys() {
+  for (final key in page.localKeys()) {
+    if (!key.startsWith('budget') && !key.startsWith('budgie.')) continue;
+    final renamed = legacyLocalKey(key);
+    if (renamed == null) continue;
+    final value = page.localGet(key);
+    if (value != null && page.localGet(renamed) == null) {
+      page.localSet(renamed, value);
+    }
+    page.localRemove(key);
+  }
+}
+
+/// The Streams/Events name for a pre-rename storage key, else null.
+String? legacyLocalKey(String key) {
+  if (key == 'budget_tx_docked') return 'budget_events_docked';
+  final renamed = key
+      .replaceAll('transaction', 'event')
+      .replaceAll('Transaction', 'Event')
+      .replaceAll('pool', 'stream')
+      .replaceAll('Pool', 'Stream');
+  return renamed == key ? null : renamed;
+}
+
 /// Keys (one place, so they don't collide).
 abstract final class PrefKeys {
-  /// Docked Transactions list width, logical px.
+  /// Docked Events list width, logical px.
   static const dockedListWidth = 'timeline.dockedListWidth';
 }

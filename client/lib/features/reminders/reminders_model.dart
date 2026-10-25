@@ -3,22 +3,21 @@ import 'package:decimal/decimal.dart';
 import '../../data/models.dart';
 import '../timeline/zoom_level.dart';
 
-/// One dated occurrence of a transaction series.
+/// One dated occurrence of an event series.
 class ReminderItem {
-  const ReminderItem({required this.transaction, required this.date});
+  const ReminderItem({required this.event, required this.date});
 
-  final Transaction transaction;
+  final BudgetEvent event;
   final DateTime date;
 
   /// A once-off override of this date, if any.
-  OccurrenceOverride? get override => transaction.overrideOn(date);
+  OccurrenceOverride? get override => event.overrideOn(date);
 
   bool get isGain =>
-      (override?.direction ?? transaction.direction) ==
-      TransactionDirection.credit;
+      (override?.direction ?? event.direction) == EventDirection.credit;
 
   /// This occurrence's amount (its override, else the series amount).
-  Decimal get amount => override?.amount ?? transaction.amount;
+  Decimal get amount => override?.amount ?? event.amount;
   Decimal get signed => isGain ? amount : -amount;
 }
 
@@ -90,23 +89,23 @@ enum ReminderRange {
   }
 }
 
-/// Expands enabled transactions into occurrences within [from]..[to]
+/// Expands enabled events into occurrences within [from]..[to]
 /// (inclusive, date-only), using the same start-anchored schedule as the
-/// server and the timeline. [skipped] holds "transactionId|yyyy-mm-dd" keys
+/// server and the timeline. [skipped] holds "eventId|yyyy-mm-dd" keys
 /// for occurrences the server reports as skipped.
 List<ReminderItem> expandOccurrences(
-  Iterable<Transaction> transactions, {
+  Iterable<BudgetEvent> events, {
   required DateTime from,
   required DateTime to,
   Set<String> skipped = const {},
 }) {
   final lo = dateOnly(from), hi = dateOnly(to);
   final out = <ReminderItem>[];
-  for (final t in transactions) {
+  for (final t in events) {
     if (!t.enabled) continue;
     for (final d in occurrenceDatesBetween(t, lo, hi)) {
       if (skipped.contains(skipKey(t.id, d))) continue;
-      out.add(ReminderItem(transaction: t, date: d));
+      out.add(ReminderItem(event: t, date: d));
     }
   }
   out.sort((a, b) {
@@ -115,19 +114,19 @@ List<ReminderItem> expandOccurrences(
     // Gains first, then larger amounts, then name.
     if (a.isGain != b.isGain) return a.isGain ? -1 : 1;
     final m = b.amount.compareTo(a.amount);
-    return m != 0 ? m : a.transaction.name.compareTo(b.transaction.name);
+    return m != 0 ? m : a.event.name.compareTo(b.event.name);
   });
   return out;
 }
 
-String skipKey(String transactionId, DateTime date) {
+String skipKey(String eventId, DateTime date) {
   final d = dateOnly(date);
-  return '$transactionId|${d.year}-${d.month}-${d.day}';
+  return '$eventId|${d.year}-${d.month}-${d.day}';
 }
 
 /// Occurrence dates of [t] that fall in [lo]..[hi] (date-only, inclusive).
 Iterable<DateTime> occurrenceDatesBetween(
-  Transaction t,
+  BudgetEvent t,
   DateTime lo,
   DateTime hi,
 ) sync* {

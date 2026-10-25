@@ -12,10 +12,7 @@ Color scenarioColor(int i) =>
     AppTheme.scenarioColors[i % AppTheme.scenarioColors.length];
 
 /// Human summary of [scenarioDelta]: e.g. "+$420 by 1 Mar 27 · alert +3 wks".
-String scenarioDeltaText(
-  GoalResult r,
-  DateTime? baselineAlert,
-) {
+String scenarioDeltaText(GoalResult r, DateTime? baselineAlert) {
   final d = scenarioDelta(r, baselineAlert);
   final parts = <String>[];
   final end = r.values?.endDate;
@@ -37,25 +34,21 @@ String scenarioDeltaText(
   return parts.join(' · ');
 }
 
-/// Saved what-ifs for a pool: include/exclude each on the chart (as a
-/// coloured ghost line), compare it with the pool as it is, load it back
-/// into the goal planner, or delete it. Never edits real transactions.
+/// Saved what-ifs for a stream: include/exclude each on the chart (as a
+/// coloured ghost line), compare it with the stream as it is, load it back
+/// into the goal planner, or delete it. Never edits real events.
 class ScenariosPanel extends ConsumerWidget {
-  const ScenariosPanel({
-    super.key,
-    required this.pool,
-    required this.onLoad,
-  });
+  const ScenariosPanel({super.key, required this.stream, required this.onLoad});
 
-  final Pool pool;
+  final BudgetStream stream;
   final ValueChanged<Scenario> onLoad;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final results = ref.watch(scenarioResultsProvider(pool.id));
-    final insights = ref.watch(insightsProvider(pool.id)).valueOrNull;
-    final repo = ref.read(poolRepositoryProvider);
+    final results = ref.watch(scenarioResultsProvider(stream.id));
+    final insights = ref.watch(insightsProvider(stream.id)).valueOrNull;
+    final repo = ref.read(streamRepositoryProvider);
     Future<void> run(Future<void> Function() f) async {
       try {
         await f();
@@ -65,7 +58,7 @@ class ScenariosPanel extends ConsumerWidget {
               .showSnackBar(SnackBar(content: Text('Scenario: $e')));
         }
       }
-      ref.invalidate(scenariosProvider(pool.id));
+      ref.invalidate(scenariosProvider(stream.id));
     }
 
     final list = results.valueOrNull;
@@ -75,7 +68,7 @@ class ScenariosPanel extends ConsumerWidget {
       children: [
         Text(
           'Saved what-ifs. Included ones are drawn on the chart in their '
-          'colour and compared with the pool as it is now. Save one '
+          'colour and compared with the stream as it is now. Save one '
           'from "Plan a goal".',
           style: theme.textTheme.bodySmall?.copyWith(color: AppTheme.textMuted),
         ),
@@ -124,15 +117,15 @@ class ScenariosPanel extends ConsumerWidget {
                       Switch(
                         key: ValueKey('scenario-include-${s.id}'),
                         value: s.included,
-                        onChanged: !pool.role.canEdit
+                        onChanged: !stream.role.canEdit
                             ? null
                             : (on) => run(
-                          () => repo.updateScenario(
-                            pool.id,
-                            s.id,
-                            included: on,
-                          ),
-                        ),
+                                () => repo.updateScenario(
+                                  stream.id,
+                                  s.id,
+                                  included: on,
+                                ),
+                              ),
                       ),
                       IconButton(
                         key: ValueKey('scenario-load-${s.id}'),
@@ -141,15 +134,15 @@ class ScenariosPanel extends ConsumerWidget {
                         onPressed: () => onLoad(s),
                         icon: const Icon(Icons.edit_outlined, size: 18),
                       ),
-                      if (pool.role.canEdit)
-                      IconButton(
-                        key: ValueKey('scenario-delete-${s.id}'),
-                        tooltip: 'Delete scenario',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () =>
-                            run(() => repo.deleteScenario(pool.id, s.id)),
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                      ),
+                      if (stream.role.canEdit)
+                        IconButton(
+                          key: ValueKey('scenario-delete-${s.id}'),
+                          tooltip: 'Delete scenario',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () =>
+                              run(() => repo.deleteScenario(stream.id, s.id)),
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                        ),
                     ],
                   ),
                   Text(

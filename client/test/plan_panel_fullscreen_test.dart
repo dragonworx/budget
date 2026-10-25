@@ -9,10 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _Repo extends PoolRepository {
+class _Repo extends StreamRepository {
   _Repo() : super(ApiClient());
   @override
-  Future<GoalResult> goal(String poolId, GoalRequest request) async =>
+  Future<GoalResult> goal(String streamId, GoalRequest request) async =>
       GoalResult.fromJson({
         'status': 'incomplete',
         'solveFor': request.solveFor.name,
@@ -20,7 +20,7 @@ class _Repo extends PoolRepository {
       });
 }
 
-final _pool = Pool(
+final _stream = BudgetStream(
   id: 'acc',
   ownerId: 'u',
   name: 'A',
@@ -29,28 +29,31 @@ final _pool = Pool(
   lossThreshold: Decimal.zero,
 );
 
-Future<void> _pump(WidgetTester t, {required bool full, VoidCallback? expand}) =>
-    t.pumpWidget(
-      ProviderScope(
-        overrides: [poolRepositoryProvider.overrideWithValue(_Repo())],
-        child: MaterialApp(
-          home: Scaffold(
-            body: PlanPanel(
-              pool: _pool,
-              tab: PlanTab.goal,
-              onTab: (_) {},
-              onClose: () {},
-              onPreview: (_) {},
-              onDone: (_) {},
-              onGoalResult: (_, _) {},
-              compact: true,
-              fullScreen: full,
-              onExpand: expand,
-            ),
-          ),
+Future<void> _pump(
+  WidgetTester t, {
+  required bool full,
+  VoidCallback? expand,
+}) => t.pumpWidget(
+  ProviderScope(
+    overrides: [streamRepositoryProvider.overrideWithValue(_Repo())],
+    child: MaterialApp(
+      home: Scaffold(
+        body: PlanPanel(
+          stream: _stream,
+          tab: PlanTab.goal,
+          onTab: (_) {},
+          onClose: () {},
+          onPreview: (_) {},
+          onDone: (_) {},
+          onGoalResult: (_, _) {},
+          compact: true,
+          fullScreen: full,
+          onExpand: expand,
         ),
       ),
-    );
+    ),
+  ),
+);
 
 void main() {
   testWidgets('full screen drops the panel close (app bar has it)', (t) async {

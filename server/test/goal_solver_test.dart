@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 
 final _start = DateTime.utc(2026, 1, 1);
 
-/// Flat 1000 baseline for [days] from 1 Jan 2026 (no other transactions),
+/// Flat 1000 baseline for [days] from 1 Jan 2026 (no other events),
 /// optionally with a weekly −100 bill from 5 Jan.
 GoalBaseline _baseline({int days = 800, bool bills = false}) {
   var b = 1000.0;
@@ -56,7 +56,7 @@ void main() {
       expect(r.endBalance, closeTo(2000, 1e-6));
     });
 
-    test('amount pools for existing bills', () {
+    test('amount streams for existing bills', () {
       final r = _solver(bills: true).solve(GoalRequest(
         solveFor: GoalVar.amount,
         startDate: _start,

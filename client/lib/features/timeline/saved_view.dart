@@ -14,7 +14,7 @@ const double maxSavedStartDay = 84006;
 /// Largest balance magnitude a saved range may reach.
 const double maxSavedBalance = 1e13;
 
-/// One member's last timeline view of a pool: the left edge (a calendar
+/// One member's last timeline view of a stream: the left edge (a calendar
 /// day coordinate, see [dayCoord]), the span, the unit, and the visible
 /// balance range (null: not fitted yet, use the default).
 class SavedView {
@@ -84,15 +84,15 @@ class SavedView {
 }
 
 /// This browser's copy of each saved view (local storage), per signed-in
-/// user per pool: restores instantly, before the server copy arrives.
+/// user per stream: restores instantly, before the server copy arrives.
 class SavedViewStore {
   const SavedViewStore();
 
-  static String key(String userId, String poolId) =>
-      'budget_view:$userId:$poolId';
+  static String key(String userId, String streamId) =>
+      'budget_view:$userId:$streamId';
 
-  SavedView? load(String userId, String poolId) {
-    final raw = page.localGet(key(userId, poolId));
+  SavedView? load(String userId, String streamId) {
+    final raw = page.localGet(key(userId, streamId));
     if (raw == null || raw.isEmpty) return null;
     try {
       return SavedView.fromJson(jsonDecode(raw));
@@ -101,6 +101,6 @@ class SavedViewStore {
     }
   }
 
-  void save(String userId, String poolId, SavedView view) =>
-      page.localSet(key(userId, poolId), jsonEncode(view.toJson()));
+  void save(String userId, String streamId, SavedView view) =>
+      page.localSet(key(userId, streamId), jsonEncode(view.toJson()));
 }

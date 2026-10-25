@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app.dart';
+
 import 'package:intl/intl.dart';
 
 import '../../data/api_client.dart';
@@ -31,9 +32,9 @@ class AdminPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          tooltip: 'Pools',
+          tooltip: 'Streams',
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.go(poolsPath),
+          onPressed: () => context.go(streamsPath),
         ),
         titleSpacing: 4,
         title: const Text('Admin'),
@@ -54,12 +55,18 @@ class AdminPage extends ConsumerWidget {
                     const TabBar(
                       tabs: [
                         Tab(key: ValueKey('admin-tab-users'), text: 'Users'),
-                        Tab(key: ValueKey('admin-tab-allowlist'), text: 'Allowlist'),
+                        Tab(
+                          key: ValueKey('admin-tab-allowlist'),
+                          text: 'Allowlist',
+                        ),
                       ],
                     ),
                     Expanded(
                       child: TabBarView(
-                        children: [_UsersTab(myId: me.id), const _AllowlistTab()],
+                        children: [
+                          _UsersTab(myId: me.id),
+                          const _AllowlistTab(),
+                        ],
                       ),
                     ),
                   ],
@@ -101,7 +108,10 @@ class _UsersTab extends ConsumerWidget {
             title: Row(
               children: [
                 Flexible(
-                  child: Text(u.user.displayName, overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    u.user.displayName,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 if (u.isAdmin) ...[
                   const SizedBox(width: 6),
@@ -115,8 +125,9 @@ class _UsersTab extends ConsumerWidget {
             ),
             subtitle: Text(
               [
-                if (u.user.name != null && u.user.name!.isNotEmpty) u.user.email,
-                '${u.ownedPools} pool${u.ownedPools == 1 ? '' : 's'}',
+                if (u.user.name != null && u.user.name!.isNotEmpty)
+                  u.user.email,
+                '${u.ownedStreams} stream${u.ownedStreams == 1 ? '' : 's'}',
                 last == null
                     ? 'never signed in'
                     : 'last in ${DateFormat('d MMM y').format(last.toLocal())}',
@@ -126,7 +137,9 @@ class _UsersTab extends ConsumerWidget {
             trailing: u.user.id == myId
                 ? const Text('You')
                 : Tooltip(
-                    message: u.disabled ? 'Enable sign-in' : 'Disable (signs them out)',
+                    message: u.disabled
+                        ? 'Enable sign-in'
+                        : 'Disable (signs them out)',
                     child: Switch(
                       key: ValueKey('admin-user-enabled-${u.user.email}'),
                       value: !u.disabled,
@@ -137,7 +150,10 @@ class _UsersTab extends ConsumerWidget {
                               .setDisabled(u.user.id, !on);
                           ref.invalidate(adminUsersProvider);
                           if (context.mounted) {
-                            _toast(context, '${u.user.email} ${on ? 'enabled' : 'disabled'}');
+                            _toast(
+                              context,
+                              '${u.user.email} ${on ? 'enabled' : 'disabled'}',
+                            );
                           }
                         } catch (e) {
                           if (context.mounted) _toast(context, e);
@@ -171,7 +187,8 @@ class _AllowlistTabState extends ConsumerState<_AllowlistTab> {
 
   Future<void> _add() async {
     final p = _pattern.text.trim().toLowerCase();
-    if (!RegExp(r'^([^@\s]+@[^@\s]+\.[^@\s]+|@[^@\s]+\.[^@\s]+)$').hasMatch(p)) {
+    if (!RegExp(r'^([^@\s]+@[^@\s]+\.[^@\s]+|@[^@\s]+\.[^@\s]+)$')
+        .hasMatch(p)) {
       setState(() => _error = 'Enter an email or @domain');
       return;
     }
@@ -232,7 +249,11 @@ class _AllowlistTabState extends ConsumerState<_AllowlistTab> {
             ListTile(
               key: ValueKey('allow-$p'),
               contentPadding: EdgeInsets.zero,
-              leading: Icon(p.startsWith('@') ? Icons.domain_rounded : Icons.person_outline_rounded),
+              leading: Icon(
+                p.startsWith('@')
+                    ? Icons.domain_rounded
+                    : Icons.person_outline_rounded,
+              ),
               title: Text(p),
               trailing: IconButton(
                 key: ValueKey('allow-remove-$p'),
@@ -249,10 +270,16 @@ class _AllowlistTabState extends ConsumerState<_AllowlistTab> {
               ),
             ),
           if (a.entries.isEmpty)
-            Text('No entries added in the app yet.', style: theme.textTheme.bodySmall),
+            Text(
+              'No entries added in the app yet.',
+              style: theme.textTheme.bodySmall,
+            ),
           if (a.env.isNotEmpty || a.admins.isNotEmpty) ...[
             const SizedBox(height: 20),
-            Text('From server settings (edit the env file to change)', style: theme.textTheme.labelLarge),
+            Text(
+              'From server settings (edit the env file to change)',
+              style: theme.textTheme.labelLarge,
+            ),
             const SizedBox(height: 6),
             for (final p in a.admins)
               ListTile(
@@ -288,6 +315,9 @@ class _Tag extends StatelessWidget {
       color: color.withValues(alpha: 0.18),
       borderRadius: BorderRadius.circular(4),
     ),
-    child: Text(text, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+    child: Text(
+      text,
+      style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+    ),
   );
 }

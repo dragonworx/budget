@@ -4,7 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:budget_server/api/events.dart';
+import 'package:budget_server/api/live.dart';
 import 'package:budget_server/api/router.dart';
 import 'package:budget_server/auth/google_verifier.dart';
 import 'package:budget_server/auth/jwks_cache.dart';
@@ -48,7 +48,7 @@ class Instance {
     final handler = buildHandler(pool, config,
         bus: bus,
         sessions: sessions,
-        eventsSettings: const EventsSettings(
+        liveSettings: const LiveSettings(
             heartbeat: Duration(milliseconds: 300), maxReplay: 50),
         verifier: GoogleIdTokenVerifier(
             clientId: clientId,
@@ -215,9 +215,10 @@ void main() {
     );
   }
 
-  Future<Sse> subscribe(Instance i, String who, {int? since}) async {
+  Future<Sse> subscribe(Instance i, String who,
+      {int? since, String path = '/api/live'}) async {
     final c = HttpClient();
-    final req = await c.getUrl(Uri.parse('${i.base}/api/events'));
+    final req = await c.getUrl(Uri.parse('${i.base}$path'));
     req.headers.set('cookie', cookies[who] ?? await login(who));
     if (since != null) req.headers.set('last-event-id', '$since');
     final res = await req.close();
@@ -245,53 +246,63 @@ void main() {
     if (admin == null) return markTestSkipped('no test DB');
     final ownerB = await subscribe(b, 'owner');
     final outsider = await subscribe(b, 'outsider');
-    final acc = await call(a, 'POST', '/api/pools', 'owner',
+    final acc = await call(a, 'POST', '/api/streams', 'owner',
         body: {'name': 'A1', 'seedDate': '2026-01-01'}, clientTag: 'tab-1');
     final aid = acc.json['id'] as String;
-    final ev = await ownerB.waitAction('pool.created', entityId: aid);
+    final ev = await ownerB.waitAction('stream.created', entityId: aid);
     expect(ev.containsKey('projectId'), isFalse);
-    expect(ev['poolId'], aid);
+    expect(ev['streamId'], aid);
     expect(ev['clientId'], 'tab-1');
     expect(ev['actorId'], await userId('owner'));
     expect(ev['id'], isA<int>());
-    final t = await call(a, 'POST', '/api/pools/$aid/transactions', 'owner',
+    final t = await call(a, 'POST', '/api/streams/$aid/events', 'owner',
         body: tx('x'));
-    await ownerB.waitAction('transaction.created', entityId: t.json['id']);
+    await ownerB.waitAction('event.created', entityId: t.json['id']);
     await Future<void>.delayed(const Duration(milliseconds: 300));
     expect(outsider.events.where((e) => e.event == 'change'), isEmpty);
     ownerB.close();
     outsider.close();
   });
 
-  test('pool share grant, role change and revocation stop delivery',
+  test('deprecated GET /api/events (pre-rename SSE path) still streams',
       () async {
     if (admin == null) return markTestSkipped('no test DB');
-    final acc = await call(a, 'POST', '/api/pools', 'own2',
+    final legacy = await subscribe(b, 'owner', path: '/api/events');
+    final acc = await call(a, 'POST', '/api/streams', 'owner',
+        body: {'name': 'Legacy SSE', 'seedDate': '2026-01-01'});
+    await legacy.waitAction('stream.created', entityId: acc.json['id']);
+    legacy.close();
+  });
+
+  test('stream share grant, role change and revocation stop delivery',
+      () async {
+    if (admin == null) return markTestSkipped('no test DB');
+    final acc = await call(a, 'POST', '/api/streams', 'own2',
         body: {'name': 'A', 'seedDate': '2026-01-01'});
     final aid = acc.json['id'] as String;
     await login('guest');
     final gid = await userId('guest');
     final guest = await subscribe(b, 'guest');
-    await call(a, 'POST', '/api/pools/$aid/invites', 'own2',
+    await call(a, 'POST', '/api/streams/$aid/invites', 'own2',
         body: {'email': 'guest@$domain', 'role': 'viewer'});
-    final added = await guest.waitAction('pool_share.added');
+    final added = await guest.waitAction('stream_share.added');
     expect(added['subjectUserId'], gid);
-    final t1 = await call(a, 'POST', '/api/pools/$aid/transactions', 'own2',
+    final t1 = await call(a, 'POST', '/api/streams/$aid/events', 'own2',
         body: tx('seen'));
-    await guest.waitAction('transaction.created', entityId: t1.json['id']);
-    await call(a, 'PATCH', '/api/pools/$aid/shares/$gid', 'own2',
+    await guest.waitAction('event.created', entityId: t1.json['id']);
+    await call(a, 'PATCH', '/api/streams/$aid/shares/$gid', 'own2',
         body: {'role': 'editor'});
-    final changed = await guest.waitAction('pool_share.changed');
+    final changed = await guest.waitAction('stream_share.changed');
     expect(changed['detail']['role'], 'editor');
-    await call(a, 'DELETE', '/api/pools/$aid/shares/$gid', 'own2');
-    await guest.waitAction('pool_share.revoked');
-    final t2 = await call(a, 'POST', '/api/pools/$aid/transactions', 'own2',
+    await call(a, 'DELETE', '/api/streams/$aid/shares/$gid', 'own2');
+    await guest.waitAction('stream_share.revoked');
+    final t2 = await call(a, 'POST', '/api/streams/$aid/events', 'own2',
         body: tx('hidden'));
     // Owner on A sees it; the revoked guest must not.
     final ownerA = await subscribe(a, 'own2', since: (added['id'] as int) - 1);
-    await ownerA.waitAction('transaction.created', entityId: t2.json['id']);
+    await ownerA.waitAction('event.created', entityId: t2.json['id']);
     await Future<void>.delayed(const Duration(milliseconds: 300));
-    expect(guest.has('transaction.created', entityId: t2.json['id']), isFalse);
+    expect(guest.has('event.created', entityId: t2.json['id']), isFalse);
     guest.close();
     ownerA.close();
   });
@@ -302,11 +313,11 @@ void main() {
     final first = await subscribe(b, 'own3');
     final cursor = first.events.firstWhere((e) => e.event == 'ready').id!;
     first.close();
-    final acc = await call(a, 'POST', '/api/pools', 'own3',
+    final acc = await call(a, 'POST', '/api/streams', 'own3',
         body: {'name': 'Late', 'seedDate': '2026-01-01'});
     final again = await subscribe(b, 'own3', since: cursor);
     final ev =
-        await again.waitAction('pool.created', entityId: acc.json['id']);
+        await again.waitAction('stream.created', entityId: acc.json['id']);
     expect(ev['id'], greaterThan(cursor));
     // Replay precedes 'ready'.
     final kinds = again.events.map((e) => e.event).toList();
@@ -326,7 +337,7 @@ void main() {
 
   test('failed mutations roll back their audit row; no event fires', () async {
     if (admin == null) return markTestSkipped('no test DB');
-    final acc = await call(a, 'POST', '/api/pools', 'own4',
+    final acc = await call(a, 'POST', '/api/streams', 'own4',
         body: {'name': 'RT4', 'seedDate': '2026-01-01'});
     final aid = acc.json['id'] as String;
     final sub = await subscribe(b, 'own4');
@@ -336,16 +347,16 @@ void main() {
             parameters: {'e': 'own4@$domain'}))
         .first[0];
     final before = await count();
-    final conflict = await call(a, 'PATCH', '/api/pools/$aid', 'own4',
+    final conflict = await call(a, 'PATCH', '/api/streams/$aid', 'own4',
         body: {'name': 'nope', 'version': 999});
     expect(conflict.status, 409);
-    final bad = await call(a, 'POST', '/api/pools', 'own4',
+    final bad = await call(a, 'POST', '/api/streams', 'own4',
         body: {'name': 'x', 'seedDate': 'not-a-date'});
     expect(bad.status, 400);
     expect(await count(), before);
-    final ok = await call(a, 'PATCH', '/api/pools/$aid', 'own4',
+    final ok = await call(a, 'PATCH', '/api/streams/$aid', 'own4',
         body: {'name': 'RT4b'});
-    final ev = await sub.waitAction('pool.updated', entityId: aid);
+    final ev = await sub.waitAction('stream.updated', entityId: aid);
     expect(ev['detail']['version'], ok.json['version']);
     expect(sub.events.where((e) => e.event == 'change').length, 1);
     sub.close();
@@ -354,16 +365,16 @@ void main() {
   test('listener reconnect: events after a dropped LISTEN still arrive',
       () async {
     if (admin == null) return markTestSkipped('no test DB');
-    final acc = await call(a, 'POST', '/api/pools', 'own5',
+    final acc = await call(a, 'POST', '/api/streams', 'own5',
         body: {'name': 'RT5', 'seedDate': '2026-01-01'});
     final aid = acc.json['id'] as String;
     final sub = await subscribe(b, 'own5');
     await b.listener.dropConnection();
     // Written while B's listener is down; recovered by the gap catch-up.
-    final r = await call(a, 'PATCH', '/api/pools/$aid', 'own5',
+    final r = await call(a, 'PATCH', '/api/streams/$aid', 'own5',
         body: {'name': 'RT5b'});
     expect(r.status, 200);
-    await sub.waitAction('pool.updated', entityId: aid);
+    await sub.waitAction('stream.updated', entityId: aid);
     sub.close();
   });
 

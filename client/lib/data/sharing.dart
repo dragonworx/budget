@@ -3,23 +3,23 @@ import 'models.dart';
 
 DateTime? _dt(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
 
-/// A pool's owner or share holder.
+/// A stream's owner or share holder.
 class Member {
   const Member({
     required this.user,
     required this.role,
     this.addedAt,
-    this.poolId,
-    this.poolName,
+    this.streamId,
+    this.streamName,
   });
 
   final UserRef user;
   final Role role;
   final DateTime? addedAt;
 
-  /// Set for pool shares.
-  final String? poolId;
-  final String? poolName;
+  /// Set for stream shares.
+  final String? streamId;
+  final String? streamName;
 
   String get userId => user.id;
 
@@ -27,8 +27,8 @@ class Member {
     user: UserRef.maybe({...j, 'id': j['userId'] ?? j['id']})!,
     role: Role.parse(j['role'], Role.viewer),
     addedAt: _dt(j['addedAt']),
-    poolId: j['poolId']?.toString(),
-    poolName: j['poolName']?.toString(),
+    streamId: j['streamId']?.toString(),
+    streamName: j['streamName']?.toString(),
   );
 }
 
@@ -37,8 +37,8 @@ class Invite {
     required this.id,
     required this.email,
     required this.role,
-    this.poolId,
-    this.poolName,
+    this.streamId,
+    this.streamName,
     this.invitedBy,
     this.status = 'pending',
     this.createdAt,
@@ -48,8 +48,8 @@ class Invite {
   final String id;
   final String email;
   final Role role;
-  final String? poolId;
-  final String? poolName;
+  final String? streamId;
+  final String? streamName;
   final UserRef? invitedBy;
   final String status;
   final DateTime? createdAt;
@@ -57,15 +57,15 @@ class Invite {
 
   bool get pending => status == 'pending';
 
-  /// The shared pool's name.
-  String get targetLabel => poolName ?? 'a pool';
+  /// The shared stream's name.
+  String get targetLabel => streamName ?? 'a stream';
 
   factory Invite.fromJson(Map<String, dynamic> j) => Invite(
     id: j['id'].toString(),
     email: (j['email'] ?? '').toString(),
     role: Role.parse(j['role'], Role.viewer),
-    poolId: j['poolId']?.toString(),
-    poolName: j['poolName']?.toString(),
+    streamId: j['streamId']?.toString(),
+    streamName: j['streamName']?.toString(),
     invitedBy: UserRef.maybe(j['invitedBy']),
     status: (j['status'] ?? 'pending').toString(),
     createdAt: _dt(j['createdAt']),
@@ -73,22 +73,22 @@ class Invite {
   );
 }
 
-/// A pool's owner, its shares (all of them for the owner, else just
+/// A stream's owner, its shares (all of them for the owner, else just
 /// mine) and, for the owner, pending invites.
 class ShareInfo {
   const ShareInfo({
     required this.role,
     this.members = const [],
-    this.poolShares = const [],
+    this.streamShares = const [],
     this.invites = const [],
   });
 
-  /// My role on the pool.
+  /// My role on the stream.
   final Role role;
 
   /// The owner (one entry).
   final List<Member> members;
-  final List<Member> poolShares;
+  final List<Member> streamShares;
   final List<Invite> invites;
 
   static List<T> _list<T>(dynamic v, T Function(Map<String, dynamic>) f) => [
@@ -106,14 +106,19 @@ class ShareInfo {
             }),
           ]
         : _list(j['members'], Member.fromJson),
-    poolShares: _list(j['poolShares'] ?? j['shares'], Member.fromJson),
+    streamShares: _list(j['streamShares'] ?? j['shares'], Member.fromJson),
     invites: _list(j['invites'], Invite.fromJson),
   );
 }
 
 /// Result of inviting by email: added directly, or a pending invite + link.
 class InviteResult {
-  const InviteResult({required this.added, this.invite, this.token, this.inviteUrl});
+  const InviteResult({
+    required this.added,
+    this.invite,
+    this.token,
+    this.inviteUrl,
+  });
   final bool added;
   final Invite? invite;
   final String? token;
@@ -130,8 +135,8 @@ class InvitePreview {
 }
 
 class AcceptedInvite {
-  const AcceptedInvite({this.poolId, required this.role});
-  final String? poolId;
+  const AcceptedInvite({this.streamId, required this.role});
+  final String? streamId;
   final Role role;
 }
 
@@ -142,14 +147,14 @@ class AdminUser {
     this.disabled = false,
     this.createdAt,
     this.lastLoginAt,
-    this.ownedPools = 0,
+    this.ownedStreams = 0,
   });
   final UserRef user;
   final bool isAdmin;
   final bool disabled;
   final DateTime? createdAt;
   final DateTime? lastLoginAt;
-  final int ownedPools;
+  final int ownedStreams;
 
   factory AdminUser.fromJson(Map<String, dynamic> j) => AdminUser(
     user: UserRef.maybe(j)!,
@@ -157,7 +162,7 @@ class AdminUser {
     disabled: j['disabled'] == true,
     createdAt: _dt(j['createdAt']),
     lastLoginAt: _dt(j['lastLoginAt']),
-    ownedPools: (j['ownedPools'] as num?)?.toInt() ?? 0,
+    ownedStreams: (j['ownedStreams'] as num?)?.toInt() ?? 0,
   );
 }
 
@@ -189,12 +194,12 @@ class Allowlist {
   );
 }
 
-/// The pool being shared.
+/// The stream being shared.
 class ShareTarget {
-  const ShareTarget.pool(this.id, this.name);
+  const ShareTarget.stream(this.id, this.name);
   final String id;
   final String name;
-  String get _base => '/api/pools/$id';
+  String get _base => '/api/streams/$id';
 }
 
 /// Sharing, invites and admin endpoints (plan §4b).
@@ -205,9 +210,8 @@ class SharingRepository {
   Map<String, dynamic> _map(dynamic d) =>
       d is Map ? Map<String, dynamic>.from(d) : const {};
 
-  Future<ShareInfo> load(ShareTarget t) async => ShareInfo.fromJson(
-    _map(await _api.get('${t._base}/shares')),
-  );
+  Future<ShareInfo> load(ShareTarget t) async =>
+      ShareInfo.fromJson(_map(await _api.get('${t._base}/shares')));
 
   Future<InviteResult> invite(ShareTarget t, String email, Role role) async {
     final d = _map(
@@ -219,7 +223,9 @@ class SharingRepository {
     final inv = d['invite'];
     return InviteResult(
       added: d['status'] == 'added',
-      invite: inv is Map ? Invite.fromJson(Map<String, dynamic>.from(inv)) : null,
+      invite: inv is Map
+          ? Invite.fromJson(Map<String, dynamic>.from(inv))
+          : null,
       token: d['token']?.toString(),
       inviteUrl: d['inviteUrl']?.toString(),
     );
@@ -237,7 +243,9 @@ class SharingRepository {
   Future<String> rotateLink(String inviteId) async {
     final d = _map(await _api.post('/api/invites/$inviteId/link'));
     final token = d['token']?.toString();
-    return token != null ? inviteLink(token) : (d['inviteUrl'] ?? '').toString();
+    return token != null
+        ? inviteLink(token)
+        : (d['inviteUrl'] ?? '').toString();
   }
 
   Future<void> revoke(String inviteId) => _api.delete('/api/invites/$inviteId');
@@ -251,7 +259,9 @@ class SharingRepository {
   }
 
   Future<InvitePreview> preview(String token) async {
-    final d = _map(await _api.post('/api/invites/preview', body: {'token': token}));
+    final d = _map(
+      await _api.post('/api/invites/preview', body: {'token': token}),
+    );
     return InvitePreview(
       invite: Invite.fromJson(Map<String, dynamic>.from(d['invite'] as Map)),
       emailMatches: d['emailMatches'] == true,
@@ -259,9 +269,11 @@ class SharingRepository {
   }
 
   Future<AcceptedInvite> accept(String token) async {
-    final d = _map(await _api.post('/api/invites/accept', body: {'token': token}));
+    final d = _map(
+      await _api.post('/api/invites/accept', body: {'token': token}),
+    );
     return AcceptedInvite(
-      poolId: d['poolId']?.toString(),
+      streamId: d['streamId']?.toString(),
       role: Role.parse(d['role'], Role.viewer),
     );
   }
@@ -284,9 +296,8 @@ class SharingRepository {
   Future<void> addAllowed(String pattern) =>
       _api.post('/api/admin/allowlist', body: {'pattern': pattern});
 
-  Future<void> removeAllowed(String pattern) => _api.delete(
-    '/api/admin/allowlist/${Uri.encodeComponent(pattern)}',
-  );
+  Future<void> removeAllowed(String pattern) =>
+      _api.delete('/api/admin/allowlist/${Uri.encodeComponent(pattern)}');
 }
 
 /// `<this site>/invite/<token>`.

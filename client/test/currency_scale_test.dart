@@ -1,6 +1,6 @@
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
-import 'package:budget_client/widgets/pool_dialog.dart';
+import 'package:budget_client/widgets/stream_dialog.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,8 +36,8 @@ void main() {
     });
   });
 
-  test('Pool json round-trips currencyScale, defaults to 100', () {
-    final a = Pool.fromJson({
+  test('Stream json round-trips currencyScale, defaults to 100', () {
+    final a = BudgetStream.fromJson({
       'id': 'a',
       'name': 'n',
       'currency': 'AUD',
@@ -45,11 +45,11 @@ void main() {
       'seedDate': '2026-10-01',
     });
     expect(a.currencyScale, 100);
-    final b = Pool.fromJson({...a.toJson(), 'currencyScale': 1000});
+    final b = BudgetStream.fromJson({...a.toJson(), 'currencyScale': 1000});
     expect(b.currencyScale, 1000);
     expect(b.toPatchJson()['currencyScale'], 1000);
     expect(b.toCreateJson()['currencyScale'], 1000);
-    // Pools have no currency: an older payload's field is ignored and
+    // Streams have no currency: an older payload's field is ignored and
     // never sent back.
     for (final json in [b.toJson(), b.toCreateJson(), b.toPatchJson()]) {
       expect(json.containsKey('currency'), isFalse);
@@ -57,7 +57,7 @@ void main() {
   });
 
   testWidgets('edit dialog changes Currency Scale', (tester) async {
-    final existing = Pool(
+    final existing = BudgetStream(
       id: 'a1',
       name: 'Main',
       seedBalance: Decimal.zero,
@@ -65,12 +65,12 @@ void main() {
       lossThreshold: Decimal.zero,
       currencyScale: 1000,
     );
-    late Future<Pool?> result;
+    late Future<BudgetStream?> result;
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
           builder: (c) => TextButton(
-            onPressed: () => result = showPoolDialog(c, existing: existing),
+            onPressed: () => result = showStreamDialog(c, existing: existing),
             child: const Text('open'),
           ),
         ),
@@ -84,28 +84,28 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('currency-scale-10')).last);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('pool-save')));
+    await tester.tap(find.byKey(const ValueKey('stream-save')));
     await tester.pumpAndSettle();
     expect((await result)!.currencyScale, 10);
   });
 
   test('autoCurrencyScale fits the span in 9 units', () {
-    expect(Pool.autoCurrencyScale(0), 1);
-    expect(Pool.autoCurrencyScale(800), 100);
-    expect(Pool.autoCurrencyScale(3500), 1000);
-    expect(Pool.autoCurrencyScale(-42000), 10000);
-    expect(Pool.autoCurrencyScale(5e9), 1000000);
+    expect(BudgetStream.autoCurrencyScale(0), 1);
+    expect(BudgetStream.autoCurrencyScale(800), 100);
+    expect(BudgetStream.autoCurrencyScale(3500), 1000);
+    expect(BudgetStream.autoCurrencyScale(-42000), 10000);
+    expect(BudgetStream.autoCurrencyScale(5e9), 1000000);
   });
 
-  testWidgets('new pool: no Currency Scale field; saves Hundreds', (
+  testWidgets('new stream: no Currency Scale field; saves Hundreds', (
     tester,
   ) async {
-    late Future<Pool?> result;
+    late Future<BudgetStream?> result;
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
           builder: (c) => TextButton(
-            onPressed: () => result = showPoolDialog(c),
+            onPressed: () => result = showStreamDialog(c),
             child: const Text('open'),
           ),
         ),
@@ -113,14 +113,14 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(Pool.defaultCurrencyScale, 100);
-    // Scale is only offered by Edit pool (Pool settings).
+    expect(BudgetStream.defaultCurrencyScale, 100);
+    // Scale is only offered by Edit stream (Stream settings).
     expect(find.text('Currency Scale'), findsNothing);
     expect(find.byType(DropdownButtonFormField<int>), findsNothing);
     // A big seed balance doesn't change it either.
-    await tester.enterText(find.byKey(const ValueKey('pool-seed')), '90000');
-    await tester.enterText(find.byKey(const ValueKey('pool-name')), 'N');
-    await tester.tap(find.byKey(const ValueKey('pool-save')));
+    await tester.enterText(find.byKey(const ValueKey('stream-seed')), '90000');
+    await tester.enterText(find.byKey(const ValueKey('stream-name')), 'N');
+    await tester.tap(find.byKey(const ValueKey('stream-save')));
     await tester.pumpAndSettle();
     expect((await result)!.currencyScale, 100);
     expect((await result)!.toCreateJson()['currencyScale'], 100);

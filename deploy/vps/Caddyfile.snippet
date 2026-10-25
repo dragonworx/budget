@@ -3,7 +3,7 @@
 #
 # Port mapping (deploy/vps/docker-compose.yml):
 #   budget-web listens on :80 inside Docker, published on the host as 127.0.0.1:${WEB_PORT:-8081}.
-#   budget-web proxies /api/* (incl. SSE /api/events) to the api replicas on :8080 internally,
+#   budget-web proxies /api/* (incl. SSE /api/live) to the api replicas on :8080 internally,
 #   so Caddy only needs this one upstream.
 #
 # Host Caddy (systemd, default):  reverse_proxy 127.0.0.1:8081
@@ -11,6 +11,6 @@
 budget.fresneldigital.com {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8081 {
-		flush_interval -1 # keep SSE (/api/events) streaming
+		flush_interval -1 # keep SSE (/api/live) streaming
 	}
 }

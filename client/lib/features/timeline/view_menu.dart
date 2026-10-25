@@ -5,7 +5,7 @@ import '../../theme/app_theme.dart';
 import 'combined.dart';
 
 /// The timeline's View (eye) menu: on phones Go to today / seed, and
-/// "Combine with" (other pools as checkboxes; the
+/// "Combine with" (other streams as checkboxes; the
 /// menu stays open so several can be ticked).
 ///
 /// Keyboard: Enter / Space / ↓ on the trigger opens it with the first row
@@ -15,20 +15,20 @@ class ViewMenu extends StatefulWidget {
   const ViewMenu({
     super.key,
     required this.compact,
-    required this.pools,
+    required this.streams,
     required this.combined,
     required this.onToday,
     required this.onSeed,
-    required this.onTogglePool,
+    required this.onToggleStream,
     required this.builder,
   });
 
   final bool compact;
-  final List<CombinedPool> pools;
+  final List<CombinedStream> streams;
   final Set<String> combined;
   final VoidCallback onToday;
   final VoidCallback onSeed;
-  final ValueChanged<String> onTogglePool;
+  final ValueChanged<String> onToggleStream;
 
   /// The trigger; call `open` to toggle the menu.
   final Widget Function(BuildContext context, VoidCallback open) builder;
@@ -153,24 +153,24 @@ class _ViewMenuState extends State<ViewMenu> {
           ),
         ),
       ),
-      if (widget.pools.isEmpty)
+      if (widget.streams.isEmpty)
         MenuItemButton(
           style: _style,
           onPressed: null,
-          child: const Text('No other pools'),
+          child: const Text('No other streams'),
         ),
       // Keys on a wrapper: CheckboxMenuButton hands its key to its inner
       // MenuItemButton too.
-      for (final (i, p) in widget.pools.indexed)
+      for (final (i, p) in widget.streams.indexed)
         KeyedSubtree(
           key: ValueKey('combine-${p.id}'),
           child: CheckboxMenuButton(
-            // Desktop: the first pool row takes focus on open.
+            // Desktop: the first stream row takes focus on open.
             focusNode: !widget.compact && i == 0 ? _first : null,
             style: _style,
             closeOnActivate: false,
             value: widget.combined.contains(p.id),
-            onChanged: (_) => widget.onTogglePool(p.id),
+            onChanged: (_) => widget.onToggleStream(p.id),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

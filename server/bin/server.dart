@@ -82,7 +82,7 @@ Future<void> main(List<String> args) async {
     await closing.timeout(const Duration(seconds: 2), onTimeout: () async {
       await server.close(force: true);
     });
-    // 4. Realtime listener and pool.
+    // 4. Realtime listener and stream.
     await listener.stop();
     await pool.close();
     log.info(

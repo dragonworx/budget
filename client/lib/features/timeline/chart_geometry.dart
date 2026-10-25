@@ -394,7 +394,7 @@ List<double> niceGridlines(double min, double max, {int target = 4}) {
   return out;
 }
 
-/// Where a transaction label sits relative to its occurrence dot: directly
+/// Where an event label sits relative to its occurrence dot: directly
 /// above or directly below it, its left edge flush with the dot's left edge.
 ///
 /// Tried in this order: above keeps the balance line under the dot visible;
@@ -606,7 +606,7 @@ double vertexHitRadius(PointerDeviceKind kind) => switch (kind) {
   _ => touchVertexHitRadius,
 };
 
-/// Extra reach (logical px) around a painted transaction label that still
+/// Extra reach (logical px) around a painted event label that still
 /// counts as a tap / hover on it.
 const double labelHitSlop = 2;
 
@@ -771,7 +771,7 @@ const double zeroAnchorFraction = 1 / 3;
 /// Headroom past the data's furthest balance in the default view.
 const double zeroAnchorHeadroom = 1.2;
 
-/// Default balance view (opening a pool, first data shown, a currency
+/// Default balance view (opening a stream, first data shown, a currency
 /// scale change): zero always sits [zeroAnchorFraction] up the plot.
 ///
 /// The span is 10 currency-scale [unit]s when the data in view
@@ -788,7 +788,7 @@ BalanceExtents currencyScaleRange(double unit, double dataMin, double dataMax) {
   return BalanceExtents(-f * span, (1 - f) * span);
 }
 
-/// Half-size of the opening-balance diamond for a transaction dot [radius]:
+/// Half-size of the opening-balance diamond for an event dot [radius]:
 /// a touch larger so it reads as the start of the line.
 double seedVertexRadius(double radius) => math.max(4.0, radius + 1.8);
 
@@ -833,7 +833,7 @@ class DayGroup {
   int get count => allSkipped ? all.length : active.length;
 
   /// Net of the counted occurrences (skipped ones when all are skipped).
-  /// Transfers between combined pools ([Occurrence.netted]) net out.
+  /// Transfers between combined streams ([Occurrence.netted]) net out.
   double get net => (allSkipped ? all : active).fold(
     0.0,
     (sum, o) => o.netted ? sum : sum + o.signedDelta.toDouble(),
@@ -844,8 +844,8 @@ class DayGroup {
   bool get hasDebit =>
       active.any((o) => !o.netted && o.signedDelta.toDouble() < 0);
 
-  /// The other pools (combined view) with occurrences on this day.
-  Set<String> get otherPools => {for (final o in all) ?o.poolId};
+  /// The other streams (combined view) with occurrences on this day.
+  Set<String> get otherStreams => {for (final o in all) ?o.streamId};
 
   /// Both money in and out that day.
   bool get mixed => hasCredit && hasDebit;

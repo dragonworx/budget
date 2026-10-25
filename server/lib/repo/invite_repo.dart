@@ -14,8 +14,8 @@ class Invite {
     required this.id,
     required this.email,
     required this.role,
-    required this.poolId,
-    this.poolName,
+    required this.streamId,
+    this.streamName,
     required this.invitedBy,
     required this.invitedByEmail,
     this.invitedByName,
@@ -28,8 +28,8 @@ class Invite {
   final String id;
   final String email;
   final Role role;
-  final String poolId;
-  final String? poolName;
+  final String streamId;
+  final String? streamName;
   final String invitedBy;
   final String invitedByEmail;
   final String? invitedByName;
@@ -50,8 +50,8 @@ class Invite {
         'id': id,
         'email': email,
         'role': role.name,
-        'poolId': poolId,
-        'poolName': poolName,
+        'streamId': streamId,
+        'streamName': streamName,
         'invitedBy': {
           'id': invitedBy,
           'email': invitedByEmail,
@@ -64,20 +64,20 @@ class Invite {
 }
 
 const _cols = '''
-  i.id::text, i.email, i.role::text, i.pool_id::text,
+  i.id::text, i.email, i.role::text, i.stream_id::text,
   a.name, u.id::text, u.email, u.name,
   i.created_at, i.expires_at, i.accepted_at, i.revoked_at''';
 const _from = '''
   FROM invites i
   JOIN users u ON u.id = i.invited_by
-  JOIN pools a ON a.id = i.pool_id''';
+  JOIN streams a ON a.id = i.stream_id''';
 
 Invite _row(List<Object?> x) => Invite(
       id: x[0] as String,
       email: x[1] as String,
       role: Role.parse(x[2])!,
-      poolId: x[3] as String,
-      poolName: x[4] as String?,
+      streamId: x[3] as String,
+      streamName: x[4] as String?,
       invitedBy: x[5] as String,
       invitedByEmail: x[6] as String,
       invitedByName: x[7] as String?,
@@ -87,7 +87,7 @@ Invite _row(List<Object?> x) => Invite(
       revokedAt: x[11] as DateTime?,
     );
 
-/// Invites by email to a single pool. Tokens are random;
+/// Invites by email to a single stream. Tokens are random;
 /// only HMAC(SESSION_SECRET, token) is stored.
 class InviteRepo {
   InviteRepo(this._db,
@@ -112,22 +112,22 @@ class InviteRepo {
   Future<(Invite, String)> create({
     required String email,
     required Role role,
-    required String poolId,
+    required String streamId,
     required String invitedBy,
   }) async {
     await _db.execute(
       Sql.named('''
         UPDATE invites SET revoked_at = now()
         WHERE email = @e AND accepted_at IS NULL AND revoked_at IS NULL
-          AND pool_id = @a::uuid
+          AND stream_id = @a::uuid
       '''),
-      parameters: {'e': email, 'a': poolId},
+      parameters: {'e': email, 'a': streamId},
     );
     final id = _uuid.v4();
     final token = _newToken();
     await _db.execute(
       Sql.named('''
-        INSERT INTO invites (id, token_hash, email, pool_id, role, invited_by, expires_at)
+        INSERT INTO invites (id, token_hash, email, stream_id, role, invited_by, expires_at)
         VALUES (@id::uuid, @h, @e, @a::uuid, @r::text::member_role, @by::uuid,
                 now() + make_interval(secs => @ttl))
       '''),
@@ -135,7 +135,7 @@ class InviteRepo {
         'id': id,
         'h': TypedValue(Type.byteArray, _hash(token)),
         'e': email,
-        'a': poolId,
+        'a': streamId,
         'r': role.name,
         'by': invitedBy,
         'ttl': ttl.inSeconds.toDouble(),
@@ -188,16 +188,16 @@ class InviteRepo {
   }
 
   /// Pending invites, by target or by email.
-  Future<List<Invite>> pending({String? poolId, String? email}) async {
+  Future<List<Invite>> pending({String? streamId, String? email}) async {
     final r = await _db.execute(
       Sql.named('''
         SELECT $_cols $_from
         WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()
           AND (@e::text IS NULL OR i.email = @e::text)
-          AND (@a::uuid IS NULL OR i.pool_id = @a::uuid)
+          AND (@a::uuid IS NULL OR i.stream_id = @a::uuid)
         ORDER BY i.created_at
       '''),
-      parameters: {'e': email, 'a': poolId},
+      parameters: {'e': email, 'a': streamId},
     );
     return r.map(_row).toList();
   }
@@ -205,7 +205,7 @@ class InviteRepo {
   /// Grants the invite to [userId] and marks it accepted.
   Future<void> accept(Invite inv, String userId) async {
     await MembershipRepo(_db)
-        .grantPool(inv.poolId, userId, inv.role, addedBy: inv.invitedBy);
+        .grantStream(inv.streamId, userId, inv.role, addedBy: inv.invitedBy);
     await _db.execute(
       Sql.named(
           'UPDATE invites SET accepted_at = now(), accepted_by = @u::uuid '

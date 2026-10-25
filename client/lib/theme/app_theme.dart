@@ -43,8 +43,8 @@ class AppTheme {
     Color(0xFFFF6FA5),
   ];
 
-  /// Other pools in a combined timeline, in my pools order.
-  static const List<Color> poolColors = [
+  /// Other streams in a combined timeline, in my streams order.
+  static const List<Color> streamColors = [
     Color(0xFF6FB7FF),
     Color(0xFFE38BFF),
     Color(0xFFFF9F68),
@@ -61,7 +61,7 @@ class AppTheme {
   static Color creditSoft = _credit.withValues(alpha: 0.14);
   static Color debitSoft = _debit.withValues(alpha: 0.14);
 
-  /// Transfers between pools (violet: neither income nor spend).
+  /// Transfers between streams (violet: neither income nor spend).
   static const Color transferColor = violet;
   static Color transferSoft = violet.withValues(alpha: 0.14);
 

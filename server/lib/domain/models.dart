@@ -2,8 +2,8 @@ import 'package:decimal/decimal.dart';
 
 import 'enums.dart';
 
-class Pool {
-  Pool({
+class BudgetStream {
+  BudgetStream({
     required this.id,
     required this.ownerId,
     required this.name,
@@ -11,7 +11,7 @@ class Pool {
     required this.seedDate,
     required this.lossThreshold,
     required this.displayOrder,
-    required this.transactionOrder,
+    required this.eventOrder,
     this.currencyScale = defaultCurrencyScale,
     this.version = 1,
   });
@@ -24,14 +24,14 @@ class Pool {
 
   final String id;
 
-  /// The user who owns the pool (pools are top level).
+  /// The user who owns the stream (streams are top level).
   final String ownerId;
   final String name;
   final Decimal seedBalance;
   final DateTime seedDate;
   final Decimal lossThreshold;
   final int displayOrder;
-  final List<String> transactionOrder;
+  final List<String> eventOrder;
   final int currencyScale;
 
   Map<String, Object?> toJson() => {
@@ -43,15 +43,15 @@ class Pool {
         'seedDate': formatDate(seedDate),
         'lossThreshold': lossThreshold.toString(),
         'displayOrder': displayOrder,
-        'transactionOrder': transactionOrder,
+        'eventOrder': eventOrder,
         'version': version,
       };
 }
 
-class Transaction {
-  Transaction({
+class BudgetEvent {
+  BudgetEvent({
     required this.id,
-    required this.poolId,
+    required this.streamId,
     required this.name,
     required this.direction,
     required this.amount,
@@ -82,7 +82,7 @@ class Transaction {
   }
 
   final String id;
-  final String poolId;
+  final String streamId;
   final String name;
   final Direction direction;
   final Decimal amount;
@@ -103,7 +103,7 @@ class Transaction {
 
   Map<String, Object?> toJson() => {
         'id': id,
-        'poolId': poolId,
+        'streamId': streamId,
         'name': name,
         'direction': direction.name,
         'amount': amount.toString(),
@@ -126,9 +126,9 @@ class Transaction {
         ],
       };
 
-  Transaction copyWith({
+  BudgetEvent copyWith({
     String? id,
-    String? poolId,
+    String? streamId,
     String? name,
     Direction? direction,
     Decimal? amount,
@@ -146,9 +146,9 @@ class Transaction {
     bool clearEndDate = false,
     bool clearOccurrenceCount = false,
   }) {
-    return Transaction(
+    return BudgetEvent(
       id: id ?? this.id,
-      poolId: poolId ?? this.poolId,
+      streamId: streamId ?? this.streamId,
       name: name ?? this.name,
       direction: direction ?? this.direction,
       amount: amount ?? this.amount,
@@ -169,10 +169,10 @@ class Transaction {
     );
   }
 
-  Transaction withOverrides(Map<DateTime, AmountOverride> overrides) =>
-      Transaction(
+  BudgetEvent withOverrides(Map<DateTime, AmountOverride> overrides) =>
+      BudgetEvent(
         id: id,
-        poolId: poolId,
+        streamId: streamId,
         name: name,
         direction: direction,
         amount: amount,
@@ -211,38 +211,38 @@ class TransferLink {
   TransferLink({
     required this.id,
     this.peerId,
-    this.peerPoolId,
-    this.peerPoolName,
+    this.peerStreamId,
+    this.peerStreamName,
   });
 
   final String id;
   final String? peerId;
-  final String? peerPoolId;
-  final String? peerPoolName;
+  final String? peerStreamId;
+  final String? peerStreamName;
 
   Map<String, Object?> toJson() => {
         'id': id,
-        'peerTransactionId': peerId,
-        'peerPoolId': peerPoolId,
-        'peerPoolName': peerPoolName,
+        'peerEventId': peerId,
+        'peerStreamId': peerStreamId,
+        'peerStreamName': peerStreamName,
       };
 }
 
 class Occurrence {
   Occurrence({
-    required this.transactionId,
+    required this.eventId,
     required this.date,
     required this.signedDelta,
     required this.skipped,
   });
 
-  final String transactionId;
+  final String eventId;
   final DateTime date;
   final Decimal signedDelta;
   final bool skipped;
 
   Map<String, Object?> toJson() => {
-        'transactionId': transactionId,
+        'eventId': eventId,
         'date': formatDate(date),
         'signedDelta': signedDelta.toString(),
         'skipped': skipped,
@@ -288,14 +288,14 @@ Decimal parseDecimal(Object? value) {
 }
 
 /// Reads an optional `currencyScale` from a request body. Null when absent;
-/// throws [FormatException] for values outside [Pool.currencyScales].
+/// throws [FormatException] for values outside [Stream.currencyScales].
 int? parseCurrencyScale(Map<String, Object?> body) {
   final raw = body['currencyScale'];
   if (raw == null) return null;
   final v = raw is int ? raw : int.tryParse(raw.toString());
-  if (v == null || !Pool.currencyScales.contains(v)) {
+  if (v == null || !BudgetStream.currencyScales.contains(v)) {
     throw FormatException(
-        'currencyScale must be one of ${Pool.currencyScales.join(', ')}');
+        'currencyScale must be one of ${BudgetStream.currencyScales.join(', ')}');
   }
   return v;
 }
@@ -305,8 +305,8 @@ int? parseCurrencyScale(Map<String, Object?> body) {
 /// clamped to $1..$1M. E.g. 3500 → 1000, 800 → 100, 0 → 1.
 int autoCurrencyScale(double span) {
   final s = span.abs();
-  for (final unit in Pool.currencyScales) {
+  for (final unit in BudgetStream.currencyScales) {
     if (s <= 9 * unit) return unit;
   }
-  return Pool.currencyScales.last;
+  return BudgetStream.currencyScales.last;
 }

@@ -1,6 +1,6 @@
 # Budget Tool
 
-A Flutter application for visually planning and tracking pool balances over time through discrete credit/debit transactions.
+A Flutter application for visually planning and tracking stream balances over time through discrete credit/debit events.
 
 **Platforms (v1):** Web only (`flutter run -d chrome` / web build). iOS, Android, and desktop are out of scope.
 
@@ -12,9 +12,9 @@ A Flutter application for visually planning and tracking pool balances over time
 
 ## 1. Goals
 
-1. Let a user model one or more **pools** (top level, owned by the user and shareable per pool), each with **transactions**.
-2. Show a pool’s projected **balance over time** on an infinite, zoomable timeline.
-3. Let the user create transactions by picking dates/ranges on the timeline and **solving** for unknown transaction variables (goal planning).
+1. Let a user model one or more **streams** (top level, owned by the user and shareable per stream), each with **events**.
+2. Show a stream’s projected **balance over time** on an infinite, zoomable timeline.
+3. Let the user create events by picking dates/ranges on the timeline and **solving** for unknown event variables (goal planning).
 
 Non-goals for v1: bank sync, receipts, budgets-by-category, multi-currency conversion, interest accrual formulas.
 
@@ -26,46 +26,46 @@ Non-goals for v1: bank sync, receipts, budgets-by-category, multi-currency conve
 
 ```
 User
- └── Pool (seed balance + seed date; shareable: owner / editor / viewer)
-      └── Transaction (one-time or repeating credit/debit)
+ └── Stream (seed balance + seed date; shareable: owner / editor / viewer)
+      └── Event (one-time or repeating credit/debit)
            └── Occurrence (computed instance on a calendar day)
 ```
 
 | Entity | Purpose |
 |--------|---------|
-| **Pool** | Named ledger with a seed balance and seed date. Owns transactions. |
-| **Transaction** | A planned credit or debit pattern applied to one pool. |
-| **Occurrence** | A concrete application of a transaction on one calendar day (derived, not stored unless overridden). |
+| **Stream** | Named ledger with a seed balance and seed date. Owns events. |
+| **Event** | A planned credit or debit pattern applied to one stream. |
+| **Occurrence** | A concrete application of an event on one calendar day (derived, not stored unless overridden). |
 
-### 2.2 (Projects were removed: pools are top level.)
+### 2.2 (Projects were removed: streams are top level.)
 
-### 2.3 Pool
+### 2.3 Stream
 
 | Field | Type | Notes |
 |-------|------|--------|
 | `id` | UUID | |
 | `ownerId` | UUID | Owning user |
 | `name` | string | Required, unique per owner (case-insensitive) |
-| `currency` | ISO 4217 | Fixed per pool in v1 (default device locale currency). No FX. |
+| `currency` | ISO 4217 | Fixed per stream in v1 (default device locale currency). No FX. |
 | `seedBalance` | decimal | Balance **at the start of** `seedDate` (before that day’s occurrences) |
 | `seedDate` | date | Anchor for the balance series; timeline may extend before this date (balance is undefined / not drawn before seed, or shown as flat seed—**decision: do not draw before seedDate**) |
-| `transactionOrder` | list of transaction IDs | Explicit order used as same-day tiebreaker (see §3) |
+| `eventOrder` | list of event IDs | Explicit order used as same-day tiebreaker (see §3) |
 
-**Seed semantics:** On `seedDate`, apply occurrences for that day in `transactionOrder`, starting from `seedBalance`. Days before `seedDate` are out of range for the chart.
+**Seed semantics:** On `seedDate`, apply occurrences for that day in `eventOrder`, starting from `seedBalance`. Days before `seedDate` are out of range for the chart.
 
-### 2.4 Transaction
+### 2.4 Event
 
 | Field | Type | Notes |
 |-------|------|--------|
 | `id` | UUID | |
-| `poolId` | UUID | |
+| `streamId` | UUID | |
 | `name` | string | Optional label (e.g. “Rent”, “Paycheck”) |
 | `direction` | `credit` \| `debit` | Credit raises balance; debit lowers it |
 | `amount` | decimal ≥ 0 | Magnitude per occurrence (direction separate from sign) |
 | `startDate` | date | First possible occurrence date |
 | `recurrence` | see below | |
 | `endRule` | see below | When repeating stops |
-| `enabled` | bool | Disabled transactions contribute no occurrences |
+| `enabled` | bool | Disabled events contribute no occurrences |
 
 #### Recurrence
 
@@ -83,7 +83,7 @@ Exactly one of:
 
 `daily` is sugar for `every 1 day` (UI may offer it as a shortcut; model stores `every`).
 
-#### End rule (repeating transactions only)
+#### End rule (repeating events only)
 
 Exactly one of:
 
@@ -93,17 +93,17 @@ Exactly one of:
 | `untilDate` | Last occurrence on or before `endDate` (inclusive) |
 | `count` | Exactly `occurrenceCount` occurrences (including the first) |
 
-`once` transactions ignore `endRule`.
+`once` events ignore `endRule`.
 
 #### Solver / planning mode
 
-Transactions may be created in **fully specified** form or via the **solver** (§4), which fills missing fields from a goal. After solving, the transaction is stored as a normal fully specified transaction (solver inputs are not re-solved unless the user re-opens Solve).
+Events may be created in **fully specified** form or via the **solver** (§4), which fills missing fields from a goal. After solving, the event is stored as a normal fully specified event (solver inputs are not re-solved unless the user re-opens Solve).
 
 ### 2.5 Occurrence (derived)
 
 | Field | Type | Notes |
 |-------|------|--------|
-| `transactionId` | UUID | |
+| `eventId` | UUID | |
 | `date` | date | Calendar day |
 | `signedDelta` | decimal | `+amount` for credit, `-amount` for debit |
 | `skipped` | bool | Optional per-instance override (v1: support skip only) |
@@ -128,7 +128,7 @@ Balance is computed as a **daily** series:
 
 ### 3.2 Same-day order
 
-If multiple occurrences fall on the same date, apply them in **`transactionOrder`** (pool-level list). Transactions not in the list append in creation order. Reordering in the UI updates `transactionOrder`.
+If multiple occurrences fall on the same date, apply them in **`eventOrder`** (stream-level list). Events not in the list append in creation order. Reordering in the UI updates `eventOrder`.
 
 ### 3.3 Calendar arithmetic
 
@@ -136,24 +136,24 @@ If multiple occurrences fall on the same date, apply them in **`transactionOrder
 - **Months:** Same day-of-month when possible; if the target month is shorter, use the last day of that month (e.g. Jan 31 + 1 month → Feb 28/29).
 - **Years:** Same rule on anniversary; Feb 29 start → Feb 28 in non-leap years.
 
-### 3.4 Indefinite transactions
+### 3.4 Indefinite events
 
 Computation and rendering use a **visible window** plus a buffer (e.g. ±2× viewport). Do not materialize infinite occurrences. Solver “until never” is allowed but goals that need a finite horizon require `untilDate` or `count`.
 
 ### 3.5 Precision
 
-Use decimal money (not binary float) with currency minor units (e.g. 2 places for USD). Display with the pool’s currency formatter.
+Use decimal money (not binary float) with currency minor units (e.g. 2 places for USD). Display with the stream’s currency formatter.
 
 ---
 
-## 4. Transaction Solver (Goal Planning)
+## 4. Event Solver (Goal Planning)
 
 The user fills in whichever variables they know; the solver derives **all** the others it can. Two relations tie the variables together:
 
 - **Total:** `T = A × N`
 - **Schedule:** `S`, `F`, `N`, `E` — any three determine the fourth
 
-So any four independent knowns determine the transaction (e.g. `S` + `T` + weekly `F` + `A` → `N` and `E`).
+So any four independent knowns determine the event (e.g. `S` + `T` + weekly `F` + `A` → `N` and `E`).
 
 ### 4.1 Variables
 
@@ -182,10 +182,10 @@ Every field is optional; blank means "calculate". The planner re-solves as the u
 
 - **Too few knowns:** the solver reports how many more are needed and which fields would help (e.g. `S` + `T` + `F` → "fill in one more: end date, increment amount or count").
 - **Too many knowns:** accepted if consistent, otherwise rejected with a message naming the fields to clear.
-- `N = 1` produces a `once` transaction. The stored end rule is `untilDate` when `E` was user-supplied, otherwise `count`.
+- `N = 1` produces a `once` event. The stored end rule is `untilDate` when `E` was user-supplied, otherwise `count`.
 
 **Balance goal (`B*`):** Solve using  
-`needed = B* − projectedClosingBalance(E) without this transaction`  
+`needed = B* − projectedClosingBalance(E) without this event`  
 then treat `needed` as signed `T` (credit if positive, debit if negative)—or require the user to pick direction explicitly if `needed` sign conflicts with `Dir`.
 
 ### 4.3 Constraints / errors
@@ -198,22 +198,22 @@ then treat `needed` as signed `T` (credit if positive, debit if negative)—or r
 
 ## 5. Major UI
 
-### 5.1 Pools home
+### 5.1 Streams home
 
-**Purpose:** List my pools and those shared with me; enter Timeline for a pool. After sign-in the app opens the last-used pool directly; the home is shown when there is none (or via “Manage pools”).
+**Purpose:** List my streams and those shared with me; enter Timeline for a stream. After sign-in the app opens the last-used stream directly; the home is shown when there is none (or via “Manage streams”).
 
 **Capabilities:**
 
-- List pools: “My pools”, then “Shared with me” (owner + my role).
-- Create / edit / delete pools.
-- Reorder pools (display order only).
-- Open **Timeline View** for a pool (primary CTA).
+- List streams: “My streams”, then “Shared with me” (owner + my role).
+- Create / edit / delete streams.
+- Reorder streams (display order only).
+- Open **Timeline View** for a stream (primary CTA).
 
-**Empty state:** No pools → “New pool”.
+**Empty state:** No streams → “New stream”.
 
 ### 5.2 Timeline View
 
-**Purpose:** Infinite horizontal chart of closing balance vs time; create and manage transactions in context.
+**Purpose:** Infinite horizontal chart of closing balance vs time; create and manage events in context.
 
 #### Chart
 
@@ -228,20 +228,20 @@ then treat `needed` as signed `T` (credit if positive, debit if negative)—or r
 | Before seed | No series (axis may show empty) |
 | Today | Vertical marker |
 
-#### Transaction interaction
+#### Event interaction
 
-- **Tap occurrence marker** → inspect transaction / edit / skip this occurrence / delete transaction.
-- **Tap empty day** → create **once** transaction on that date (amount + direction + name).
+- **Tap occurrence marker** → inspect event / edit / skip this occurrence / delete event.
+- **Tap empty day** → create **once** event on that date (amount + direction + name).
 - **Drag-select date range** → open **Solve / plan** sheet with `S`/`E` prefilled; user picks what to solve (§4).
-- **Transaction list panel** (side sheet or bottom sheet): all transactions for the pool, enable/disable, reorder (`transactionOrder`), edit fields manually without solver.
+- **Event list panel** (side sheet or bottom sheet): all events for the stream, enable/disable, reorder (`eventOrder`), edit fields manually without solver.
 
 #### Chrome
 
-- Pool name + current (today’s) closing balance in app bar.
-- Back to the Pools home.
+- Stream name + current (today’s) closing balance in app bar.
+- Back to the Streams home.
 - Zoom controls; “Jump to today”; “Jump to seed”.
 
-### 5.3 Transaction editor (shared)
+### 5.3 Event editor (shared)
 
 Fields matching §2.4. Validation inline. Recurrence and end-rule controls mutually exclusive as specified. Preview next few occurrence dates.
 
@@ -251,13 +251,13 @@ Fields matching §2.4. Validation inline. Recurrence and end-rule controls mutua
 
 ### v1 (must)
 
-- [ ] Pools CRUD  
-- [ ] Pools CRUD (name, currency, seed balance, seed date)  
-- [ ] Transactions CRUD (once / every N units; end never / until date / count)  
+- [ ] Streams CRUD  
+- [ ] Streams CRUD (name, currency, seed balance, seed date)  
+- [ ] Events CRUD (once / every N units; end never / until date / count)  
 - [ ] Skip single occurrence  
-- [ ] Daily balance engine with same-day `transactionOrder`  
+- [ ] Daily balance engine with same-day `eventOrder`  
 - [ ] Timeline: pan, zoom levels, today marker, occurrence markers  
-- [ ] Create one-time transaction from day tap  
+- [ ] Create one-time event from day tap  
 - [ ] Range-select → solver (fill any known variables, calculate the rest) as in §4.2  
 - [ ] Browser-local persistence + survive refresh / restart  
 - [ ] Web run target with hot reload in daily development  
@@ -266,14 +266,14 @@ Fields matching §2.4. Validation inline. Recurrence and end-rule controls mutua
 ### v1.1 (should)
 
 - [ ] Target closing balance `B*` solver mode  
-- [ ] Duplicate transaction / duplicate pool  
-- [ ] Export/import transactions JSON  
-- [ ] Soft color coding per transaction on the chart  
+- [ ] Duplicate event / duplicate stream  
+- [ ] Export/import events JSON  
+- [ ] Soft color coding per event on the chart  
 
 ### Out of scope (for now)
 
 - Bank / Plaid sync  
-- Transfers between pools (model as paired transactions manually in v1)  
+- Transfers between streams (model as paired events manually in v1)  
 - Interest, fees, amortization schedules as first-class types  
 - Multi-currency conversion  
 - Auth / sync / multi-device  
@@ -298,14 +298,14 @@ Resolved in this draft (change if wrong):
 1. Chart plots **closing** balance per day.  
 2. No drawing before `seedDate`.  
 3. Direction and amount are separate fields (not signed amount).  
-4. Same-day tiebreak = explicit `transactionOrder`.  
+4. Same-day tiebreak = explicit `eventOrder`.  
 5. Local-only persistence for v1.  
 
 Still open:
 
 1. Exact chart visual (step line vs bars).  
 2. Default currency source (device locale vs user setting at first launch).  
-3. Whether deleting a pool is recoverable (trash vs hard delete).  
+3. Whether deleting a stream is recoverable (trash vs hard delete).  
 4. Max practical pan range for `endRule = never` (e.g. seed → seed+100 years clamp).  
 
 ---
@@ -315,7 +315,7 @@ Still open:
 | Term | Definition |
 |------|------------|
 | Seed | Starting balance and date that anchor the series |
-| Transaction | Recurring or one-time credit/debit pattern |
-| Occurrence | One application of a transaction on a day |
+| Event | Recurring or one-time credit/debit pattern |
+| Occurrence | One application of an event on a day |
 | Closing balance | Balance after all of that day’s occurrences |
-| Solver | UI/engine that computes a missing transaction variable from a goal |
+| Solver | UI/engine that computes a missing event variable from a goal |

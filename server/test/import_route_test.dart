@@ -3,10 +3,10 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:budget_server/api/pools.dart';
+import 'package:budget_server/api/streams.dart';
 import 'package:budget_server/config.dart';
 import 'package:budget_server/db.dart';
-import 'package:budget_server/repo/pool_repo.dart';
+import 'package:budget_server/repo/stream_repo.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
@@ -35,7 +35,7 @@ void main() {
       return;
     }
     final owner = await testOwnerId(c);
-    final pool = (await PoolRepo(c).create(
+    final stream = (await StreamRepo(c).create(
             ownerId: owner,
             name: 'Import offsets',
             seedBalance: Decimal.zero,
@@ -43,10 +43,10 @@ void main() {
             lossThreshold: Decimal.zero))
         .id;
     try {
-      final h = buildPoolsApi(c).call;
+      final h = buildStreamsApi(c).call;
       Future<({int status, dynamic json})> post(String q, String body) async {
         final res = await h(Request(
-            'POST', Uri.parse('http://x/$pool/transactions/import$q'),
+            'POST', Uri.parse('http://x/$stream/events/import$q'),
             body: body));
         return (
           status: res.statusCode,
@@ -86,9 +86,9 @@ void main() {
       expect(done.status, 201);
       expect(done.json['created'], 2);
       final rows = await c.execute(
-          Sql.named('SELECT name, start_date, end_date FROM transactions '
-              'WHERE pool_id = @p::uuid ORDER BY name'),
-          parameters: {'p': pool});
+          Sql.named('SELECT name, start_date, end_date FROM events '
+              'WHERE stream_id = @p::uuid ORDER BY name'),
+          parameters: {'p': stream});
       String day(Object? d) =>
           (d as DateTime).toIso8601String().substring(0, 10);
       expect(
@@ -105,7 +105,7 @@ void main() {
       final ids = (done.json['createdIds'] as List).cast<String>();
       Future<({int status, dynamic json})> undo(Object body) async {
         final res = await h(Request(
-            'POST', Uri.parse('http://x/$pool/transactions/import/undo'),
+            'POST', Uri.parse('http://x/$stream/events/import/undo'),
             body: jsonEncode(body)));
         return (
           status: res.statusCode,
@@ -125,20 +125,20 @@ void main() {
       expect(undone.json['deleted'], 2);
       expect(undone.json['missing'], isEmpty);
       final left = await c.execute(
-          Sql.named('SELECT name FROM transactions WHERE pool_id = @p::uuid'),
-          parameters: {'p': pool});
+          Sql.named('SELECT name FROM events WHERE stream_id = @p::uuid'),
+          parameters: {'p': stream});
       expect(left.map((r) => r[0]), ['Keep']);
       final order = await c.execute(
-          Sql.named('SELECT cardinality(transaction_order) FROM pools '
+          Sql.named('SELECT cardinality(event_order) FROM streams '
               'WHERE id = @p::uuid'),
-          parameters: {'p': pool});
+          parameters: {'p': stream});
       expect(order.single[0], 1, reason: 'undone ids leave the list order');
       // A repeat (or a row deleted meanwhile) is reported, not an error.
       final again = await undo({'ids': ids});
       expect(again.json['deleted'], 0);
       expect(again.json['missing'], ids);
     } finally {
-      await PoolRepo(c).delete(pool);
+      await StreamRepo(c).delete(stream);
     }
   });
 }

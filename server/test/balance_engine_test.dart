@@ -4,15 +4,15 @@ import 'package:budget_server/engine/balance_engine.dart';
 import 'package:decimal/decimal.dart';
 import 'package:test/test.dart';
 
-Transaction _credit({
+BudgetEvent _credit({
   required String id,
   required Decimal amount,
   required DateTime date,
   DateTime? createdAt,
 }) {
-  return Transaction(
+  return BudgetEvent(
     id: id,
-    poolId: 'a1',
+    streamId: 'a1',
     name: id,
     direction: Direction.credit,
     amount: amount,
@@ -24,15 +24,15 @@ Transaction _credit({
   );
 }
 
-Transaction _debit({
+BudgetEvent _debit({
   required String id,
   required Decimal amount,
   required DateTime date,
   DateTime? createdAt,
 }) {
-  return Transaction(
+  return BudgetEvent(
     id: id,
-    poolId: 'a1',
+    streamId: 'a1',
     name: id,
     direction: Direction.debit,
     amount: amount,
@@ -50,14 +50,14 @@ void main() {
       final series = BalanceEngine.compute(
         seedBalance: Decimal.parse('100'),
         seedDate: DateTime.utc(2024, 1, 1),
-        transactions: [
+        events: [
           _credit(
             id: 'c1',
             amount: Decimal.parse('50'),
             date: DateTime.utc(2024, 1, 1),
           ),
         ],
-        transactionOrder: ['c1'],
+        eventOrder: ['c1'],
         from: DateTime.utc(2024, 1, 1),
         to: DateTime.utc(2024, 1, 1),
       );
@@ -69,14 +69,14 @@ void main() {
       final series = BalanceEngine.compute(
         seedBalance: Decimal.parse('100'),
         seedDate: DateTime.utc(2024, 1, 1),
-        transactions: [
+        events: [
           _credit(
             id: 'c1',
             amount: Decimal.parse('50'),
             date: DateTime.utc(2024, 1, 5),
           ),
         ],
-        transactionOrder: ['c1'],
+        eventOrder: ['c1'],
         from: DateTime.utc(2024, 2, 1),
         to: DateTime.utc(2024, 2, 1),
       );
@@ -88,8 +88,8 @@ void main() {
       final series = BalanceEngine.compute(
         seedBalance: Decimal.parse('10'),
         seedDate: DateTime.utc(2024, 1, 10),
-        transactions: const [],
-        transactionOrder: const [],
+        events: const [],
+        eventOrder: const [],
         from: DateTime.utc(2024, 1, 1),
         to: DateTime.utc(2024, 1, 12),
       );
@@ -100,7 +100,7 @@ void main() {
           isTrue);
     });
 
-    test('same-day order follows transactionOrder', () {
+    test('same-day order follows eventOrder', () {
       final a = _credit(
         id: 'a',
         amount: Decimal.parse('100'),
@@ -117,15 +117,14 @@ void main() {
       final series = BalanceEngine.compute(
         seedBalance: Decimal.zero,
         seedDate: DateTime.utc(2024, 1, 1),
-        transactions: [a, b],
-        transactionOrder: ['b', 'a'],
+        events: [a, b],
+        eventOrder: ['b', 'a'],
         from: DateTime.utc(2024, 1, 1),
         to: DateTime.utc(2024, 1, 1),
       );
 
       // Order does not change commutative sum, but occurrences list is ordered.
-      expect(
-          series.occurrences.map((o) => o.transactionId).toList(), ['b', 'a']);
+      expect(series.occurrences.map((o) => o.eventId).toList(), ['b', 'a']);
       expect(series.points.first.closingBalance, Decimal.parse('70'));
     });
 
@@ -133,14 +132,14 @@ void main() {
       final series = BalanceEngine.compute(
         seedBalance: Decimal.parse('100'),
         seedDate: DateTime.utc(2024, 1, 1),
-        transactions: [
+        events: [
           _debit(
             id: 'rent',
             amount: Decimal.parse('40'),
             date: DateTime.utc(2024, 1, 2),
           ),
         ],
-        transactionOrder: ['rent'],
+        eventOrder: ['rent'],
         from: DateTime.utc(2024, 1, 1),
         to: DateTime.utc(2024, 1, 2),
         skipped: {
@@ -155,7 +154,7 @@ void main() {
       final series = BalanceEngine.compute(
         seedBalance: Decimal.parse('0'),
         seedDate: DateTime.utc(2024, 1, 1),
-        transactions: [
+        events: [
           _credit(
             id: 'pay',
             amount: Decimal.parse('10'),
@@ -167,7 +166,7 @@ void main() {
             date: DateTime.utc(2024, 1, 3),
           ),
         ],
-        transactionOrder: ['pay', 'coffee'],
+        eventOrder: ['pay', 'coffee'],
         from: DateTime.utc(2024, 1, 1),
         to: DateTime.utc(2024, 1, 3),
       );

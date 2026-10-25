@@ -27,9 +27,9 @@ import '../../data/alert.dart';
 typedef ViewportChanged = void Function(DateTime viewStart, double visibleDays);
 typedef CreateOnDay = void Function(DateTime day);
 
-/// The dot popup's Edit: open [transaction]'s editor (the series editor for
+/// The dot popup's Edit: open [event]'s editor (the series editor for
 /// a recurring one), focused on the tapped occurrence [date].
-typedef EditOccurrence = void Function(Transaction transaction, DateTime date);
+typedef EditOccurrence = void Function(BudgetEvent event, DateTime date);
 
 /// Step chart of closing balance with a calendar axis.
 ///
@@ -67,12 +67,12 @@ void Function(String name, double x, bool labelled)? debugVertexLabel;
 void Function(String name, Offset center, double radius, Rect rect)?
 debugVertexLabelRect;
 
-/// Test hook: each transaction label as drawn: its box and its text lines
+/// Test hook: each event label as drawn: its box and its text lines
 /// (the day total first, then names / "+N more").
 @visibleForTesting
 void Function(Rect rect, List<String> lines)? debugVertexLabelLines;
 
-/// Test hook: each lane label as drawn: the transaction's name, its signed
+/// Test hook: each lane label as drawn: the event's name, its signed
 /// amount text, that amount's colour and the amount pill's box.
 @visibleForTesting
 void Function(String name, String amount, Color color, Rect pill)?
@@ -82,14 +82,14 @@ debugLaneAmount;
 @visibleForTesting
 void Function(String name, Rect rect)? debugLaneName;
 
-/// Most transaction names listed under a day's total before "+N more".
+/// Most event names listed under a day's total before "+N more".
 const int maxLabelNames = 6;
 
 /// A label kept from the previous paint: its box relative to the dot, how
 /// many names it listed and whether it was the one-line "Name +N more".
 typedef _LabelSpot = ({Rect rect, int names, bool compact});
 
-/// A transaction label as painted last frame (chart coords) and the centre
+/// An event label as painted last frame (chart coords) and the centre
 /// of the dot it names; taps / hover on it act as on that dot.
 typedef _LabelHit = ({Rect rect, Offset dot});
 
@@ -121,7 +121,7 @@ class BalanceChart extends StatefulWidget {
     this.selectDay,
     this.selectDayToken = 0,
     this.dataEditToken = 0,
-    this.transactionNames = const {},
+    this.eventNames = const {},
     this.dataFrom,
     this.dataThrough,
     this.fitToken = 0,
@@ -133,7 +133,7 @@ class BalanceChart extends StatefulWidget {
     this.onFitRequested,
     this.onZoomStep,
     this.onShift,
-    this.transactions = const {},
+    this.events = const {},
     this.ghosts = const [],
     this.target,
     this.targetMode = false,
@@ -141,62 +141,62 @@ class BalanceChart extends StatefulWidget {
     this.onPlanPeriod,
     this.onAddForPeriod,
     this.onTrimOccurrence,
-    this.onEditTransaction,
+    this.onEditEvent,
     this.onNewOnDay,
     this.lineStart,
-    this.combinedPools = const {},
-    this.otherTransactions = const {},
-    this.onOpenOtherTransaction,
+    this.combinedStreams = const {},
+    this.otherEvents = const {},
+    this.onOpenOtherEvent,
     this.laneOrder = const [],
     this.otherLaneOrder = const [],
   });
 
-  /// The viewed pool's transaction ids in the Transactions list's order: the
+  /// The viewed stream's event ids in the Events list's order: the
   /// order of the stacked lanes (top first). Ids it misses follow, in
-  /// [transactions] order.
+  /// [events] order.
   final List<String> laneOrder;
 
-  /// Combined view: the other pools' transaction ids, pool by pool in the
-  /// pools' order, each in its list order: the lanes after the viewed pool's.
+  /// Combined view: the other streams' event ids, stream by stream in the
+  /// streams' order, each in its list order: the lanes after the viewed stream's.
   final List<String> otherLaneOrder;
 
   /// Combined view: where the (summed) line starts, the earliest seed of
-  /// the included pools. Null: [seedDate].
+  /// the included streams. Null: [seedDate].
   final DateTime? lineStart;
 
-  /// Combined view: the other pools folded into [series], by id. Their
-  /// occurrences carry [Occurrence.poolId] and get that pool's tint.
-  final Map<String, CombinedPool> combinedPools;
+  /// Combined view: the other streams folded into [series], by id. Their
+  /// occurrences carry [Occurrence.streamId] and get that stream's tint.
+  final Map<String, CombinedStream> combinedStreams;
 
-  /// Combined view: the other pools' transactions by id (popups only; Trim
-  /// and Edit only ever use [transactions], the current pool's).
-  final Map<String, Transaction> otherTransactions;
+  /// Combined view: the other streams' events by id (popups only; Trim
+  /// and Edit only ever use [events], the current stream's).
+  final Map<String, BudgetEvent> otherEvents;
 
-  /// "Open in `pool`" in a dot popup, for another pool's transaction when I
-  /// can edit that pool. Opens its editor only.
-  final void Function(CombinedPool pool, Transaction t, DateTime date)?
-  onOpenOtherTransaction;
+  /// "Open in `stream`" in a dot popup, for another stream's event when I
+  /// can edit that stream. Opens its editor only.
+  final void Function(CombinedStream stream, BudgetEvent t, DateTime date)?
+  onOpenOtherEvent;
 
   /// "Edit" in the dot popup (a menu, in creation order, when the dot has
-  /// several transactions). Null: no Edit (viewers). Only an explicit tap on
+  /// several events). Null: no Edit (viewers). Only an explicit tap on
   /// Edit / a menu item calls this; other taps never edit.
-  final EditOccurrence? onEditTransaction;
+  final EditOccurrence? onEditEvent;
 
-  /// "+" on a dot popup row: a new transaction on that row's day, always in
-  /// this pool (also for another pool's row in a combined view). Null: no
+  /// "+" on a dot popup row: a new event on that row's day, always in
+  /// this stream (also for another stream's row in a combined view). Null: no
   /// "+" (viewers). Only a tap on that button calls it.
   final CreateOnDay? onNewOnDay;
 
   /// "Trim" on a recurring row of the dot popup: end that series on the
   /// tapped occurrence (it becomes the last one). Null: no Trim (viewers).
-  /// Only the current pool's own series get it; only that tap calls it.
+  /// Only the current stream's own series get it; only that tap calls it.
   final EditOccurrence? onTrimOccurrence;
 
   /// "Plan…" in the selection card: opens the goal planner pre-filled with
   /// the selected range. Opens a panel only; never edits data.
   final void Function(PeriodSummary period)? onPlanPeriod;
 
-  /// "+" in the selection card: open the add-transaction editor bounded to
+  /// "+" in the selection card: open the add-event editor bounded to
   /// the selected days (start .. end, inclusive). Opens the editor only;
   /// nothing is created until it is saved. Null: no "+" (viewers).
   final void Function(DateTime start, DateTime end)? onAddForPeriod;
@@ -212,8 +212,8 @@ class BalanceChart extends StatefulWidget {
   /// Dashed what-if lines (plan preview, scenarios) over the real line.
   final List<GhostLine> ghosts;
 
-  /// Transactions by id, for the occurrence hover tooltip.
-  final Map<String, Transaction> transactions;
+  /// Events by id, for the occurrence hover tooltip.
+  final Map<String, BudgetEvent> events;
 
   /// +/− keys: one centred zoom step (-1 in, +1 out). Falls back to an
   /// unanimated centred zoom when null.
@@ -230,7 +230,7 @@ class BalanceChart extends StatefulWidget {
   /// Changing this refits the balance range to the data in view.
   final int fitToken;
 
-  /// Which pools are combined into [series]. A change never refits or
+  /// Which streams are combined into [series]. A change never refits or
   /// moves anything: the balance range stays exactly as it was and the
   /// line redraws in it (it may run off-range).
   final String combineKey;
@@ -261,7 +261,7 @@ class BalanceChart extends StatefulWidget {
   /// Closing balances below this value are drawn as a loss (equal is not).
   final double lossThreshold;
 
-  /// Pool currency scale (dollars per y grid step). The chart opens at
+  /// Stream currency scale (dollars per y grid step). The chart opens at
   /// [currencyScaleRange] (zero a third up the plot) and re-applies it
   /// whenever the scale changes.
   final double? currencyScale;
@@ -285,11 +285,11 @@ class BalanceChart extends StatefulWidget {
   /// Bumped when the user changed the data (import, undo, add, edit,
   /// delete): the balance that comes back refits the balance range if the
   /// line no longer fits it (see [_BalanceChartState._refitIfDataLeftRange]).
-  /// Syncs from others and combining pools never refit.
+  /// Syncs from others and combining streams never refit.
   final int dataEditToken;
 
-  /// Occurrence transaction id to display name. Missing ids are left unlabeled.
-  final Map<String, String> transactionNames;
+  /// Occurrence event id to display name. Missing ids are left unlabeled.
+  final Map<String, String> eventNames;
 
   @override
   State<BalanceChart> createState() => _BalanceChartState();
@@ -541,7 +541,7 @@ class _BalanceChartState extends State<BalanceChart>
     if (oldWidget.zeroToken != widget.zeroToken && y != null) {
       _yRange = includeZero(y);
     }
-    // Combining / uncombining pools never moves the view: no refit, not
+    // Combining / uncombining streams never moves the view: no refit, not
     // even one still waiting for its data (the combined refetch would
     // otherwise complete it). The line just redraws in the same scale.
     if (oldWidget.combineKey != widget.combineKey) _fitAwaitingData = false;
@@ -605,7 +605,7 @@ class _BalanceChartState extends State<BalanceChart>
 
   /// A restored (saved) range is checked against the data once it is in:
   /// one far too small for the line in view (it fitted a flat line, before
-  /// transactions arrived, e.g. an import) is dropped for a fit.
+  /// events arrived, e.g. an import) is dropped for a fit.
   bool _restorePending = false;
 
   void _checkRestoredRange() {
@@ -660,7 +660,7 @@ class _BalanceChartState extends State<BalanceChart>
     if (_scaleDefault) {
       return currencyScaleRange(widget.currencyScale ?? 0, min, max);
     }
-    // A line flat at $0 (no transactions in view yet) fits the currency
+    // A line flat at $0 (no events in view yet) fits the currency
     // scale's default rather than ±$1, so what is added next shows.
     final seedV = widget.seedBalance != null && _seedInView
         ? widget.seedBalance!
@@ -682,8 +682,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// Where the line starts: the seed, or the earliest combined seed.
   DateTime get _lineStart => dateOnly(widget.lineStart ?? widget.seedDate);
 
-  Transaction? _txOf(String id) =>
-      widget.transactions[id] ?? widget.otherTransactions[id];
+  BudgetEvent? _txOf(String id) => widget.events[id] ?? widget.otherEvents[id];
 
   bool get _seedInView {
     final seed = dateOnly(widget.seedDate);
@@ -1344,10 +1343,10 @@ class _BalanceChartState extends State<BalanceChart>
   /// it and its dot, so moving from the dot to Edit keeps the tip.
   bool _tipCardContains(Offset pos) {
     final actionable =
-        widget.onEditTransaction != null ||
+        widget.onEditEvent != null ||
         widget.onNewOnDay != null ||
         widget.onTrimOccurrence != null ||
-        widget.onOpenOtherTransaction != null;
+        widget.onOpenOtherEvent != null;
     if (!actionable || _hoverDots.value == null) return false;
     return _keyContains(_tipCardKey, pos, inflate: 18);
   }
@@ -1657,8 +1656,8 @@ class _BalanceChartState extends State<BalanceChart>
                           series: widget.series,
                           seedDate: widget.seedDate,
                           lineStart: _lineStart,
-                          poolColors: {
-                            for (final p in widget.combinedPools.values)
+                          streamColors: {
+                            for (final p in widget.combinedStreams.values)
                               p.id: p.color,
                           },
                           seedBalance: widget.seedBalance,
@@ -1673,8 +1672,8 @@ class _BalanceChartState extends State<BalanceChart>
                           laneStyle:
                               (theme.textTheme.labelSmall ?? const TextStyle())
                                   .copyWith(fontWeight: FontWeight.w600),
-                          transactionNames: widget.transactionNames,
-                          transactionOrder: widget.transactions.keys.toList(),
+                          eventNames: widget.eventNames,
+                          eventOrder: widget.events.keys.toList(),
                           lanes: _laneSet(),
                           textScaler: MediaQuery.textScalerOf(context),
                           dataFrom: widget.dataFrom,
@@ -2059,7 +2058,7 @@ class _BalanceChartState extends State<BalanceChart>
         continue;
       }
       // Same rule as the toolbar heatmap's day nets.
-      if (!countsInDayTotals(o, enabled: _txOf(o.transactionId)?.enabled)) {
+      if (!countsInDayTotals(o, enabled: _txOf(o.eventId)?.enabled)) {
         continue;
       }
       final v = o.signedDelta.toDouble();
@@ -2190,7 +2189,7 @@ class _BalanceChartState extends State<BalanceChart>
               const SizedBox(width: 8),
               IconButton(
                 key: const ValueKey('pick-add'),
-                tooltip: 'Add a transaction on ${formatOccurrenceDate(day)}',
+                tooltip: 'Add an event on ${formatOccurrenceDate(day)}',
                 style: btn,
                 icon: const Icon(Icons.add_rounded, size: 22),
                 onPressed: _addFromPin,
@@ -2497,7 +2496,7 @@ class _BalanceChartState extends State<BalanceChart>
         const ValueKey('sel-row-losses'),
       ),
       row(
-        'Transactions',
+        'Events',
         '',
         Text(
           '${sum.occurrences.length}',
@@ -2556,7 +2555,7 @@ class _BalanceChartState extends State<BalanceChart>
                 const SizedBox(width: 6),
                 IconButton.outlined(
                   key: const ValueKey('sel-add'),
-                  tooltip: 'Add a transaction for this period',
+                  tooltip: 'Add an event for this period',
                   visualDensity: VisualDensity.compact,
                   iconSize: 18,
                   onPressed: () => widget.onAddForPeriod!(
@@ -2773,11 +2772,11 @@ class _BalanceChartState extends State<BalanceChart>
   Object? _lanesKey;
 
   /// The stacked lanes (see stack_lanes.dart), rebuilt only when the
-  /// transactions or their order change.
+  /// events or their order change.
   LaneSet _laneSet() {
     final key = (
-      widget.transactions,
-      widget.otherTransactions,
+      widget.events,
+      widget.otherEvents,
       widget.laneOrder,
       widget.otherLaneOrder,
     );
@@ -2793,8 +2792,8 @@ class _BalanceChartState extends State<BalanceChart>
     _lanesKey = key;
     return _lanesMemo = buildLaneSet(
       order: widget.laneOrder,
-      transactions: widget.transactions,
-      others: widget.otherTransactions,
+      events: widget.events,
+      others: widget.otherEvents,
       otherOrder: widget.otherLaneOrder,
     );
   }
@@ -2889,7 +2888,7 @@ class _BalanceChartState extends State<BalanceChart>
 
   /// [nearest] with the dots drawn on top of it (a different day group at
   /// the same spot, e.g. the opening diamond). Dots of one day, in different
-  /// lanes, are never merged: each inspects its own transaction only.
+  /// lanes, are never merged: each inspects its own event only.
   List<_Dot> _overlapping(ChartLayout layout, _Dot nearest) => [
     nearest,
     for (final d in _dots(layout))
@@ -2898,7 +2897,7 @@ class _BalanceChartState extends State<BalanceChart>
           !d.idle &&
           !identical(d, nearest) &&
           !identical(d.occurrences, nearest.occurrences) &&
-          // Lane dots of one day are never merged: one dot, one transaction.
+          // Lane dots of one day are never merged: one dot, one event.
           !(d.txId != null && d.day == nearest.day) &&
           (d.center - nearest.center).distance < 2)
         d,
@@ -2909,7 +2908,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// Priority: dot > label > the chart itself.
   /// With stacked lanes a net chip is an explicit target: inside its rect it
   /// wins over the (far bigger) dot hit radius, whose nearest dot is just
-  /// one transaction.
+  /// one event.
   _Dot? _dotAt(ChartLayout layout, Offset pos, double maxDistance) =>
       (_laneSet().isEmpty ? null : _labelDotAt(layout, pos, slop: 0)) ??
       _nearestDot(layout, pos, maxDistance) ??
@@ -2932,7 +2931,7 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   /// A day's net chip speaks for the whole day: the popup lists every
-  /// transaction on it (a lane dot, by contrast, inspects only its own).
+  /// event on it (a lane dot, by contrast, inspects only its own).
   _Dot _wholeDay(ChartLayout layout, _Dot d) {
     final day = d.day;
     if (d.isSeed || day == null || _laneSet().isEmpty) return d;
@@ -2988,7 +2987,7 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   /// Mouse hover: same nearest-dot logic and popup as touch, at the 18px
-  /// mouse hit radius; same-day grouped dots list all their transactions.
+  /// mouse hit radius; same-day grouped dots list all their events.
   void _updateDotHover(ChartLayout layout, Offset pos) {
     _touchUi = false;
     final nearest = _dotAt(
@@ -3022,15 +3021,15 @@ class _BalanceChartState extends State<BalanceChart>
   /// The day a popup row is about: its occurrence's (or the seed's).
   DateTime _rowDay(Occurrence? o) => dateOnly(o?.date ?? widget.seedDate);
 
-  /// A row's ⋮ menu entries, in order: New (a transaction on that day), Trim
+  /// A row's ⋮ menu entries, in order: New (an event on that day), Trim
   /// series here (own recurring series, when trimmable), Edit (own) or
-  /// "Edit in pool" (another pool's row I can edit). Empty: no ⋮.
+  /// "Edit in stream" (another stream's row I can edit). Empty: no ⋮.
   List<_RowAction> _rowActions(Occurrence? o, {DateTime? onDay}) {
     // A lane's dot at a step it does not occur on: [o] is its previous
     // occurrence (Trim ends the series there), [onDay] the step itself.
     final trimDay = _rowDay(o);
     final day = onDay ?? trimDay;
-    final id = o?.transactionId ?? 'seed';
+    final id = o?.eventId ?? 'seed';
     final actions = <_RowAction>[];
     if (widget.onNewOnDay != null) {
       actions.add(
@@ -3043,7 +3042,7 @@ class _BalanceChartState extends State<BalanceChart>
       );
     }
     if (o == null) return actions;
-    final own = widget.transactions[o.transactionId];
+    final own = widget.events[o.eventId];
     if (own != null) {
       if (widget.onTrimOccurrence != null && canTrimAtOccurrence(own, o.date)) {
         actions.add(
@@ -3055,30 +3054,30 @@ class _BalanceChartState extends State<BalanceChart>
           ),
         );
       }
-      if (widget.onEditTransaction != null) {
+      if (widget.onEditEvent != null) {
         actions.add(
           _RowAction(
             'tip-menu-edit-${own.id}',
             Icons.edit_outlined,
             'Edit',
-            () => widget.onEditTransaction?.call(own, day),
+            () => widget.onEditEvent?.call(own, day),
           ),
         );
       }
       return actions;
     }
-    final pool = widget.combinedPools[o.poolId];
-    final other = widget.otherTransactions[o.transactionId];
-    if (pool != null &&
+    final stream = widget.combinedStreams[o.streamId];
+    final other = widget.otherEvents[o.eventId];
+    if (stream != null &&
         other != null &&
-        pool.canEdit &&
-        widget.onOpenOtherTransaction != null) {
+        stream.canEdit &&
+        widget.onOpenOtherEvent != null) {
       actions.add(
         _RowAction(
           'tip-menu-open-other-${other.id}',
           Icons.open_in_new_rounded,
-          'Edit in ${pool.name}',
-          () => widget.onOpenOtherTransaction?.call(pool, other, day),
+          'Edit in ${stream.name}',
+          () => widget.onOpenOtherEvent?.call(stream, other, day),
         ),
       );
     }
@@ -3187,12 +3186,12 @@ class _BalanceChartState extends State<BalanceChart>
       ? DateFormat('EEE d MMM').format(d)
       : DateFormat("EEE d MMM ’yy").format(d);
 
-  /// A transaction's occurrences just before and just after [day] in the
+  /// An event's occurrences just before and just after [day] in the
   /// series (null: none), for the popup of a lane dot on a step it skips.
   (Occurrence?, Occurrence?) _idleNeighbours(String txId, DateTime day) {
     Occurrence? prev, next;
     for (final o in widget.series.occurrences) {
-      if (o.transactionId != txId) continue;
+      if (o.eventId != txId) continue;
       final d = dateOnly(o.date);
       if (d.isBefore(day)) {
         if (prev == null || d.isAfter(dateOnly(prev.date))) prev = o;
@@ -3205,7 +3204,7 @@ class _BalanceChartState extends State<BalanceChart>
 
   Widget _tooltip(ThemeData theme, _DotTip tip) {
     final maxWidth = math.min(280.0, _size.width - 8);
-    // One row per transaction on the vertex's day (seed: one row).
+    // One row per event on the vertex's day (seed: one row).
     final entries = <(_Dot, Occurrence?)>[
       for (final d in tip.dots)
         if (d.isSeed || d.idle)
@@ -3246,7 +3245,7 @@ class _BalanceChartState extends State<BalanceChart>
           ? _rowActions(idlePrev, onDay: dot.day)
           : _rowActions(o);
       // Unique per row: one series can show twice in a merged far-zoom dot.
-      final baseId = o?.transactionId ?? (idle ? dot.txId! : 'seed');
+      final baseId = o?.eventId ?? (idle ? dot.txId! : 'seed');
       final n = seen[baseId] = (seen[baseId] ?? 0) + 1;
       final rowId = n == 1 ? baseId : '$baseId@$n';
       anyActions |= actions.isNotEmpty;
@@ -3254,16 +3253,18 @@ class _BalanceChartState extends State<BalanceChart>
           ? _txOf(dot.txId!)
           : o == null
           ? null
-          : _txOf(o.transactionId);
-      final poolOf = idle ? idlePrev?.poolId : o?.poolId;
-      final otherPool = poolOf == null ? null : widget.combinedPools[poolOf];
+          : _txOf(o.eventId);
+      final streamOf = idle ? idlePrev?.streamId : o?.streamId;
+      final otherStream = streamOf == null
+          ? null
+          : widget.combinedStreams[streamOf];
       final String name;
       final String amountText;
       final Color amountColor;
       final skipped = o?.skipped ?? false;
       if (idle) {
-        final raw = widget.transactionNames[dot.txId] ?? t?.name;
-        name = raw == null || raw.trim().isEmpty ? 'Transaction' : raw.trim();
+        final raw = widget.eventNames[dot.txId] ?? t?.name;
+        name = raw == null || raw.trim().isEmpty ? 'Event' : raw.trim();
         final amount = (t?.signedAmount ?? idlePrev?.signedDelta)?.toDouble();
         amountText = amount == null ? '' : formatSignedAmount(amount);
         amountColor = amount == null || amount < 0
@@ -3274,28 +3275,28 @@ class _BalanceChartState extends State<BalanceChart>
         amountText = formatMoneyAmount(dot.balanceAfter);
         amountColor = AppTheme.accent;
       } else {
-        final raw = widget.transactionNames[o.transactionId] ?? t?.name;
-        name = raw == null || raw.trim().isEmpty ? 'Transaction' : raw.trim();
+        final raw = widget.eventNames[o.eventId] ?? t?.name;
+        name = raw == null || raw.trim().isEmpty ? 'Event' : raw.trim();
         final amount = o.signedDelta.toDouble();
         amountText = formatSignedAmount(amount);
         amountColor = skipped
             ? AppTheme.textFaint
             : (amount < 0 ? AppTheme.debitColor : AppTheme.creditColor);
       }
-      // Secondary line only when it says something: the other pool,
+      // Secondary line only when it says something: the other stream,
       // a repeat (not "One-off"), a status, or the date of a mixed popup.
       final metaSpans = <TextSpan>[
         if (!oneDay)
           TextSpan(
             text: formatSelectedDate(idle ? dateOnly(dot.day!) : _rowDay(o)),
           ),
-        if (otherPool != null)
+        if (otherStream != null)
           TextSpan(
-            text: otherPool.canEdit
-                ? otherPool.name
-                : '${otherPool.name} · view only',
+            text: otherStream.canEdit
+                ? otherStream.name
+                : '${otherStream.name} · view only',
             style: TextStyle(
-              color: otherPool.color,
+              color: otherStream.color,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -3318,7 +3319,7 @@ class _BalanceChartState extends State<BalanceChart>
           ),
         if (o != null)
           for (final s in [
-            if (o.netted) 'Transfer between combined pools: nets out',
+            if (o.netted) 'Transfer between combined streams: nets out',
             if (o.skipped) 'Skipped',
             if (t != null && !t.enabled) 'Disabled',
             if (t != null && t.overrideOn(o.date) != null)
@@ -3338,7 +3339,7 @@ class _BalanceChartState extends State<BalanceChart>
         metaParts.add(s);
       }
       final menuW = actions.isEmpty ? 0.0 : _menuButtonWidth;
-      final dotW = otherPool == null ? 0.0 : 14.0;
+      final dotW = otherStream == null ? 0.0 : 14.0;
       contentWidth = math.max(
         contentWidth,
         dotW +
@@ -3377,15 +3378,15 @@ class _BalanceChartState extends State<BalanceChart>
                       // Name (ellipsis) · amount, then the row's ⋮.
                       Row(
                         children: [
-                          if (otherPool != null)
+                          if (otherStream != null)
                             Padding(
-                              key: ValueKey('tip-pool-${otherPool.id}'),
+                              key: ValueKey('tip-stream-${otherStream.id}'),
                               padding: const EdgeInsets.only(right: 6),
                               child: Container(
                                 width: 8,
                                 height: 8,
                                 decoration: BoxDecoration(
-                                  color: otherPool.color,
+                                  color: otherStream.color,
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -3533,7 +3534,7 @@ class _BalanceChartState extends State<BalanceChart>
               ),
               const SizedBox(width: 12),
             ],
-            // Balance after the day's transactions: bold, green at or
+            // Balance after the day's events: bold, green at or
             // above the alert threshold (0 when none), red below it.
             // Takes all the room left (a Spacer would halve it).
             Expanded(
@@ -3656,7 +3657,7 @@ class _BalanceChartState extends State<BalanceChart>
   Widget _addButton(ThemeData theme, DateTime day) {
     final rect = _dayButtonRect(_layout, day);
     if (rect == null) return const SizedBox.shrink();
-    final label = 'New transaction on ${formatDate(day)}';
+    final label = 'New event on ${formatDate(day)}';
     // Purely visual: clicks, drags and wheel events fall through to the
     // chart's Listener, which treats a click inside this rect as "create".
     return Positioned(
@@ -3695,11 +3696,11 @@ double _laneHeight(LaneSet lanes, ChartLayout layout) => laneThickness(
 );
 
 /// Test hook: called for every stacked-lane dot painted, with its
-/// transaction (null: no lane) and centre in chart coordinates.
+/// event (null: no lane) and centre in chart coordinates.
 @visibleForTesting
 void Function(String? txId, Offset center)? debugLaneDot;
 
-/// Test hook: a lane's dot at a step its transaction does not occur on.
+/// Test hook: a lane's dot at a step its event does not occur on.
 @visibleForTesting
 void Function(String? txId, Offset center)? debugLaneIdleDot;
 
@@ -3883,7 +3884,7 @@ class _BalanceChartPainter extends CustomPainter {
     required this.series,
     required this.seedDate,
     DateTime? lineStart,
-    this.poolColors = const {},
+    this.streamColors = const {},
     this.seedBalance,
     required this.lossThreshold,
     required this.viewStart,
@@ -3891,8 +3892,8 @@ class _BalanceChartPainter extends CustomPainter {
     required this.labelStyle,
     required this.strongStyle,
     required this.laneStyle,
-    required this.transactionNames,
-    this.transactionOrder = const [],
+    required this.eventNames,
+    this.eventOrder = const [],
     required this.lanes,
     required this.textScaler,
     this.dataFrom,
@@ -3915,8 +3916,8 @@ class _BalanceChartPainter extends CustomPainter {
   /// Where the line starts (the earliest combined seed; else [seedDate]).
   final DateTime lineStart;
 
-  /// Combined view: tint per other pool id (their dots get a ring).
-  final Map<String, Color> poolColors;
+  /// Combined view: tint per other stream id (their dots get a ring).
+  final Map<String, Color> streamColors;
 
   /// Opening balance on [seedDate]; drawn as the initial vertex. Null: none.
   final double? seedBalance;
@@ -3934,11 +3935,11 @@ class _BalanceChartPainter extends CustomPainter {
   final List<_LabelHit> labelHits;
   final TextStyle strongStyle;
   final TextStyle laneStyle;
-  final Map<String, String> transactionNames;
+  final Map<String, String> eventNames;
 
-  /// Transaction ids in the order they were added (labels list a day's
-  /// names in this order). Ids not in it follow, by [transactionNames].
-  final List<String> transactionOrder;
+  /// Event ids in the order they were added (labels list a day's
+  /// names in this order). Ids not in it follow, by [eventNames].
+  final List<String> eventOrder;
 
   /// The stacked lanes the balance line is drawn as (none: a plain line).
   final LaneSet lanes;
@@ -4659,7 +4660,7 @@ class _BalanceChartPainter extends CustomPainter {
   double _laneH = 0;
 
   /// The balance line as stacked lanes: a ribbon one lane per active
-  /// transaction (list order, top first), centred on the balance and stepping
+  /// event (list order, top first), centred on the balance and stepping
   /// with it at each day's left edge; a thin line where no lane is active.
   /// Lane names are written inside their lanes.
   void _paintStack(
@@ -4694,7 +4695,7 @@ class _BalanceChartPainter extends CustomPainter {
     for (final p in plateaus) {
       cost += p.active.length;
     }
-    // A heavy pool zoomed far out: one band, no per-lane shapes.
+    // A heavy stream zoomed far out: one band, no per-lane shapes.
     final collapse = cost > 9000;
     final paths = collapse
         ? null
@@ -4966,8 +4967,8 @@ class _BalanceChartPainter extends CustomPainter {
     }
   }
 
-  /// Day dots and day totals for the stacked lanes: a dot per transaction on
-  /// the left edge of its day, in that transaction's lane; the day's net
+  /// Day dots and day totals for the stacked lanes: a dot per event on
+  /// the left edge of its day, in that event's lane; the day's net
   /// total above (else below) the ribbon, flush left with the day.
   void _paintLaneOccurrences(
     Canvas canvas,
@@ -5077,7 +5078,7 @@ class _BalanceChartPainter extends CustomPainter {
           for (final d in laneDots.dots) {
             final center = Offset(x, d.y);
             if (d.idle) {
-              // The lane has no transaction on this step: a small dimmed
+              // The lane has no event on this step: a small dimmed
               // ring, so the occurring dots still stand out.
               debugLaneIdleDot?.call(d.txId, center);
               final ir = math.max(1.7, r * 0.62);
@@ -5120,10 +5121,10 @@ class _BalanceChartPainter extends CustomPainter {
               );
               if (!simple) canvas.drawCircle(center, r, ring);
             }
-            // Combined view: another pool's money gets its tint as a ring.
+            // Combined view: another stream's money gets its tint as a ring.
             if (!simple) {
-              final pool = d.own.first.poolId;
-              final c = pool == null ? null : poolColors[pool];
+              final stream = d.own.first.streamId;
+              final c = stream == null ? null : streamColors[stream];
               if (c != null) {
                 canvas.drawCircle(
                   center,
@@ -5327,9 +5328,9 @@ class _BalanceChartPainter extends CustomPainter {
             ..strokeWidth = 1.5,
         );
       }
-      // Combined view: another pool's money that day gets its tint as a
-      // ring (split into arcs when several other pools share the day).
-      final others = [for (final id in g.otherPools) ?poolColors[id]];
+      // Combined view: another stream's money that day gets its tint as a
+      // ring (split into arcs when several other streams share the day).
+      final others = [for (final id in g.otherStreams) ?streamColors[id]];
       for (final (i, c) in others.indexed) {
         final sweep = 2 * math.pi / others.length;
         canvas.drawArc(
@@ -5383,7 +5384,7 @@ class _BalanceChartPainter extends CustomPainter {
   }
 
   /// Opening-balance vertex: a hollow accent diamond, unlike the round
-  /// transaction dots.
+  /// event dots.
   void _paintSeedVertex(Canvas canvas, Offset c, double r) {
     final path = Path()
       ..moveTo(c.dx, c.dy - r)
@@ -5401,17 +5402,15 @@ class _BalanceChartPainter extends CustomPainter {
     );
   }
 
-  /// Names of the transactions counted on day [g] (the skipped ones only
+  /// Names of the events counted on day [g] (the skipped ones only
   /// when every one is skipped), once each, in the order they were added
   /// (as the dot popup's Edit menu lists them).
   List<String> _dayNames(DayGroup g) {
     final ids = <String>{
-      for (final o in g.allSkipped ? g.all : g.active) o.transactionId,
+      for (final o in g.allSkipped ? g.all : g.active) o.eventId,
     }.toList();
-    final order = {for (final (i, id) in transactionOrder.indexed) id: i};
-    final fallback = {
-      for (final (i, id) in transactionNames.keys.indexed) id: i,
-    };
+    final order = {for (final (i, id) in eventOrder.indexed) id: i};
+    final fallback = {for (final (i, id) in eventNames.keys.indexed) id: i};
     int rank(String id) =>
         order[id] ?? (order.length + (fallback[id] ?? fallback.length));
     final sorted = [...ids]
@@ -5421,12 +5420,12 @@ class _BalanceChartPainter extends CustomPainter {
       });
     return [
       for (final id in sorted)
-        if (transactionNames[id] case final raw?)
-          raw.trim().isEmpty ? 'Transaction' : raw.trim(),
+        if (eventNames[id] case final raw?)
+          raw.trim().isEmpty ? 'Event' : raw.trim(),
     ];
   }
 
-  /// Transaction labels for each occurrence dot, flush left with the dot and
+  /// Event labels for each occurrence dot, flush left with the dot and
   /// directly above it (or below, when above runs off the plot or collides).
   /// Width follows the free room and the zoom, and a label is omitted when
   /// neither spot is free.
@@ -5503,7 +5502,7 @@ class _BalanceChartPainter extends CustomPainter {
       final vertexStyle = vertex.skipped
           ? style.copyWith(color: AppTheme.textFaint)
           : style;
-      // Main line: the day's net transaction total (never the balance).
+      // Main line: the day's net event total (never the balance).
       final amount = TextPainter(
         text: TextSpan(
           text: vertex.seed
@@ -5679,7 +5678,7 @@ class _BalanceChartPainter extends CustomPainter {
           }
         }
       }
-      // Fresh layout. Every option names at least one transaction: as many
+      // Fresh layout. Every option names at least one event: as many
       // names as fit (most first), then, on a busy day, "Name +N more" on a
       // single line. Each is tried above, then below the dot, flush left
       // with it, names shortened with "…" to fit the room. Only when none
@@ -5881,7 +5880,7 @@ class _BalanceChartPainter extends CustomPainter {
     return oldDelegate.series != series ||
         oldDelegate.seedDate != seedDate ||
         oldDelegate.lineStart != lineStart ||
-        !mapEquals(oldDelegate.poolColors, poolColors) ||
+        !mapEquals(oldDelegate.streamColors, streamColors) ||
         oldDelegate.seedBalance != seedBalance ||
         oldDelegate.lossThreshold != lossThreshold ||
         oldDelegate.viewStart != viewStart ||
@@ -5895,9 +5894,9 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.highlightY != highlightY ||
         oldDelegate.yRange?.max != yRange?.max ||
         oldDelegate.dataThrough != dataThrough ||
-        !mapEquals(oldDelegate.transactionNames, transactionNames) ||
+        !mapEquals(oldDelegate.eventNames, eventNames) ||
         !identical(oldDelegate.lanes, lanes) ||
-        !listEquals(oldDelegate.transactionOrder, transactionOrder);
+        !listEquals(oldDelegate.eventOrder, eventOrder);
   }
 }
 
@@ -5933,7 +5932,7 @@ class _ChartVertex {
   /// The opening-balance vertex: amount unsigned, in the accent colour.
   final bool seed;
 
-  /// Transaction names listed under the total, in the order added. Empty
+  /// Event names listed under the total, in the order added. Empty
   /// when none are known; the total is still shown.
   final List<String> names;
 
@@ -5943,7 +5942,7 @@ class _ChartVertex {
   final Offset center;
   final double radius;
 
-  /// The day's net transaction total (+ credit, − debit) over its counted
+  /// The day's net event total (+ credit, − debit) over its counted
   /// occurrences (overrides included). Shown even when every one is
   /// skipped (greyed); the running balance is read off the axis.
   final double amount;
@@ -5979,7 +5978,7 @@ class _Dot {
     this.idle = false,
   }) : balanceY = balanceY ?? center.dy;
 
-  /// Stacked lanes: this transaction has a lane at this step but does not
+  /// Stacked lanes: this event has a lane at this step but does not
   /// occur on it ([occurrences] is empty; [txId] and [day] say which).
   final bool idle;
 
@@ -5989,7 +5988,7 @@ class _Dot {
   /// The day this dot is on (null: the opening-balance diamond).
   final DateTime? day;
 
-  /// Stacked lanes: the transaction whose lane this dot sits in (null: none).
+  /// Stacked lanes: the event whose lane this dot sits in (null: none).
   final String? txId;
 
   /// Where the balance is on the y axis at this dot: the ribbon's centre.
@@ -6007,7 +6006,7 @@ class _Dot {
 
   bool get isSeed => occurrences.isEmpty && !idle;
 
-  /// Pool balance right after this occurrence applied.
+  /// Stream balance right after this occurrence applied.
   final double balanceAfter;
 }
 

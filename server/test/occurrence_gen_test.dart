@@ -4,7 +4,7 @@ import 'package:budget_server/engine/occurrence_gen.dart';
 import 'package:decimal/decimal.dart';
 import 'package:test/test.dart';
 
-Transaction _transaction({
+BudgetEvent _event({
   String id = 's1',
   RecurrenceMode mode = RecurrenceMode.every,
   int? interval = 1,
@@ -15,9 +15,9 @@ Transaction _transaction({
   DateTime? start,
   bool enabled = true,
 }) {
-  return Transaction(
+  return BudgetEvent(
     id: id,
-    poolId: 'a1',
+    streamId: 'a1',
     name: 'Rent',
     direction: Direction.debit,
     amount: Decimal.parse('1000'),
@@ -35,10 +35,10 @@ Transaction _transaction({
 
 void main() {
   group('OccurrenceGenerator', () {
-    test('once transaction yields single date in window', () {
-      final s = _transaction(
-          mode: RecurrenceMode.once, start: DateTime.utc(2024, 3, 5));
-      final dates = OccurrenceGenerator.datesForTransaction(
+    test('once event yields single date in window', () {
+      final s =
+          _event(mode: RecurrenceMode.once, start: DateTime.utc(2024, 3, 5));
+      final dates = OccurrenceGenerator.datesForEvent(
         s,
         DateTime.utc(2024, 3, 1),
         DateTime.utc(2024, 3, 31),
@@ -46,9 +46,9 @@ void main() {
       expect(dates, [DateTime.utc(2024, 3, 5)]);
     });
 
-    test('monthly transaction clamps and stays inside window', () {
-      final s = _transaction();
-      final dates = OccurrenceGenerator.datesForTransaction(
+    test('monthly event clamps and stays inside window', () {
+      final s = _event();
+      final dates = OccurrenceGenerator.datesForEvent(
         s,
         DateTime.utc(2024, 1, 1),
         DateTime.utc(2024, 4, 30),
@@ -62,13 +62,13 @@ void main() {
     });
 
     test('count end rule limits occurrences', () {
-      final s = _transaction(
+      final s = _event(
         endMode: EndMode.count,
         occurrenceCount: 2,
         unit: RecurrenceUnit.weeks,
         start: DateTime.utc(2024, 1, 1),
       );
-      final dates = OccurrenceGenerator.datesForTransaction(
+      final dates = OccurrenceGenerator.datesForEvent(
         s,
         DateTime.utc(2024, 1, 1),
         DateTime.utc(2024, 12, 31),
@@ -80,12 +80,12 @@ void main() {
     });
 
     test('until_date inclusive', () {
-      final s = _transaction(
+      final s = _event(
         endMode: EndMode.untilDate,
         endDate: DateTime.utc(2024, 2, 29),
         start: DateTime.utc(2024, 1, 31),
       );
-      final dates = OccurrenceGenerator.datesForTransaction(
+      final dates = OccurrenceGenerator.datesForEvent(
         s,
         DateTime.utc(2024, 1, 1),
         DateTime.utc(2024, 12, 31),
@@ -96,10 +96,10 @@ void main() {
       ]);
     });
 
-    test('disabled transactions contribute nothing', () {
-      final s = _transaction(enabled: false);
+    test('disabled events contribute nothing', () {
+      final s = _event(enabled: false);
       final occ = OccurrenceGenerator.generate(
-        transactions: [s],
+        events: [s],
         from: DateTime.utc(2024, 1, 1),
         to: DateTime.utc(2024, 3, 1),
       );
@@ -107,10 +107,10 @@ void main() {
     });
 
     test('skipped flag does not remove occurrence from list', () {
-      final s = _transaction(
-          mode: RecurrenceMode.once, start: DateTime.utc(2024, 1, 10));
+      final s =
+          _event(mode: RecurrenceMode.once, start: DateTime.utc(2024, 1, 10));
       final occ = OccurrenceGenerator.generate(
-        transactions: [s],
+        events: [s],
         from: DateTime.utc(2024, 1, 1),
         to: DateTime.utc(2024, 1, 31),
         skipped: {

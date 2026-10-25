@@ -1,11 +1,11 @@
-// Transaction editor schedule: Once / Repeats, then Every [− N +] [unit ▾].
+// Event editor schedule: Once / Repeats, then Every [− N +] [unit ▾].
 // Every former preset (weekly, fortnightly, monthly, quarterly, yearly …) is
 // just N + unit, so existing series open and save unchanged.
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/frequency.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
-import 'package:budget_client/features/transactions/transaction_editor.dart';
+import 'package:budget_client/features/events/event_editor.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
@@ -13,31 +13,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'support/fake_pools.dart';
+import 'support/fake_streams.dart';
 
-class _Txs extends TransactionRepository {
+class _Txs extends EventRepository {
   _Txs() : super(ApiClient());
-  final saved = <Transaction>[];
+  final saved = <BudgetEvent>[];
   @override
-  Future<List<Transaction>> listForPool(String poolId) async => [];
+  Future<List<BudgetEvent>> listForStream(String streamId) async => [];
   @override
-  Future<Transaction> create(String poolId, Transaction draft) async {
+  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
     saved.add(draft);
     return draft;
   }
 
   @override
-  Future<Transaction> update(Transaction t, {bool force = false}) async {
+  Future<BudgetEvent> update(BudgetEvent t, {bool force = false}) async {
     saved.add(t);
     return t;
   }
 }
 
-Transaction _series(int? interval, RecurrenceUnit? unit) => Transaction(
+BudgetEvent _series(int? interval, RecurrenceUnit? unit) => BudgetEvent(
   id: 't1',
-  poolId: 'a',
+  streamId: 'a',
   name: 'Rent',
-  direction: TransactionDirection.debit,
+  direction: EventDirection.debit,
   amount: Decimal.fromInt(100),
   startDate: DateTime(2026, 10, 20),
   recurrenceMode: interval == null ? RecurrenceMode.once : RecurrenceMode.every,
@@ -47,7 +47,7 @@ Transaction _series(int? interval, RecurrenceUnit? unit) => Transaction(
   version: 1,
 );
 
-Future<_Txs> _pump(WidgetTester tester, {Transaction? existing}) async {
+Future<_Txs> _pump(WidgetTester tester, {BudgetEvent? existing}) async {
   tester.view.physicalSize = const Size(390, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -55,13 +55,13 @@ Future<_Txs> _pump(WidgetTester tester, {Transaction? existing}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        poolRepositoryProvider.overrideWithValue(FakePoolRepository()),
-        transactionRepositoryProvider.overrideWithValue(txs),
+        streamRepositoryProvider.overrideWithValue(FakeStreamRepository()),
+        eventRepositoryProvider.overrideWithValue(txs),
       ],
       child: MaterialApp(
         home: Scaffold(
-          body: TransactionEditor(
-            poolId: 'a',
+          body: EventEditor(
+            streamId: 'a',
             existing: existing,
             initialDate: DateTime(2026, 10, 20),
             onDone: (_) {},

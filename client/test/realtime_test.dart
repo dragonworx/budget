@@ -6,7 +6,7 @@ import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/realtime_service.dart';
 import 'package:budget_client/data/repositories.dart';
-import 'package:budget_client/features/transactions/transaction_editor.dart';
+import 'package:budget_client/features/events/event_editor.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:budget_client/state/realtime_providers.dart';
@@ -27,7 +27,8 @@ class FakeConn {
   void send(String s) => ctrl.add(utf8.encode(s));
   void change(int id, Map<String, dynamic> e) =>
       send('event: change\nid: $id\ndata: ${jsonEncode({'id': id, ...e})}\n\n');
-  void ready(int id) => send('event: ready\nid: $id\ndata: {"lastEventId":$id}\n\n');
+  void ready(int id) =>
+      send('event: ready\nid: $id\ndata: {"lastEventId":$id}\n\n');
   Future<void> close() => ctrl.close();
 }
 
@@ -94,42 +95,52 @@ void main() {
     });
     tearDown(() => s.stop());
 
-    test('delivers changes, de-dupes, skips own echoes, tracks cursor', () async {
-      final first = hub.next();
-      s.start();
-      final c = await first;
-      expect(c.request.headers['X-Client-Id'], 'me-tab');
-      c.send('retry: 3000\n\n');
-      c.ready(10);
-      await _tick();
-      expect(s.status.value, RealtimeStatus.connected);
-      c.change(11, {'action': 'transaction.updated', 'poolId': 'a1', 'clientId': 'other'});
-      c.change(11, {'action': 'transaction.updated', 'poolId': 'a1'});
-      c.change(12, {'action': 'pool.updated', 'clientId': 'me-tab'});
-      await _tick();
-      expect(got.map((e) => e.id), [11]);
-      expect(s.lastEventId, 12);
-    });
+    test(
+      'delivers changes, de-dupes, skips own echoes, tracks cursor',
+      () async {
+        final first = hub.next();
+        s.start();
+        final c = await first;
+        expect(c.request.headers['X-Client-Id'], 'me-tab');
+        c.send('retry: 3000\n\n');
+        c.ready(10);
+        await _tick();
+        expect(s.status.value, RealtimeStatus.connected);
+        c.change(11, {
+          'action': 'event.updated',
+          'streamId': 'a1',
+          'clientId': 'other',
+        });
+        c.change(11, {'action': 'event.updated', 'streamId': 'a1'});
+        c.change(12, {'action': 'stream.updated', 'clientId': 'me-tab'});
+        await _tick();
+        expect(got.map((e) => e.id), [11]);
+        expect(s.lastEventId, 12);
+      },
+    );
 
-    test('reconnects with Last-Event-ID / since, honouring retry then backoff', () async {
-      var opened = hub.next();
-      s.start();
-      final c1 = await opened;
-      c1.send('retry: 3000\n\n');
-      c1.ready(20);
-      await _tick();
-      opened = hub.next();
-      await c1.close();
-      final c2 = await opened;
-      expect(sleeps.first, const Duration(seconds: 3));
-      expect(c2.request.headers['Last-Event-ID'], '20');
-      expect(c2.request.url.queryParameters['since'], '20');
-      expect(s.status.value, RealtimeStatus.reconnecting);
-      opened = hub.next();
-      await c2.close(); // fails again before ready -> longer delay
-      await opened;
-      expect(sleeps[1], greaterThanOrEqualTo(const Duration(seconds: 6)));
-    });
+    test(
+      'reconnects with Last-Event-ID / since, honouring retry then backoff',
+      () async {
+        var opened = hub.next();
+        s.start();
+        final c1 = await opened;
+        c1.send('retry: 3000\n\n');
+        c1.ready(20);
+        await _tick();
+        opened = hub.next();
+        await c1.close();
+        final c2 = await opened;
+        expect(sleeps.first, const Duration(seconds: 3));
+        expect(c2.request.headers['Last-Event-ID'], '20');
+        expect(c2.request.url.queryParameters['since'], '20');
+        expect(s.status.value, RealtimeStatus.reconnecting);
+        opened = hub.next();
+        await c2.close(); // fails again before ready -> longer delay
+        await opened;
+        expect(sleeps[1], greaterThanOrEqualTo(const Duration(seconds: 6)));
+      },
+    );
 
     test('goodbye stops for good and reports', () async {
       final opened = hub.next();
@@ -157,7 +168,9 @@ void main() {
       final opened = hub.next();
       s.start();
       final c = await opened;
-      c.send('event: resync\nid: 99\ndata: {"lastEventId":99,"reason":"too far behind"}\n\n');
+      c.send(
+        'event: resync\nid: 99\ndata: {"lastEventId":99,"reason":"too far behind"}\n\n',
+      );
       c.send('event: error\ndata: {"error":"boom"}\n\n');
       await _tick();
       expect(resyncs, ['too far behind', 'boom']);
@@ -171,7 +184,9 @@ void main() {
       c1.ready(5);
       await _tick();
       opened = hub.next();
-      c1.send('retry: 1000\n\nevent: reconnect\ndata: {"reason":"shutdown","lastEventId":7}\n\n');
+      c1.send(
+        'retry: 1000\n\nevent: reconnect\ndata: {"reason":"shutdown","lastEventId":7}\n\n',
+      );
       final c2 = await opened;
       expect(sleeps.last, const Duration(seconds: 1));
       expect(c2.request.headers['Last-Event-ID'], '7');
@@ -194,91 +209,130 @@ void main() {
   });
 
   group('controller', () {
-    testWidgets('events invalidate data; revocation navigates away', (tester) async {
+    testWidgets('events invalidate data; revocation navigates away', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final tx = _Txs();
-      final c = ProviderContainer(overrides: [
-        authRepositoryProvider.overrideWithValue(FakeAuthRepository(user: adminUser)),
-        poolRepositoryProvider.overrideWithValue(_Pools()),
-        transactionRepositoryProvider.overrideWithValue(tx),
-      ]);
+      final c = ProviderContainer(
+        overrides: [
+          authRepositoryProvider.overrideWithValue(
+            FakeAuthRepository(user: adminUser),
+          ),
+          streamRepositoryProvider.overrideWithValue(_Streams()),
+          eventRepositoryProvider.overrideWithValue(tx),
+        ],
+      );
       addTearDown(c.dispose);
-      await tester.pumpWidget(UncontrolledProviderScope(container: c, child: const BudgetApp()));
+      await tester.pumpWidget(
+        UncontrolledProviderScope(container: c, child: const BudgetApp()),
+      );
       await tester.pumpAndSettle();
-      await c.read(transactionsProvider('a1').future);
+      await c.read(eventsProvider('a1').future);
       expect(tx.lists, 1);
       final ctl = c.read(realtimeControllerProvider);
-      ctl.handle(const ChangeEvent(id: 1, action: 'transaction.updated', poolId: 'a1', entityId: 't1'));
-      await c.read(transactionsProvider('a1').future);
+      ctl.handle(
+        const ChangeEvent(
+          id: 1,
+          action: 'event.updated',
+          streamId: 'a1',
+          entityId: 't1',
+        ),
+      );
+      await c.read(eventsProvider('a1').future);
       expect(tx.lists, 2);
       expect(c.read(remoteChangesProvider)['t1']?.id, 1);
 
-      c.read(routerProvider).go('/pools/a1/timeline');
+      c.read(routerProvider).go('/streams/a1/timeline');
       await tester.pumpAndSettle();
       // Someone else's share going away does not move me.
-      ctl.handle(const ChangeEvent(
-        id: 2,
-        action: 'pool_share.revoked',
-        poolId: 'a1',
-        subjectUserId: 'u2',
-      ));
+      ctl.handle(
+        const ChangeEvent(
+          id: 2,
+          action: 'stream_share.revoked',
+          streamId: 'a1',
+          subjectUserId: 'u2',
+        ),
+      );
       await tester.pumpAndSettle();
       expect(
         c.read(routerProvider).routerDelegate.currentConfiguration.uri.path,
-        '/pools/a1/timeline',
+        '/streams/a1/timeline',
       );
-      ctl.handle(ChangeEvent(
-        id: 3,
-        action: 'pool_share.revoked',
-        poolId: 'a1',
-        subjectUserId: adminUser.id,
-      ));
+      ctl.handle(
+        ChangeEvent(
+          id: 3,
+          action: 'stream_share.revoked',
+          streamId: 'a1',
+          subjectUserId: adminUser.id,
+        ),
+      );
       await tester.pumpAndSettle();
       expect(
         c.read(routerProvider).routerDelegate.currentConfiguration.uri.path,
-        poolsPath,
+        streamsPath,
       );
-      expect(find.text('You no longer have access to that pool'), findsOneWidget);
+      expect(
+        find.text('You no longer have access to that stream'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('open editor shows "Updated by" instead of clobbering', (tester) async {
+    testWidgets('open editor shows "Updated by" instead of clobbering', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
-      final c = ProviderContainer(overrides: [
-        poolRepositoryProvider.overrideWithValue(_Pools()),
-        transactionRepositoryProvider.overrideWithValue(_Txs()),
-      ]);
+      final c = ProviderContainer(
+        overrides: [
+          streamRepositoryProvider.overrideWithValue(_Streams()),
+          eventRepositoryProvider.overrideWithValue(_Txs()),
+        ],
+      );
       addTearDown(c.dispose);
-      await tester.pumpWidget(UncontrolledProviderScope(
-        container: c,
-        child: MaterialApp(
-          home: Scaffold(
-            body: TransactionEditor(poolId: 'a1', existing: _t, onDone: (_) {}),
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: Scaffold(
+              body: EventEditor(streamId: 'a1', existing: _t, onDone: (_) {}),
+            ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const ValueKey('editor-name')), 'My edit');
+      await tester.enterText(
+        find.byKey(const ValueKey('editor-name')),
+        'My edit',
+      );
       expect(find.byKey(const ValueKey('editor-remote-banner')), findsNothing);
       c.read(remoteChangesProvider.notifier).state = {
-        't1': const ChangeEvent(id: 9, action: 'transaction.updated', entityId: 't1', actorId: 'u2'),
+        't1': const ChangeEvent(
+          id: 9,
+          action: 'event.updated',
+          entityId: 't1',
+          actorId: 'u2',
+        ),
       };
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('editor-remote-banner')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('editor-remote-banner')),
+        findsOneWidget,
+      );
       expect(find.textContaining('Updated by'), findsOneWidget);
       expect(find.text('My edit'), findsOneWidget);
     });
   });
 }
 
-final _t = Transaction(
+final _t = BudgetEvent(
   id: 't1',
-  poolId: 'a1',
+  streamId: 'a1',
   name: 'Rent',
-  direction: TransactionDirection.debit,
+  direction: EventDirection.debit,
   amount: Decimal.fromInt(100),
   startDate: DateTime(2026, 10, 1),
   recurrenceMode: RecurrenceMode.once,
@@ -286,12 +340,12 @@ final _t = Transaction(
   version: 1,
 );
 
-class _Pools extends PoolRepository {
-  _Pools() : super(ApiClient());
+class _Streams extends StreamRepository {
+  _Streams() : super(ApiClient());
   @override
-  Future<PoolList> list() async => const PoolList([]);
+  Future<StreamList> list() async => const StreamList([]);
   @override
-  Future<Pool> get(String id) async => Pool(
+  Future<BudgetStream> get(String id) async => BudgetStream(
     id: id,
     ownerId: 'u1',
     name: 'Everyday',
@@ -301,11 +355,11 @@ class _Pools extends PoolRepository {
   );
 }
 
-class _Txs extends TransactionRepository {
+class _Txs extends EventRepository {
   _Txs() : super(ApiClient());
   int lists = 0;
   @override
-  Future<List<Transaction>> listForPool(String poolId) async {
+  Future<List<BudgetEvent>> listForStream(String streamId) async {
     lists++;
     return [_t];
   }

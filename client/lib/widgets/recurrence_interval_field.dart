@@ -18,7 +18,7 @@ String recurrenceUnitWord(RecurrenceUnit unit, int count) {
   };
 }
 
-/// Every [− N +] [unit ▾]: the recurrence spacing, shared by the transaction
+/// Every [− N +] [unit ▾]: the recurrence spacing, shared by the event
 /// editor and the Plan panels.
 ///
 /// N (1–[maxRecurrenceInterval]) lives in [controller]: typed (digits, two

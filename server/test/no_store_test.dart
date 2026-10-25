@@ -8,17 +8,13 @@ void main() {
       .addHandler((Request r) => Response.ok('{}'));
 
   test('API responses (incl. after deletes) are never cacheable', () async {
-    for (final path in [
-      '/api/pools',
-      '/api/pools/x/transactions',
-      '/health'
-    ]) {
+    for (final path in ['/api/streams', '/api/streams/x/events', '/health']) {
       final res = await handler(Request('GET', Uri.parse('http://h$path')));
       expect(res.headers['cache-control'], contains('no-store'), reason: path);
       expect(res.headers['pragma'], 'no-cache');
     }
     final del =
-        await handler(Request('DELETE', Uri.parse('http://h/api/pools/a')));
+        await handler(Request('DELETE', Uri.parse('http://h/api/streams/a')));
     expect(del.headers['cache-control'], contains('no-store'));
   });
 

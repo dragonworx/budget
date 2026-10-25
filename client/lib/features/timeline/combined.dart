@@ -10,10 +10,10 @@ import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import 'zoom_level.dart';
 
-/// Another pool drawn into the current pool's timeline (View menu
+/// Another stream drawn into the current stream's timeline (View menu
 /// "Combine with"): its name, tint and whether I may edit it.
-class CombinedPool {
-  const CombinedPool({
+class CombinedStream {
+  const CombinedStream({
     required this.id,
     required this.name,
     required this.color,
@@ -27,7 +27,7 @@ class CombinedPool {
 
   @override
   bool operator ==(Object other) =>
-      other is CombinedPool &&
+      other is CombinedStream &&
       other.id == id &&
       other.name == name &&
       other.color == color &&
@@ -37,49 +37,49 @@ class CombinedPool {
   int get hashCode => Object.hash(id, name, color, canEdit);
 }
 
-/// Tint for the other pool at [index] (in my pools list order, so a pool
+/// Tint for the other stream at [index] (in my streams list order, so a stream
 /// keeps its colour while others are toggled). Avoids the money-in / out
 /// greens and reds, the accent line and the seed violet.
-Color combinedPoolColor(int index) =>
-    AppTheme.poolColors[index % AppTheme.poolColors.length];
+Color combinedStreamColor(int index) =>
+    AppTheme.streamColors[index % AppTheme.streamColors.length];
 
-/// One included pool's loaded data.
+/// One included stream's loaded data.
 class CombinedPart {
   const CombinedPart({
-    required this.poolId,
+    required this.streamId,
     required this.seedDate,
     required this.series,
-    required this.transactions,
+    required this.events,
   });
 
-  final String poolId;
+  final String streamId;
   final DateTime seedDate;
   final BalanceSeries series;
-  final List<Transaction> transactions;
+  final List<BudgetEvent> events;
 }
 
-/// The current pool's series with [others] folded in:
+/// The current stream's series with [others] folded in:
 ///
-/// * points: per day, the sum of each pool's closing balance. A pool adds
+/// * points: per day, the sum of each stream's closing balance. A stream adds
 ///   nothing before its seed date (the server sends no points there); on
 ///   later days missing from a series its last closing carries forward.
-/// * occurrences: the current pool's as they are, then the other pools',
-///   tagged with their pool id. Transfers whose two pools are both included
+/// * occurrences: the current stream's as they are, then the other streams',
+///   tagged with their stream id. Transfers whose two streams are both included
 ///   are marked [Occurrence.netted]: the sum already nets them, so they
 ///   also stay out of the day's money in / out.
 BalanceSeries combineSeries(CombinedPart current, List<CombinedPart> others) {
   if (others.isEmpty) return current.series;
   final parts = [current, ...others];
-  final included = {for (final p in parts) p.poolId};
+  final included = {for (final p in parts) p.streamId};
   final txById = {
     for (final p in parts)
-      for (final t in p.transactions) t.id: t,
+      for (final t in p.events) t.id: t,
   };
   bool netted(Occurrence o) {
-    final link = txById[o.transactionId]?.transfer;
+    final link = txById[o.eventId]?.transfer;
     return link != null &&
         link.peerReadable &&
-        included.contains(link.peerPoolId);
+        included.contains(link.peerStreamId);
   }
 
   final days = <DateTime>{};
@@ -111,12 +111,12 @@ BalanceSeries combineSeries(CombinedPart current, List<CombinedPart> others) {
         netted(o) ? o.tagged(netted: true) : o,
       for (final p in others)
         for (final o in p.series.occurrences)
-          o.tagged(poolId: p.poolId, netted: netted(o)),
+          o.tagged(streamId: p.streamId, netted: netted(o)),
     ],
   );
 }
 
-/// Earliest seed among the included pools: where the combined line starts.
+/// Earliest seed among the included streams: where the combined line starts.
 DateTime combinedLineStart(CombinedPart current, List<CombinedPart> others) {
   var start = dateOnly(current.seedDate);
   for (final p in others) {
@@ -126,16 +126,16 @@ DateTime combinedLineStart(CombinedPart current, List<CombinedPart> others) {
   return start;
 }
 
-/// "Combine with" choices, remembered per signed-in user per current pool
+/// "Combine with" choices, remembered per signed-in user per current stream
 /// in this browser (local storage).
 class CombineStore {
   const CombineStore();
 
-  static String key(String userId, String poolId) =>
-      'budget_combine:$userId:$poolId';
+  static String key(String userId, String streamId) =>
+      'budget_combine:$userId:$streamId';
 
-  Set<String> load(String userId, String poolId) {
-    final raw = page.localGet(key(userId, poolId));
+  Set<String> load(String userId, String streamId) {
+    final raw = page.localGet(key(userId, streamId));
     if (raw == null || raw.isEmpty) return {};
     try {
       return {for (final v in jsonDecode(raw) as List) v as String};
@@ -144,6 +144,6 @@ class CombineStore {
     }
   }
 
-  void save(String userId, String poolId, Set<String> ids) =>
-      page.localSet(key(userId, poolId), jsonEncode(ids.toList()..sort()));
+  void save(String userId, String streamId, Set<String> ids) =>
+      page.localSet(key(userId, streamId), jsonEncode(ids.toList()..sort()));
 }

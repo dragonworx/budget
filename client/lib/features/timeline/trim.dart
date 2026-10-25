@@ -4,7 +4,7 @@ import 'zoom_level.dart';
 
 /// Whether [t] can be trimmed to end on [day]: a repeating, enabled series
 /// that started on or before [day] and still runs after it.
-bool canTrimOn(Transaction t, DateTime day) {
+bool canTrimOn(BudgetEvent t, DateTime day) {
   if (t.recurrenceMode != RecurrenceMode.every || !t.enabled) return false;
   final d = dateOnly(day);
   if (dateOnly(t.startDate).isAfter(d)) return false;
@@ -15,7 +15,7 @@ bool canTrimOn(Transaction t, DateTime day) {
 /// Whether the dot popup offers "Trim" on [t]'s occurrence on [day]: a
 /// trimmable series ([canTrimOn]) with [day] one of its dates and at least
 /// one occurrence after it (hidden on what is already the last one).
-bool canTrimAtOccurrence(Transaction t, DateTime day) {
+bool canTrimAtOccurrence(BudgetEvent t, DateTime day) {
   final d = dateOnly(day);
   if (!canTrimOn(t, d)) return false;
   if (t.endMode == EndMode.never) return true;
@@ -27,7 +27,7 @@ bool canTrimAtOccurrence(Transaction t, DateTime day) {
 }
 
 /// [t] ending on [day] (inclusive, as the editor's "On date" end).
-Transaction trimmedTransaction(Transaction t, DateTime day) => t.copyWith(
+BudgetEvent trimmedEvent(BudgetEvent t, DateTime day) => t.copyWith(
   endMode: EndMode.untilDate,
   endDate: dateOnly(day),
   clearOccurrenceCount: true,

@@ -1,5 +1,5 @@
 import 'package:budget_client/data/models.dart';
-import 'package:budget_client/features/transactions/solve_sheet.dart';
+import 'package:budget_client/features/events/solve_sheet.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Toy solver: complete when start, interval and count are all known
@@ -37,9 +37,9 @@ Future<SolveResult> _solve(SolveRequest r) async {
     'needsMore': complete ? 0 : 1,
     'needsOneOf': complete ? <String>[] : ['count'],
     if (complete)
-      'transaction': {
+      'event': {
         'id': 't',
-        'poolId': 'a',
+        'streamId': 'a',
         'name': 'n',
         'direction': 'credit',
         'amount': '1',
@@ -61,7 +61,7 @@ SolveRequest _req({
   int? count,
 }) => SolveRequest(
   name: 'n',
-  direction: TransactionDirection.credit,
+  direction: EventDirection.credit,
   unit: RecurrenceUnit.weeks,
   startDate: start,
   endDate: end,

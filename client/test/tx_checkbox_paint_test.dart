@@ -1,4 +1,4 @@
-// Transactions list include checkboxes: click toggles; press and drag
+// Events list include checkboxes: click toggles; press and drag
 // across rows paints them all to the pressed row's new value (sets, never
 // toggles), saved in one batch with one timeline refresh; failures roll
 // back. Works scrolled, with touch (a drag from a checkbox paints instead
@@ -8,7 +8,7 @@ import 'dart:async';
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
-import 'package:budget_client/features/transactions/transactions_panel.dart';
+import 'package:budget_client/features/events/events_panel.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-final _pool = Pool(
+final _stream = BudgetStream(
   id: 'p',
   ownerId: 'u1',
   name: 'Everyday',
@@ -27,11 +27,11 @@ final _pool = Pool(
   role: Role.owner,
 );
 
-Transaction _tx(int i, {bool enabled = true}) => Transaction(
+BudgetEvent _tx(int i, {bool enabled = true}) => BudgetEvent(
   id: 't$i',
-  poolId: 'p',
+  streamId: 'p',
   name: 'Item $i',
-  direction: TransactionDirection.debit,
+  direction: EventDirection.debit,
   amount: Decimal.fromInt(10 + i),
   startDate: DateTime(2026, 2, 1),
   recurrenceMode: RecurrenceMode.once,
@@ -39,24 +39,24 @@ Transaction _tx(int i, {bool enabled = true}) => Transaction(
   enabled: enabled,
 );
 
-class _PoolRepo extends PoolRepository {
-  _PoolRepo() : super(ApiClient());
+class _StreamRepo extends StreamRepository {
+  _StreamRepo() : super(ApiClient());
   @override
-  Future<Pool> get(String id) async => _pool;
+  Future<BudgetStream> get(String id) async => _stream;
 }
 
-class _TxRepo extends TransactionRepository {
+class _TxRepo extends EventRepository {
   _TxRepo(this.items) : super(ApiClient());
-  List<Transaction> items;
+  List<BudgetEvent> items;
   final calls = <String>[];
   final fail = <String>{};
   Completer<void>? gate;
 
   @override
-  Future<List<Transaction>> listForPool(String poolId) async => items;
+  Future<List<BudgetEvent>> listForStream(String streamId) async => items;
 
   @override
-  Future<Transaction> setEnabled(String id, bool enabled) async {
+  Future<BudgetEvent> setEnabled(String id, bool enabled) async {
     calls.add('$id=$enabled');
     if (gate != null) await gate!.future;
     if (fail.contains(id)) throw ApiException('boom', statusCode: 500);
@@ -85,13 +85,13 @@ Future<void> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        poolRepositoryProvider.overrideWithValue(_PoolRepo()),
-        transactionRepositoryProvider.overrideWithValue(_repo),
+        streamRepositoryProvider.overrideWithValue(_StreamRepo()),
+        eventRepositoryProvider.overrideWithValue(_repo),
       ],
       child: MaterialApp(
         home: Scaffold(
-          body: TransactionsPanel(
-            pool: _pool,
+          body: EventsPanel(
+            stream: _stream,
             skipsFor: (_) => const {},
             onPanelClosed: (_) {},
             onChanged: () => _changed++,
@@ -136,7 +136,7 @@ void main() {
     expect(_checked(tester, 1), isTrue);
     expect(_saved(1), isTrue);
     // The row didn't open in the editor.
-    expect(find.byKey(const ValueKey('transactions-search')), findsOneWidget);
+    expect(find.byKey(const ValueKey('events-search')), findsOneWidget);
   });
 
   testWidgets('press and drag across rows sets them all, one batch', (

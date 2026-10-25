@@ -13,7 +13,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/sharing_ui.dart';
 
-/// Opens the share dialog for a pool. Resolves true when the user left
+/// Opens the share dialog for a stream. Resolves true when the user left
 /// it (callers navigate away).
 Future<bool> showShareDialog(BuildContext context, ShareTarget target) async {
   final r = await showDialog<bool>(
@@ -68,7 +68,8 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
   }
 
   void _toast(String text) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(text)));
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(text)));
   }
 
   Future<void> _run(Future<void> Function() action, {String? done}) async {
@@ -77,7 +78,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
       await action();
       await _load();
       // Roles and lists elsewhere depend on sharing.
-      ref.invalidate(poolsProvider);
+      ref.invalidate(streamsProvider);
       if (done != null) _toast(done);
     } catch (e) {
       _toast(friendlyError(e));
@@ -134,7 +135,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
     setState(() => _busy = true);
     try {
       await _repo.leave(_t);
-      ref.invalidate(poolsProvider);
+      ref.invalidate(streamsProvider);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       _toast(friendlyError(e));
@@ -150,7 +151,10 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
       confirmLabel: 'Remove',
     );
     if (!ok) return;
-    await _run(() => _repo.remove(on, m.userId), done: 'Removed ${m.user.email}');
+    await _run(
+      () => _repo.remove(on, m.userId),
+      done: 'Removed ${m.user.email}',
+    );
   }
 
   @override
@@ -163,7 +167,10 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
     final width = MediaQuery.sizeOf(context).width;
     return AlertDialog(
       key: const ValueKey('share-dialog'),
-      insetPadding: EdgeInsets.symmetric(horizontal: width < 500 ? 12 : 40, vertical: 24),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: width < 500 ? 12 : 40,
+        vertical: 24,
+      ),
       titlePadding: const EdgeInsets.fromLTRB(20, 18, 8, 0),
       contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
       title: Row(
@@ -172,11 +179,12 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Share “${_t.name}”', maxLines: 1, overflow: TextOverflow.ellipsis),
                 Text(
-                  'Pool',
-                  style: theme.textTheme.bodySmall,
+                  'Share “${_t.name}”',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
+                Text('Stream', style: theme.textTheme.bodySmall),
               ],
             ),
           ),
@@ -206,11 +214,14 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                     if (isOwner) ..._inviteSection(theme),
                     if (_link != null) _linkBox(theme),
                     _heading(theme, 'People with access'),
-                    for (final m in info.members) _memberRow(m, info, me?.id, isOwner),
-                    for (final m in info.poolShares) _memberRow(m, info, me?.id, isOwner),
+                    for (final m in info.members)
+                      _memberRow(m, info, me?.id, isOwner),
+                    for (final m in info.streamShares)
+                      _memberRow(m, info, me?.id, isOwner),
                     if (isOwner && info.invites.any((i) => i.pending)) ...[
                       _heading(theme, 'Pending invites'),
-                      for (final i in info.invites.where((i) => i.pending)) _inviteRow(i, theme),
+                      for (final i in info.invites.where((i) => i.pending))
+                        _inviteRow(i, theme),
                     ],
                     if (!isOwner) ...[
                       const SizedBox(height: 12),
@@ -231,7 +242,7 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
             key: const ValueKey('share-leave'),
             onPressed: _busy ? null : _leave,
             icon: const Icon(Icons.logout_rounded, size: 18),
-            label: const Text('Leave pool'),
+            label: const Text('Leave stream'),
           ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(false),
@@ -243,11 +254,14 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
 
   /// Only a share holder can leave (the owner deletes instead).
   bool _canLeave(ShareInfo info, String? myId) =>
-      info.poolShares.any((m) => m.userId == myId);
+      info.streamShares.any((m) => m.userId == myId);
 
   Widget _heading(ThemeData theme, String text) => Padding(
     padding: const EdgeInsets.only(top: 14, bottom: 4),
-    child: Text(text, style: theme.textTheme.labelLarge?.copyWith(color: AppTheme.textMuted)),
+    child: Text(
+      text,
+      style: theme.textTheme.labelLarge?.copyWith(color: AppTheme.textMuted),
+    ),
   );
 
   List<Widget> _inviteSection(ThemeData theme) => [
@@ -309,14 +323,18 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
             children: [
               Text(
                 'Send this link to ${_linkFor ?? 'them'}',
-                style: theme.textTheme.bodySmall?.copyWith(color: AppTheme.text),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppTheme.text,
+                ),
               ),
               const SizedBox(height: 2),
               SelectableText(
                 _link!,
                 key: const ValueKey('share-link'),
                 maxLines: 1,
-                style: theme.textTheme.bodySmall?.copyWith(color: AppTheme.accent),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppTheme.accent,
+                ),
               ),
             ],
           ),
@@ -354,7 +372,8 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                 ),
                 Text(
                   [
-                    if (m.user.name != null && m.user.name!.isNotEmpty) m.user.email,
+                    if (m.user.name != null && m.user.name!.isNotEmpty)
+                      m.user.email,
                   ].join(' · '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -376,8 +395,11 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                   ? null
                   : (r) {
                       if (r == null || r == m.role) return;
-                      _run(() => _repo.setRole(on, m.userId, r),
-                          done: '${m.user.displayName} is now ${r.label.toLowerCase()}');
+                      _run(
+                        () => _repo.setRole(on, m.userId, r),
+                        done:
+                            '${m.user.displayName} is now ${r.label.toLowerCase()}',
+                      );
                     },
             )
           else
@@ -426,7 +448,8 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
                 Text(
                   [
                     '${i.role.label} · pending',
-                    if (exp != null) 'expires ${DateFormat('d MMM').format(exp.toLocal())}',
+                    if (exp != null)
+                      'expires ${DateFormat('d MMM').format(exp.toLocal())}',
                   ].join(' · '),
                   style: theme.textTheme.bodySmall,
                   maxLines: 1,
@@ -446,7 +469,10 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
             tooltip: 'Revoke invite',
             onPressed: _busy
                 ? null
-                : () => _run(() => _repo.revoke(i.id), done: 'Invite to ${i.email} revoked'),
+                : () => _run(
+                    () => _repo.revoke(i.id),
+                    done: 'Invite to ${i.email} revoked',
+                  ),
             icon: const Icon(Icons.block_rounded, size: 20),
           ),
         ],

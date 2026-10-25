@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// The Transactions list glyph (bulleted list: three dots, three lines),
+/// The Events list glyph (bulleted list: three dots, three lines),
 /// drawn with a painter on a 24-unit grid to match Material's rounded list
 /// icon. Painted rather than taken from the icon font so it can never be
 /// missing from a font subset (e.g. a browser still holding an older

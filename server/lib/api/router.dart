@@ -10,23 +10,24 @@ import '../config.dart';
 import '../auth/authz_middleware.dart';
 import '../db_scope.dart';
 import '../realtime/event_bus.dart';
-import 'events.dart';
+import 'live.dart';
 import '../hardening/client_ip.dart';
 import '../hardening/lifecycle.dart';
 import '../hardening/logging.dart';
 import '../hardening/rate_limit.dart';
 import '../hardening/security_headers.dart';
-import 'pools.dart';
+import 'streams.dart';
 import 'admin.dart';
 import 'sharing.dart';
 import 'auth.dart';
 import 'json_helpers.dart';
-import 'transactions.dart';
+import 'events.dart';
+import 'legacy_aliases.dart';
 
 Handler buildHandler(Session base, Config config,
     {GoogleIdTokenVerifier? verifier,
     EventBus? bus,
-    EventsSettings eventsSettings = const EventsSettings(),
+    LiveSettings liveSettings = const LiveSettings(),
     SessionStore? sessions,
     Log? log,
     Lifecycle? lifecycle,
@@ -80,14 +81,17 @@ Handler buildHandler(Session base, Config config,
               jwks: JwksCache(httpJwksFetcher()),
             ),
       ).call);
-  final poolsApi = buildPoolsApi(conn);
-  attachPoolSharingRoutes(poolsApi, conn, config);
-  root.mount('/api/pools', poolsApi.call);
+  final streamsApi = buildStreamsApi(conn);
+  attachStreamSharingRoutes(streamsApi, conn, config);
+  root.mount('/api/streams', streamsApi.call);
   root.mount('/api/invites', buildInvitesApi(conn, config).call);
   root.mount('/api/admin', buildAdminApi(conn, config, sessions).call);
-  root.mount('/api/transactions', transactionsRouter(conn).call);
-  root.mount('/api/events',
-      buildEventsApi(conn, sessions, bus, settings: eventsSettings).call);
+  root.mount('/api/events', eventsRouter(conn).call);
+  final liveApi = buildLiveApi(conn, sessions, bus, settings: liveSettings);
+  root.mount('/api/live', liveApi.call);
+  // Deprecated: SSE lived at GET /api/events before the Streams/Events
+  // rename; tabs still running an older build reconnect here.
+  root.mount('/api/events', liveApi.call);
 
   return const Pipeline()
       .addMiddleware(requestLogging(
@@ -103,6 +107,7 @@ Handler buildHandler(Session base, Config config,
           general: RateLimiter(config.rateLimitPerMinute)))
       .addMiddleware(csrfMiddleware(config))
       .addMiddleware(removedApi(removedApiPrefixes))
+      .addMiddleware(legacyApiAliases())
       .addMiddleware(authMiddleware(sessions))
       .addMiddleware(authzMiddleware(conn))
       .addHandler(root.call);

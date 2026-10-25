@@ -3,8 +3,8 @@ import 'dart:math' as math;
 
 import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/api_client.dart';
-import 'package:budget_client/features/transactions/import_dialog.dart';
-import 'package:budget_client/features/transactions/transaction_editor.dart';
+import 'package:budget_client/features/events/import_dialog.dart';
+import 'package:budget_client/features/events/event_editor.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/widgets/ui.dart' show SectionCard;
 import 'package:budget_client/data/repositories.dart';
@@ -33,7 +33,7 @@ import 'chip_taps.dart';
 final _today = DateTime.now();
 final _day = DateTime(_today.year, _today.month, _today.day);
 
-Pool _pool({Role role = Role.owner}) => Pool(
+BudgetStream _stream({Role role = Role.owner}) => BudgetStream(
   id: 'acc',
   ownerId: 'u',
   name: 'Everyday',
@@ -44,26 +44,25 @@ Pool _pool({Role role = Role.owner}) => Pool(
   role: role,
 );
 
-Transaction _tx(String id, String name, {TransactionDirection? dir}) =>
-    Transaction(
-      id: id,
-      poolId: 'acc',
-      name: name,
-      direction: dir ?? TransactionDirection.debit,
-      amount: Decimal.fromInt(id == 'salary' ? 4200 : 50),
-      startDate: _day.subtract(const Duration(days: 14)),
-      recurrenceMode: RecurrenceMode.every,
-      interval: 1,
-      unit: RecurrenceUnit.weeks,
-      endMode: EndMode.never,
-    );
+BudgetEvent _tx(String id, String name, {EventDirection? dir}) => BudgetEvent(
+  id: id,
+  streamId: 'acc',
+  name: name,
+  direction: dir ?? EventDirection.debit,
+  amount: Decimal.fromInt(id == 'salary' ? 4200 : 50),
+  startDate: _day.subtract(const Duration(days: 14)),
+  recurrenceMode: RecurrenceMode.every,
+  interval: 1,
+  unit: RecurrenceUnit.weeks,
+  endMode: EndMode.never,
+);
 
-Transaction _withOverrides(
-  Transaction t,
+BudgetEvent _withOverrides(
+  BudgetEvent t,
   Map<DateTime, OccurrenceOverride> overrides,
-) => Transaction(
+) => BudgetEvent(
   id: t.id,
-  poolId: t.poolId,
+  streamId: t.streamId,
   name: t.name,
   direction: t.direction,
   amount: t.amount,
@@ -80,11 +79,11 @@ Transaction _withOverrides(
   overrides: overrides,
 );
 
-/// In-memory server: transactions, skips and a flat balance.
+/// In-memory server: events, skips and a flat balance.
 class _Store {
-  final txs = <String, Transaction>{
+  final txs = <String, BudgetEvent>{
     'rent': _tx('rent', 'Rent'),
-    'salary': _tx('salary', 'Salary', dir: TransactionDirection.credit),
+    'salary': _tx('salary', 'Salary', dir: EventDirection.credit),
   };
   final skips = <String, Set<DateTime>>{};
   final calls = <String>[];
@@ -92,16 +91,16 @@ class _Store {
   bool undoFails = false;
 }
 
-class _PoolRepo extends PoolRepository {
-  _PoolRepo(this.s) : super(ApiClient());
+class _StreamRepo extends StreamRepository {
+  _StreamRepo(this.s) : super(ApiClient());
   final _Store s;
 
   @override
-  Future<Pool> get(String id) async => _pool(role: s.role);
+  Future<BudgetStream> get(String id) async => _stream(role: s.role);
 
   @override
   Future<BalanceSeries> balance(
-    String poolId, {
+    String streamId, {
     required DateTime from,
     required DateTime to,
   }) async {
@@ -114,10 +113,10 @@ class _PoolRepo extends PoolRepository {
     for (final t in s.txs.values) {
       for (final d in estimateOccurrenceDates(t, maxCount: 400, through: to)) {
         if (d.isBefore(from)) continue;
-        final sign = t.direction == TransactionDirection.credit ? 1 : -1;
+        final sign = t.direction == EventDirection.credit ? 1 : -1;
         occ.add(
           Occurrence(
-            transactionId: t.id,
+            eventId: t.id,
             date: d,
             signedDelta: t.amount * Decimal.fromInt(sign),
             skipped: s.skips[t.id]?.contains(d) ?? false,
@@ -129,16 +128,16 @@ class _PoolRepo extends PoolRepository {
   }
 }
 
-class _TxRepo extends TransactionRepository {
+class _TxRepo extends EventRepository {
   _TxRepo(this.s) : super(ApiClient());
   final _Store s;
 
   @override
-  Future<List<Transaction>> listForPool(String poolId) async =>
+  Future<List<BudgetEvent>> listForStream(String streamId) async =>
       s.txs.values.toList();
 
   @override
-  Future<Transaction> update(Transaction t, {bool force = false}) async {
+  Future<BudgetEvent> update(BudgetEvent t, {bool force = false}) async {
     s.calls.add('update ${t.id} ${t.interval} ${t.unit?.name}');
     // Like the server: overrides no longer on an occurrence are pruned.
     final end = t.endMode == EndMode.untilDate ? t.endDate : null;
@@ -149,30 +148,30 @@ class _TxRepo extends TransactionRepository {
   }
 
   @override
-  Future<Transaction> setOverride(
-    String transactionId,
+  Future<BudgetEvent> setOverride(
+    String eventId,
     DateTime date, {
-    required TransactionDirection direction,
+    required EventDirection direction,
     required Decimal amount,
     int? version,
   }) async {
-    s.calls.add('override $transactionId');
-    final t = s.txs[transactionId]!;
-    return s.txs[transactionId] = _withOverrides(t, {
+    s.calls.add('override $eventId');
+    final t = s.txs[eventId]!;
+    return s.txs[eventId] = _withOverrides(t, {
       ...t.overrides,
       date: OccurrenceOverride(direction: direction, amount: amount),
     });
   }
 
   @override
-  Future<Transaction> create(String poolId, Transaction draft) async {
+  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
     s.calls.add('create ${draft.name}');
     return s.txs[draft.id] = draft;
   }
 
   @override
   Future<Map<String, dynamic>> import(
-    String poolId,
+    String streamId,
     String raw, {
     required DateTime root,
     bool dryRun = false,
@@ -202,7 +201,7 @@ class _TxRepo extends TransactionRepository {
 
   @override
   Future<Map<String, dynamic>> undoImport(
-    String poolId,
+    String streamId,
     List<String> ids,
   ) async {
     s.calls.add('undoImport ${ids.join(',')}');
@@ -218,12 +217,12 @@ class _TxRepo extends TransactionRepository {
 
   @override
   Future<void> skipOccurrence(
-    String transactionId,
+    String eventId,
     DateTime date, {
     bool skipped = true,
   }) async {
-    s.calls.add('skip $transactionId $skipped');
-    final set = s.skips.putIfAbsent(transactionId, () => {});
+    s.calls.add('skip $eventId $skipped');
+    final set = s.skips.putIfAbsent(eventId, () => {});
     skipped ? set.add(date) : set.remove(date);
   }
 }
@@ -246,10 +245,10 @@ Future<_Store> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        poolRepositoryProvider.overrideWithValue(_PoolRepo(store)),
-        transactionRepositoryProvider.overrideWithValue(_TxRepo(store)),
+        streamRepositoryProvider.overrideWithValue(_StreamRepo(store)),
+        eventRepositoryProvider.overrideWithValue(_TxRepo(store)),
       ],
-      child: const MaterialApp(home: TimelinePage(poolId: 'acc')),
+      child: const MaterialApp(home: TimelinePage(streamId: 'acc')),
     ),
   );
   await tester.pumpAndSettle();
@@ -281,7 +280,7 @@ Future<Offset> _revealTip(WidgetTester tester, PointerDeviceKind kind) async {
   fail('a tap should reveal some dot');
 }
 
-/// Salary a day after Rent, so every dot holds one transaction.
+/// Salary a day after Rent, so every dot holds one event.
 void _singles(_Store s) {
   final t = s.txs['salary']!;
   s.txs['salary'] = t.copyWith(
@@ -289,7 +288,7 @@ void _singles(_Store s) {
   );
 }
 
-/// Opens the ⋮ menu of the popup row for transaction [id].
+/// Opens the ⋮ menu of the popup row for event [id].
 Future<void> _openRowMenu(
   WidgetTester tester,
   String id,
@@ -304,10 +303,10 @@ Finder _keyStarts(String prefix) => find.byWidgetPredicate(
       w.key is ValueKey && '${(w.key! as ValueKey).value}'.startsWith(prefix),
 );
 
-/// Opens [name]'s series in the editor through the Transactions panel
+/// Opens [name]'s series in the editor through the Events panel
 /// (the only edit path: taps on the chart just show info).
 Future<void> _editFromPanel(WidgetTester tester, String name) async {
-  await tester.tap(find.byKey(const ValueKey('open-transactions')));
+  await tester.tap(find.byKey(const ValueKey('open-events')));
   await tester.pumpAndSettle();
   await tester.tap(find.text(name));
   await tester.pumpAndSettle();
@@ -366,7 +365,7 @@ void main() {
     chart.onAddForPeriod!(start, end);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
-    expect(find.text('New transaction'), findsWidgets);
+    expect(find.text('New event'), findsWidgets);
     String fmt(DateTime d) => DateFormat('EEE d MMM y').format(d);
     expect(find.text(fmt(start)), findsWidgets, reason: 'start pre-filled');
     // Once by default (every entry point); Repeats ends on the period's
@@ -492,7 +491,7 @@ void main() {
     tester,
   ) async {
     final store = await _pump(tester);
-    expect(find.byTooltip('Transactions (2)'), findsOneWidget);
+    expect(find.byTooltip('Events (2)'), findsOneWidget);
     await _editFromPanel(tester, 'Rent');
     await tester.tap(find.byKey(const ValueKey('editor-delete')));
     await tester.pumpAndSettle();
@@ -507,11 +506,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.calls, contains('delete rent'));
     expect(find.text('Deleted “Rent”'), findsOneWidget);
-    expect(find.byTooltip('Transactions (1)'), findsOneWidget);
+    expect(find.byTooltip('Events (1)'), findsOneWidget);
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(store.calls, contains('create Rent'));
-    expect(find.byTooltip('Transactions (2)'), findsOneWidget);
+    expect(find.byTooltip('Events (2)'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
 
@@ -534,32 +533,30 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('transactions panel opens the editor in place, back returns', (
+  testWidgets('events panel opens the editor in place, back returns', (
     tester,
   ) async {
     await _pump(tester);
-    await tester.tap(find.byKey(const ValueKey('open-transactions')));
+    await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Salary'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('editor-back')), findsOneWidget);
     // Only one panel route: the list is replaced, not stacked.
-    expect(find.byKey(const ValueKey('transactions-search')), findsNothing);
+    expect(find.byKey(const ValueKey('events-search')), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('transactions-search')), findsOneWidget);
+    expect(find.byKey(const ValueKey('events-search')), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('transactions-search')), findsNothing);
+    expect(find.byKey(const ValueKey('events-search')), findsNothing);
   });
 
-  testWidgets('new transaction button creates and the count updates', (
-    tester,
-  ) async {
+  testWidgets('new event button creates and the count updates', (tester) async {
     final store = await _pump(tester);
-    await tester.tap(find.byKey(const ValueKey('open-transactions')));
+    await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('panel-new-transaction')));
+    await tester.tap(find.byKey(const ValueKey('panel-new-event')));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.descendant(
@@ -579,7 +576,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.calls, contains('create Coffee'));
     expect(find.text('Created “Coffee”'), findsOneWidget);
-    expect(find.byTooltip('Transactions (3)'), findsOneWidget);
+    expect(find.byTooltip('Events (3)'), findsOneWidget);
     await tester.pump(const Duration(seconds: 6));
   });
 
@@ -589,19 +586,19 @@ void main() {
       final store = await _pump(tester, size: size);
       // Layout overflows surface as test exceptions; none expected.
       expect(tester.takeException(), isNull);
-      expect(find.byKey(const ValueKey('new-transaction')), findsNothing);
+      expect(find.byKey(const ValueKey('new-event')), findsNothing);
       expect(find.byKey(const ValueKey('timeline-back')), findsOneWidget);
       final back = tester.getSize(find.byKey(const ValueKey('timeline-back')));
       expect(back.height, greaterThanOrEqualTo(44));
       await tester.tap(find.byKey(const ValueKey('timeline-more')));
       await tester.pumpAndSettle();
-      expect(find.text('Pool settings'), findsOneWidget);
-      expect(find.text('Import transactions'), findsOneWidget);
+      expect(find.text('Stream settings'), findsOneWidget);
+      expect(find.text('Import events'), findsOneWidget);
       await tester.tapAt(const Offset(5, 400));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('open-transactions')));
+      await tester.tap(find.byKey(const ValueKey('open-events')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('panel-new-transaction')));
+      await tester.tap(find.byKey(const ValueKey('panel-new-event')));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       await tester.enterText(
@@ -917,7 +914,7 @@ void main() {
     }
   });
 
-  testWidgets('popup ⋮ → Edit (one transaction) opens its editor; the ⋮ '
+  testWidgets('popup ⋮ → Edit (one event) opens its editor; the ⋮ '
       'sits after the amount on the name line; touch and mouse', (
     tester,
   ) async {
@@ -987,7 +984,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.textContaining('New transaction on '), findsNothing);
+      expect(find.textContaining('New event on '), findsNothing);
       await tester.tap(items[2], kind: kind);
       await tester.pumpAndSettle();
       final field = tester.widget<TextField>(
@@ -1077,7 +1074,7 @@ void main() {
     await mouse.removePointer();
   });
 
-  testWidgets('popup with several transactions: one compact line each '
+  testWidgets('popup with several events: one compact line each '
       '(name, amount, ⋮); ⋮ → Edit opens that series', (tester) async {
     for (final (size, kind) in [
       (const Size(390, 844), PointerDeviceKind.touch),
@@ -1141,7 +1138,7 @@ void main() {
     }
   });
 
-  testWidgets('popup "+" opens a new transaction on that day (Name focused, '
+  testWidgets('popup "+" opens a new event on that day (Name focused, '
       'keyboard primed); never creates by itself; touch and mouse', (
     tester,
   ) async {
@@ -1165,7 +1162,7 @@ void main() {
         find.descendant(of: plus, matching: find.text('New')),
         findsOneWidget,
       );
-      expect(find.textContaining('New transaction on '), findsNothing);
+      expect(find.textContaining('New event on '), findsNothing);
       final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
       final txDay = chart.series.occurrences
           .map((o) => DateTime(o.date.year, o.date.month, o.date.day))
@@ -1185,9 +1182,7 @@ void main() {
         isTrue,
       );
       // The editor's date is the dot's day.
-      final editor = tester.widget<TransactionEditor>(
-        find.byType(TransactionEditor),
-      );
+      final editor = tester.widget<EventEditor>(find.byType(EventEditor));
       expect(editor.initialDate, txDay);
       expect(editor.existing, isNull);
       expect(
@@ -1290,7 +1285,7 @@ void main() {
     tester,
   ) async {
     final store = await _pump(tester);
-    await tester.tap(find.byKey(const ValueKey('open-transactions')));
+    await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('row-delete-rent')));
     await tester.pumpAndSettle();
@@ -1303,7 +1298,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  // ── New transaction: Name focused (phones too); Once by default, no
+  // ── New event: Name focused (phones too); Once by default, no
   // Occurrences / Options; Repeats starts at every 1 week ──
 
   List<String> sectionTitles(WidgetTester tester) => [
@@ -1331,10 +1326,7 @@ void main() {
         'defaults to Once with no Occurrences / Options; Repeats starts '
         'at every 1 week', (tester) async {
       final store = await _pump(tester, size: size);
-      await tester.tap(
-        find.byKey(const ValueKey('open-transactions')),
-        kind: kind,
-      );
+      await tester.tap(find.byKey(const ValueKey('open-events')), kind: kind);
       await tester.pumpAndSettle();
       final primed = page.primeSoftKeyboardCalls;
       if (viaMenu) {
@@ -1349,7 +1341,7 @@ void main() {
         );
       } else {
         await tester.tap(
-          find.byKey(const ValueKey('panel-new-transaction')),
+          find.byKey(const ValueKey('panel-new-event')),
           kind: kind,
         );
       }
@@ -1424,7 +1416,7 @@ void main() {
         interval: 3,
       ),
     );
-    await tester.tap(find.byKey(const ValueKey('open-transactions')));
+    await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
     final primed = page.primeSoftKeyboardCalls;
     await tester.tap(find.text('Rent'), kind: PointerDeviceKind.touch);
@@ -1439,7 +1431,7 @@ void main() {
     // to the end of the form.
     final scroll = find
         .descendant(
-          of: find.byType(TransactionEditor),
+          of: find.byType(EventEditor),
           matching: find.byType(Scrollable),
         )
         .first;
@@ -1470,7 +1462,7 @@ void main() {
         'nothing saves or closes; Shift+Tab is unchanged', (tester) async {
       final store = await _pump(tester, size: size);
       final ctx = tester.element(find.byType(BalanceChart));
-      unawaited(showTransactionEditor(ctx, poolId: 'p1'));
+      unawaited(showEventEditor(ctx, streamId: 'p1'));
       await tester.pump();
       await tester.pump(nameRefocusDelay);
       await tester.pumpAndSettle();
@@ -1531,7 +1523,7 @@ void main() {
     final store = await _pump(tester, size: const Size(390, 844));
     final ctx = tester.element(find.byType(BalanceChart));
     unawaited(
-      showTransactionEditor(ctx, poolId: 'p1', existing: store.txs['rent']),
+      showEventEditor(ctx, streamId: 'p1', existing: store.txs['rent']),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('editor-name')));
@@ -1543,13 +1535,13 @@ void main() {
     expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
   });
 
-  testWidgets('other create paths (showTransactionEditor) focus Name too', (
+  testWidgets('other create paths (showEventEditor) focus Name too', (
     tester,
   ) async {
     await _pump(tester, size: const Size(390, 844));
     final ctx = tester.element(find.byType(BalanceChart));
     final primed = page.primeSoftKeyboardCalls;
-    unawaited(showTransactionEditor(ctx, poolId: 'p1'));
+    unawaited(showEventEditor(ctx, streamId: 'p1'));
     expect(page.primeSoftKeyboardCalls, primed + 1);
     await tester.pump();
     await tester.pump(nameRefocusDelay);
@@ -1574,7 +1566,7 @@ void main() {
         );
       }
       final store = await _pump(tester, size: size);
-      await tester.tap(find.byKey(const ValueKey('open-transactions')));
+      await tester.tap(find.byKey(const ValueKey('open-events')));
       await tester.pumpAndSettle();
       Future<void> delete(String id) async {
         // Phones swipe a row left; desktop has a trash button.
@@ -1621,7 +1613,7 @@ void main() {
     tester,
   ) async {
     final store = await _pump(tester, size: const Size(360, 740));
-    await tester.tap(find.byKey(const ValueKey('open-transactions')));
+    await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
     final row = find.byKey(const ValueKey('dismiss-rent'));
     await tester.drag(row, const Offset(-60, 0));
@@ -1650,7 +1642,7 @@ void main() {
       // No "Keep alert line" option any more (fits never stretch to it).
       expect(find.byKey(const ValueKey('fit-threshold')), findsNothing);
       expect(find.textContaining('Keep alert line'), findsNothing);
-      expect(find.byType(CheckboxMenuButton), findsNothing); // 1 pool only
+      expect(find.byType(CheckboxMenuButton), findsNothing); // 1 stream only
       expect(find.text('Go to today'), compact ? findsOneWidget : findsNothing);
       expect(
         find.text('Go to seed date'),
@@ -1671,7 +1663,7 @@ void main() {
       if (!compact) expect(find.text('View'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('fit-menu'))); // closes
       await tester.pumpAndSettle();
-      expect(find.text('No other pools'), findsNothing);
+      expect(find.text('No other streams'), findsNothing);
       if (!compact) {
         // The fit modes stay as keyboard shortcuts, listed in the sheet
         // (More ▸ Gestures & shortcuts).
@@ -1698,7 +1690,7 @@ void main() {
     (Size(1440, 900), true, true, true, false),
   ]) {
     testWidgets('${size.width.toInt()}px header: every action in the top row, '
-        'Reminders · Transactions (plain list) · View · More at the right '
+        'Reminders · Events (plain list) · View · More at the right '
         'end; the date heatmap alone spans the second row', (tester) async {
       final w = size.width;
       await _pump(tester, size: size);
@@ -1729,21 +1721,21 @@ void main() {
       }
       expect(more.right, lessThanOrEqualTo(w));
       expect(more.right, greaterThan(w - 16));
-      // Right end, in order: Reminders · Transactions · View · More, at
-      // every width (320 included: Transactions never hides in More).
+      // Right end, in order: Reminders · Events · View · More, at
+      // every width (320 included: Events never hides in More).
       expect(inBar('fit-menu'), isTrue);
       expect(inBar('open-reminders'), isTrue);
       expect(r('timeline-more').left, greaterThan(r('fit-menu').right - 1));
       expect(r('timeline-more').left - r('fit-menu').right, lessThan(4));
       {
-        expect(inBar('open-transactions'), isTrue);
+        expect(inBar('open-events'), isTrue);
         expect(
-          r('open-transactions').left,
+          r('open-events').left,
           greaterThan(r('open-reminders').right - 1),
         );
-        expect(r('fit-menu').left - r('open-transactions').right, lessThan(4));
-        expect(r('open-transactions').width, greaterThanOrEqualTo(40));
-        expect(r('open-transactions').right, lessThanOrEqualTo(w));
+        expect(r('fit-menu').left - r('open-events').right, lessThan(4));
+        expect(r('open-events').width, greaterThanOrEqualTo(40));
+        expect(r('open-events').right, lessThanOrEqualTo(w));
         // The glyph is painted (not transparent) when the list is closed.
         final glyph = tester.widget<CustomPaint>(
           find.descendant(
@@ -1758,14 +1750,14 @@ void main() {
         );
         // A plain list icon: no outlined / tonal / filled container.
         final tx = tester.widget<IconButton>(
-          find.byKey(const ValueKey('open-transactions')),
+          find.byKey(const ValueKey('open-events')),
         );
         expect(tx.style, isNull);
         // Painted (ListGlyph), not an icon-font glyph a stale font lacks.
         expect(tx.icon, isA<ListGlyph>());
         expect(
           find.descendant(
-            of: find.byKey(const ValueKey('open-transactions')),
+            of: find.byKey(const ValueKey('open-events')),
             matching: find.byWidgetPredicate(
               (w) =>
                   w is Ink ||
@@ -1777,16 +1769,19 @@ void main() {
           findsNothing,
         );
         expect(
-          tester
-              .getSize(find.byKey(const ValueKey('open-transactions')))
-              .height,
+          tester.getSize(find.byKey(const ValueKey('open-events'))).height,
           greaterThanOrEqualTo(40),
         );
-        expect(find.byTooltip('Transactions (2)'), findsOneWidget);
+        expect(find.byTooltip('Events (2)'), findsOneWidget);
       }
-      // Everything else (Today, Seed, Share, Pool settings) sits left of
+      // Everything else (Today, Seed, Share, Stream settings) sits left of
       // Reminders.
-      for (final k in ['go-today', 'go-seed', 'pool-share', 'pool-settings']) {
+      for (final k in [
+        'go-today',
+        'go-seed',
+        'stream-share',
+        'stream-settings',
+      ]) {
         if (inBar(k)) {
           expect(
             r(k).right,
@@ -1810,11 +1805,11 @@ void main() {
       );
       if (desk) expect(inBar('go-seed'), isTrue);
       expect(
-        find.byKey(const ValueKey('pool-settings')),
+        find.byKey(const ValueKey('stream-settings')),
         mid ? findsOneWidget : findsNothing,
       );
       expect(
-        find.byKey(const ValueKey('pool-share')),
+        find.byKey(const ValueKey('stream-share')),
         mid ? findsOneWidget : findsNothing,
       );
       // No balance / alert summary in the header; the name is compact.
@@ -1822,9 +1817,9 @@ void main() {
         expect(find.byKey(ValueKey(gone)), findsNothing);
       }
       expect(find.textContaining('Seed \$'), findsNothing);
-      // The pool picker stretches up to the actions (its arrow at the
+      // The stream picker stretches up to the actions (its arrow at the
       // right end; the empty space after the name opens it too).
-      final name = r('header-pool-picker');
+      final name = r('header-stream-picker');
       expect(name.width, greaterThan(40));
       final firstAction = [
         for (final e
@@ -1852,61 +1847,55 @@ void main() {
       // 0.3: two-digit start days ("10 Oct") are one test-font glyph wider
       // than "9 Oct"; 0.35 failed on those days at 320px.
       expect(r('range-heatmap').width, greaterThan(w * 0.3));
-      // What overflowed is in More (Pool settings first when it is there).
+      // What overflowed is in More (Stream settings first when it is there).
       await tester.tap(find.byKey(const ValueKey('timeline-more')));
       await tester.pumpAndSettle();
-      expect(find.text('Pool settings'), mid ? findsNothing : findsOneWidget);
-      expect(find.text('Share pool'), mid ? findsNothing : findsOneWidget);
-      expect(find.text('Import transactions'), findsOneWidget);
+      expect(find.text('Stream settings'), mid ? findsNothing : findsOneWidget);
+      expect(find.text('Share stream'), mid ? findsNothing : findsOneWidget);
+      expect(find.text('Import events'), findsOneWidget);
       expect(find.text('Gestures & shortcuts'), findsOneWidget);
-      // Transactions is never duplicated in More.
-      expect(find.byKey(const ValueKey('more-transactions')), findsNothing);
-      expect(find.text('Transactions (2)'), findsNothing);
+      // Events is never duplicated in More.
+      expect(find.byKey(const ValueKey('more-events')), findsNothing);
+      expect(find.text('Events (2)'), findsNothing);
       expect(find.text('Plan a payment'), findsNothing);
       if (tiny) {
         await tester.tapAt(const Offset(4, 4));
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('open-transactions')));
+        await tester.tap(find.byKey(const ValueKey('open-events')));
         await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('panel-new-transaction')),
-          findsOneWidget,
-        );
+        expect(find.byKey(const ValueKey('panel-new-event')), findsOneWidget);
       }
       expect(tester.takeException(), isNull);
     });
   }
 
-  // Regression: after 1e4bdcc Transactions hid in More below 360px, which
+  // Regression: after 1e4bdcc Events hid in More below 360px, which
   // is what zoomed / large-display-size phones report (e.g. 390 at 115%
   // page zoom ≈ 339). It must stay in the header at every phone width.
   for (final w in const [320.0, 339.0, 359.0, 360.0, 375.0, 412.0, 430.0]) {
-    testWidgets('${w.toInt()}px phone: the Transactions list icon is in the '
+    testWidgets('${w.toInt()}px phone: the Events list icon is in the '
         'header between Reminders and View, the name keeps room', (
       tester,
     ) async {
       await _pump(tester, size: Size(w, 800));
       expect(tester.takeException(), isNull);
       Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
-      final tx = r('open-transactions');
+      final tx = r('open-events');
       expect(tx.left, greaterThan(r('open-reminders').right - 1));
       expect(tx.right, lessThanOrEqualTo(r('fit-menu').left + 0.5));
       expect(tx.width, greaterThanOrEqualTo(40));
       expect(r('timeline-more').right, lessThanOrEqualTo(w));
-      expect(r('header-pool-picker').width, greaterThan(40));
-      expect(r('header-pool-picker').right, lessThanOrEqualTo(tx.left));
+      expect(r('header-stream-picker').width, greaterThan(40));
+      expect(r('header-stream-picker').right, lessThanOrEqualTo(tx.left));
       // One sync dot: on the logo below 360, in the action row otherwise.
       expect(find.byType(RealtimeDot), findsOneWidget);
       expect(
         find.byKey(const ValueKey('brand-rt-dot')),
         w < 360 ? findsOneWidget : findsNothing,
       );
-      await tester.tap(find.byKey(const ValueKey('open-transactions')));
+      await tester.tap(find.byKey(const ValueKey('open-events')));
       await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('panel-new-transaction')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('panel-new-event')), findsOneWidget);
     });
   }
 
@@ -2028,18 +2017,18 @@ void main() {
     await _pump(tester, size: const Size(390, 844));
     await tester.tap(find.byKey(const ValueKey('timeline-more')));
     await tester.pumpAndSettle();
-    expect(find.text('Pool settings'), findsOneWidget);
+    expect(find.text('Stream settings'), findsOneWidget);
     expect(find.text('Plan a payment'), findsNothing);
   });
 
   for (final size in const [Size(1440, 900), Size(390, 844)]) {
-    testWidgets('${size.width.toInt()}px: Transactions New ▾ split button: '
+    testWidgets('${size.width.toInt()}px: Events New ▾ split button: '
         'New (default) and Plan', (tester) async {
       await _pump(tester, size: size);
-      await tester.tap(find.byKey(const ValueKey('open-transactions')));
+      await tester.tap(find.byKey(const ValueKey('open-events')));
       await tester.pumpAndSettle();
       // Main action: New opens the editor, as before.
-      await tester.tap(find.byKey(const ValueKey('panel-new-transaction')));
+      await tester.tap(find.byKey(const ValueKey('panel-new-event')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('editor-back')));
@@ -2047,7 +2036,7 @@ void main() {
       // The menu: New and Plan.
       final menu = find.byKey(const ValueKey('panel-new-menu'));
       final main = tester.getRect(
-        find.byKey(const ValueKey('panel-new-transaction')),
+        find.byKey(const ValueKey('panel-new-event')),
       );
       expect(tester.getRect(menu).left - main.right, lessThan(4));
       await tester.tap(menu);
@@ -2065,7 +2054,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('new-option-plan')));
       await tester.pumpAndSettle();
       // The panel closes and the planner opens.
-      expect(find.byKey(const ValueKey('panel-new-transaction')), findsNothing);
+      expect(find.byKey(const ValueKey('panel-new-event')), findsNothing);
       expect(find.byType(PlanPanel), findsOneWidget);
       expect(
         tester.widget<PlanPanel>(find.byType(PlanPanel)).tab,
@@ -2136,7 +2125,7 @@ void main() {
 
   // The seed's calendar day (seedDate is 30×24h back, so across DST it
   // can sit at 23:00 the day before).
-  final seed = _pool().seedDate;
+  final seed = _stream().seedDate;
   final seedDay = DateTime(seed.year, seed.month, seed.day);
 
   double xOfDay(WidgetTester tester, DateTime day) {
@@ -2162,7 +2151,7 @@ void main() {
     Size(1440, 900),
   ]) {
     testWidgets('toolbar at ${size.width.toInt()}px: no step buttons, date '
-        'range kept, fits; logo left of the pool name', (tester) async {
+        'range kept, fits; logo left of the stream name', (tester) async {
       await _pump(tester, size: size);
       expect(tester.takeException(), isNull);
       expect(find.byKey(const ValueKey('shift-left')), findsNothing);
@@ -2175,7 +2164,7 @@ void main() {
       final logo = tester.getRect(find.byKey(const ValueKey('timeline-brand')));
       final back = tester.getRect(find.byKey(const ValueKey('timeline-back')));
       final name = tester.getRect(
-        find.byKey(const ValueKey('header-pool-picker')),
+        find.byKey(const ValueKey('header-stream-picker')),
       );
       expect(logo.left, greaterThanOrEqualTo(back.right - 1));
       expect(logo.right, lessThanOrEqualTo(name.left));
@@ -2384,7 +2373,7 @@ void main() {
     });
   });
 
-  testWidgets('More menu (below 960px): Pool settings is the first item', (
+  testWidgets('More menu (below 960px): Stream settings is the first item', (
     tester,
   ) async {
     await _pump(tester, size: const Size(390, 844));
@@ -2400,9 +2389,9 @@ void main() {
       );
     expect(first.first.value, 'settings');
     double y(String t) => tester.getTopLeft(find.text(t)).dy;
-    expect(y('Pool settings'), lessThan(y('Share pool')));
-    expect(y('Share pool'), lessThan(y('Import transactions')));
-    await tester.tap(find.text('Pool settings'));
+    expect(y('Stream settings'), lessThan(y('Share stream')));
+    expect(y('Share stream'), lessThan(y('Import events')));
+    await tester.tap(find.text('Stream settings'));
     await tester.pumpAndSettle();
     expect(find.byType(Dialog), findsOneWidget);
   });
@@ -2436,7 +2425,7 @@ void main() {
         size: size,
         setup: (s) => s.txs['rent'] = _withOverrides(s.txs['rent']!, {
           far: OccurrenceOverride(
-            direction: TransactionDirection.debit,
+            direction: EventDirection.debit,
             amount: Decimal.fromInt(99),
           ),
         }),
@@ -2659,8 +2648,8 @@ void main() {
     (Size(390, 844), PointerDeviceKind.touch),
     (Size(1440, 900), PointerDeviceKind.mouse),
   ]) {
-    testWidgets('${size.width.toInt()}px ${kind.name}: tapping a transaction '
-        'net chip shows the day\'s popup, its dot only its transaction; never '
+    testWidgets('${size.width.toInt()}px ${kind.name}: tapping an event '
+        'net chip shows the day\'s popup, its dot only its event; never '
         'creates', (tester) async {
       final labels = <(Offset, Rect)>[];
       debugVertexLabelRect = (name, c, r, rect) => labels.add((c, rect));
@@ -2731,7 +2720,7 @@ void main() {
       await settle();
       expect(tip, findsNothing);
       // The day's net chip lists the whole day; a dot only its own
-      // transaction (the lane's), with no day net.
+      // event (the lane's), with no day net.
       expect(byLabel, containsAll(['Rent', 'Salary']));
       expect(byLabel.any((t) => t.startsWith('Net')), isTrue);
       expect(rectByLabel, isNotNull);
@@ -2804,7 +2793,7 @@ void main() {
         expect(item.enabled, isFalse);
         expect(find.byKey(const ValueKey('more-import-hint')), findsOneWidget);
         expect(find.text(importNeedsDayHint), findsOneWidget);
-        await tester.tap(find.text('Import transactions'), warnIfMissed: false);
+        await tester.tap(find.text('Import events'), warnIfMissed: false);
         await tester.pumpAndSettle();
         expect(find.text('Paste a JSON array'), findsNothing);
         expect(find.byKey(const ValueKey('import-paste')), findsNothing);
@@ -2833,7 +2822,7 @@ void main() {
           isTrue,
         );
         expect(find.text('Dates count from $dateText'), findsOneWidget);
-        await tester.tap(find.text('Import transactions'));
+        await tester.tap(find.text('Import events'));
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('import-paste')), findsOneWidget);
         expect(
@@ -2858,7 +2847,7 @@ void main() {
           store.calls,
           contains('import ${importRootParam(day)} dryRun=false'),
         );
-        expect(find.textContaining('Imported 1 transaction'), findsOneWidget);
+        expect(find.textContaining('Imported 1 event'), findsOneWidget);
         expect(tester.takeException(), isNull);
       });
     }
@@ -2870,7 +2859,7 @@ void main() {
       Future<void> once() async {
         await tester.tap(find.byKey(const ValueKey('timeline-more')));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Import transactions'));
+        await tester.tap(find.text('Import events'));
         await tester.pumpAndSettle();
         await _pasteImport(
           tester,
@@ -2896,7 +2885,7 @@ void main() {
           tester
               .widget<Text>(find.byKey(const ValueKey('import-undo-message')))
               .data,
-          'Imported 1 transaction',
+          'Imported 1 event',
         );
         // Far past the 5 s undo tip (and past 10 s): still up.
         for (var i = 0; i < 15; i++) {
@@ -3033,11 +3022,11 @@ DateTime _plus(DateTime x, int days) => DateTime(x.year, x.month, x.day + days);
 
 void _three(_Store s) {
   final r = s.txs['rent']!;
-  s.txs['gym'] = Transaction(
+  s.txs['gym'] = BudgetEvent(
     id: 'gym',
-    poolId: r.poolId,
+    streamId: r.streamId,
     name: 'Gym',
-    direction: TransactionDirection.debit,
+    direction: EventDirection.debit,
     amount: Decimal.fromInt(25),
     startDate: r.startDate,
     recurrenceMode: RecurrenceMode.once,

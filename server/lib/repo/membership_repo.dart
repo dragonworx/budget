@@ -22,32 +22,32 @@ class Member {
       };
 }
 
-class PoolShare extends Member {
-  PoolShare(this.poolId, this.poolName, String userId, String email,
+class StreamShare extends Member {
+  StreamShare(this.streamId, this.streamName, String userId, String email,
       String? name, String? pictureUrl, Role role, DateTime createdAt)
       : super(userId, email, name, pictureUrl, role, createdAt);
-  final String poolId;
-  final String poolName;
+  final String streamId;
+  final String streamName;
 
   @override
   Map<String, Object?> toJson() =>
-      {'poolId': poolId, 'poolName': poolName, ...super.toJson()};
+      {'streamId': streamId, 'streamName': streamName, ...super.toJson()};
 }
 
-/// Pool owners and shares.
+/// Stream owners and shares.
 class MembershipRepo {
   MembershipRepo(this._db);
   final Session _db;
 
-  /// The pool's owner, as a member row with role owner.
-  Future<Member?> poolOwner(String poolId) async {
+  /// The stream's owner, as a member row with role owner.
+  Future<Member?> streamOwner(String streamId) async {
     final r = await _db.execute(
       Sql.named('''
         SELECT u.id::text, u.email, u.name, u.picture_url, u.created_at
-        FROM pools a JOIN users u ON u.id = a.owner_id
+        FROM streams a JOIN users u ON u.id = a.owner_id
         WHERE a.id = @a::uuid
       '''),
-      parameters: {'a': poolId},
+      parameters: {'a': streamId},
     );
     if (r.isEmpty) return null;
     final x = r.first;
@@ -55,20 +55,20 @@ class MembershipRepo {
         x[3] as String?, Role.owner, x[4] as DateTime? ?? DateTime.now());
   }
 
-  Future<List<PoolShare>> poolShares({required String poolId}) async {
+  Future<List<StreamShare>> streamShares({required String streamId}) async {
     final r = await _db.execute(
       Sql.named('''
         SELECT a.id::text, a.name, u.id::text, u.email, u.name, u.picture_url,
                s.role::text, s.created_at
-        FROM pool_shares s JOIN users u ON u.id = s.user_id
-        JOIN pools a ON a.id = s.pool_id
-        WHERE s.pool_id = @a::uuid
+        FROM stream_shares s JOIN users u ON u.id = s.user_id
+        JOIN streams a ON a.id = s.stream_id
+        WHERE s.stream_id = @a::uuid
         ORDER BY s.created_at
       '''),
-      parameters: {'a': poolId},
+      parameters: {'a': streamId},
     );
     return r
-        .map((x) => PoolShare(
+        .map((x) => StreamShare(
             x[0] as String,
             x[1] as String,
             x[2] as String,
@@ -80,36 +80,35 @@ class MembershipRepo {
         .toList();
   }
 
-  Future<void> grantPool(String poolId, String userId, Role role,
+  Future<void> grantStream(String streamId, String userId, Role role,
       {String? addedBy}) async {
     await _db.execute(
       Sql.named('''
-        INSERT INTO pool_shares (pool_id, user_id, role, added_by)
+        INSERT INTO stream_shares (stream_id, user_id, role, added_by)
         VALUES (@a::uuid, @u::uuid, @r::text::member_role, @by::uuid)
-        ON CONFLICT (pool_id, user_id) DO UPDATE
-          SET role = GREATEST(pool_shares.role, EXCLUDED.role)
+        ON CONFLICT (stream_id, user_id) DO UPDATE
+          SET role = GREATEST(stream_shares.role, EXCLUDED.role)
       '''),
-      parameters: {'a': poolId, 'u': userId, 'r': role.name, 'by': addedBy},
+      parameters: {'a': streamId, 'u': userId, 'r': role.name, 'by': addedBy},
     );
   }
 
-  Future<bool> setPoolRole(
-      String poolId, String userId, Role role) async {
+  Future<bool> setStreamRole(String streamId, String userId, Role role) async {
     final r = await _db.execute(
       Sql.named('''
-        UPDATE pool_shares SET role = @r::text::member_role
-        WHERE pool_id = @a::uuid AND user_id = @u::uuid RETURNING 1
+        UPDATE stream_shares SET role = @r::text::member_role
+        WHERE stream_id = @a::uuid AND user_id = @u::uuid RETURNING 1
       '''),
-      parameters: {'a': poolId, 'u': userId, 'r': role.name},
+      parameters: {'a': streamId, 'u': userId, 'r': role.name},
     );
     return r.isNotEmpty;
   }
 
-  Future<bool> removePoolShare(String poolId, String userId) async {
+  Future<bool> removeStreamShare(String streamId, String userId) async {
     final r = await _db.execute(
-      Sql.named('DELETE FROM pool_shares '
-          'WHERE pool_id = @a::uuid AND user_id = @u::uuid RETURNING 1'),
-      parameters: {'a': poolId, 'u': userId},
+      Sql.named('DELETE FROM stream_shares '
+          'WHERE stream_id = @a::uuid AND user_id = @u::uuid RETURNING 1'),
+      parameters: {'a': streamId, 'u': userId},
     );
     return r.isNotEmpty;
   }

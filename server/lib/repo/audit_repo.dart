@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'package:postgres/postgres.dart';
 
 import '../auth/authz.dart';
-import '../realtime/event.dart';
+import '../realtime/live_event.dart';
 
 const _entityTables = {
-  'pool': 'pools',
-  'transaction': 'transactions',
+  'stream': 'streams',
+  'event': 'events',
   'scenario': 'scenarios',
 };
 
@@ -17,12 +17,12 @@ class AuditRepo {
   AuditRepo(this._db);
   final Session _db;
 
-  /// Inserts the audit row and NOTIFYs it on [BudgetEvent.channel] in the
+  /// Inserts the audit row and NOTIFYs it on [LiveEvent.channel] in the
   /// same session, so listeners only see it once the mutation commits.
-  Future<BudgetEvent> record({
+  Future<LiveEvent> record({
     required String? userId,
     required String action,
-    String? poolId,
+    String? streamId,
     String? entityId,
     String? subjectUserId,
     String? clientId,
@@ -31,15 +31,15 @@ class AuditRepo {
     final entity = action.split('.').first;
     final r = await _db.execute(
       Sql.named('''
-        INSERT INTO audit_log (user_id, pool_id, action, entity,
+        INSERT INTO audit_log (user_id, stream_id, action, entity,
                                entity_id, detail, subject_user_id, client_id)
         VALUES (@u::uuid, @a::uuid, @action, @entity, @eid,
                 @detail::jsonb, @subj::uuid, @client)
-        RETURNING ${BudgetEvent.columns}
+        RETURNING ${LiveEvent.columns}
       '''),
       parameters: {
         'u': userId,
-        'a': _uuidOrNull(poolId),
+        'a': _uuidOrNull(streamId),
         'action': action,
         'entity': entity,
         'eid': entityId,
@@ -48,11 +48,11 @@ class AuditRepo {
         'client': clientId == null || clientId.length > 100 ? null : clientId,
       },
     );
-    final event = BudgetEvent.fromRow(r.first);
+    final event = LiveEvent.fromRow(r.first);
     await _db.execute(
       Sql.named('SELECT pg_notify(@ch, @payload)'),
       parameters: {
-        'ch': BudgetEvent.channel,
+        'ch': LiveEvent.channel,
         'payload': jsonEncode(event.toJson()),
       },
     );
@@ -73,16 +73,16 @@ class AuditRepo {
     var action = policy.event!;
     // An invite to an existing user grants access immediately.
     if (action == 'invite.created' && response?['status'] == 'added') {
-      action = 'pool_share.added';
+      action = 'stream_share.added';
     }
     final entity = action.split('.').first;
     final isCreate = action.endsWith('.created');
     String? entityId = switch (entity) {
-      'pool' => params['a'],
-      'transaction' => params['t'],
+      'stream' => params['a'],
+      'event' => params['t'],
       'skip' => params['t'],
       'scenario' => params['s'],
-      'pool_share' =>
+      'stream_share' =>
         params['u'] ?? (response?['member'] as Map?)?['userId']?.toString(),
       'invite' => params['i'],
       'admin' => params['u'] ?? params['pattern'],
@@ -90,22 +90,22 @@ class AuditRepo {
     };
     if (isCreate || entityId == null) entityId = createdId ?? entityId;
     final subject = switch (entity) {
-      'pool_share' => action.endsWith('.left') ? userId : entityId,
+      'stream_share' => action.endsWith('.left') ? userId : entityId,
       'admin' when action == 'admin.user_updated' => params['u'],
       'invite' when action == 'invite.accepted' => userId,
       _ => null,
     };
 
-    var poolId = access.poolId;
-    if (action == 'pool.created') poolId = createdId;
+    var streamId = access.streamId;
+    if (action == 'stream.created') streamId = createdId;
     if (action == 'invite.accepted' && response != null) {
-      poolId = response['poolId']?.toString();
+      streamId = response['streamId']?.toString();
     }
 
     await record(
       userId: userId,
       action: action,
-      poolId: poolId,
+      streamId: streamId,
       entityId: entityId,
       subjectUserId: subject,
       clientId: clientId,
@@ -117,8 +117,8 @@ class AuditRepo {
           'disabled': response!['disabled'],
         if (params['d'] != null) 'date': params['d'],
         if (response?['version'] != null) 'version': response!['version'],
-        if (params['peer'] != null) 'peerPoolId': params['peer'],
-        if (action == 'transactions.imported' && response != null)
+        if (params['peer'] != null) 'peerStreamId': params['peer'],
+        if (action == 'events.imported' && response != null)
           'imported': response['imported'] ?? response['created'],
       },
     );

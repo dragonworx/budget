@@ -21,8 +21,8 @@ class BalanceEngine {
   static BalanceSeries compute({
     required Decimal seedBalance,
     required DateTime seedDate,
-    required List<Transaction> transactions,
-    required List<String> transactionOrder,
+    required List<BudgetEvent> events,
+    required List<String> eventOrder,
     required DateTime from,
     required DateTime to,
     Map<String, Set<DateTime>> skipped = const {},
@@ -46,28 +46,28 @@ class BalanceEngine {
     // Generate from the seed: occurrences before the requested window still
     // move the opening balance. Only in-window ones are returned.
     final occurrences = OccurrenceGenerator.generate(
-      transactions: transactions,
+      events: events,
       from: seed,
       to: rangeEnd,
       skipped: skipped,
     );
 
     final orderIndex = <String, int>{};
-    for (var i = 0; i < transactionOrder.length; i++) {
-      orderIndex[transactionOrder[i]] = i;
+    for (var i = 0; i < eventOrder.length; i++) {
+      orderIndex[eventOrder[i]] = i;
     }
-    // Transactions not in transactionOrder append in creation order (createdAt).
+    // Events not in eventOrder append in creation order (createdAt).
     final creationIndex = <String, int>{};
-    final sortedByCreation = [...transactions]
+    final sortedByCreation = [...events]
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     for (var i = 0; i < sortedByCreation.length; i++) {
       creationIndex[sortedByCreation[i].id] = i;
     }
 
     int occurrenceRank(Occurrence o) {
-      final inOrder = orderIndex[o.transactionId];
+      final inOrder = orderIndex[o.eventId];
       if (inOrder != null) return inOrder;
-      return transactionOrder.length + (creationIndex[o.transactionId] ?? 0);
+      return eventOrder.length + (creationIndex[o.eventId] ?? 0);
     }
 
     occurrences.sort((a, b) {

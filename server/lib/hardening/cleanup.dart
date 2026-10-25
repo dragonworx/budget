@@ -6,7 +6,7 @@ import '../auth/session_store.dart';
 import 'logging.dart';
 
 /// Periodically deletes expired sessions and stale invites. Uses a
-/// transaction-scoped advisory lock so only one replica runs it per tick.
+/// event-scoped advisory lock so only one replica runs it per tick.
 class CleanupJob {
   CleanupJob(this._db, this._sessions, this._log,
       {this.interval = const Duration(hours: 1),

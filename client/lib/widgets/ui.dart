@@ -256,7 +256,7 @@ class EmptyState extends StatelessWidget {
   }) : assert(icon != null || glyph != null);
   final IconData? icon;
 
-  /// A custom icon widget (e.g. [PoolIcon]) instead of [icon].
+  /// A custom icon widget (e.g. [StreamIcon]) instead of [icon].
   final Widget? glyph;
   final String title;
   final String message;
@@ -314,7 +314,7 @@ class IconTile extends StatelessWidget {
   const IconTile(this.icon, {super.key, this.color = AppTheme.accent})
     : glyph = null;
 
-  /// A tile around a custom icon widget (e.g. [PoolIcon]).
+  /// A tile around a custom icon widget (e.g. [StreamIcon]).
   const IconTile.glyph(
     Widget this.glyph, {
     super.key,

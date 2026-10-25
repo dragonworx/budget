@@ -1,4 +1,4 @@
-// Save options in the transaction editor: Save (whole series), Save
+// Save options in the event editor: Save (whole series), Save
 // once-off (override one occurrence), From now on (split), and clearing
 // overrides back to the natural series value.
 import 'package:budget_client/data/api_client.dart';
@@ -6,8 +6,8 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/reminders/reminders_model.dart';
 import 'package:budget_client/features/timeline/occurrence_info.dart';
-import 'package:budget_client/features/transactions/editor_outcome.dart';
-import 'package:budget_client/features/transactions/transaction_editor.dart';
+import 'package:budget_client/features/events/editor_outcome.dart';
+import 'package:budget_client/features/events/event_editor.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
@@ -19,14 +19,14 @@ import 'package:budget_client/widgets/ui.dart';
 final _start = DateTime(2026, 10, 5);
 final _focus = DateTime(2026, 10, 19);
 
-Transaction _series({
+BudgetEvent _series({
   Map<DateTime, OccurrenceOverride> overrides = const {},
   RecurrenceMode mode = RecurrenceMode.every,
-}) => Transaction(
+}) => BudgetEvent(
   id: 't',
-  poolId: 'acc',
+  streamId: 'acc',
   name: 'Rent',
-  direction: TransactionDirection.debit,
+  direction: EventDirection.debit,
   amount: Decimal.fromInt(100),
   startDate: _start,
   recurrenceMode: mode,
@@ -37,45 +37,44 @@ Transaction _series({
   overrides: overrides,
 );
 
-OccurrenceOverride _o(int amount, [TransactionDirection? d]) =>
-    OccurrenceOverride(
-      direction: d ?? TransactionDirection.debit,
-      amount: Decimal.fromInt(amount),
-    );
+OccurrenceOverride _o(int amount, [EventDirection? d]) => OccurrenceOverride(
+  direction: d ?? EventDirection.debit,
+  amount: Decimal.fromInt(amount),
+);
 
-class _Repo extends TransactionRepository {
+class _Repo extends EventRepository {
   _Repo(this.t) : super(ApiClient());
-  Transaction t;
+  BudgetEvent t;
   final calls = <String>[];
 
   @override
-  Future<List<Transaction>> listForPool(String poolId) async => [t];
+  Future<List<BudgetEvent>> listForStream(String streamId) async => [t];
 
   @override
-  Future<Transaction> update(Transaction x, {bool force = false}) async {
+  Future<BudgetEvent> update(BudgetEvent x, {bool force = false}) async {
     calls.add('update ${x.id} ${x.name} ${x.amount} v${x.version}');
     return t = x;
   }
 
   @override
-  Future<Transaction> create(String poolId, Transaction draft) async {
+  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
     calls.add('create ${draft.name}');
     return draft;
   }
 
   @override
-  Future<Transaction> setOverride(
-    String transactionId,
+  Future<BudgetEvent> setOverride(
+    String eventId,
     DateTime date, {
-    required TransactionDirection direction,
+    required EventDirection direction,
     required Decimal amount,
     int? version,
   }) async {
     calls.add(
-      'override $transactionId ${formatDate(date)} ${direction.name} '
+      'override $eventId ${formatDate(date)} ${direction.name} '
       '$amount v$version',
     );
-    return t = Transaction.fromJson({
+    return t = BudgetEvent.fromJson({
       ...t.toJson(),
       'overrides': [
         {
@@ -88,15 +87,13 @@ class _Repo extends TransactionRepository {
   }
 
   @override
-  Future<void> clearOverrides(String transactionId, {DateTime? date}) async {
-    calls.add(
-      'clear $transactionId ${date == null ? 'all' : formatDate(date)}',
-    );
+  Future<void> clearOverrides(String eventId, {DateTime? date}) async {
+    calls.add('clear $eventId ${date == null ? 'all' : formatDate(date)}');
   }
 
   @override
-  Future<({Transaction original, Transaction? created})> split(
-    Transaction edited,
+  Future<({BudgetEvent original, BudgetEvent? created})> split(
+    BudgetEvent edited,
     DateTime date, {
     bool force = false,
   }) async {
@@ -116,7 +113,7 @@ class _Repo extends TransactionRepository {
 
 Future<(_Repo, List<EditorOutcome?>)> _pump(
   WidgetTester tester, {
-  Transaction? existing,
+  BudgetEvent? existing,
   DateTime? focus,
   bool readOnly = false,
   Size size = const Size(1200, 1600),
@@ -131,11 +128,11 @@ Future<(_Repo, List<EditorOutcome?>)> _pump(
   await tester.pumpWidget(const SizedBox());
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [transactionRepositoryProvider.overrideWithValue(repo)],
+      overrides: [eventRepositoryProvider.overrideWithValue(repo)],
       child: MaterialApp(
         home: Scaffold(
-          body: TransactionEditor(
-            poolId: 'acc',
+          body: EventEditor(
+            streamId: 'acc',
             existing: repo.t,
             focusDate: focus,
             readOnly: readOnly,
@@ -175,14 +172,14 @@ void main() {
     await _pump(tester);
     expect(find.byKey(const ValueKey('editor-save')), findsOneWidget);
     expect(_menu, findsNothing);
-    // Once-only transaction on its date: plain Save.
+    // Once-only event on its date: plain Save.
     await _pump(
       tester,
       existing: _series(mode: RecurrenceMode.once),
       focus: _start,
     );
     expect(_menu, findsNothing);
-    // New transaction: no dropdown.
+    // New event: no dropdown.
     tester.view.physicalSize = const Size(1200, 1600);
     // Viewers: no save at all.
     await _pump(tester, focus: _focus, readOnly: true);
@@ -262,7 +259,7 @@ void main() {
     expect(repo.calls, ['split t 2026-10-19 Rent 150 v3']);
     final o = outcomes.single!;
     expect(o.action, EditorAction.split);
-    expect(o.transaction.id, 't2');
+    expect(o.event.id, 't2');
     expect(o.original!.endDate, DateTime(2026, 10, 18));
     expect(
       describeOutcome(o),
@@ -403,16 +400,13 @@ void main() {
   });
 
   test('model: overrides parse and set the occurrence amount', () {
-    final t = Transaction.fromJson({
+    final t = BudgetEvent.fromJson({
       ..._series().toJson(),
       'overrides': [
         {'date': '2026-10-19', 'direction': 'credit', 'amount': '30'},
       ],
     });
-    expect(
-      t.overrideOn(DateTime(2026, 10, 19)),
-      _o(30, TransactionDirection.credit),
-    );
+    expect(t.overrideOn(DateTime(2026, 10, 19)), _o(30, EventDirection.credit));
     expect(t.signedAmountOn(DateTime(2026, 10, 19)), Decimal.fromInt(30));
     expect(t.signedAmountOn(DateTime(2026, 10, 12)), Decimal.fromInt(-100));
     expect(t.copyWith(name: 'x').overrides, t.overrides);
@@ -431,9 +425,7 @@ void main() {
     );
     final day = DayTotals.of(items.where((i) => i.date == _focus));
     expect(day.losses, Decimal.fromInt(250));
-    final credit = _series(
-      overrides: {_focus: _o(40, TransactionDirection.credit)},
-    );
+    final credit = _series(overrides: {_focus: _o(40, EventDirection.credit)});
     final i = expandOccurrences([credit], from: _focus, to: _focus).single;
     expect(i.isGain, isTrue);
     expect(DayTotals.of([i]).gains, Decimal.fromInt(40));

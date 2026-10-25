@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 DateTime d(int day) => DateTime(2026, 10, day);
 Occurrence o(int day, num v, {bool skipped = false, String id = 't'}) =>
     Occurrence(
-      transactionId: id,
+      eventId: id,
       date: d(day),
       signedDelta: Decimal.parse('$v'),
       skipped: skipped,
@@ -51,11 +51,7 @@ void main() {
     expect(s.gains + s.losses, s.net);
     expect(s.percent, closeTo(-15.333, 0.001));
     expect(s.days, 7);
-    expect(s.occurrences.map((x) => x.transactionId), [
-      'rent',
-      'food',
-      'refund',
-    ]);
+    expect(s.occurrences.map((x) => x.eventId), ['rent', 'food', 'refund']);
   });
 
   test('skipped occurrences neither count nor list', () {

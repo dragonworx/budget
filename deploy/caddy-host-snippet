@@ -3,7 +3,7 @@
 budget.example.com {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8081 {
-		# Keep SSE (/api/events) streaming.
+		# Keep SSE (/api/live) streaming.
 		flush_interval -1
 		header_up X-Forwarded-Proto {scheme}
 	}

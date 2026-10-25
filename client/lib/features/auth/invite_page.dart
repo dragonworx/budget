@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app.dart';
+
 import 'package:intl/intl.dart';
 
 import '../../data/api_client.dart';
@@ -56,14 +57,18 @@ class _InvitePageState extends ConsumerState<InvitePage> {
     setState(() => _accepting = true);
     try {
       final r = await ref.read(sharingRepositoryProvider).accept(widget.token);
-      ref.invalidate(poolsProvider);
+      ref.invalidate(streamsProvider);
       ref.invalidate(myInvitesProvider);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Invite accepted: you can now ${r.role.canEdit ? 'edit' : 'view'} it')),
+        SnackBar(
+          content: Text(
+            'Invite accepted: you can now ${r.role.canEdit ? 'edit' : 'view'} it',
+          ),
+        ),
       );
       context.go(
-        r.poolId != null ? '/pools/${r.poolId}/timeline' : poolsPath,
+        r.streamId != null ? '/streams/${r.streamId}/timeline' : streamsPath,
       );
     } catch (e) {
       if (!mounted) return;
@@ -105,7 +110,11 @@ class _InvitePageState extends ConsumerState<InvitePage> {
       body = [
         const Icon(Icons.link_off_rounded, size: 40, color: AppTheme.textFaint),
         const SizedBox(height: 12),
-        Text(_error!, key: ValueKey<String>(_errorKey ?? 'invite-error'), textAlign: TextAlign.center),
+        Text(
+          _error!,
+          key: ValueKey<String>(_errorKey ?? 'invite-error'),
+          textAlign: TextAlign.center,
+        ),
       ];
     } else if (p == null) {
       body = [const CircularProgressIndicator()];
@@ -113,7 +122,10 @@ class _InvitePageState extends ConsumerState<InvitePage> {
       final inv = p.invite;
       final by = inv.invitedBy;
       body = [
-        if (by != null) RefAvatar(by, radius: 26) else const Icon(Icons.group_add_rounded, size: 40),
+        if (by != null)
+          RefAvatar(by, radius: 26)
+        else
+          const Icon(Icons.group_add_rounded, size: 40),
         const SizedBox(height: 14),
         Text(
           '${by?.displayName ?? 'Someone'} invited you to',
@@ -133,10 +145,7 @@ class _InvitePageState extends ConsumerState<InvitePage> {
           children: [
             RoleChip(inv.role),
             const SizedBox(width: 8),
-            Text(
-              'pool',
-              style: theme.textTheme.bodySmall,
-            ),
+            Text('stream', style: theme.textTheme.bodySmall),
           ],
         ),
         if (inv.expiresAt != null) ...[
@@ -148,7 +157,11 @@ class _InvitePageState extends ConsumerState<InvitePage> {
         ],
         const SizedBox(height: 22),
         if (!inv.pending)
-          Text(_goneText(inv.status), key: const ValueKey('invite-gone'), textAlign: TextAlign.center)
+          Text(
+            _goneText(inv.status),
+            key: const ValueKey('invite-gone'),
+            textAlign: TextAlign.center,
+          )
         else if (!p.emailMatches) ...[
           Text(
             'This invite is for ${inv.email}, but you\'re signed in as ${me?.email ?? 'someone else'}.',
@@ -186,8 +199,8 @@ class _InvitePageState extends ConsumerState<InvitePage> {
                     ...body,
                     const SizedBox(height: 16),
                     TextButton(
-                      onPressed: () => context.go(poolsPath),
-                      child: const Text('Go to pools'),
+                      onPressed: () => context.go(streamsPath),
+                      child: const Text('Go to streams'),
                     ),
                   ],
                 ),

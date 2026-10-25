@@ -3,12 +3,12 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import '../engine/solver.dart' show SolverException;
-import '../repo/pool_repo.dart';
+import '../repo/stream_repo.dart';
 import '../repo/scenario_repo.dart';
 import 'goal.dart';
 import 'json_helpers.dart';
 
-const maxScenariosPerPool = 8;
+const maxScenariosPerStream = 8;
 
 /// Validated scenario fields from a create (all required bar color/included)
 /// or patch (all optional) body. The request is checked by parsing it as a
@@ -39,10 +39,10 @@ const maxScenariosPerPool = 8;
   return (name: name, colorIndex: color, included: included, request: request);
 }
 
-/// `/<poolId>/scenarios` CRUD. Scenarios are what-ifs only; they never
-/// touch the pool's transactions.
+/// `/<streamId>/scenarios` CRUD. Scenarios are what-ifs only; they never
+/// touch the stream's events.
 void attachScenarioRoutes(Router router, Session conn) {
-  final pools = PoolRepo(conn);
+  final streams = StreamRepo(conn);
   final repo = ScenarioRepo(conn);
 
   Future<Response> guard(Future<Response> Function() f) async {
@@ -57,24 +57,24 @@ void attachScenarioRoutes(Router router, Session conn) {
     }
   }
 
-  router.get('/<poolId>/scenarios', (Request r, String poolId) async {
-    if (await pools.get(poolId) == null) {
-      return jsonError(404, 'pool not found');
+  router.get('/<streamId>/scenarios', (Request r, String streamId) async {
+    if (await streams.get(streamId) == null) {
+      return jsonError(404, 'stream not found');
     }
-    final list = await repo.listByPool(poolId);
+    final list = await repo.listByStream(streamId);
     return jsonOk([for (final s in list) s.toJson()]);
   });
 
   router.post(
-    '/<poolId>/scenarios',
-    (Request r, String poolId) => guard(() async {
-      if (await pools.get(poolId) == null) {
-        return jsonError(404, 'pool not found');
+    '/<streamId>/scenarios',
+    (Request r, String streamId) => guard(() async {
+      if (await streams.get(streamId) == null) {
+        return jsonError(404, 'stream not found');
       }
       final b = parseScenarioBody(await readJsonObject(r), create: true);
-      final existing = await repo.listByPool(poolId);
-      if (existing.length >= maxScenariosPerPool) {
-        return jsonError(409, 'at most $maxScenariosPerPool scenarios');
+      final existing = await repo.listByStream(streamId);
+      if (existing.length >= maxScenariosPerStream) {
+        return jsonError(409, 'at most $maxScenariosPerStream scenarios');
       }
       final used = {for (final s in existing) s.colorIndex};
       final color = b.colorIndex ??
@@ -83,7 +83,7 @@ void attachScenarioRoutes(Router router, Session conn) {
             orElse: () => existing.length % 8,
           );
       final s = await repo.create(
-        poolId: poolId,
+        streamId: streamId,
         name: b.name!,
         colorIndex: color,
         included: b.included ?? true,
@@ -94,21 +94,21 @@ void attachScenarioRoutes(Router router, Session conn) {
   );
 
   Future<Response> owned(
-    String poolId,
+    String streamId,
     String id,
     Future<Response> Function() f,
   ) async {
     final s = await repo.get(id);
-    if (s == null || s.poolId != poolId) {
+    if (s == null || s.streamId != streamId) {
       return jsonError(404, 'scenario not found');
     }
     return f();
   }
 
   router.patch(
-    '/<poolId>/scenarios/<id>',
-    (Request r, String poolId, String id) => guard(
-      () => owned(poolId, id, () async {
+    '/<streamId>/scenarios/<id>',
+    (Request r, String streamId, String id) => guard(
+      () => owned(streamId, id, () async {
         final b = parseScenarioBody(await readJsonObject(r), create: false);
         final s = await repo.update(
           id,
@@ -123,8 +123,8 @@ void attachScenarioRoutes(Router router, Session conn) {
   );
 
   router.delete(
-    '/<poolId>/scenarios/<id>',
-    (Request r, String poolId, String id) => owned(poolId, id, () async {
+    '/<streamId>/scenarios/<id>',
+    (Request r, String streamId, String id) => owned(streamId, id, () async {
       await repo.delete(id);
       return jsonOk({'deleted': id});
     }),

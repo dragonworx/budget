@@ -5,7 +5,7 @@ import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-// Regression: an import into a pool whose line was flat at $0 left the
+// Regression: an import into a stream whose line was flat at $0 left the
 // balance range fitted to the flat line (±$1), so the imported bills drew
 // off the plot (no dots, "flat" graph) while the heat map showed them.
 
@@ -110,7 +110,7 @@ void main() {
     expect(y.min, lessThan(0));
   });
 
-  testWidgets('importing bills into a flat pool refits so the line shows', (
+  testWidgets('importing bills into a flat stream refits so the line shows', (
     tester,
   ) async {
     final h = await _pump(tester);

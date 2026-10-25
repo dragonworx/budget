@@ -13,11 +13,11 @@ final _start = DateTime(2026, 10, 1);
 const _days = 30.0;
 const _size = Size(1000, 500);
 
-Transaction _t(String id, {bool enabled = true}) => Transaction(
+BudgetEvent _t(String id, {bool enabled = true}) => BudgetEvent(
   id: id,
-  poolId: 'a',
+  streamId: 'a',
   name: id,
-  direction: TransactionDirection.debit,
+  direction: EventDirection.debit,
   amount: Decimal.fromInt(10),
   startDate: _start,
   recurrenceMode: RecurrenceMode.every,
@@ -29,7 +29,7 @@ Transaction _t(String id, {bool enabled = true}) => Transaction(
 
 Occurrence _o(String id, int day, int delta, {bool skipped = false}) =>
     Occurrence(
-      transactionId: id,
+      eventId: id,
       date: DateTime(2026, 10, day),
       signedDelta: Decimal.fromInt(delta),
       skipped: skipped,
@@ -73,7 +73,7 @@ Future<List<DateTime>> _pump(
                 _o('rent', 12, -180),
               ],
             ),
-            transactions: {
+            events: {
               for (final id in ['pay', 'gift', 'rent', 'coffee', 'skipped'])
                 id: _t(id),
               'off': _t('off', enabled: false),

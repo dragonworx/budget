@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/repositories.dart';
-import 'package:budget_client/features/transactions/import_dialog.dart';
+import 'package:budget_client/features/events/import_dialog.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:budget_client/theme/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Records calls; dry runs answer [preview] (or throw [error]).
-class _Repo extends TransactionRepository {
+class _Repo extends EventRepository {
   _Repo() : super(ApiClient());
   final calls = <String>[];
   Map<String, dynamic> Function(String raw) preview = (_) => {};
@@ -19,7 +19,7 @@ class _Repo extends TransactionRepository {
 
   @override
   Future<Map<String, dynamic>> import(
-    String poolId,
+    String streamId,
     String raw, {
     required DateTime root,
     bool dryRun = false,
@@ -97,7 +97,7 @@ Future<(_Repo, List<ImportResult?>)> _open(
   final results = <ImportResult?>[];
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [transactionRepositoryProvider.overrideWithValue(repo)],
+      overrides: [eventRepositoryProvider.overrideWithValue(repo)],
       child: MaterialApp(
         theme: AppTheme.dark(),
         home: Builder(
@@ -107,7 +107,7 @@ Future<(_Repo, List<ImportResult?>)> _open(
                 onPressed: () async => results.add(
                   await showImportDialog(
                     context,
-                    poolId: 'p1',
+                    streamId: 'p1',
                     root: DateTime(2026, 10, 22),
                   ),
                 ),
@@ -152,7 +152,7 @@ void main() {
     expect(find.byKey(const ValueKey('import-preview')), findsNothing);
   });
 
-  testWidgets('Paste previews one row per transaction (recurring once)', (
+  testWidgets('Paste previews one row per event (recurring once)', (
     tester,
   ) async {
     final (repo, results) = await _open(tester);

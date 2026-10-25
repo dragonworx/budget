@@ -7,7 +7,7 @@ import 'brand/landing_intro.dart';
 import 'features/admin/admin_page.dart';
 import 'features/auth/invite_page.dart';
 import 'features/auth/sign_in_page.dart';
-import 'features/pools/pools_page.dart';
+import 'features/streams/streams_page.dart';
 import 'features/timeline/timeline_page.dart';
 import 'state/auth_providers.dart';
 import 'state/realtime_providers.dart';
@@ -15,9 +15,9 @@ import 'theme/app_theme.dart';
 
 const signInPath = '/sign-in';
 
-/// The pools home (list, New pool). `/` is the same page, but the
-/// first visit after sign-in jumps straight to the last-used pool.
-const poolsPath = '/pools';
+/// The streams home (list, New stream). `/` is the same page, but the
+/// first visit after sign-in jumps straight to the last-used stream.
+const streamsPath = '/streams';
 
 /// Where the guard sends [location] for the given auth state, or null to stay.
 /// Pure so it can be unit-tested.
@@ -74,9 +74,12 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (context, state) => const PoolsPage(landing: true),
+        builder: (context, state) => const StreamsPage(landing: true),
       ),
-      GoRoute(path: poolsPath, builder: (context, state) => const PoolsPage()),
+      GoRoute(
+        path: streamsPath,
+        builder: (context, state) => const StreamsPage(),
+      ),
       GoRoute(
         path: signInPath,
         builder: (context, state) => const SignInPage(),
@@ -87,23 +90,37 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) =>
             InvitePage(token: state.pathParameters['token']!),
       ),
-      // Old project links (projects are gone): the pools home.
-      GoRoute(path: '/projects/:projectId', redirect: (_, _) => poolsPath),
-      // Old account links (accounts are now pools).
-      GoRoute(path: '/accounts', redirect: (_, _) => poolsPath),
+      // Old project links (projects are gone): the streams home.
+      GoRoute(path: '/projects/:projectId', redirect: (_, _) => streamsPath),
+      // Old account links (accounts are now streams).
+      GoRoute(path: '/accounts', redirect: (_, _) => streamsPath),
       GoRoute(
         path: '/accounts/:id/timeline',
-        redirect: (_, state) => '/pools/${state.pathParameters['id']}/timeline',
+        redirect: (_, state) =>
+            '/streams/${state.pathParameters['id']}/timeline',
       ),
       GoRoute(
         path: '/accounts/:id',
-        redirect: (_, state) => '/pools/${state.pathParameters['id']}/timeline',
+        redirect: (_, state) =>
+            '/streams/${state.pathParameters['id']}/timeline',
+      ),
+      // Old pool links (pools are now streams).
+      GoRoute(path: '/pools', redirect: (_, _) => streamsPath),
+      GoRoute(
+        path: '/pools/:id/timeline',
+        redirect: (_, state) =>
+            '/streams/${state.pathParameters['id']}/timeline',
       ),
       GoRoute(
-        path: '/pools/:poolId/timeline',
+        path: '/pools/:id',
+        redirect: (_, state) =>
+            '/streams/${state.pathParameters['id']}/timeline',
+      ),
+      GoRoute(
+        path: '/streams/:streamId/timeline',
         builder: (context, state) {
-          final poolId = state.pathParameters['poolId']!;
-          return TimelinePage(poolId: poolId);
+          final streamId = state.pathParameters['streamId']!;
+          return TimelinePage(streamId: streamId);
         },
       ),
     ],

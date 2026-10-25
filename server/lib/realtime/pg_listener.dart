@@ -4,10 +4,10 @@ import 'dart:math';
 
 import 'package:postgres/postgres.dart';
 
-import 'event.dart';
+import 'live_event.dart';
 import 'event_bus.dart';
 
-/// A dedicated Postgres connection that LISTENs on [BudgetEvent.channel] and
+/// A dedicated Postgres connection that LISTENs on [LiveEvent.channel] and
 /// publishes each notification to [bus]. Reconnects with backoff (1 s .. 30 s)
 /// and signals a gap after every reconnect so subscribers re-read audit_log.
 class PgListener {
@@ -41,9 +41,9 @@ class PgListener {
       try {
         final conn = await _open();
         _conn = conn;
-        final sub = conn.channels[BudgetEvent.channel].listen((payload) {
+        final sub = conn.channels[LiveEvent.channel].listen((payload) {
           try {
-            bus.publish(BudgetEvent.fromJson(
+            bus.publish(LiveEvent.fromJson(
                 jsonDecode(payload) as Map<String, dynamic>));
           } catch (e) {
             onLog?.call('realtime: bad payload ignored: $e');
@@ -54,7 +54,7 @@ class PgListener {
             conn.channels[e.key].listen(e.value)
         ];
         // Make sure LISTEN is registered before declaring readiness.
-        await conn.execute('LISTEN ${BudgetEvent.channel}');
+        await conn.execute('LISTEN ${LiveEvent.channel}');
         for (final ch in extraChannels.keys) {
           await conn.execute('LISTEN $ch');
         }

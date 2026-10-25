@@ -34,7 +34,7 @@ const goalRows = [
 class GoalPanel extends ConsumerStatefulWidget {
   const GoalPanel({
     super.key,
-    required this.pool,
+    required this.stream,
     required this.onResult,
     this.initial,
     this.onSaveScenario,
@@ -43,7 +43,7 @@ class GoalPanel extends ConsumerStatefulWidget {
   /// "Save as scenario": stores the current request as a what-if.
   final ValueChanged<GoalRequest>? onSaveScenario;
 
-  final Pool pool;
+  final BudgetStream stream;
 
   /// Every solve (null while incomplete or failed), for the chart preview.
   final void Function(GoalRequest request, GoalResult? result) onResult;
@@ -194,8 +194,8 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     setState(() => _solving = true);
     try {
       final r = await ref
-          .read(poolRepositoryProvider)
-          .goal(widget.pool.id, req);
+          .read(streamRepositoryProvider)
+          .goal(widget.stream.id, req);
       if (!mounted || seq != _seq) return;
       setState(() {
         _result = r;
@@ -317,22 +317,22 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
           _status(context),
           const SizedBox(height: 12),
           FilledButton.icon(
-            key: const ValueKey('goal-add-transactions'),
+            key: const ValueKey('goal-add-events'),
             onPressed:
-                !widget.pool.role.canEdit ||
+                !widget.stream.role.canEdit ||
                     _saving ||
                     _solving ||
-                    (_result?.toTransactions(widget.pool.id).isEmpty ?? true)
+                    (_result?.toEvents(widget.stream.id).isEmpty ?? true)
                 ? null
-                : _addTransactions,
+                : _addEvents,
             icon: const Icon(Icons.add_rounded, size: 18),
             label: Text(
-              !widget.pool.role.canEdit
-                  ? 'View only: can’t add to pool'
-                  : (_saving ? 'Adding…' : 'Add plan to pool'),
+              !widget.stream.role.canEdit
+                  ? 'View only: can’t add to stream'
+                  : (_saving ? 'Adding…' : 'Add plan to stream'),
             ),
           ),
-          if (widget.onSaveScenario != null && widget.pool.role.canEdit) ...[
+          if (widget.onSaveScenario != null && widget.stream.role.canEdit) ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
               key: const ValueKey('goal-save-scenario'),
@@ -541,7 +541,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     );
   }
 
-  /// Every [− N +] [unit ▾] (shared with the transaction editor).
+  /// Every [− N +] [unit ▾] (shared with the event editor).
   Widget _frequencyField(BuildContext context) => RecurrenceIntervalField(
     keyPrefix: 'goal-field-interval',
     caption: GoalVar.interval.label,
@@ -735,14 +735,12 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     };
   }
 
-  Future<void> _addTransactions() async {
-    final txs = _result?.toTransactions(widget.pool.id) ?? const [];
+  Future<void> _addEvents() async {
+    final txs = _result?.toEvents(widget.stream.id) ?? const [];
     if (txs.isEmpty) return;
     setState(() => _saving = true);
     try {
-      final notifier = ref.read(
-        transactionsProvider(widget.pool.id).notifier,
-      );
+      final notifier = ref.read(eventsProvider(widget.stream.id).notifier);
       for (final t in txs) {
         await notifier.create(t);
       }
@@ -751,7 +749,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Added ${txs.length} transaction${txs.length == 1 ? '' : 's'}',
+              'Added ${txs.length} event${txs.length == 1 ? '' : 's'}',
             ),
           ),
         );

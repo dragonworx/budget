@@ -15,15 +15,15 @@ void main() {
         return http.Response('', status);
       }),
     );
-    await PoolRepository(api).delete('a1');
-    await TransactionRepository(api).delete('t1');
+    await StreamRepository(api).delete('a1');
+    await EventRepository(api).delete('t1');
     expect(seen, [
-      'DELETE /api/pools/a1 no-cache',
-      'DELETE /api/transactions/t1 no-cache',
+      'DELETE /api/streams/a1 no-cache',
+      'DELETE /api/events/t1 no-cache',
     ]);
     status = 500;
     expect(
-      () => PoolRepository(api).delete('a1'),
+      () => StreamRepository(api).delete('a1'),
       throwsA(isA<ApiException>()),
     );
   });

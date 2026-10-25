@@ -1,6 +1,6 @@
 import 'models.dart';
 
-/// Frequency presets for the transaction editor and Plan sheet. Each maps to
+/// Frequency presets for the event editor and Plan sheet. Each maps to
 /// the existing recurrence model (once, or every [interval] [unit]), so no
 /// schema change; anything else is [custom]. Steps mirror the timeline's
 /// view units (Day … Year), worded as frequencies.

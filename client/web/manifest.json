@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#0A2C5E",
     "theme_color": "#0A2C5E",
-    "description": "Budgie: tweet your budget right. Plan each pool's balance over time.",
+    "description": "Budgie: tweet your budget right. Plan each stream's balance over time.",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
