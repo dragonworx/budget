@@ -14,8 +14,9 @@ import 'zoom_level.dart';
 ///   date of its final counted occurrence), or for ever when it never ends.
 ///   A once-off is a lane one day wide.
 /// * The lanes active on a day are stacked in the Events list's order
-///   (first = top) with no gaps, and the stack's centre sits on the balance
-///   line, so the whole ribbon rises and falls with the balance.
+///   (first = top) with no gaps, hanging just under the balance line
+///   ([laneGap] below it), so the whole ribbon rises and falls with the
+///   balance and the line stays clear of every lane.
 /// * Excluded (Include in balance off) events have no occurrences and
 ///   no lane.
 class StackLane {
@@ -299,9 +300,17 @@ List<StackPlateau> stackPlateaus({
   return out;
 }
 
-/// Top of lane [slot] of [n] stacked and centred on [balanceY].
+/// Space between the balance line and the first lane under it.
+const double laneGap = 3.0;
+
+/// Top of lane [slot] of [n] stacked under the balance line at [balanceY]
+/// (slot 0 directly under it). [n] is kept for callers that size the stack.
 double laneTop(double balanceY, int slot, int n, double thickness) =>
-    balanceY - n * thickness / 2 + slot * thickness;
+    balanceY + laneGap + slot * thickness;
+
+/// Bottom of a stack of [n] lanes under [balanceY] ([balanceY] when empty).
+double stackBottomOf(double balanceY, int n, double thickness) =>
+    n == 0 ? balanceY : laneTop(balanceY, n, n, thickness);
 
 /// Slanted run, in px, where the ribbon moves from one level to the next
 /// (just left of the new level's left edge, so the new level starts exactly
@@ -331,9 +340,10 @@ class LaneDot {
 /// centred in it), in lane order from the top. A lane whose event
 /// occurs that day gets its occurrences; the others get an [LaneDot.idle]
 /// dot. Any occurrence with no lane that day gets its own dot on the balance.
-/// [balanceY] is the ribbon's centre (the day's closing balance), [thickness]
-/// a lane's. Also returns the stack's top and bottom ([stackTop] /
-/// [stackBottom], both [balanceY] when no lane is active).
+/// [balanceY] is the balance line (the day's closing balance) the stack
+/// hangs under, [thickness] a lane's. Also returns the stack's top and
+/// bottom ([stackTop] / [stackBottom], both [balanceY] when no lane is
+/// active).
 ({List<LaneDot> dots, double stackTop, double stackBottom}) laneDotsForDay({
   required LaneSet lanes,
   required DayGroup group,
@@ -390,7 +400,7 @@ class LaneDot {
         ),
     ],
     stackTop: n == 0 ? balanceY : laneTop(balanceY, 0, n, thickness),
-    stackBottom: n == 0 ? balanceY : laneTop(balanceY, n, n, thickness),
+    stackBottom: stackBottomOf(balanceY, n, thickness),
   );
 }
 

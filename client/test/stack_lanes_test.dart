@@ -46,6 +46,7 @@ BudgetEvent _t(
 void main() {
   tearDown(() {
     debugLaneDot = null;
+    debugLaneDotPainted = null;
     debugRibbon = null;
     debugRiser = null;
     debugTrueLine = null;
@@ -171,10 +172,14 @@ void main() {
   });
 
   group('ribbon geometry', () {
-    test('the stack is centred on the balance, in list order, no gaps', () {
+    test('the stack hangs just under the balance, in list order, no '
+        'gaps', () {
       const h = 14.0;
       final tops = [for (var k = 0; k < 3; k++) laneTop(200, k, 3, h)];
-      expect(tops, [200 - 21, 200 - 7, 200 + 7]);
+      expect(tops, [200 + laneGap, 200 + laneGap + 14, 200 + laneGap + 28]);
+      // Every lane is under the line: the first starts just below it.
+      expect(tops.first, greaterThan(200));
+      expect(stackBottomOf(200, 3, h), 200 + laneGap + 42);
       expect(tops[1] + h, tops[2]);
       // A higher balance (smaller y) lifts the whole stack together.
       expect(laneTop(100, 0, 3, h), tops[0] - 100);
@@ -325,6 +330,99 @@ void main() {
       expect(dots['c']!.first.dy, lessThan(dots['a']!.first.dy));
     });
 
+    testWidgets('lane dots are hidden until the pointer is on their lane', (
+      tester,
+    ) async {
+      final painted = <String?>[];
+      debugLaneDotPainted = (id, _, _) => painted.add(id);
+      final dots = await pump(tester, ['a', 'b', 'c']);
+      expect(dots.keys, containsAll(['a', 'b', 'c']), reason: 'placed');
+      expect(painted, isEmpty, reason: 'none drawn initially');
+      expect(find.byKey(const ValueKey('occurrence-tooltip')), findsNothing);
+    });
+
+    testWidgets('hovering anywhere on a lane shows its dot and opens its '
+        'popup on the dot\'s left', (tester) async {
+      final painted = <(String?, Offset)>[];
+      debugLaneDotPainted = (id, c, _) => painted.add((id, c));
+      final dots = await pump(tester, ['a', 'b', 'c'], actions: true);
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      final layout = ChartLayout.of(const Size(1440, 800), 30);
+      final dayPx = layout.plot.width / 30;
+      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: origin + const Offset(1300, 760));
+      addTearDown(mouse.removePointer);
+      await tester.pump();
+      for (final id in ['a', 'b', 'c']) {
+        // Mid-step, well right of the (hidden) dot: still its lane.
+        final dot = dots[id]!.last;
+        painted.clear();
+        await mouse.moveTo(origin + dot + Offset(dayPx * 3.4, 1));
+        await tester.pump();
+        expect(tip, findsOneWidget, reason: id);
+        for (final e in names.entries) {
+          expect(
+            find.descendant(of: tip, matching: find.text(e.value)),
+            e.key == id ? findsWidgets : findsNothing,
+            reason: '${e.value} (hovering $id)',
+          );
+        }
+        // Only the hovered lane's dot, at its step's left edge.
+        expect(painted, isNotEmpty);
+        expect(painted.map((p) => p.$1).toSet(), {id});
+        expect(painted.last.$2.dx, closeTo(dot.dx, 0.01));
+        expect(painted.last.$2.dy, closeTo(dot.dy, 0.01));
+        // The card opens on the dot's left, clear of the pointer.
+        expect(tester.getRect(tip).right, lessThan(origin.dx + dot.dx));
+      }
+      // Another step of the same lane moves the dot there (near the left
+      // edge the card falls back to the dot's right, above its row).
+      final later = dots['a']!.first;
+      painted.clear();
+      await mouse.moveTo(origin + later + Offset(dayPx * 2, 1));
+      await tester.pump();
+      expect(tip, findsOneWidget);
+      expect(painted.last.$2.dx, closeTo(later.dx, 0.01));
+      expect(tester.getRect(tip).bottom, lessThan(origin.dy + later.dy));
+      // Leaving the lanes closes it (after a short grace).
+      await mouse.moveTo(origin + const Offset(1300, 760));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(tip, findsNothing);
+      painted.clear();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(painted, isEmpty, reason: 'dots hidden again');
+    });
+
+    testWidgets('a tap anywhere on a lane shows its dot and popup, never '
+        'creating', (tester) async {
+      final painted = <String?>{};
+      debugLaneDotPainted = (id, _, _) => painted.add(id);
+      var created = 0;
+      final dots = await pump(tester, [
+        'a',
+        'b',
+        'c',
+      ], onCreate: (_) => created++);
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      final dayPx = ChartLayout.of(const Size(1440, 800), 30).plot.width / 30;
+      final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+      await tester.tapAt(
+        origin + dots['c']!.first + Offset(dayPx * 4, 0),
+        kind: PointerDeviceKind.touch,
+      );
+      await tester.pump();
+      expect(tip, findsOneWidget);
+      expect(
+        find.descendant(of: tip, matching: find.text('Gym')),
+        findsWidgets,
+      );
+      expect(painted, {'c'});
+      expect(created, 0);
+      await tester.pump(const Duration(seconds: 6));
+    });
+
     testWidgets('dots sit on the left edge of their day, not its centre', (
       tester,
     ) async {
@@ -339,8 +437,8 @@ void main() {
       }
     });
 
-    testWidgets('the auto-fit leaves room for half the stack above and '
-        'below the line', (tester) async {
+    testWidgets('the auto-fit leaves room for the whole stack under the '
+        'line', (tester) async {
       await pump(tester, ['a', 'b', 'c'], balances: [1000, 1500]);
       final range =
           (tester.state(find.byType(BalanceChart)) as dynamic).debugYRange
@@ -353,12 +451,17 @@ void main() {
       );
       final span = range.max - range.min;
       double px(double v) => (range.max - v) / span * layout.plot.height;
-      expect(px(1500), greaterThanOrEqualTo(h * 3 / 2));
-      expect(layout.plot.height - px(0), greaterThanOrEqualTo(h * 3 / 2));
+      // The highest balance keeps a chip's room above it ...
+      expect(px(1500), greaterThan(0));
+      // ... and the lowest its whole stack below, nothing clipped.
+      expect(
+        layout.plot.height - px(1000),
+        greaterThanOrEqualTo(laneGap + h * 3),
+      );
     });
 
-    testWidgets('the ribbon is centred on the balance\'s own y, at every '
-        'day, zoomed in or out', (tester) async {
+    testWidgets('the ribbon hangs just under the balance\'s own y, at '
+        'every day, zoomed in or out', (tester) async {
       for (final days in [30.0, 9.0, 60.0]) {
         final seen = <DateTime, (Rect, double)>{};
         debugRibbon = (d, r, y) => seen[d] = (r, y);
@@ -376,8 +479,14 @@ void main() {
           final balance = e.key.isBefore(_start.add(const Duration(days: 7)))
               ? 1000.0
               : 1500.0;
-          expect(rect.center.dy, closeTo(y, 0.01), reason: '${e.key}');
-          expect(rect.center.dy, closeTo(yOf(balance), 0.01), reason: '$days');
+          expect(rect.top, closeTo(y + laneGap, 0.01), reason: '${e.key}');
+          expect(
+            rect.top,
+            closeTo(yOf(balance) + laneGap, 0.01),
+            reason: '$days',
+          );
+          // Fitted: the stack is never clipped by the plot.
+          expect(rect.bottom, lessThanOrEqualTo(layout.plot.bottom + 0.01));
         }
       }
     });
@@ -429,12 +538,12 @@ void main() {
           reason: '$r',
         );
       }
-      // The stack's centre is the line, at every level.
+      // The stack hangs just under the line, at every level.
       for (final e in ribbons.entries) {
         final y = e.key.isBefore(_start.add(const Duration(days: 7)))
             ? yOf(1000)
             : yOf(1500);
-        expect(e.value.center.dy, closeTo(y, 0.01));
+        expect(e.value.top, closeTo(y + laneGap, 0.01));
       }
       // One step, at day 8's left edge, spanning the two balances.
       final step = steps.single;
@@ -472,14 +581,13 @@ void main() {
       // Over the lane text: every line piece after the last name / pill.
       expect(order.indexOf('line'), greaterThan(order.lastIndexOf('text')));
       expect(lastLine, order.length - 1);
-      // Every stack's whole width carries the line at its centre, middle
-      // lane text or not.
+      // Every stack's whole width carries the line just over its top.
       for (final r in ribbons) {
         expect(
           pieces.any(
             (p) =>
                 p.height <= 4 &&
-                (p.center.dy - r.center.dy).abs() < 0.01 &&
+                (p.center.dy - (r.top - laneGap)).abs() < 0.01 &&
                 p.left <= r.left + 0.01 &&
                 p.right >= r.right - 0.01,
           ),
@@ -489,9 +597,7 @@ void main() {
       }
     });
 
-    testWidgets('a single lane gets the line too, through its centre', (
-      tester,
-    ) async {
+    testWidgets('a single lane hangs directly under the line', (tester) async {
       final pieces = <Rect>[];
       debugTrueLine = pieces.add;
       final ribbons1 = <Rect>[];
@@ -512,7 +618,7 @@ void main() {
           pieces.any(
             (p) =>
                 p.height <= 4 &&
-                (p.center.dy - r.center.dy).abs() < 0.01 &&
+                (p.center.dy - (r.top - laneGap)).abs() < 0.01 &&
                 p.left <= r.left + 0.01 &&
                 p.right >= r.right - 0.01,
           ),

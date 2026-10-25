@@ -631,16 +631,18 @@ class _BalanceChartState extends State<BalanceChart>
     if (_yRange != null) return _yRange;
     final visible = _visible();
     if (visible == null) return null;
-    // The stacked ribbon is centred on the line, so a fit leaves room for
-    // half of it above the highest and below the lowest balance.
-    final half = _stackHalfPx();
+    // The stacked lanes hang under the line, so a fit leaves room for the
+    // whole stack below the lowest balance (and a net chip's height above
+    // the highest).
+    final below = _stackBelowPx();
+    final above = below > 0 ? _stackAbovePx : 0.0;
     final plotH = _layout.plot.height;
     BalanceExtents fit(double lo, double hi) {
       var r = _fitRange(lo, hi);
-      if (half <= 0 || plotH <= half * 2.5) return r;
+      if (below <= 0 || plotH <= (below + above) * 1.6) return r;
       for (var i = 0; i < 3; i++) {
-        final v = half * (r.max - r.min) / plotH;
-        r = _fitRange(lo - v, hi + v);
+        final perPx = (r.max - r.min) / plotH;
+        r = _fitRange(lo - below * perPx, hi + above * perPx);
       }
       return r;
     }
@@ -648,12 +650,15 @@ class _BalanceChartState extends State<BalanceChart>
     return _yRange = fit(visible.extents.min, visible.extents.max);
   }
 
-  /// Half the tallest stack of lanes, in px, plus a little air.
-  double _stackHalfPx() {
+  /// The tallest stack of lanes under the line, in px, plus a little air.
+  double _stackBelowPx() {
     final lanes = _laneSet();
     if (lanes.isEmpty) return 0;
-    return lanes.maxActive * _laneHeight(lanes, _layout) / 2 + 6;
+    return laneGap + lanes.maxActive * _laneHeight(lanes, _layout) + 6;
   }
+
+  /// Room over the highest balance for its net chip.
+  static const double _stackAbovePx = 22;
 
   BalanceExtents _fitRange(double min, double max) {
     // The default view anchors $0 a third of the way up the plot.
@@ -723,6 +728,7 @@ class _BalanceChartState extends State<BalanceChart>
     _tapTipTimer?.cancel();
     _nudgeTimer?.cancel();
     _dtAnim.dispose();
+    _switchTimer?.cancel();
     _hoverDay.dispose();
     _hoverDots.dispose();
     _focus.dispose();
@@ -813,10 +819,26 @@ class _BalanceChartState extends State<BalanceChart>
       return;
     }
     _mode = _Gesture.pan;
+    // A drag scrubs from the shown (revealed) dot, anywhere along its
+    // revealed lane, or from an always-drawn dot; anywhere else on the
+    // lanes it pans (they cover much of the plot).
+    final shown = _hoverDots.value;
+    bool onShownLane() {
+      if (shown == null || shown.dots.length != 1) return false;
+      final id = shown.dots.first.txId;
+      if (id == null) return false;
+      return _laneDotAt(layout, event.localPosition, slop: 6)?.txId == id;
+    }
+
     _scrubCandidate =
         touch &&
         !_hasSelection &&
-        _nearestDot(layout, event.localPosition, touchVertexHitRadius) != null;
+        (_nearestDot(layout, event.localPosition, touchVertexHitRadius) !=
+                null ||
+            shown != null &&
+                (shown.anchor - event.localPosition).distance <=
+                    touchVertexHitRadius ||
+            onShownLane());
     // Press-and-hold (touch or mouse, within the slop) in empty graph
     // space enters selection mode; near a dot (44px touch / 18px mouse) a
     // hold shows that dot's info as before. A quick tap still shows dot
@@ -828,7 +850,8 @@ class _BalanceChartState extends State<BalanceChart>
       final pos = _downPos;
       if (pos == null || !_layout.plot.contains(pos)) return;
       final layout = _layout;
-      final near = _dotAt(layout, pos, vertexHitRadius(event.kind));
+      final lane = _laneDotAt(layout, pos, slop: touch ? 6 : 2);
+      final near = lane ?? _dotAt(layout, pos, vertexHitRadius(event.kind));
       final lineTol = touch ? touchLineHitTolerance : mouseLineHitTolerance;
       if (near == null && _distanceToLine(layout, pos) <= lineTol) {
         return; // on the balance line: no selection (and nothing else)
@@ -840,9 +863,12 @@ class _BalanceChartState extends State<BalanceChart>
       }
       if (!touch) return; // mouse: hover already shows the dot's info
       // Touch long-press on a dot shows / pins its tooltip.
-      final hits = _overlapping(layout, near);
+      final hits = lane != null ? [lane] : _overlapping(layout, near);
       _longPressTip = true;
-      _hoverDots.value = _DotTip(hits, near.center);
+      _hoverDots.value = _DotTip(
+        hits,
+        lane != null ? _tipAnchor(layout, lane) : near.center,
+      );
     });
   }
 
@@ -918,37 +944,42 @@ class _BalanceChartState extends State<BalanceChart>
     }
     var best = double.infinity;
     var cursor = xOf(drawStart);
-    // Stacked lanes: the line is a ribbon, so a point inside it is on the
-    // line; [half] is half the stack's thickness around the balance.
+    // Stacked lanes: the line and the lanes hanging under it are one
+    // ribbon, so a point inside it is on the line; [depth] is how far the
+    // stack reaches below the balance.
     final lanes = _laneSet();
     final laneH = lanes.isEmpty ? 0.0 : _laneHeight(lanes, layout);
-    double halfAt(DateTime day) =>
-        lanes.isEmpty ? 0.0 : lanes.activeOn(day).length * laneH / 2;
-    var curHalf = halfAt(drawStart);
-    void seg(Offset a, Offset b, double half) => best = math.min(
-      best,
-      math.max(0.0, distanceToSegment(pos, a, b) - half),
-    );
+    double depthAt(DateTime day) {
+      if (lanes.isEmpty) return 0.0;
+      final n = lanes.activeOn(day).length;
+      return n == 0 ? 0.0 : laneGap + n * laneH;
+    }
+
+    void band(double x0, double x1, double top, double bottom) {
+      final dx = pos.dx < x0 ? x0 - pos.dx : (pos.dx > x1 ? pos.dx - x1 : 0.0);
+      final dy = pos.dy < top
+          ? top - pos.dy
+          : (pos.dy > bottom ? pos.dy - bottom : 0.0);
+      best = math.min(best, math.sqrt(dx * dx + dy * dy));
+    }
+
+    var curDepth = depthAt(drawStart);
     for (final j in jumps) {
       final jx = xOf(dateOnly(j.date));
       final next = j.closingBalance.toDouble();
-      final nextHalf = halfAt(dateOnly(j.date));
+      final nextDepth = depthAt(dateOnly(j.date));
       if (current != null) {
-        final y = scale.yOf(current);
-        seg(Offset(cursor, y), Offset(jx, y), curHalf);
-        seg(
-          Offset(jx, y),
-          Offset(jx, scale.yOf(next)),
-          math.max(curHalf, nextHalf),
-        );
+        final y = scale.yOf(current), yn = scale.yOf(next);
+        band(cursor, jx, y, y + curDepth);
+        band(jx, jx, math.min(y, yn), math.max(y + curDepth, yn + nextDepth));
       }
       current = next;
       cursor = jx;
-      curHalf = nextHalf;
+      curDepth = nextDepth;
     }
     if (current != null) {
       final y = scale.yOf(current);
-      seg(Offset(cursor, y), Offset(xOf(drawEnd), y), curHalf);
+      band(cursor, xOf(drawEnd), y, y + curDepth);
     }
     return best;
   }
@@ -1260,25 +1291,34 @@ class _BalanceChartState extends State<BalanceChart>
   void _showTapTip(Offset pos, double hitRadius) {
     _tapTipTimer?.cancel();
     final layout = _layout;
+    // A tap anywhere on an event's lane opens that lane's dot (as hover
+    // does); a net chip, then the always-drawn dots, otherwise.
+    final chip = !layout.plot.contains(pos) || _laneSet().isEmpty
+        ? null
+        : _labelDotAt(layout, pos, slop: 0);
+    final lane = chip == null && layout.plot.contains(pos)
+        ? _laneDotAt(layout, pos, slop: _touchDown ? 6 : 2)
+        : null;
     final nearest = layout.plot.contains(pos)
-        ? _dotAt(layout, pos, hitRadius)
+        ? chip ?? lane ?? _dotAt(layout, pos, hitRadius)
         : null;
     if (nearest == null) {
       _tapTip = false;
       _hoverDots.value = null;
       return;
     }
-    final group = _overlapping(layout, nearest);
+    final group = lane != null ? [lane] : _overlapping(layout, nearest);
+    final anchor = lane != null ? _tipAnchor(layout, lane) : nearest.center;
     _tapTip = true;
     final current = _hoverDots.value;
     if (current != null && identical(current.dots.first, nearest) ||
         current != null &&
             current.dots.length == group.length &&
-            (current.anchor - nearest.center).distance < 0.5) {
+            (current.anchor - anchor).distance < 0.5) {
       // Tapping the dot that is already shown: keep the card where it is.
       _hoverDots.value = current;
     } else {
-      _hoverDots.value = _DotTip(group, nearest.center);
+      _hoverDots.value = _DotTip(group, anchor);
     }
     // Touch tips stay until the next tap; mouse clicks time out.
     if (_touchDown) {
@@ -1682,6 +1722,7 @@ class _BalanceChartState extends State<BalanceChart>
                           highlightY: _tipShown(tip)
                               ? _highlightDot(tip!).balanceY
                               : null,
+                          revealDot: _tipShown(tip) ? _revealOf(tip!) : null,
                         ),
                         child: const SizedBox.expand(),
                       ),
@@ -1806,6 +1847,17 @@ class _BalanceChartState extends State<BalanceChart>
           !_longPressTip &&
           !_stickyTip &&
           _mode != _Gesture.scrub);
+
+  /// The lane dot(s) a shown tip reveals: its lane dot, or all of a day's
+  /// for a net chip.
+  LaneReveal? _revealOf(_DotTip tip) {
+    final d = _highlightDot(tip);
+    final day = d.day;
+    if (day == null) return null;
+    if (d.wholeDay) return (day: day, txId: null);
+    final id = d.txId;
+    return id == null ? null : (day: day, txId: id);
+  }
 
   /// The dot whose balance the y-axis highlight shows: the day's dot
   /// (end-of-day balance) for a group, else the seed diamond.
@@ -2685,6 +2737,7 @@ class _BalanceChartState extends State<BalanceChart>
     if (event.kind == PointerDeviceKind.touch) return;
     if (_pointer != null || _multiTouch || _size == Size.zero) return;
     final pos = event.localPosition;
+    _lastHover = pos;
     final layout = _layout;
     if (_pickPinned && _keyContains(_pinKey, pos)) {
       if (_hoverDay.value != null) _hoverDay.value = null;
@@ -2693,6 +2746,8 @@ class _BalanceChartState extends State<BalanceChart>
     }
     _overTipCard = _tipCardContains(pos);
     if (_overTipCard) {
+      _switchTimer?.cancel();
+      _switchTimer = null;
       // Heading for (or on) the popup's Edit: keep the tip, no "+".
       if (_hoverDay.value != null) _hoverDay.value = null;
       if (_overAdd) setState(() => _overAdd = false);
@@ -2956,11 +3011,16 @@ class _BalanceChartState extends State<BalanceChart>
     );
   }
 
-  /// Nearest dot to [pos] within [maxDistance], by 2D distance.
+  /// Nearest dot to [pos] within [maxDistance], by 2D distance. Lane dots
+  /// are hidden until their lane is hovered / tapped ([_laneDotAt]), so only
+  /// the ones always drawn count: the opening diamond, and occurrences with
+  /// no lane (on the line itself).
   _Dot? _nearestDot(ChartLayout layout, Offset pos, double maxDistance) {
     if (!layout.plot.inflate(maxDistance).contains(pos)) return null;
     final dots = _dots(layout)
-        .where((d) => layout.plot.inflate(8).contains(d.center))
+        .where(
+          (d) => d.txId == null && layout.plot.inflate(8).contains(d.center),
+        )
         .toList();
     final i = nearestPointIndex(
       [for (final d in dots) d.center],
@@ -2970,12 +3030,143 @@ class _BalanceChartState extends State<BalanceChart>
     return i == null ? null : dots[i];
   }
 
+  List<(DateTime, double)>? _stepsMemo;
+  List<DayGroup>? _groupsMemo;
+  Object? _stepsKey;
+
+  /// Balance steps (day, closing balance), and the occurrence days, both in
+  /// date order, for [_laneDotAt].
+  (List<(DateTime, double)>, List<DayGroup>) _steps() {
+    final key = widget.series;
+    if (!identical(_stepsKey, key) ||
+        _stepsMemo == null ||
+        _groupsMemo == null) {
+      _stepsKey = key;
+      final byDay = <DateTime, double>{
+        for (final p in widget.series.points)
+          dateOnly(p.date): p.closingBalance.toDouble(),
+      };
+      _stepsMemo = [
+        for (final d in byDay.keys.toList()..sort()) (d, byDay[d]!),
+      ];
+      _groupsMemo = groupByDay(widget.series.occurrences).toList()
+        ..sort((a, b) => a.day.compareTo(b.day));
+    }
+    return (_stepsMemo!, _groupsMemo!);
+  }
+
+  /// Index of the last entry of [days] on or before [day] (-1: none).
+  static int _lastOnOrBefore<T>(
+    List<T> list,
+    DateTime Function(T) dayOf,
+    DateTime day,
+  ) {
+    var lo = 0, hi = list.length - 1, best = -1;
+    while (lo <= hi) {
+      final mid = (lo + hi) >> 1;
+      if (dayOf(list[mid]).isAfter(day)) {
+        hi = mid - 1;
+      } else {
+        best = mid;
+        lo = mid + 1;
+      }
+    }
+    return best;
+  }
+
+  /// The lane dot for the event lane under [pos]: anywhere along an
+  /// event's band (any day it spans), its dot for the step the pointer is
+  /// on (on the left edge of the step's day, where the balance changed), as
+  /// if that dot itself were hovered. [slop] grows the stack's top and
+  /// bottom a little (thin lanes). Null off every lane.
+  _Dot? _laneDotAt(ChartLayout layout, Offset pos, {double slop = 2}) {
+    final lanes = _laneSet();
+    final range = _ensureYRange();
+    if (lanes.isEmpty || range == null || !layout.plot.contains(pos)) {
+      return null;
+    }
+    final dayPx = layout.plot.width / math.max(widget.visibleDays, 0.001);
+    if (dayPx < laneDotsMinDayPx) return null;
+    final day = layout.dateAt(pos.dx, widget.viewStart, widget.visibleDays);
+    if (day.isBefore(_lineStart)) return null;
+    final from = widget.dataFrom, through = widget.dataThrough;
+    if (from != null && day.isBefore(from) && !from.isBefore(_lineStart)) {
+      return null;
+    }
+    if (through != null && day.isAfter(through)) return null;
+    final (steps, groups) = _steps();
+    final si = _lastOnOrBefore(steps, (s) => s.$1, day);
+    if (si < 0) return null;
+    final active = lanes.activeOn(day);
+    final m = active.length;
+    if (m == 0) return null;
+    final scale = _YScale(range.min, range.max, layout.plot);
+    final h = _laneHeight(lanes, layout);
+    final top0 = laneTop(scale.yOf(steps[si].$2), 0, m, h);
+    if (pos.dy < top0 - slop || pos.dy > top0 + m * h + slop) return null;
+    final slot = ((pos.dy - top0) / h).floor().clamp(0, m - 1);
+    final lane = lanes.lanes[active[slot]];
+    // The step: the last occurrence day on or before [day] (each balance
+    // change is one), never before the lane's own first day.
+    final gi = _lastOnOrBefore(groups, (g) => g.day, day);
+    var stepDay = gi < 0 ? lane.start : groups[gi].day;
+    var occ = gi < 0 ? const <Occurrence>[] : groups[gi].all;
+    if (stepDay.isBefore(lane.start)) {
+      stepDay = lane.start;
+      occ = const [];
+    }
+    final ci = _lastOnOrBefore(steps, (s) => s.$1, stepDay);
+    if (ci < 0) return null;
+    final close = steps[ci].$2;
+    final balanceY = scale.yOf(close);
+    final dots = laneDotsForDay(
+      lanes: lanes,
+      group: DayGroup(stepDay, occ),
+      balanceY: balanceY,
+      thickness: h,
+    ).dots;
+    final d = dots.where((d) => d.txId == lane.id).firstOrNull;
+    if (d == null) return null;
+    final base = dayPx > 28
+        ? 4.5
+        : dayPx > 12
+        ? 3.4
+        : 2.2;
+    final x = layout.xOf(stepDay, widget.viewStart, widget.visibleDays);
+    return _Dot(
+      Offset(x, d.y),
+      laneDotRadius(base, h),
+      d.own,
+      close,
+      balanceY: balanceY,
+      day: stepDay,
+      txId: lane.id,
+      idle: d.idle,
+    );
+  }
+
+  /// A lane tip whose dot scrolled off the left edge still points into the
+  /// plot.
+  Offset _tipAnchor(ChartLayout layout, _Dot d) => Offset(
+    d.center.dx.clamp(layout.plot.left, layout.plot.right).toDouble(),
+    d.center.dy,
+  );
+
+  /// Two lane dots are the same target (same event, same step).
+  static bool _sameLaneDot(_Dot a, _Dot b) =>
+      a.txId != null && a.txId == b.txId && a.day == b.day;
+
   /// Touch scrub: tooltip follows the dot nearest the finger; far from all
   /// dots it keeps the last one (still following the finger).
   void _updateScrub(Offset pos) {
     final layout = _layout;
-    final nearest = _nearestDot(layout, pos, scrubMaxDistance);
+    final lane = _laneDotAt(layout, pos, slop: 6);
     final current = _hoverDots.value;
+    if (lane != null) {
+      _hoverDots.value = _DotTip([lane], _tipAnchor(layout, lane), finger: pos);
+      return;
+    }
+    final nearest = _nearestDot(layout, pos, scrubMaxDistance);
     if (nearest == null) {
       if (current != null) {
         _hoverDots.value = _DotTip(current.dots, current.anchor, finger: pos);
@@ -2988,16 +3179,79 @@ class _BalanceChartState extends State<BalanceChart>
 
   /// Mouse hover: same nearest-dot logic and popup as touch, at the 18px
   /// mouse hit radius; same-day grouped dots list all their events.
+  ///
+  /// Lane dots are hidden: hovering anywhere on an event's lane shows that
+  /// lane's dot for the step under the pointer and opens its popup, as if
+  /// the dot itself were hovered. A net chip (whole day) wins inside its
+  /// rect; the always-drawn dots (opening diamond, lane-less occurrences)
+  /// next. Leaving for the popup (to reach Edit) keeps it: a move heading
+  /// into the card ([_headingForCard]) waits a moment before switching.
   void _updateDotHover(ChartLayout layout, Offset pos) {
     _touchUi = false;
-    final nearest = _dotAt(
-      layout,
-      pos,
-      vertexHitRadius(PointerDeviceKind.mouse),
-    );
+    final chip = _laneSet().isEmpty ? null : _labelDotAt(layout, pos, slop: 0);
+    final lane = chip == null ? _laneDotAt(layout, pos) : null;
+    final nearest =
+        chip ??
+        lane ??
+        _nearestDot(layout, pos, vertexHitRadius(PointerDeviceKind.mouse)) ??
+        _labelDotAt(layout, pos);
     final overlapping = nearest == null
         ? const <_Dot>[]
+        : lane != null
+        ? [lane]
         : _overlapping(layout, nearest);
+    final current = _hoverDots.value;
+    final same =
+        current != null &&
+        overlapping.isNotEmpty &&
+        (listEquals(current.dots, overlapping) ||
+            (current.dots.length == 1 &&
+                _sameLaneDot(current.dots.first, overlapping.first)));
+    if (same) {
+      _switchTimer?.cancel();
+      _switchTimer = null;
+      _aimFrom = pos;
+      return;
+    }
+    // Heading for the open popup's card (to reach its Edit): hold the
+    // current tip briefly instead of switching on the way.
+    if (current != null && !_tapTip && _headingForCard(pos)) {
+      _switchTimer ??= Timer(_switchGrace, () {
+        _switchTimer = null;
+        if (!mounted || _overTipCard) return;
+        final p = _lastHover;
+        if (p != null) _applyDotHover(_layout, p, force: true);
+      });
+      return;
+    }
+    _applyDotHover(layout, pos, overlapping: overlapping);
+  }
+
+  void _applyDotHover(
+    ChartLayout layout,
+    Offset pos, {
+    List<_Dot>? overlapping,
+    bool force = false,
+  }) {
+    _switchTimer?.cancel();
+    _switchTimer = null;
+    if (overlapping == null) {
+      final chip = _laneSet().isEmpty
+          ? null
+          : _labelDotAt(layout, pos, slop: 0);
+      final lane = chip == null ? _laneDotAt(layout, pos) : null;
+      final nearest =
+          chip ??
+          lane ??
+          _nearestDot(layout, pos, vertexHitRadius(PointerDeviceKind.mouse)) ??
+          _labelDotAt(layout, pos);
+      overlapping = nearest == null
+          ? const <_Dot>[]
+          : lane != null
+          ? [lane]
+          : _overlapping(layout, nearest);
+    }
+    _aimFrom = pos;
     if (overlapping.isEmpty) {
       // A tooltip pinned by a click stays until its timeout or next click.
       if (_hoverDots.value != null && !_tapTip) _hoverDots.value = null;
@@ -3006,10 +3260,61 @@ class _BalanceChartState extends State<BalanceChart>
     }
     if (!_overDot) setState(() => _overDot = true);
     final current = _hoverDots.value;
-    if (current != null && listEquals(current.dots, overlapping)) {
+    if (!force && current != null && listEquals(current.dots, overlapping)) {
       return;
     }
-    _hoverDots.value = _DotTip(overlapping, overlapping.first.center);
+    final first = overlapping.first;
+    _hoverDots.value = _DotTip(
+      overlapping,
+      first.txId != null ? _tipAnchor(layout, first) : first.center,
+    );
+  }
+
+  /// Where the pointer was when it last settled on the shown tip's target:
+  /// the apex of the "aim" triangle towards the popup card.
+  Offset? _aimFrom;
+  Offset? _lastHover;
+  Timer? _switchTimer;
+  static const Duration _switchGrace = Duration(milliseconds: 350);
+
+  /// Whether the move from [_aimFrom] to [pos] heads into the popup card:
+  /// [pos] is inside the triangle from [_aimFrom] to the card's near edge
+  /// (grown a little), so crossing other lanes on the way keeps the tip.
+  bool _headingForCard(Offset pos) {
+    final from = _aimFrom;
+    final card = _keyRect(_tipCardKey)?.inflate(10);
+    if (from == null || card == null) return false;
+    if (card.contains(pos)) return true;
+    final nearX = from.dx < card.left
+        ? card.left
+        : from.dx > card.right
+        ? card.right
+        : null;
+    final List<Offset> tri;
+    if (nearX != null) {
+      tri = [from, Offset(nearX, card.top), Offset(nearX, card.bottom)];
+    } else {
+      final nearY = from.dy < card.top ? card.top : card.bottom;
+      tri = [from, Offset(card.left, nearY), Offset(card.right, nearY)];
+    }
+    return _inTriangle(pos, tri[0], tri[1], tri[2]);
+  }
+
+  static bool _inTriangle(Offset p, Offset a, Offset b, Offset c) {
+    double cross(Offset o, Offset u, Offset v) =>
+        (u.dx - o.dx) * (v.dy - o.dy) - (u.dy - o.dy) * (v.dx - o.dx);
+    final d1 = cross(p, a, b), d2 = cross(p, b, c), d3 = cross(p, c, a);
+    final neg = d1 < 0 || d2 < 0 || d3 < 0;
+    final pos = d1 > 0 || d2 > 0 || d3 > 0;
+    return !(neg && pos);
+  }
+
+  /// [key]'s widget rect in chart coordinates (null: not laid out).
+  Rect? _keyRect(GlobalKey key) {
+    final box = key.currentContext?.findRenderObject();
+    final me = context.findRenderObject();
+    if (box is! RenderBox || me is! RenderBox || !box.attached) return null;
+    return me.globalToLocal(box.localToGlobal(Offset.zero)) & box.size;
   }
 
   /// Last press was touch (44px popup targets) or a mouse.
@@ -3566,13 +3871,21 @@ class _BalanceChartState extends State<BalanceChart>
         .clamp(math.min(150.0, maxWidth), maxWidth)
         .toDouble();
     final estHeight = 14.0 + math.min(rowsHeight, maxRowsHeight) + extra;
-    // Right of the dot, flipping left / up near the edges.
-    var left = tip.anchor.dx + 14;
-    if (left + width > _size.width - 4) left = tip.anchor.dx - 14 - width;
+    // Right of the dot, flipping left / up near the edges. A lane dot's
+    // card opens on its left: the pointer is on the lane to the dot's right
+    // (anywhere along its step), so the card never covers the lanes being
+    // hovered.
+    final laneTip = tip.dots.length == 1 && tip.dots.first.txId != null;
+    var left = laneTip ? tip.anchor.dx - 14 - width : tip.anchor.dx + 14;
+    if (laneTip && left < 4) {
+      left = tip.anchor.dx + 14;
+    } else if (!laneTip && left + width > _size.width - 4) {
+      left = tip.anchor.dx - 14 - width;
+    }
     left = _clampEdge(left, 4, _size.width - width - 4);
     var top = tip.anchor.dy - 20;
-    if (left < tip.anchor.dx) {
-      // Flipped left of the dot: keep the card off the dot's row so the
+    if (left < tip.anchor.dx || laneTip) {
+      // Flipped left of the dot (or a lane dot's): keep the card off the dot's row so the
       // y-axis guide line and balance pill stay readable.
       final above = tip.anchor.dy - 18 - estHeight;
       top = above >= 4 ? above : tip.anchor.dy + 18;
@@ -3695,12 +4008,22 @@ double _laneHeight(LaneSet lanes, ChartLayout layout) => laneThickness(
   phone: layout.size.width < 600,
 );
 
-/// Test hook: called for every stacked-lane dot painted, with its
-/// event (null: no lane) and centre in chart coordinates.
+/// Test hook: called for every stacked-lane dot's place in view (shown or
+/// not), with its event (null: no lane) and centre in chart coordinates.
 @visibleForTesting
 void Function(String? txId, Offset center)? debugLaneDot;
 
-/// Test hook: a lane's dot at a step its event does not occur on.
+/// Test hook: called for every lane dot actually painted (lane dots stay
+/// hidden until the pointer is on their lane); [idle] is a ring.
+@visibleForTesting
+void Function(String? txId, Offset center, bool idle)? debugLaneDotPainted;
+
+/// Which lane dot(s) to draw: [txId]'s on [day], or all of [day]'s when
+/// [txId] is null.
+typedef LaneReveal = ({DateTime day, String? txId});
+
+/// Test hook: a lane's dot place at a step its event does not occur on
+/// (shown or not).
 @visibleForTesting
 void Function(String? txId, Offset center)? debugLaneIdleDot;
 
@@ -3900,6 +4223,7 @@ class _BalanceChartPainter extends CustomPainter {
     this.dataThrough,
     this.yRange,
     this.highlightY,
+    this.revealDot,
   }) : lineStart = dateOnly(lineStart ?? seedDate);
 
   /// Balance range shown top to bottom. Null falls back to fitting the view.
@@ -3908,6 +4232,11 @@ class _BalanceChartPainter extends CustomPainter {
   /// Y of the active dot's highlighted balance; regular axis labels that
   /// would collide with its pill are skipped.
   final double? highlightY;
+
+  /// Lane dots are hidden until the pointer is on a lane: the one dot this
+  /// names is drawn ([LaneReveal.txId] null: every dot of that day, for a
+  /// day's net chip). Null: no lane dot is drawn.
+  final LaneReveal? revealDot;
   final DateTime? dataFrom;
   final DateTime? dataThrough;
   final BalanceSeries series;
@@ -4660,8 +4989,8 @@ class _BalanceChartPainter extends CustomPainter {
   double _laneH = 0;
 
   /// The balance line as stacked lanes: a ribbon one lane per active
-  /// event (list order, top first), centred on the balance and stepping
-  /// with it at each day's left edge; a thin line where no lane is active.
+  /// event (list order, top first) hanging just under the balance line and
+  /// stepping with it at each day's left edge; a thin line where no lane is active.
   /// Lane names are written inside their lanes.
   void _paintStack(
     Canvas canvas,
@@ -4762,21 +5091,19 @@ class _BalanceChartPainter extends CustomPainter {
           thin.addRect(Rect.fromLTRB(p.x0, yb - 1.8, p.x1, yb + 1.8));
         }
         if (next != null && (m == 0 || mn == 0)) {
-          final y0 = m == 0 ? yb : laneTop(yb, 0, m, h) + m * h / 2;
-          final y1 = mn == 0 ? yn : laneTop(yn, 0, mn, h) + mn * h / 2;
           thin.addRect(
             Rect.fromLTRB(
               p.x1 - 1.8,
-              math.min(y0, y1) - 1.8,
+              math.min(yb, yn) - 1.8,
               p.x1 + 1.8,
-              math.max(y0, y1) + 1.8,
+              math.max(yb, yn) + 1.8,
             ),
           );
         }
       }
       if (m == 0) continue;
       // The balance line itself, drawn over the lanes so it can be traced
-      // end to end: this level (the stack's centre), and its step into the
+      // end to end: this level (just over the stack), and its step into the
       // next stack at the day edge.
       truth.add(Rect.fromLTRB(p.x0, yb - 1.5, p.x1, yb + 1.5));
       if (next != null && mn > 0 && (yn - yb).abs() > 0.5) {
@@ -4796,7 +5123,10 @@ class _BalanceChartPainter extends CustomPainter {
         yb,
       );
       if (_isLoss(p.balance)) {
-        loss.addRect(Rect.fromLTRB(p.x0, top0 - rim, p.x1, top0));
+        // Under the stack: the gap over it belongs to the line's outline.
+        loss.addRect(
+          Rect.fromLTRB(p.x0, top0 + m * h, p.x1, top0 + m * h + rim),
+        );
       }
       if (collapse) {
         band.addRect(Rect.fromLTRB(p.x0, top0, p.x1, top0 + m * h));
@@ -5003,8 +5333,9 @@ class _BalanceChartPainter extends CustomPainter {
     for (final p in _plateaus) {
       final m = p.active.length;
       if (m == 0) continue;
-      final top = laneTop(scale.yOf(p.balance), 0, m, h);
-      placed.add(Rect.fromLTRB(p.x0, top, p.x1, top + m * h));
+      final yb = scale.yOf(p.balance);
+      // The line (and its outline) over the stack, then the lanes.
+      placed.add(Rect.fromLTRB(p.x0, yb - 4, p.x1, stackBottomOf(yb, m, h)));
     }
     void chip(
       double x,
@@ -5074,13 +5405,26 @@ class _BalanceChartPainter extends CustomPainter {
           thickness: h,
         );
         final inView = x >= plot.left - r - 4 && x <= plot.right + r + 4;
+        final reveal = revealDot;
+        final dayShown = reveal != null && reveal.day == day;
         if (inView) {
           for (final d in laneDots.dots) {
             final center = Offset(x, d.y);
             if (d.idle) {
+              debugLaneIdleDot?.call(d.txId, center);
+            } else {
+              debugLaneDot?.call(d.txId, center);
+            }
+            // Hidden until the pointer is on its lane (a lane-less
+            // occurrence, on the line itself, always shows).
+            if (d.txId != null &&
+                !(dayShown && (reveal.txId == null || reveal.txId == d.txId))) {
+              continue;
+            }
+            debugLaneDotPainted?.call(d.txId, center, d.idle);
+            if (d.idle) {
               // The lane has no event on this step: a small dimmed
               // ring, so the occurring dots still stand out.
-              debugLaneIdleDot?.call(d.txId, center);
               final ir = math.max(1.7, r * 0.62);
               canvas.drawCircle(
                 center,
@@ -5097,7 +5441,6 @@ class _BalanceChartPainter extends CustomPainter {
               );
               continue;
             }
-            debugLaneDot?.call(d.txId, center);
             final own = DayGroup(day, d.own);
             final net = own.net;
             if (own.allSkipped) {
@@ -5142,9 +5485,11 @@ class _BalanceChartPainter extends CustomPainter {
           continue;
         }
         final net = g.net;
+        // Just over the line first (the lanes hang under it), else under
+        // the stack.
         chip(
           x,
-          laneDots.stackTop,
+          balanceY - 4,
           laneDots.stackBottom,
           Offset(x, laneDots.dots.first.y),
           formatSignedAmount(net),
@@ -5892,6 +6237,7 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.dataFrom != dataFrom ||
         oldDelegate.yRange?.min != yRange?.min ||
         oldDelegate.highlightY != highlightY ||
+        oldDelegate.revealDot != revealDot ||
         oldDelegate.yRange?.max != yRange?.max ||
         oldDelegate.dataThrough != dataThrough ||
         !mapEquals(oldDelegate.eventNames, eventNames) ||

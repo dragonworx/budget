@@ -760,8 +760,12 @@ void main() {
     await tester.tapAt(empty, kind: PointerDeviceKind.touch);
     await tester.pump();
     expect(tip, findsNothing);
-    // Drag-scrub from the dot, lift: the tip stays on the last dot.
-    final g = await tester.startGesture(spot!, kind: PointerDeviceKind.touch);
+    // Lane dots are hidden until a tap reveals one; then a drag along its
+    // lane scrubs, and on lift the tip stays on the last dot.
+    await tester.tapAt(spot!, kind: PointerDeviceKind.touch);
+    await tester.pump();
+    expect(tip, findsOneWidget);
+    final g = await tester.startGesture(spot, kind: PointerDeviceKind.touch);
     for (var i = 1; i <= 6; i++) {
       await g.moveTo(spot + Offset(i * 4.0, 0));
       await tester.pump(const Duration(milliseconds: 16));
@@ -1227,8 +1231,11 @@ void main() {
     await tester.tapAt(empty, kind: PointerDeviceKind.touch);
     await tester.pump();
     expect(tip, findsNothing);
-    // Drag-scrub, then lift: same rect just before and after up.
-    final g = await tester.startGesture(spot!, kind: PointerDeviceKind.touch);
+    // Reveal the dot again, drag-scrub along its lane, then lift: same rect
+    // just before and after up.
+    await tester.tapAt(spot!, kind: PointerDeviceKind.touch);
+    await tester.pump();
+    final g = await tester.startGesture(spot, kind: PointerDeviceKind.touch);
     for (var i = 1; i <= 6; i++) {
       await g.moveTo(spot + Offset(i * 4.0, 0));
       await tester.pump(const Duration(milliseconds: 16));

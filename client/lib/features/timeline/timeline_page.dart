@@ -2252,12 +2252,12 @@ class _TipsBar extends StatelessWidget {
     );
     final tips = [
       if (compact) ...[
-        tip(Icons.ads_click_rounded, 'Tap near a dot for details'),
+        tip(Icons.ads_click_rounded, 'Tap an event lane for details'),
         tip(Icons.add_circle_outline_rounded, 'Tap or drag the dates to add'),
         tip(Icons.touch_app_outlined, 'Drag near dots for details'),
         tip(Icons.pinch_outlined, 'Pinch to zoom'),
       ] else ...[
-        tip(Icons.ads_click_rounded, 'Click or tap a dot for details'),
+        tip(Icons.ads_click_rounded, 'Hover an event lane for details'),
         tip(Icons.swipe_right_alt_rounded, 'Drag or tap the dates to add'),
         tip(Icons.pan_tool_alt_outlined, 'Drag the chart to pan'),
         tip(Icons.view_week_rounded, 'Pinch or − / + change unit, [ ] step'),
