@@ -201,6 +201,14 @@ const List<Color> laneColors = [
 
 Color laneColor(int index) => laneColors[index % laneColors.length];
 
+/// The text drawn on a lane (and on the event menu's header, which wears
+/// the lane's colour): near-white, ≥3.7:1 on every [laneColors] entry.
+const Color laneTextColor = Color(0xF2FFFFFF);
+
+/// The small dark pill behind a lane's green / red amount, so the amount
+/// reads (≥6:1, AA) on every lane colour; the event menu's header uses it too.
+const Color laneAmountPillColor = Color(0xD90E1420);
+
 /// Thickness of one lane. The stack must stay close to the dollars it
 /// stands for, so the tallest stack gets about a quarter of the plot at full
 /// (14-16px) lanes; past that lanes keep the text height while the stack

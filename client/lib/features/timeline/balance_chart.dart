@@ -3487,40 +3487,74 @@ class _BalanceChartState extends State<BalanceChart>
     final topLeft = bounds.width > 0 && bounds.height > 0
         ? placeTapMenu(tap, menuSize, bounds)
         : tap;
+    // The header wears the event's lane colour (a solid fill, as on the
+    // chart), flush with the menu's rounded top; the name in the lane's
+    // near-white text and the green / red amount on the lane's dark pill,
+    // so it reads on every lane colour exactly as the lane's own label.
+    final laneFill = lane == null
+        ? AppTheme.raised
+        : laneColor(lane.colorIndex);
+    final headerH = itemH + padV;
     final header = PopupMenuItem<int>(
       key: const ValueKey('dot-menu-header'),
       enabled: false,
-      height: itemH,
+      height: headerH,
+      padding: EdgeInsets.zero,
       mouseCursor: SystemMouseCursors.basic,
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              name,
-              key: const ValueKey('dot-menu-name'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppTheme.text,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
+      child: Container(
+        key: const ValueKey('dot-menu-header-bg'),
+        width: double.infinity,
+        height: headerH,
+        padding: const EdgeInsets.fromLTRB(12, padV, 8, 0),
+        decoration: BoxDecoration(
+          color: laneFill,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(dotMenuRadius - 1),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                name,
+                key: const ValueKey('dot-menu-name'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: laneTextColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  shadows: [Shadow(color: Color(0x8C000000), blurRadius: 2)],
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            formatSignedAmount(amount),
-            key: const ValueKey('dot-menu-amount'),
-            maxLines: 1,
-            softWrap: false,
-            style: TextStyle(
-              color: amount < 0 ? AppTheme.debitColor : AppTheme.creditColor,
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              fontFeatures: const [FontFeature.tabularFigures()],
+            const SizedBox(width: 10),
+            DecoratedBox(
+              key: const ValueKey('dot-menu-amount-pill'),
+              decoration: BoxDecoration(
+                color: laneAmountPillColor,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Text(
+                  formatSignedAmount(amount),
+                  key: const ValueKey('dot-menu-amount'),
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: amount < 0
+                        ? AppTheme.debitColor
+                        : AppTheme.creditColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
     PopupMenuItem<int> item(
@@ -3563,7 +3597,14 @@ class _BalanceChartState extends State<BalanceChart>
       ),
       constraints: BoxConstraints.tightFor(width: width),
       color: AppTheme.overlay,
-      menuPadding: const EdgeInsets.symmetric(vertical: padV),
+      // No top padding: the lane-coloured header sits flush with the
+      // menu's rounded top (its own height adds the padding back).
+      menuPadding: const EdgeInsets.only(bottom: padV),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(dotMenuRadius),
+        side: const BorderSide(color: AppTheme.border),
+      ),
+      clipBehavior: Clip.antiAlias,
       // No staggered fade-in: Safari can leave the canvas on a mid-fade
       // frame (a dimmed last row) until the next input.
       popUpAnimationStyle: AnimationStyle.noAnimation,
@@ -5605,7 +5646,7 @@ class _BalanceChartPainter extends CustomPainter {
         const Radius.circular(3),
       );
       draws.add(() {
-        canvas.drawRRect(pill, Paint()..color = const Color(0xD90E1420));
+        canvas.drawRRect(pill, Paint()..color = laneAmountPillColor);
         debugLaneAmount?.call(
           lane.name,
           amountPainter.text!.toPlainText(),

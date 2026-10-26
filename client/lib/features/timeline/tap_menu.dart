@@ -16,3 +16,7 @@ Offset placeTapMenu(Offset tap, Size menu, Rect bounds, {double gap = 8}) {
   y = math.max(bounds.top, math.min(y, bounds.bottom - menu.height));
   return Offset(x, y);
 }
+
+/// Corner radius of the event action menu (the app's popup radius); its
+/// lane-coloured header rounds its top corners to match.
+const double dotMenuRadius = 12;

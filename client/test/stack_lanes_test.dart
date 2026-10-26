@@ -7,6 +7,7 @@ import 'package:budget_client/features/timeline/alert_fill.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/stack_lanes.dart';
+import 'package:budget_client/features/timeline/tap_menu.dart';
 import 'package:budget_client/theme/app_theme.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
@@ -735,6 +736,103 @@ void main() {
         }
       }
       await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets('the header wears its lane\'s colour (by lane position), '
+        'flush with the menu\'s rounded top', (tester) async {
+      for (final order in [
+        ['a', 'b', 'c'],
+        ['c', 'a', 'b'],
+        ['b', 'c', 'a'],
+      ]) {
+        final at = steps(await pump(tester, order, log: []));
+        final origin = tester.getTopLeft(find.byType(BalanceChart));
+        final dayPx = ChartLayout.of(const Size(1440, 800), 30).plot.width / 30;
+        for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+          for (final (li, id) in order.indexed) {
+            await tester.tapAt(
+              origin + at[id]![1] + Offset(dayPx * 3, 0),
+              kind: kind,
+            );
+            await tester.pumpAndSettle();
+            final bg = find.byKey(const ValueKey('dot-menu-header-bg'));
+            final deco =
+                tester.widget<Container>(bg).decoration! as BoxDecoration;
+            expect(deco.color, laneColor(li), reason: '$order $id ($kind)');
+            expect(
+              deco.borderRadius,
+              const BorderRadius.vertical(
+                top: Radius.circular(dotMenuRadius - 1),
+              ),
+            );
+            // Fills the header's full width, at the menu's very top.
+            final m = menuRect(tester);
+            final r = tester.getRect(bg);
+            expect(r.top, closeTo(m.top, 0.5));
+            expect(r.left, closeTo(m.left, 0.5));
+            expect(r.right, closeTo(m.right, 0.5));
+            // The menu clips to its rounded shape.
+            final menu = tester.widget<Material>(
+              find
+                  .ancestor(
+                    of: find.byKey(const ValueKey('dot-menu-new')),
+                    matching: find.byType(Material),
+                  )
+                  .first,
+            );
+            expect(menu.clipBehavior, Clip.antiAlias);
+            expect(
+              (menu.shape! as RoundedRectangleBorder).borderRadius,
+              BorderRadius.circular(dotMenuRadius),
+            );
+            // Name in the lane's text colour; amount on the lane's pill.
+            expect(
+              tester
+                  .widget<Text>(find.byKey(const ValueKey('dot-menu-name')))
+                  .style!
+                  .color,
+              laneTextColor,
+            );
+            final pill = tester.widget<DecoratedBox>(
+              find.byKey(const ValueKey('dot-menu-amount-pill')),
+            );
+            expect(
+              (pill.decoration as BoxDecoration).color,
+              laneAmountPillColor,
+            );
+            await closeMenu(tester);
+          }
+        }
+      }
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    test('header contrast: the name reads on every lane colour and the '
+        'green / red amount on its pill', () {
+      double ratio(Color a, Color b) {
+        final la = a.computeLuminance(), lb = b.computeLuminance();
+        return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+      }
+
+      for (final lane in laneColors) {
+        final text = Color.alphaBlend(laneTextColor, lane);
+        expect(ratio(text, lane), greaterThanOrEqualTo(3.5), reason: '$lane');
+        final pill = Color.alphaBlend(laneAmountPillColor, lane);
+        for (final c in [AppTheme.creditColor, AppTheme.debitColor]) {
+          expect(
+            ratio(c, pill),
+            greaterThanOrEqualTo(4.5),
+            reason: '$c on $lane',
+          );
+        }
+      }
+      // Gain and loss stay clearly apart (green vs red).
+      expect(
+        HSVColor.fromColor(AppTheme.creditColor).hue,
+        inInclusiveRange(90, 170),
+      );
+      final red = HSVColor.fromColor(AppTheme.debitColor).hue;
+      expect(red < 20 || red > 340, isTrue);
     });
 
     testWidgets('a long name ellipsizes; the amount stays whole', (
