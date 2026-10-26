@@ -1863,9 +1863,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 row(['H'], 'Fit all data horizontally'),
                 head('Events'),
                 row(
-                  ['Lane', 'Dot'],
-                  'Hover / tap an event lane, then its dot: new event, '
-                  'trim or edit from that day',
+                  ['Tap', 'Click'],
+                  'Tap or click an event line for actions (new event, '
+                  'trim or edit from that day)',
                 ),
                 row(['Net chip'], 'That day’s events'),
                 row(['Hover day', '+'], 'Add a one-off on that day'),

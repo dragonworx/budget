@@ -424,9 +424,9 @@ void main() {
     (Size(1440, 900), PointerDeviceKind.mouse),
     (Size(390, 844), PointerDeviceKind.touch),
   ]) {
-    testWidgets('${kind.name}: an event lane reveals its dot with no popup; '
-        'the dot\'s menu New Event From Here opens the editor on that day '
-        'and only Save creates', (tester) async {
+    testWidgets('${kind.name}: a tap / click on an event lane opens its '
+        'menu at once (no popup, no reveal step); New Event From Here opens '
+        'the editor on that day and only Save creates', (tester) async {
       final placed = <(String?, Offset)>[];
       debugLaneDot = (id, c) => placed.add((id, c));
       addTearDown(() => debugLaneDot = null);
@@ -461,13 +461,15 @@ void main() {
         await mouse.down(at);
         await mouse.up();
       } else {
+        // On the lane just right of its (hidden) dot: the menu, at once.
         await tester.tapAt(at + const Offset(4, 0), kind: kind);
-        await tester.pump(const Duration(milliseconds: 400));
-        expect(tip, findsNothing, reason: 'a lane tap only reveals');
-        await tester.tapAt(at, kind: kind);
       }
       await tester.pumpAndSettle();
       expect(tip, findsNothing);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('dot-menu-name'))).data,
+        'Rent',
+      );
       expect(find.text('New Event From Here'), findsOneWidget);
       expect(find.text('Trim From Here'), findsOneWidget);
       expect(find.text('Edit Series'), findsOneWidget);

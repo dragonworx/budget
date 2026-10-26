@@ -20,6 +20,7 @@ import 'ghost_line.dart';
 import 'occurrence_info.dart';
 import 'selection_period.dart';
 import 'stack_lanes.dart';
+import 'tap_menu.dart';
 import 'trim.dart';
 import 'alert_fill.dart';
 import 'zoom_level.dart';
@@ -1294,32 +1295,33 @@ class _BalanceChartState extends State<BalanceChart>
   void _showTapTip(Offset pos, double hitRadius) {
     _tapTipTimer?.cancel();
     final layout = _layout;
-    // A tap / click on a lane's (revealed) dot opens its action menu.
-    final hit = layout.plot.contains(pos)
-        ? _laneDotHit(layout, pos, touch: _touchDown)
-        : null;
-    if (hit != null) {
-      _openDotMenu(hit);
-      return;
-    }
-    // A tap anywhere on an event's lane opens that lane's dot (as hover
-    // does); a net chip, then the always-drawn dots, otherwise.
-    final chip = !layout.plot.contains(pos) || _laneSet().isEmpty
+    final onPlot = layout.plot.contains(pos);
+    // A net chip keeps its whole-day popup.
+    final chip = !onPlot || _laneSet().isEmpty
         ? null
         : _labelDotAt(layout, pos, slop: 0);
-    final lane = chip == null && layout.plot.contains(pos)
-        ? _laneDotAt(layout, pos, slop: _touchDown ? 6 : 2)
-        : null;
-    final nearest = layout.plot.contains(pos)
-        ? chip ?? lane ?? _dotAt(layout, pos, hitRadius)
-        : null;
+    // A tap / click anywhere on an event's lane (or, with a mouse, on its
+    // hover-revealed dot) opens that event's action menu at the tap, in
+    // one step (touch has no reveal-then-tap). Its day: the step at or
+    // before the tapped x (the revealed dot's step for a dot click).
+    final lane = chip != null || !onPlot
+        ? null
+        : (_touchDown ? null : _laneDotHit(layout, pos, touch: false)) ??
+              _laneDotAt(layout, pos, slop: _touchDown ? 6 : 2);
+    if (lane != null) {
+      _openDotMenu(lane, at: pos);
+      return;
+    }
+    // Otherwise a net chip, then the always-drawn dots (opening diamond,
+    // lane-less occurrences).
+    final nearest = onPlot ? chip ?? _dotAt(layout, pos, hitRadius) : null;
     if (nearest == null) {
       _tapTip = false;
       _hoverDots.value = null;
       return;
     }
-    final group = lane != null ? [lane] : _overlapping(layout, nearest);
-    final anchor = lane != null ? _tipAnchor(layout, lane) : nearest.center;
+    final group = _overlapping(layout, nearest);
+    final anchor = nearest.center;
     _tapTip = true;
     final current = _hoverDots.value;
     if (current != null && identical(current.dots.first, nearest) ||
@@ -1762,8 +1764,8 @@ class _BalanceChartState extends State<BalanceChart>
                 ValueListenableBuilder<_DotTip?>(
                   valueListenable: _hoverDots,
                   builder: (context, tip, _) {
-                    // A lane's dot is only revealed (no popup): clicking
-                    // it opens its action menu.
+                    // A lane's dot is only revealed (no popup): a tap /
+                    // click on its lane opens its action menu.
                     if (!_tipShown(tip) || _isLaneTip(tip!)) {
                       return const SizedBox.shrink();
                     }
@@ -3210,14 +3212,21 @@ class _BalanceChartState extends State<BalanceChart>
     }
   }
 
-  /// The click cursor: on a revealed lane dot (its 32px target), or on
-  /// any other hovered target (net chip, opening diamond).
+  /// The click cursor: anywhere on an event's lane (a click opens its
+  /// menu), or on any other hovered target (net chip, opening diamond).
   void _syncOverDot(ChartLayout layout, Offset pos) {
     final tip = _hoverDots.value;
     final over =
         tip != null &&
         (_isLaneTip(tip)
-            ? _onRevealedDot(layout, tip.dots.first, pos, mouseDotHitRadius)
+            ? layout.plot.contains(pos) &&
+                  (_onRevealedDot(
+                        layout,
+                        tip.dots.first,
+                        pos,
+                        mouseDotHitRadius,
+                      ) ||
+                      _laneDotAt(layout, pos) != null)
             : !_tapTip);
     if (over != _overDot) setState(() => _overDot = over);
   }
@@ -3387,10 +3396,11 @@ class _BalanceChartState extends State<BalanceChart>
       !tip.dots.first.wholeDay &&
       tip.dots.first.day != null;
 
-  /// The lane dot a tap / click at [pos] hits: the revealed one, within
-  /// its generous target (32px mouse, 44px touch). A mouse may also click
-  /// a dot straight away (hover reveals it as the pointer arrives); touch
-  /// first taps the lane to reveal the dot, then taps the dot.
+  /// The lane dot a mouse click at [pos] hits: the hover-revealed one,
+  /// within its generous target (32px mouse, 44px touch), so a click on a
+  /// dot just left of its step's edge still means that step. Any other
+  /// tap / click on a lane opens the menu for the step under it
+  /// ([_laneDotAt]); touch has no reveal-then-tap step.
   _Dot? _laneDotHit(ChartLayout layout, Offset pos, {required bool touch}) {
     final r = touch ? touchDotHitRadius : mouseDotHitRadius;
     final shown = _hoverDots.value;
@@ -3408,11 +3418,14 @@ class _BalanceChartState extends State<BalanceChart>
     return null;
   }
 
-  /// Opens lane dot [d]'s action menu at the dot: New Event From Here,
-  /// then Trim From Here and Edit Event / Edit Series. Items the user
-  /// cannot use (a viewer, another stream they cannot edit, nothing left
-  /// to trim) show disabled. Only a picked item acts.
-  Future<void> _openDotMenu(_Dot d) async {
+  /// Opens lane dot [d]'s action menu at chart-local [at] (the tap; the
+  /// dot when null): a header with the event's name and signed amount,
+  /// a divider, then New Event From Here, Trim From Here and Edit Event /
+  /// Edit Series, all for [d]'s day. Kept fully inside the chart (and the
+  /// screen's safe area) by [placeTapMenu]. Items the user cannot use (a
+  /// viewer, another stream they cannot edit, nothing left to trim) show
+  /// disabled. Only a picked item acts.
+  Future<void> _openDotMenu(_Dot d, {Offset? at}) async {
     final layout = _layout;
     final day = d.day!, id = d.txId!;
     _tapTipTimer?.cancel();
@@ -3445,11 +3458,71 @@ class _BalanceChartState extends State<BalanceChart>
         ? () => widget.onOpenOtherEvent?.call(otherStream, other, day)
         : null;
     final once = event?.recurrenceMode == RecurrenceMode.once;
+    final lane = _laneSet().lanes.where((l) => l.id == id).firstOrNull;
+    final name = lane?.name ?? event?.name ?? '';
+    final amount = lane?.amount ?? event?.signedAmount.toDouble() ?? 0;
     final me = context.findRenderObject()! as RenderBox;
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final at = me.localToGlobal(anchor, ancestor: overlay);
     final itemH = _touchDown ? 44.0 : 36.0;
+    const dividerH = 9.0, padV = 4.0;
+    // The view (the chart, inset a little) within the screen's safe area
+    // (and the menu's own 8px screen margin), in overlay coordinates.
+    final safe = MediaQuery.paddingOf(context);
+    final screen = Rect.fromLTRB(
+      safe.left + 8,
+      safe.top + 8,
+      overlay.size.width - safe.right - 8,
+      overlay.size.height - safe.bottom - 8,
+    );
+    final chart = (me.localToGlobal(Offset.zero, ancestor: overlay) & me.size)
+        .deflate(4);
+    final bounds = chart.intersect(screen);
+    final width = math.max(
+      math.min(_touchDown ? 264.0 : 248.0, bounds.width),
+      140.0,
+    );
+    final menuSize = Size(width, 2 * padV + 4 * itemH + dividerH);
+    final tap = me.localToGlobal(at ?? anchor, ancestor: overlay);
+    final topLeft = bounds.width > 0 && bounds.height > 0
+        ? placeTapMenu(tap, menuSize, bounds)
+        : tap;
+    final header = PopupMenuItem<int>(
+      key: const ValueKey('dot-menu-header'),
+      enabled: false,
+      height: itemH,
+      mouseCursor: SystemMouseCursors.basic,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name,
+              key: const ValueKey('dot-menu-name'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppTheme.text,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            formatSignedAmount(amount),
+            key: const ValueKey('dot-menu-amount'),
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(
+              color: amount < 0 ? AppTheme.debitColor : AppTheme.creditColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
     PopupMenuItem<int> item(
       String key,
       IconData icon,
@@ -3480,18 +3553,23 @@ class _BalanceChartState extends State<BalanceChart>
     final actions = [newHere, trim, edit];
     final picked = await showMenu<int>(
       context: context,
-      // Just under the dot (kept on screen by the menu layout), so the
-      // dot it acts on stays in sight above its corner.
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(at.dx - 8, at.dy + 10, 16, 0),
-        Offset.zero & overlay.size,
+      // At the tap, placed (flipped / shifted) inside the view; a fixed
+      // width so the placement knows the menu's exact size.
+      position: RelativeRect.fromLTRB(
+        topLeft.dx,
+        topLeft.dy,
+        overlay.size.width - topLeft.dx - width,
+        overlay.size.height - topLeft.dy,
       ),
+      constraints: BoxConstraints.tightFor(width: width),
       color: AppTheme.overlay,
-      menuPadding: const EdgeInsets.symmetric(vertical: 4),
+      menuPadding: const EdgeInsets.symmetric(vertical: padV),
       // No staggered fade-in: Safari can leave the canvas on a mid-fade
       // frame (a dimmed last row) until the next input.
       popUpAnimationStyle: AnimationStyle.noAnimation,
       items: [
+        header,
+        const PopupMenuDivider(height: dividerH),
         item(
           'dot-menu-new',
           Icons.add_rounded,
@@ -3499,7 +3577,6 @@ class _BalanceChartState extends State<BalanceChart>
           0,
           newHere,
         ),
-        const PopupMenuDivider(height: 9),
         item(
           'dot-menu-trim',
           Icons.content_cut_rounded,
