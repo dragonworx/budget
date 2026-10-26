@@ -2161,43 +2161,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       final text = parts.isEmpty
           ? 'Nothing to end on $date'
           : '${parts.join(', ')} · $date';
-      messenger.hideCurrentSnackBar();
-      final tip = messenger.showSnackBar(
-        SnackBar(
-          key: const ValueKey('undo-tip'),
-          content: Text(text[0].toUpperCase() + text.substring(1)),
-          duration: undoTipDuration,
-          persist: false,
-          action: batch == null
-              ? null
-              : SnackBarAction(
-                  label: 'Undo',
-                  onPressed: () async {
-                    try {
-                      await n.undoEndAllOn(batch);
-                      _invalidateBalance();
-                      messenger.hideCurrentSnackBar();
-                      messenger.showSnackBar(
-                        const SnackBar(content: Text('Undone')),
-                      );
-                    } catch (error) {
-                      messenger.showSnackBar(
-                        SnackBar(
-                          content: Text('Undo failed: ${friendlyError(error)}'),
-                        ),
-                      );
-                    }
-                  },
-                ),
-        ),
+      showUndoBar(
+        messenger,
+        text: text[0].toUpperCase() + text.substring(1),
+        onUndo: batch == null
+            ? null
+            : () async {
+                await n.undoEndAllOn(batch);
+                _invalidateBalance();
+              },
       );
-      // As the editor's undo tip: hidden 5s on, whatever is open.
-      final backstop = Timer(
-        undoTipDuration + const Duration(milliseconds: 300),
-        () =>
-            messenger.hideCurrentSnackBar(reason: SnackBarClosedReason.timeout),
-      );
-      tip.closed.whenComplete(backstop.cancel);
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text(friendlyError(error))));
     }

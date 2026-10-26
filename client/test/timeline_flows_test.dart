@@ -2448,7 +2448,10 @@ void main() {
       final tip = find.byKey(const ValueKey('undo-tip'));
       expect(tip, findsOneWidget);
       expect(
-        find.descendant(of: tip, matching: find.text('Series trimmed')),
+        find.descendant(
+          of: tip,
+          matching: find.textContaining('Trimmed “Rent” · ends '),
+        ),
         findsOneWidget,
       );
       await tester.tap(find.text('Undo'));
