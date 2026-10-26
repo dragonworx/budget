@@ -57,6 +57,7 @@ void main() {
   Future<int> count(String sql) async =>
       (await db!.execute(sql)).first[0] as int;
 
+  // (Later migrations' own foreign keys, e.g. 022's, are not counted.)
   test('020 renames pools/transactions and preserves all data', () async {
     if (db == null) return markTestSkipped('no test DB');
     final c = db!;
@@ -122,7 +123,8 @@ void main() {
       for (final t in tables) t: await count('SELECT count(*) FROM $t')
     };
     final fksBefore =
-        await count("SELECT count(*) FROM pg_constraint WHERE contype = 'f'");
+        await count("SELECT count(*) FROM pg_constraint WHERE contype = 'f' "
+            "AND conrelid::regclass::text <> 'event_trim_batches'");
 
     await applyMigrations(c, migrationsDir: 'migrations');
     // A second run is a no-op.
@@ -141,7 +143,8 @@ void main() {
             "SELECT count(*) FROM users WHERE last_stream_id = '$pool'"),
         1);
     expect(
-        await count("SELECT count(*) FROM pg_constraint WHERE contype = 'f'"),
+        await count("SELECT count(*) FROM pg_constraint WHERE contype = 'f' "
+            "AND conrelid::regclass::text <> 'event_trim_batches'"),
         fksBefore);
     for (final old in ['pools', 'transactions', 'pool_shares', 'pool_views']) {
       expect((await c.execute("SELECT to_regclass('public.$old')")).first[0],

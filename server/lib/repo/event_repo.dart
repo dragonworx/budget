@@ -11,7 +11,7 @@ const _enrichedCols = '''
   t.id, t.stream_id, t.name, t.direction, t.amount, t.start_date,
   t.recurrence_mode, t.interval, t.unit, t.end_mode, t.end_date,
   t.occurrence_count, t.enabled, t.created_at, t.transfer_id,
-  p.id, pa.id, pa.name, t.version AS t_version''';
+  p.id, pa.id, pa.name, t.version AS t_version, t.color AS t_color''';
 const _peerJoin = '''
   LEFT JOIN events p
     ON t.transfer_id IS NOT NULL AND p.transfer_id = t.transfer_id AND p.id <> t.id
@@ -178,6 +178,8 @@ class EventRepo {
     int? interval,
     RecurrenceUnit? unit,
     bool? enabled,
+    String? color,
+    bool clearColor = false,
   }) async {
     final t = await get(id);
     if (t == null) throw StateError('event not found');
@@ -199,7 +201,9 @@ class EventRepo {
           amount: amount,
           interval: interval,
           unit: unit,
-          enabled: enabled))!;
+          enabled: enabled,
+          color: color,
+          clearColor: clearColor))!;
       await clearOverrides(id, date: d);
       await syncPeer(updated);
       return (original: (await get(id))!, created: null);
@@ -224,6 +228,7 @@ class EventRepo {
       endDate: t.endMode == EndMode.untilDate ? t.endDate : null,
       occurrenceCount: remaining,
       enabled: enabled ?? t.enabled,
+      color: clearColor ? null : (color ?? t.color),
     );
     // Skips from the split date on and later overrides belong to the new
     // series now (an override on the date itself gives way to the edit).
@@ -302,6 +307,7 @@ class EventRepo {
     int? occurrenceCount,
     bool enabled = true,
     String? transferId,
+    String? color,
   }) async {
     _validateShape(
       recurrenceMode: recurrenceMode,
@@ -319,11 +325,11 @@ class EventRepo {
         INSERT INTO events (
           id, stream_id, name, direction, amount, start_date,
           recurrence_mode, interval, unit, end_mode, end_date,
-          occurrence_count, enabled, transfer_id
+          occurrence_count, enabled, transfer_id, color
         ) VALUES (
           @id, @streamId, @name, @direction, @amount, @startDate,
           @recurrenceMode, @interval, @unit, @endMode, @endDate,
-          @occurrenceCount, @enabled, @transferId::uuid
+          @occurrenceCount, @enabled, @transferId::uuid, @color
         )
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -346,6 +352,7 @@ class EventRepo {
         'occurrenceCount': occurrenceCount,
         'enabled': enabled,
         'transferId': transferId,
+        'color': color,
       },
     );
 
@@ -380,6 +387,8 @@ class EventRepo {
     bool clearUnit = false,
     bool clearEndDate = false,
     bool clearOccurrenceCount = false,
+    String? color,
+    bool clearColor = false,
   }) async {
     final existing = await get(id);
     if (existing == null) return null;
@@ -417,7 +426,8 @@ class EventRepo {
           end_mode = @endMode,
           end_date = @endDate,
           occurrence_count = @occurrenceCount,
-          enabled = @enabled
+          enabled = @enabled,
+          color = @color
         WHERE id = @id
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -438,6 +448,7 @@ class EventRepo {
         'endDate': nextEndDate == null ? null : _date(nextEndDate),
         'occurrenceCount': nextCount,
         'enabled': enabled ?? existing.enabled,
+        'color': clearColor ? null : (color ?? existing.color),
       },
     );
     return (await get(id))!;
@@ -554,11 +565,11 @@ class EventRepo {
           INSERT INTO events (
             id, stream_id, name, direction, amount, start_date,
             recurrence_mode, interval, unit, end_mode, end_date,
-            occurrence_count, enabled
+            occurrence_count, enabled, color
           ) VALUES (
             @id, @streamId, @name, @direction, @amount, @startDate,
             @recurrenceMode, @interval, @unit, @endMode, @endDate,
-            @occurrenceCount, @enabled
+            @occurrenceCount, @enabled, @color
           )
         '''),
         parameters: {
@@ -575,6 +586,7 @@ class EventRepo {
           'endDate': item.endDate == null ? null : _date(item.endDate!),
           'occurrenceCount': item.occurrenceCount,
           'enabled': item.enabled,
+          'color': item.color,
         },
       );
       for (final d in item.skippedDates) {
@@ -696,8 +708,10 @@ class EventRepo {
       endDate = DateTime.utc(e.year, e.month, e.day);
     }
     final unitRaw = row[8] as String?;
-    final version = row.toColumnMap()['t_version'];
+    final cols = row.toColumnMap();
+    final version = cols['t_version'];
     return BudgetEvent(
+      color: cols['t_color'] as String?,
       version: version is int ? version : 1,
       id: row[0].toString(),
       streamId: row[1].toString(),
@@ -752,6 +766,7 @@ class EventRepo {
       occurrenceCount: source.occurrenceCount,
       enabled: source.enabled,
       transferId: transferId,
+      color: source.color,
     );
     await _copySkips(source.id, peer.id);
     return (await get(source.id))!;
@@ -769,7 +784,8 @@ class EventRepo {
   }
 
   /// Rewrites the peer of [source] (a transfer row) to mirror it exactly:
-  /// name, amount, opposite direction, schedule, enabled and skipped dates.
+  /// name, amount, opposite direction, schedule, enabled, colour and
+  /// skipped dates.
   Future<void> syncPeer(BudgetEvent source) async {
     final peerId = source.transfer?.peerId;
     if (peerId == null) return;
@@ -781,7 +797,8 @@ class EventRepo {
           amount = s.amount, start_date = s.start_date,
           recurrence_mode = s.recurrence_mode, interval = s.interval,
           unit = s.unit, end_mode = s.end_mode, end_date = s.end_date,
-          occurrence_count = s.occurrence_count, enabled = s.enabled
+          occurrence_count = s.occurrence_count, enabled = s.enabled,
+          color = s.color
         FROM events s
         WHERE s.id = @s AND p.id = @p
       '''),

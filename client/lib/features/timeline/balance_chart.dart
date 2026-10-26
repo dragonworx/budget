@@ -119,6 +119,8 @@ class BalanceChart extends StatefulWidget {
     required this.visibleDays,
     required this.onViewportChanged,
     required this.onCreateOnDay,
+    this.onTrimDay,
+    this.trimDayBlock,
     this.onPinnedDayChanged,
     this.selectDay,
     this.selectDayToken = 0,
@@ -274,6 +276,14 @@ class BalanceChart extends StatefulWidget {
   final double visibleDays;
   final ViewportChanged onViewportChanged;
   final CreateOnDay onCreateOnDay;
+
+  /// The pick bubble's ✂ (next to its "+"): end every event on the day.
+  /// Null: no ✂.
+  final ValueChanged<DateTime>? onTrimDay;
+
+  /// Why the ✂ is disabled on a day (view only, nothing to end), shown as
+  /// its tooltip; null: enabled.
+  final String? Function(DateTime day)? trimDayBlock;
 
   /// The day selected on the date lane (the pinned pick bubble), or null
   /// once it is dismissed. Notified after the frame that changes it.
@@ -2061,7 +2071,7 @@ class _BalanceChartState extends State<BalanceChart>
     // The day's totals show from touch-down, live while dragging, and stay
     // on release.
     final stats = pickDayStats(day);
-    const bubbleW = 256.0;
+    final bubbleW = widget.onTrimDay == null ? 256.0 : 292.0;
     final bubbleH = stats.balance == null ? 64.0 : 84.0;
     // Above the finger on touch so it stays visible; just above the cursor
     // otherwise. Clamped inside the chart.
@@ -2256,6 +2266,10 @@ class _BalanceChartState extends State<BalanceChart>
               // The only action. Shows from the press on (while dragging
               // the pointer is busy, so it acts once the pick is pinned).
               const SizedBox(width: 8),
+              if (widget.onTrimDay != null) ...[
+                _trimDayButton(day, btn),
+                const SizedBox(width: 4),
+              ],
               IconButton(
                 key: const ValueKey('pick-add'),
                 tooltip: 'Add an event on ${formatOccurrenceDate(day)}',
@@ -2267,6 +2281,20 @@ class _BalanceChartState extends State<BalanceChart>
           ),
         ),
       ),
+    );
+  }
+
+  /// The pick bubble's ✂: ends every event on [day] (the page confirms,
+  /// with one Undo). Disabled, saying why, when [BalanceChart.trimDayBlock]
+  /// has a reason.
+  Widget _trimDayButton(DateTime day, ButtonStyle style) {
+    final block = widget.trimDayBlock?.call(day);
+    return IconButton(
+      key: const ValueKey('pick-trim'),
+      tooltip: block ?? 'End all events on ${formatOccurrenceDate(day)}',
+      style: style,
+      icon: const Icon(Icons.content_cut_rounded, size: 20),
+      onPressed: block != null ? null : () => widget.onTrimDay!(day),
     );
   }
 
@@ -3491,9 +3519,7 @@ class _BalanceChartState extends State<BalanceChart>
     // chart), flush with the menu's rounded top; the name in the lane's
     // near-white text and the green / red amount on the lane's dark pill,
     // so it reads on every lane colour exactly as the lane's own label.
-    final laneFill = lane == null
-        ? AppTheme.raised
-        : laneColor(lane.colorIndex);
+    final laneFill = lane == null ? AppTheme.raised : lane.color;
     final headerH = itemH + padV;
     final header = PopupMenuItem<int>(
       key: const ValueKey('dot-menu-header'),
@@ -5544,10 +5570,7 @@ class _BalanceChartPainter extends CustomPainter {
     } else {
       for (final (li, path) in paths!.indexed) {
         if (path == null) continue;
-        canvas.drawPath(
-          path,
-          Paint()..color = laneColor(lanes.lanes[li].colorIndex),
-        );
+        canvas.drawPath(path, Paint()..color = lanes.lanes[li].color);
       }
     }
     canvas.drawPath(loss, Paint()..color = AppTheme.debitColor);

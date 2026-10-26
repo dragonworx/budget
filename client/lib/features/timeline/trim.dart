@@ -79,3 +79,47 @@ TrimPlan? trimFromHere(BudgetEvent t, DateTime day) {
   if (end.isBefore(start)) return const TrimPlan.delete();
   return TrimPlan.end(trimmedEvent(t, end), end);
 }
+
+/// What the day pick's ✂ ("End all events on this day") does to one
+/// event (the server applies the same rule, `endOnDayPlan`).
+enum DayTrim {
+  /// The series ends on the day (inclusive): the day's own occurrence
+  /// stays, every later one goes.
+  end,
+
+  /// It starts after the day, so nothing of it would remain: deleted.
+  delete,
+}
+
+/// [t] under "end all events on [day]": null when nothing of it falls
+/// after [day] (once-offs on or before it, series already ending by then)
+/// or it is excluded from the balance.
+DayTrim? endOnDay(BudgetEvent t, DateTime day) {
+  if (!t.enabled) return null;
+  final d = dateOnly(day);
+  if (dateOnly(t.startDate).isAfter(d)) return DayTrim.delete;
+  return canTrimAtOccurrence(t, d) ? DayTrim.end : null;
+}
+
+/// [events] under [endOnDay]: the ones that end on [day], the ones
+/// deleted. Empty: the ✂ has nothing to do.
+DayTrimPlan planEndAllOn(Iterable<BudgetEvent> events, DateTime day) {
+  final ended = <BudgetEvent>[], deleted = <BudgetEvent>[];
+  for (final t in events) {
+    switch (endOnDay(t, day)) {
+      case DayTrim.end:
+        ended.add(t);
+      case DayTrim.delete:
+        deleted.add(t);
+      case null:
+    }
+  }
+  return DayTrimPlan(ended, deleted);
+}
+
+class DayTrimPlan {
+  const DayTrimPlan(this.ended, this.deleted);
+  final List<BudgetEvent> ended;
+  final List<BudgetEvent> deleted;
+  bool get isEmpty => ended.isEmpty && deleted.isEmpty;
+}

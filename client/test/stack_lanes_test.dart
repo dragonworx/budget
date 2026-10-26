@@ -286,6 +286,7 @@ void main() {
       Set<String> once = const {},
       bool canEdit = true,
       double lossThreshold = 0,
+      Map<String, String> colors = const {},
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -340,7 +341,8 @@ void main() {
                     ),
                     'c': _t('c', 'Gym', mode: _mode(once, 'c')),
                   }.entries)
-                    if (only == null || only.contains(e.key)) e.key: e.value,
+                    if (only == null || only.contains(e.key))
+                      e.key: e.value.copyWith(color: colors[e.key]),
                 },
                 lossThreshold: lossThreshold,
                 onViewportChanged: (_, _) {},
@@ -803,6 +805,33 @@ void main() {
             await closeMenu(tester);
           }
         }
+      }
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets('an event\'s own colour: its menu header wears it; the '
+        'others keep their positional colour', (tester) async {
+      final at = steps(
+        await pump(tester, ['a', 'b', 'c'], log: [], colors: {'b': '#3C8A6E'}),
+      );
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      final dayPx = ChartLayout.of(const Size(1440, 800), 30).plot.width / 30;
+      for (final (id, want) in [
+        ('a', laneColor(0)),
+        ('b', const Color(0xFF3C8A6E)),
+        ('c', laneColor(2)),
+      ]) {
+        await tester.tapAt(origin + at[id]![1] + Offset(dayPx * 3, 0));
+        await tester.pumpAndSettle();
+        final deco =
+            tester
+                    .widget<Container>(
+                      find.byKey(const ValueKey('dot-menu-header-bg')),
+                    )
+                    .decoration!
+                as BoxDecoration;
+        expect(deco.color, want, reason: id);
+        await closeMenu(tester);
       }
       await tester.pump(const Duration(seconds: 6));
     });

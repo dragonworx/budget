@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ import '../../widgets/money_text.dart';
 import '../../widgets/recurrence_interval_field.dart';
 import '../../widgets/ui.dart';
 import '../timeline/occurrence_info.dart';
+import '../timeline/stack_lanes.dart';
 
 enum EditorAction {
   created,
@@ -179,6 +181,14 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   late DateTime _startDate;
   DateTime? _endDate;
   late bool _enabled;
+
+  /// The graph line's colour, shown as the header's background. New: a
+  /// random palette colour (one the stream's lanes don't wear yet, if any
+  /// is left). Edit: the colour the lane wears now (its own, else the
+  /// positional one), saved only once the user picks another, so an event
+  /// on the positional palette stays there until then.
+  late Color _color;
+  bool _colorPicked = false;
   bool _saving = false;
   String? _endDateError;
   late Set<DateTime> _skipped;
@@ -227,6 +237,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       _endDate = DateTime(presetEnd.year, presetEnd.month, presetEnd.day);
     }
     _enabled = existing?.enabled ?? true;
+    _color = _initialColor();
     _skipped = {for (final d in widget.skippedDates) _day(d)};
     _skippedInitially = {..._skipped};
     _initialSignature = _signature();
@@ -258,6 +269,35 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   }
 
   Timer? _refocus;
+
+  /// See [_color]. Random generator overridable for tests.
+  Color _initialColor() {
+    final events = {
+      for (final t
+          in ref.read(eventsProvider(widget.streamId)).valueOrNull ??
+              const <BudgetEvent>[])
+        t.id: t,
+    };
+    final order =
+        ref.read(streamProvider(widget.streamId)).valueOrNull?.eventOrder ??
+        [for (final id in events.keys) id];
+    final existing = widget.existing;
+    if (existing != null) {
+      return colorFromHex(existing.color) ??
+          laneColorFor(existing.id, order: order, events: events) ??
+          laneColor(0);
+    }
+    return pickNewEventColor(
+      buildLaneSet(order: order, events: events),
+      eventColorRandom ?? math.Random(),
+    );
+  }
+
+  /// What is saved as the event's colour: new events always get theirs;
+  /// an edited one keeps its stored value (possibly null = positional)
+  /// unless the user picked a colour.
+  String? get _savedColor =>
+      _isNew || _colorPicked ? colorToHex(_color) : widget.existing!.color;
 
   final _scope = FocusScopeNode(debugLabel: 'EventEditor');
 
@@ -299,6 +339,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       d.occurrenceCount,
       d.enabled,
       d.transfer?.peerStreamId,
+      d.color,
     ].join('|');
   }
 
@@ -368,6 +409,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
           : null,
       enabled: _enabled,
       transfer: _transferMode ? _transfer : null,
+      color: _savedColor,
     );
   }
 
@@ -563,55 +605,205 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       : child;
 
   Widget _header(ThemeData theme, String title) {
-    return Padding(
+    // The event's graph line colour, edge to edge; text and buttons in the
+    // lane's near-white (with a soft shadow, as on the chart), the money
+    // in / out badge on the lane's dark pill so its green / red reads.
+    const fg = laneTextColor;
+    const shadow = [Shadow(color: Color(0x66000000), blurRadius: 3)];
+    return AnimatedContainer(
+      key: const ValueKey('editor-header'),
+      duration: const Duration(milliseconds: 160),
+      color: _color,
       padding: EdgeInsets.fromLTRB(widget.onDone != null ? 4 : 16, 12, 8, 12),
-      child: Row(
-        children: [
-          if (widget.onDone != null) ...[
-            IconButton(
-              key: const ValueKey('editor-back'),
-              tooltip: 'Back to list (Esc)',
-              onPressed: _close,
-              icon: const Icon(Icons.arrow_back_rounded),
+      child: IconButtonTheme(
+        data: IconButtonThemeData(
+          style: IconButton.styleFrom(foregroundColor: fg),
+        ),
+        child: Row(
+          children: [
+            if (widget.onDone != null) ...[
+              IconButton(
+                key: const ValueKey('editor-back'),
+                tooltip: 'Back to list (Esc)',
+                onPressed: _close,
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+              const SizedBox(width: 4),
+            ],
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: laneAmountPillColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: DirectionBadge(
+                credit: _direction == EventDirection.credit,
+                muted: !_enabled,
+                size: 36,
+              ),
             ),
-            const SizedBox(width: 4),
-          ],
-          DirectionBadge(
-            credit: _direction == EventDirection.credit,
-            muted: !_enabled,
-            size: 36,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _isNew ? 'NEW' : 'EVENT SERIES',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    letterSpacing: 1,
-                    color: AppTheme.textFaint,
-                    fontWeight: FontWeight.w700,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _isNew ? 'NEW' : 'EVENT SERIES',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      letterSpacing: 1,
+                      color: fg,
+                      fontWeight: FontWeight.w800,
+                      shadows: shadow,
+                    ),
                   ),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      color: fg,
+                      shadows: shadow,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _colorButton(),
+            IconButton(
+              key: const ValueKey('editor-close'),
+              tooltip: widget.onClosePanel != null
+                  ? 'Close panel'
+                  : 'Close (Esc)',
+              onPressed: () => _close(closePanel: true),
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  final _colorMenu = MenuController();
+
+  /// The header's colour swatch: opens the palette (12 swatches, the
+  /// current one ticked). Keyboard: Tab to it, Enter / Space opens, Tab /
+  /// arrows between swatches, Enter picks, Esc closes.
+  Widget _colorButton() {
+    final i = laneColorIndexOf(_color);
+    final name = i == null ? 'Custom' : laneColorNames[i];
+    return MenuAnchor(
+      controller: _colorMenu,
+      alignmentOffset: const Offset(-120, 4),
+      style: MenuStyle(
+        padding: const WidgetStatePropertyAll(EdgeInsets.all(10)),
+        backgroundColor: const WidgetStatePropertyAll(AppTheme.raised),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      ),
+      menuChildren: [_colorGrid()],
+      builder: (context, controller, _) => IconButton(
+        key: const ValueKey('editor-color'),
+        tooltip: widget.readOnly ? 'Colour: $name' : 'Colour: $name (change)',
+        onPressed: widget.readOnly || _saving
+            ? null
+            : () => controller.isOpen ? controller.close() : controller.open(),
+        icon: Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            color: _color,
+            shape: BoxShape.circle,
+            border: Border.all(color: laneTextColor, width: 2),
+            boxShadow: const [
+              BoxShadow(color: Color(0x55000000), blurRadius: 4),
+            ],
+          ),
+          child: const Icon(
+            Icons.palette_outlined,
+            size: 14,
+            color: laneTextColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _colorGrid() {
+    final selected = laneColorIndexOf(_color);
+    return FocusTraversalGroup(
+      child: SizedBox(
+        key: const ValueKey('editor-color-grid'),
+        width: 6 * 44,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
+              child: Text(
+                'Graph line colour',
+                style: TextStyle(
+                  color: AppTheme.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleLarge,
-                ),
+              ),
+            ),
+            Wrap(
+              children: [
+                for (var i = 0; i < laneColors.length; i++)
+                  _swatch(i, selected == i),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _swatch(int i, bool selected) {
+    final c = laneColors[i];
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: '${laneColorNames[i]}${selected ? ', selected' : ''}',
+      excludeSemantics: true,
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: InkResponse(
+          key: ValueKey('color-swatch-$i'),
+          autofocus: selected,
+          radius: 22,
+          onTap: () {
+            setState(() {
+              _color = c;
+              _colorPicked = true;
+            });
+            _colorMenu.close();
+          },
+          child: Tooltip(
+            message: laneColorNames[i],
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: c,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? laneTextColor : Colors.transparent,
+                  width: 2.5,
+                ),
+              ),
+              child: selected
+                  ? const Icon(
+                      Icons.check_rounded,
+                      size: 20,
+                      color: laneTextColor,
+                    )
+                  : null,
+            ),
           ),
-          IconButton(
-            key: const ValueKey('editor-close'),
-            tooltip: widget.onClosePanel != null
-                ? 'Close panel'
-                : 'Close (Esc)',
-            onPressed: () => _close(closePanel: true),
-            icon: const Icon(Icons.close_rounded),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1553,6 +1745,10 @@ class _ViewOnlyNote extends StatelessWidget {
     );
   }
 }
+
+/// Tests: the generator behind a new event's random colour.
+@visibleForTesting
+math.Random? eventColorRandom;
 
 /// When a new event's editor re-checks that Name has focus (after
 /// the panel's entrance animation).

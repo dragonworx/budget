@@ -12,6 +12,7 @@ import '../domain/event_import.dart';
 import '../engine/calendar_math.dart';
 import '../repo/stream_repo.dart';
 import '../repo/event_repo.dart';
+import '../repo/trim_batch_repo.dart';
 import 'balance.dart';
 import 'json_helpers.dart';
 import 'goal.dart';
@@ -109,6 +110,7 @@ Router buildStreamsApi(Session conn) {
           endDate: parsed.endDate,
           occurrenceCount: parsed.occurrenceCount,
           enabled: parsed.enabled,
+          color: parsed.color,
         );
         for (final d in skips) {
           await events.setSkip(created.id, d, true);
@@ -212,6 +214,82 @@ Router buildStreamsApi(Session conn) {
       'deletedIds': result.deleted,
       'missing': result.missing,
     });
+  });
+
+  // The day pick's ✂: end every event on one day, atomically (see
+  // TrimBatchRepo.endAllOn). Body: {"date": "YYYY-MM-DD", "ids"?: [...]}
+  // (ids: only those, the list the user confirmed). Returns the batch id
+  // for Undo and what was ended / deleted / left alone.
+  router.post('/<streamId>/events/trim',
+      (Request request, String streamId) async {
+    final stream = await streams.get(streamId);
+    if (stream == null) return jsonError(404, 'stream not found');
+    final me = requireAuth(request).user.id;
+    final DateTime day;
+    Set<String>? ids;
+    try {
+      final body = await readJsonObject(request);
+      day = parseDate(requireString(body, 'date'));
+      final raw = body['ids'];
+      if (raw != null) {
+        if (raw is! List ||
+            raw.length > 5000 ||
+            raw.any((e) => e is! String || !uuidRe.hasMatch(e))) {
+          return jsonError(400, 'ids must be an array of UUIDs');
+        }
+        ids = {for (final e in raw) (e as String).toLowerCase()};
+      }
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+    // Which of the transfers' other streams I can edit (asked before the
+    // batch's transaction).
+    final authz = Authz(conn);
+    final editable = <String>{};
+    for (final t in await events.listByStream(streamId)) {
+      final sid = t.transfer?.peerStreamId;
+      if (sid == null || editable.contains(sid)) continue;
+      final a = await authz.stream(sid, me);
+      if (a?.role != null && a!.role!.atLeast(Role.editor)) editable.add(sid);
+    }
+    final peerStreams = <String>{};
+    final r = await txOf(conn).runTx((tx) => TrimBatchRepo(tx).endAllOn(
+          streamId,
+          day,
+          userId: me,
+          ids: ids,
+          canEdit: (sid) async {
+            final ok = editable.contains(sid);
+            if (ok) peerStreams.add(sid);
+            return ok;
+          },
+        ));
+    await _notifyPeers(conn, request, me, peerStreams, 'events.trimmed');
+    return jsonOk({'date': formatDate(day), ...r.toJson()});
+  });
+
+  // Undo of a trim batch: everything it ended or deleted comes back.
+  router.post('/<streamId>/events/trim/undo',
+      (Request request, String streamId) async {
+    final me = requireAuth(request).user.id;
+    final String batchId;
+    try {
+      batchId = requireString(await readJsonObject(request), 'batchId');
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+    if (!uuidRe.hasMatch(batchId)) return jsonError(400, 'bad batchId');
+    final r = await txOf(conn)
+        .runTx((tx) => TrimBatchRepo(tx).undo(streamId, batchId, me));
+    if (r == null) return jsonError(404, 'nothing to undo');
+    final peers = await conn.execute(
+      Sql.named('SELECT DISTINCT stream_id::text FROM events '
+          'WHERE id = ANY (@ids::uuid[]) AND stream_id <> @a::uuid'),
+      parameters: {'ids': r.restored, 'a': streamId},
+    );
+    await _notifyPeers(conn, request, me,
+        {for (final p in peers) p[0] as String}, 'events.trim_undone');
+    return jsonOk({'restored': r.restored.length});
   });
 
   attachBalanceRoutes(router, conn);
@@ -362,4 +440,20 @@ Router buildStreamsApi(Session conn) {
   });
 
   return router;
+}
+
+/// Audit rows (and so real-time updates) for the other streams a batch
+/// changed through transfers.
+Future<void> _notifyPeers(Session conn, Request request, String me,
+    Set<String> streamIds, String action) async {
+  final audit = AuditRepo(conn);
+  for (final sid in streamIds) {
+    await audit.record(
+      userId: me,
+      action: action,
+      streamId: sid,
+      clientId: request.headers['x-client-id'],
+      detail: const {'via': 'transfer'},
+    );
+  }
 }

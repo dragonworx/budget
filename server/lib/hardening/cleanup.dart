@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:postgres/postgres.dart';
 
 import '../auth/session_store.dart';
+import '../repo/trim_batch_repo.dart';
 import 'logging.dart';
 
 /// Periodically deletes expired sessions and stale invites. Uses a
@@ -51,6 +52,8 @@ class CleanupJob {
           '''),
           parameters: {'keep': inviteKeep.inSeconds.toDouble()},
         );
+        // Trim batches past their Undo.
+        await TrimBatchRepo(tx).purgeOld();
         _sessions.clearCache();
         if (sessions > 0 || invites.isNotEmpty) {
           _log.info(

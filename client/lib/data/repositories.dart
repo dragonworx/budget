@@ -324,6 +324,8 @@ class EventRepository {
         'interval': ?edited.interval,
         'unit': ?edited.unit?.toJson(),
         'enabled': edited.enabled,
+        // The new series' colour (null: the positional one).
+        'color': edited.color,
         if (!force && edited.version != null) 'version': edited.version,
       },
     ) as Map<String, dynamic>;
@@ -335,6 +337,41 @@ class EventRepository {
           : null,
     );
   }
+
+  /// The day pick's ✂: ends every event of [streamId] ([ids] only) on
+  /// [day] in one server transaction (series end on [day], events starting
+  /// after it are deleted, both sides of transfers). Returns the batch id
+  /// for [undoEndAllOn] (null: nothing changed) and what was done; transfers
+  /// into a stream I can't edit are left alone (`blocked`).
+  Future<
+    ({
+      String? batchId,
+      List<String> ended,
+      List<String> deleted,
+      List<String> blocked,
+    })
+  >
+  endAllOn(String streamId, DateTime day, {List<String>? ids}) async {
+    final data = await _api.post(
+      '/api/streams/$streamId/events/trim',
+      body: {'date': formatDate(day), 'ids': ?ids},
+    ) as Map<String, dynamic>;
+    List<String> list(String k) => [
+      for (final x in (data[k] as List?) ?? const []) x as String,
+    ];
+    return (
+      batchId: data['batchId'] as String?,
+      ended: list('ended'),
+      deleted: list('deleted'),
+      blocked: list('blocked'),
+    );
+  }
+
+  /// Undoes [endAllOn]'s batch: everything comes back as it was.
+  Future<void> undoEndAllOn(String streamId, String batchId) => _api.post(
+    '/api/streams/$streamId/events/trim/undo',
+    body: {'batchId': batchId},
+  );
 
   Future<void> skipOccurrence(
     String eventId,

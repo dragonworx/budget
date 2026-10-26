@@ -116,6 +116,11 @@ const policies = <Policy>[
   // Undo of an import: bulk delete of the ids that import created.
   Policy('POST', 'streams/:a/events/import/undo', Scope.stream,
       min: _e, event: 'events.import_undone'),
+  // The day pick's ✂ (end every event on a day) and its Undo.
+  Policy('POST', 'streams/:a/events/trim', Scope.stream,
+      min: _e, event: 'events.trimmed'),
+  Policy('POST', 'streams/:a/events/trim/undo', Scope.stream,
+      min: _e, event: 'events.trim_undone'),
   Policy('PATCH', 'streams/:a/reorder-events', Scope.stream,
       min: _e, event: 'stream.reordered'),
   Policy('GET', 'streams/:a/balance', Scope.stream),

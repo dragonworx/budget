@@ -73,6 +73,9 @@ Router eventsRouter(Session conn) {
           clearUnit: clearUnit,
           clearEndDate: clearEndDate,
           clearOccurrenceCount: clearCount,
+          color: parseEventColor(body['color']),
+          clearColor: body.containsKey('color') &&
+              parseEventColor(body['color']) == null,
         ))!;
         // Transfers: retarget / link / unlink, then mirror onto the peer.
         if (body.containsKey('transferToStreamId')) {
@@ -202,6 +205,9 @@ Router eventsRouter(Session conn) {
             interval: optionalInt(body, 'interval'),
             unit: unit,
             enabled: optionalBool(body, 'enabled'),
+            color: parseEventColor(body['color']),
+            clearColor: body.containsKey('color') &&
+                parseEventColor(body['color']) == null,
           ));
       return jsonOk({
         ...r.original.toJson(),
@@ -229,8 +235,10 @@ class ParsedEventBody {
     this.endDate,
     this.occurrenceCount,
     required this.enabled,
+    this.color,
   });
 
+  final String? color;
   final String name;
   final Direction direction;
   final Decimal amount;
@@ -264,5 +272,6 @@ ParsedEventBody parseEventBody(Map<String, dynamic> body) {
         : parseDate(body['endDate'].toString()),
     occurrenceCount: optionalInt(body, 'occurrenceCount'),
     enabled: optionalBool(body, 'enabled') ?? true,
+    color: parseEventColor(body['color']),
   );
 }

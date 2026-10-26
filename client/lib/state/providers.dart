@@ -255,6 +255,51 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     return r;
   }
 
+  /// The day pick's ✂ (see [EventRepository.endAllOn]); reloads the list
+  /// and every stream a transfer touched.
+  Future<
+    ({
+      String? batchId,
+      List<String> ended,
+      List<String> deleted,
+      List<String> blocked,
+    })
+  >
+  endAllOn(DateTime day, {List<String>? ids}) async {
+    final before = state.valueOrNull ?? const <BudgetEvent>[];
+    final r = await ref
+        .read(eventRepositoryProvider)
+        .endAllOn(arg, day, ids: ids);
+    final touched = {...r.ended, ...r.deleted};
+    await _reloadAfterBatch([
+      for (final t in before)
+        if (touched.contains(t.id)) t.transfer,
+    ]);
+    return r;
+  }
+
+  /// Undo of [endAllOn]'s batch [batchId].
+  Future<void> undoEndAllOn(String batchId) async {
+    final before = state.valueOrNull ?? const <BudgetEvent>[];
+    await ref.read(eventRepositoryProvider).undoEndAllOn(arg, batchId);
+    await _reloadAfterBatch([for (final t in before) t.transfer]);
+    // Restored rows (deleted by the batch) can be transfers too.
+    for (final t in state.valueOrNull ?? const <BudgetEvent>[]) {
+      _touchPeer(t.transfer);
+    }
+  }
+
+  Future<void> _reloadAfterBatch(Iterable<TransferLink?> links) async {
+    state = AsyncData(
+      await ref.read(eventRepositoryProvider).listForStream(arg),
+    );
+    // The list order is the stream's (restored on undo).
+    ref.invalidate(streamProvider(arg));
+    for (final l in links) {
+      _touchPeer(l);
+    }
+  }
+
   void _replace(BudgetEvent updated) {
     final current = state.valueOrNull ?? [];
     state = AsyncData([

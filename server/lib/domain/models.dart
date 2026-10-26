@@ -67,9 +67,14 @@ class BudgetEvent {
     this.transfer,
     this.version = 1,
     this.overrides = const {},
+    this.color,
   });
 
   final int version;
+
+  /// The event's colour as "#RRGGBB" (its timeline lane); null = the
+  /// client's positional palette colour.
+  final String? color;
 
   /// Once-off overrides of single occurrences (date-only UTC keys).
   final Map<DateTime, AmountOverride> overrides;
@@ -117,6 +122,7 @@ class BudgetEvent {
         'enabled': enabled,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'transfer': transfer?.toJson(),
+        'color': color,
         'version': version,
         'overrides': [
           for (final e
@@ -145,8 +151,11 @@ class BudgetEvent {
     bool clearUnit = false,
     bool clearEndDate = false,
     bool clearOccurrenceCount = false,
+    String? color,
+    bool clearColor = false,
   }) {
     return BudgetEvent(
+      color: clearColor ? null : (color ?? this.color),
       id: id ?? this.id,
       streamId: streamId ?? this.streamId,
       name: name ?? this.name,
@@ -171,6 +180,7 @@ class BudgetEvent {
 
   BudgetEvent withOverrides(Map<DateTime, AmountOverride> overrides) =>
       BudgetEvent(
+        color: color,
         id: id,
         streamId: streamId,
         name: name,
@@ -309,4 +319,19 @@ int autoCurrencyScale(double span) {
     if (s <= 9 * unit) return unit;
   }
   return BudgetStream.currencyScales.last;
+}
+
+final _hexColor = RegExp(r'^#?([0-9a-fA-F]{6})$');
+
+/// An event colour from JSON: "#RRGGBB" (or "RRGGBB"), normalised to
+/// upper case with the "#"; null / "" = none (the positional colour).
+/// Throws [FormatException] for anything else.
+String? parseEventColor(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! String) throw FormatException('color must be "#RRGGBB"');
+  final v = raw.trim();
+  if (v.isEmpty) return null;
+  final m = _hexColor.firstMatch(v);
+  if (m == null) throw FormatException('color must be "#RRGGBB"');
+  return '#${m.group(1)!.toUpperCase()}';
 }

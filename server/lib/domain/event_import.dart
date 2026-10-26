@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:decimal/decimal.dart';
 
 import 'enums.dart';
+import 'models.dart' show parseEventColor;
 
 // Import format (see the /transaction skill, named before the rename): every date is a whole number
 // of calendar days relative to a date root — the day the user selected on
@@ -74,6 +75,7 @@ class ImportItem {
     this.startOffset = 0,
     this.endOffset,
     this.skippedOffsets = const [],
+    this.color,
   });
 
   final int index;
@@ -94,6 +96,9 @@ class ImportItem {
   final int? endOffset;
   final List<int> skippedOffsets;
 
+  /// "#RRGGBB" or null (the positional lane colour).
+  final String? color;
+
   Map<String, dynamic> toJson() => {
         'index': index,
         'id': id,
@@ -112,6 +117,7 @@ class ImportItem {
         'startOffset': startOffset,
         'endOffset': endOffset,
         'skippedOffsets': skippedOffsets,
+        'color': color,
       };
 }
 
@@ -216,6 +222,9 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
       'end',
       'enabled',
       'skippedOffsets',
+      'color',
+      // British spelling, accepted as an alias of color.
+      'colour',
     };
     // Absolute dates from the old format: rejected with a pointer to the
     // offset field that replaces them.
@@ -401,6 +410,14 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
       bad('enabled', 'must be true or false');
     }
 
+    String? color;
+    try {
+      color = parseEventColor(m['color'] ?? m['colour']);
+    } on FormatException {
+      bad(m.containsKey('color') ? 'color' : 'colour',
+          'must be a "#RRGGBB" hex colour');
+    }
+
     final skipped = <DateTime>[];
     final skippedOffsets = <int>[];
     final sk = m['skippedOffsets'];
@@ -441,6 +458,7 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
         startOffset: startOffset!,
         endOffset: endOffset,
         skippedOffsets: skippedOffsets,
+        color: color,
       ));
     }
   }

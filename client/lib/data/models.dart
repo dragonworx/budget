@@ -341,7 +341,12 @@ class BudgetEvent {
     this.transfer,
     this.version,
     this.overrides = const {},
+    this.color,
   });
+
+  /// The graph line's colour, "#RRGGBB"; null: the lane's positional
+  /// palette colour (see `eventColor`).
+  final String? color;
 
   /// Row version for optimistic concurrency (null: last write wins).
   final int? version;
@@ -445,6 +450,7 @@ class BudgetEvent {
           ? TransferLink.fromJson(json['transfer'] as Map<String, dynamic>)
           : null,
       version: (json['version'] as num?)?.toInt(),
+      color: normalizeEventColor(json['color'] ?? json['colour']),
       overrides: {
         for (final o in (json['overrides'] as List?) ?? const [])
           parseDate((o as Map)['date']): OccurrenceOverride(
@@ -470,6 +476,7 @@ class BudgetEvent {
     'occurrenceCount': occurrenceCount,
     'enabled': enabled,
     'transfer': transfer?.toJson(),
+    'color': color,
   };
 
   Map<String, dynamic> toCreateJson() => {
@@ -486,6 +493,9 @@ class BudgetEvent {
     'enabled': enabled,
     // Always sent: null on a patch turns a transfer back into a plain series.
     'transferToStreamId': transfer?.peerStreamId,
+    // Always sent too: null is the positional colour (a transfer's other
+    // side follows).
+    'color': color,
   };
 
   BudgetEvent copyWith({
@@ -510,8 +520,11 @@ class BudgetEvent {
     bool clearOccurrenceCount = false,
     int? version,
     bool clearVersion = false,
+    String? color,
+    bool clearColor = false,
   }) {
     return BudgetEvent(
+      color: clearColor ? null : (color ?? this.color),
       version: clearVersion ? null : (version ?? this.version),
       transfer: clearTransfer ? null : (transfer ?? this.transfer),
       id: id ?? this.id,
@@ -532,6 +545,14 @@ class BudgetEvent {
       overrides: overrides,
     );
   }
+}
+
+/// "#RRGGBB" (uppercase) from "#rrggbb" / "rrggbb"; null for anything
+/// else (an unknown value falls back to the positional colour).
+String? normalizeEventColor(Object? raw) {
+  if (raw is! String) return null;
+  final m = RegExp(r'^#?([0-9a-fA-F]{6})$').firstMatch(raw.trim());
+  return m == null ? null : '#${m[1]!.toUpperCase()}';
 }
 
 /// A once-off override of one occurrence's amount and direction.

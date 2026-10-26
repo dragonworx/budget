@@ -29,6 +29,7 @@ class StackLane {
     required this.start,
     required this.end,
     this.streamId,
+    this.explicitColor,
   });
 
   final String id;
@@ -41,6 +42,12 @@ class StackLane {
   /// after its name inside the lane.
   final double amount;
   final int colorIndex;
+
+  /// The event's own colour (`BudgetEvent.color`); null: positional.
+  final Color? explicitColor;
+
+  /// What the lane is painted in (and the event menu's / editor's header).
+  Color get color => explicitColor ?? laneColor(colorIndex);
 
   /// First day (inclusive).
   final DateTime start;
@@ -145,6 +152,7 @@ LaneSet buildLaneSet({
         start: span.$1,
         end: span.$2,
         streamId: other ? t.streamId : null,
+        explicitColor: colorFromHex(t.color),
       ),
     );
   }
@@ -200,6 +208,72 @@ const List<Color> laneColors = [
 ];
 
 Color laneColor(int index) => laneColors[index % laneColors.length];
+
+/// [laneColors]' names, for the colour picker's labels.
+const List<String> laneColorNames = [
+  'Blue',
+  'Purple',
+  'Amber',
+  'Sea blue',
+  'Magenta',
+  'Olive',
+  'Indigo',
+  'Copper',
+  'Pine',
+  'Plum',
+  'Steel',
+  'Ochre',
+];
+
+/// "#RRGGBB" → opaque colour; null for null / anything else.
+Color? colorFromHex(String? hex) {
+  final v = normalizeEventColor(hex);
+  return v == null
+      ? null
+      : Color(0xFF000000 | int.parse(v.substring(1), radix: 16));
+}
+
+/// Opaque [c] as "#RRGGBB" (what `BudgetEvent.color` stores).
+String colorToHex(Color c) =>
+    '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
+/// The palette entry equal to [c] (ignoring alpha), or null.
+int? laneColorIndexOf(Color c) {
+  final rgb = c.toARGB32() & 0xFFFFFF;
+  for (final (i, p) in laneColors.indexed) {
+    if (p.toARGB32() & 0xFFFFFF == rgb) return i;
+  }
+  return null;
+}
+
+/// The colour [eventId]'s lane wears in its own stream's timeline: its own
+/// colour, else the positional one (its place in [order], as the lanes are
+/// built). Null when it has no lane (unknown or excluded).
+Color? laneColorFor(
+  String eventId, {
+  required List<String> order,
+  required Map<String, BudgetEvent> events,
+}) {
+  final lanes = buildLaneSet(order: order, events: events);
+  final i = lanes.indexOf(eventId);
+  return i == null ? null : lanes.lanes[i].color;
+}
+
+/// A new event's colour: a random palette colour no lane of [lanes] wears
+/// yet, or (all taken) a random one of the least used.
+Color pickNewEventColor(LaneSet lanes, math.Random random) {
+  final uses = List<int>.filled(laneColors.length, 0);
+  for (final l in lanes.lanes) {
+    final i = laneColorIndexOf(l.color);
+    if (i != null) uses[i]++;
+  }
+  final least = uses.reduce(math.min);
+  final pool = [
+    for (var i = 0; i < uses.length; i++)
+      if (uses[i] == least) i,
+  ];
+  return laneColors[pool[random.nextInt(pool.length)]];
+}
 
 /// The text drawn on a lane (and on the event menu's header, which wears
 /// the lane's colour): near-white, ≥3.7:1 on every [laneColors] entry.

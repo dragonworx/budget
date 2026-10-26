@@ -1277,6 +1277,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                               stream.role.canEdit
                                               ? _createOnceOnDay(context, day)
                                               : _viewOnlyToast(context),
+                                          onTrimDay: (day) =>
+                                              _trimDay(context, day),
+                                          trimDayBlock: (day) =>
+                                              !stream.role.canEdit
+                                              ? 'View only: you can\'t end events'
+                                              : planEndAllOn(
+                                                  events,
+                                                  day,
+                                                ).isEmpty
+                                              ? 'Nothing runs past '
+                                                    '${formatOccurrenceDate(day)}'
+                                              : null,
                                           onTrimOccurrence: stream.role.canEdit
                                               ? (t, day) =>
                                                     _trimAt(context, t, day)
@@ -1871,6 +1883,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 row(['Hover day', '+'], 'Add a one-off on that day'),
                 row(['Drag dates'], 'Drag along the date axis, release to add'),
                 row(['Tap dates'], 'Add a one-off on that day'),
+                row(
+                  ['Tap dates', '✂'],
+                  'End every event on that day (events starting later are '
+                  'deleted; one Undo)',
+                ),
                 row(['Ctrl', 'Enter'], 'Save in the editor'),
                 row(['Esc'], 'Cancel a date drag / close the editor'),
               ],
@@ -2078,6 +2095,111 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(friendlyError(error))));
       }
+    }
+  }
+
+  /// The day pick's ✂: ends every event of this stream on [day] (see
+  /// [planEndAllOn]: series that run past it end on it, the day's own
+  /// occurrence kept; events starting after it are deleted; transfers on
+  /// both sides) after one confirmation, as one server batch with one Undo.
+  Future<void> _trimDay(BuildContext context, DateTime day) async {
+    final stream = ref.read(streamProvider(widget.streamId)).valueOrNull;
+    if (stream != null && !stream.role.canEdit) {
+      _viewOnlyToast(context);
+      return;
+    }
+    final events =
+        ref.read(eventsProvider(widget.streamId)).valueOrNull ??
+        const <BudgetEvent>[];
+    final plan = planEndAllOn(events, day);
+    if (plan.isEmpty) return;
+    final date = formatOccurrenceDate(day);
+    String names(List<BudgetEvent> l) {
+      final n = [for (final t in l) t.name.isEmpty ? 'Untitled' : t.name];
+      return n.length <= 4
+          ? n.join(', ')
+          : '${n.take(3).join(', ')} and ${n.length - 3} more';
+    }
+
+    String count(int n, String one) =>
+        '$n $one${n == 1 || one == 'series' ? '' : 's'}';
+    final transfers = [...plan.ended, ...plan.deleted].any((t) => t.isTransfer);
+    final ok = await showConfirmDialog(
+      context,
+      title: 'End all events on $date?',
+      message: [
+        if (plan.ended.isNotEmpty)
+          '${count(plan.ended.length, 'series')} will end on $date '
+              '(its occurrences after it go): ${names(plan.ended)}.',
+        if (plan.deleted.isNotEmpty)
+          '${count(plan.deleted.length, 'event')} starting after it will be '
+              'deleted: ${names(plan.deleted)}.',
+        if (transfers) 'Transfers change on both sides.',
+        'You can undo this.',
+      ].join('\n\n'),
+      confirmLabel: 'End all',
+    );
+    if (!ok || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final n = ref.read(eventsProvider(widget.streamId).notifier);
+    try {
+      final r = await n.endAllOn(
+        day,
+        ids: [
+          for (final t in [...plan.ended, ...plan.deleted]) t.id,
+        ],
+      );
+      _invalidateBalance();
+      final batch = r.batchId;
+      final parts = [
+        if (r.ended.isNotEmpty) 'ended ${count(r.ended.length, 'series')}',
+        if (r.deleted.isNotEmpty) 'deleted ${count(r.deleted.length, 'event')}',
+        if (r.blocked.isNotEmpty)
+          'left ${count(r.blocked.length, 'transfer')} '
+              '(no edit access to the other stream)',
+      ];
+      final text = parts.isEmpty
+          ? 'Nothing to end on $date'
+          : '${parts.join(', ')} · $date';
+      messenger.hideCurrentSnackBar();
+      final tip = messenger.showSnackBar(
+        SnackBar(
+          key: const ValueKey('undo-tip'),
+          content: Text(text[0].toUpperCase() + text.substring(1)),
+          duration: undoTipDuration,
+          persist: false,
+          action: batch == null
+              ? null
+              : SnackBarAction(
+                  label: 'Undo',
+                  onPressed: () async {
+                    try {
+                      await n.undoEndAllOn(batch);
+                      _invalidateBalance();
+                      messenger.hideCurrentSnackBar();
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('Undone')),
+                      );
+                    } catch (error) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text('Undo failed: ${friendlyError(error)}'),
+                        ),
+                      );
+                    }
+                  },
+                ),
+        ),
+      );
+      // As the editor's undo tip: hidden 5s on, whatever is open.
+      final backstop = Timer(
+        undoTipDuration + const Duration(milliseconds: 300),
+        () =>
+            messenger.hideCurrentSnackBar(reason: SnackBarClosedReason.timeout),
+      );
+      tip.closed.whenComplete(backstop.cancel);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(error))));
     }
   }
 
