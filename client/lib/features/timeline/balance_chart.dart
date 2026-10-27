@@ -10,6 +10,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/eye_icons.dart';
 import '../../widgets/money_text.dart';
 import 'chart_geometry.dart';
 import 'combined.dart';
@@ -154,15 +155,13 @@ class BalanceChart extends StatefulWidget {
     this.onOpenOtherEvent,
     this.laneOrder = const [],
     this.otherLaneOrder = const [],
-    this.hiddenEvents = const {},
     this.onHideEvent,
   });
 
-  /// Event ids hidden from the timeline (a view setting, see
-  /// HiddenEvents): no lane, name or dot; the balance is unchanged.
-  final Set<String> hiddenEvents;
-
-  /// "Hide" in a lane's tap menu (the whole series). Null: no Hide.
+  /// "Hide" in a lane's tap menu (the whole series): the same flag as the
+  /// Events list's eye (hidden from the timeline and excluded from the
+  /// balance). Null: no Hide (viewers). Only the current stream's own
+  /// events get it.
   final void Function(BudgetEvent t)? onHideEvent;
 
   /// The viewed stream's event ids in the Events list's order: the
@@ -3214,16 +3213,14 @@ class _BalanceChartState extends State<BalanceChart>
       widget.otherEvents,
       widget.laneOrder,
       widget.otherLaneOrder,
-      widget.hiddenEvents,
     );
-    final last = _lanesKey as (Map, Map, List, List, Set)?;
+    final last = _lanesKey as (Map, Map, List, List)?;
     if (last != null &&
         _lanesMemo != null &&
         mapEquals(last.$1, key.$1) &&
         mapEquals(last.$2, key.$2) &&
         listEquals(last.$3, key.$3) &&
-        listEquals(last.$4, key.$4) &&
-        setEquals(last.$5, key.$5)) {
+        listEquals(last.$4, key.$4)) {
       return _lanesMemo!;
     }
     _lanesKey = key;
@@ -3232,7 +3229,6 @@ class _BalanceChartState extends State<BalanceChart>
       events: widget.events,
       others: widget.otherEvents,
       otherOrder: widget.otherLaneOrder,
-      hidden: widget.hiddenEvents,
     );
   }
 
@@ -3296,12 +3292,7 @@ class _BalanceChartState extends State<BalanceChart>
       final x = layout.xOf(day, widget.viewStart, widget.visibleDays);
       final balanceY = scale.yOf(close);
       if (lanes.isEmpty) {
-        final shown = [
-          for (final o in g.all)
-            if (!lanes.hidden.contains(o.eventId)) o,
-        ];
-        if (shown.isEmpty) continue;
-        dots.add(_Dot(Offset(x, balanceY), radius, shown, close, day: day));
+        dots.add(_Dot(Offset(x, balanceY), radius, g.all, close, day: day));
         continue;
       }
       final r = laneDotRadius(radius, laneH);
@@ -3830,9 +3821,10 @@ class _BalanceChartState extends State<BalanceChart>
               widget.onOpenOtherEvent != null
         ? () => widget.onOpenOtherEvent?.call(otherStream, other, day)
         : null;
-    final VoidCallback? hide = event != null && widget.onHideEvent != null
-        ? () => widget.onHideEvent?.call(event)
+    final VoidCallback? hide = own != null && widget.onHideEvent != null
+        ? () => widget.onHideEvent?.call(own)
         : null;
+    final hasHide = widget.onHideEvent != null;
     final once = event?.recurrenceMode == RecurrenceMode.once;
     final lane = _laneSet().lanes.where((l) => l.id == id).firstOrNull;
     final name = lane?.name ?? event?.name ?? '';
@@ -3860,7 +3852,7 @@ class _BalanceChartState extends State<BalanceChart>
     );
     final menuSize = Size(
       width,
-      2 * padV + (hide == null ? 4 : 5) * itemH + dividerH,
+      2 * padV + (hasHide ? 5 : 4) * itemH + dividerH,
     );
     final tap = me.localToGlobal(at ?? anchor, ancestor: overlay);
     final topLeft = bounds.width > 0 && bounds.height > 0
@@ -4009,10 +4001,10 @@ class _BalanceChartState extends State<BalanceChart>
           2,
           edit,
         ),
-        if (hide != null)
+        if (hasHide)
           item(
             'dot-menu-hide',
-            Icons.visibility_off_outlined,
+            eventHiddenIcon,
             once ? 'Hide Event' : 'Hide Series',
             3,
             hide,
@@ -6422,14 +6414,7 @@ class _BalanceChartPainter extends CustomPainter {
 
     canvas.save();
     canvas.clipRect(layout.plot);
-    // Hidden events draw no dot / label (their money still moves the line).
-    final shown = lanes.hidden.isEmpty
-        ? series.occurrences
-        : [
-            for (final o in series.occurrences)
-              if (!lanes.hidden.contains(o.eventId)) o,
-          ];
-    for (final g in groupByDay(shown)) {
+    for (final g in groupByDay(series.occurrences)) {
       final day = g.day;
       final nextDay = addCalendarDays(day, 1);
       // A view-width margin each side feeds the label layout (see

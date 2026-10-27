@@ -43,7 +43,6 @@ import 'combined.dart';
 import 'view_menu.dart';
 import '../../state/auth_providers.dart';
 import '../../state/stream_cleanup.dart';
-import '../../state/hidden_events.dart';
 import '../../state/app_prefs.dart';
 import 'dock_split.dart';
 import 'fit_ranges.dart';
@@ -1310,13 +1309,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                                 )
                                               : null,
                                           eventNames: eventNames,
-                                          // A view setting (any role):
+                                          // Same flag as the list's eye:
                                           // shown again from the list.
-                                          hiddenEvents: ref.watch(
-                                            hiddenEventsProvider,
-                                          ),
-                                          onHideEvent: (t) =>
-                                              _hideEvent(context, t),
+                                          onHideEvent: stream.role.canEdit
+                                              ? (t) => _hideEvent(context, t)
+                                              : null,
                                           laneOrder: stream.eventOrder,
                                           otherLaneOrder: combo == null
                                               ? const []
@@ -2027,16 +2024,27 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// or trimming from the first occurrence) it asks, then deletes, with
   /// the usual "Deleted" Undo. A transfer's other side follows (the server
   /// mirrors the end date and the delete).
-  /// A lane menu's Hide: hides the event (the whole series) from the
-  /// timeline on this device; the balance is unchanged. Undo shows it.
-  void _hideEvent(BuildContext context, BudgetEvent t) {
-    final n = ref.read(hiddenEventsProvider.notifier);
-    n.hide(t.id);
+  /// A lane menu's Hide: the Events list eye's flag (the whole series
+  /// hidden from the timeline and excluded from the balance, saved on the
+  /// server). Undo shows it again; the list's eye does too.
+  Future<void> _hideEvent(BuildContext context, BudgetEvent t) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final n = ref.read(eventsProvider(widget.streamId).notifier);
+    final r = await n.setEnabledMany({t.id: false});
+    if (r.error != null) {
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(r.error!))));
+      return;
+    }
+    _invalidateBalance();
     final name = t.name.trim().isEmpty ? 'Event' : t.name.trim();
     showUndoBar(
-      ScaffoldMessenger.of(context),
+      messenger,
       text: 'Hid "$name"',
-      onUndo: () async => n.show(t.id),
+      onUndo: () async {
+        final u = await n.setEnabledMany({t.id: true});
+        if (u.error != null) throw u.error!;
+        _invalidateBalance();
+      },
     );
   }
 

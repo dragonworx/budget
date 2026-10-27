@@ -9,6 +9,7 @@ import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/stack_lanes.dart';
 import 'package:budget_client/features/timeline/tap_menu.dart';
 import 'package:budget_client/theme/app_theme.dart';
+import 'package:budget_client/widgets/eye_icons.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -94,19 +95,17 @@ void main() {
   });
 
   group('lane set', () {
-    test('hidden events get no lane; the rest re-stack with no gap and '
-        'keep their own colours', () {
+    test('hidden (excluded) events get no lane; the rest re-stack with no '
+        'gap and keep their own colours', () {
       final events = {'a': _t('a', 'A'), 'b': _t('b', 'B'), 'c': _t('c', 'C')};
       final all = buildLaneSet(order: ['a', 'b', 'c'], events: events);
       final some = buildLaneSet(
         order: ['a', 'b', 'c'],
-        events: events,
-        hidden: {'b'},
+        events: {...events, 'b': _t('b', 'B', enabled: false)},
       );
       expect([for (final l in some.lanes) l.id], ['a', 'c']);
       expect(some.indexOf('c'), 1, reason: 'no gap where b was');
       expect(some.indexOf('b'), isNull);
-      expect(some.hidden, {'b'});
       for (final id in ['a', 'c']) {
         expect(
           some.lanes[some.indexOf(id)!].color,
@@ -115,34 +114,14 @@ void main() {
         );
       }
       expect(some.maxActive, 2);
-      // A hidden event's occurrence draws no dot (not even on the line).
-      final day = _start;
-      final group = DayGroup(day, [
-        for (final id in ['a', 'b', 'c'])
-          Occurrence(eventId: id, date: day, signedDelta: Decimal.fromInt(-10)),
-      ]);
-      final dots = laneDotsForDay(
-        lanes: some,
-        group: group,
-        balanceY: 100,
-        thickness: 10,
-      ).dots;
-      expect([for (final d in dots) d.txId], ['a', 'c']);
       final none = buildLaneSet(
         order: ['a', 'b', 'c'],
-        events: events,
-        hidden: {'a', 'b', 'c'},
+        events: {
+          for (final e in events.entries)
+            e.key: _t(e.key, e.value.name, enabled: false),
+        },
       );
       expect(none.isEmpty, isTrue);
-      expect(
-        laneDotsForDay(
-          lanes: none,
-          group: group,
-          balanceY: 100,
-          thickness: 10,
-        ).dots,
-        isEmpty,
-      );
     });
 
     test('lanes follow the list order, then the rest in loaded order', () {
@@ -370,11 +349,12 @@ void main() {
                       for (final id
                           in occurs?[d.difference(_start).inDays] ??
                               ['a', 'b', 'c'])
-                        Occurrence(
-                          eventId: id,
-                          date: d,
-                          signedDelta: Decimal.fromInt(id == 'b' ? 100 : -10),
-                        ),
+                        if (!hidden.contains(id))
+                          Occurrence(
+                            eventId: id,
+                            date: d,
+                            signedDelta: Decimal.fromInt(id == 'b' ? 100 : -10),
+                          ),
                   ],
                 ),
                 seedDate: seedDate ?? _start.subtract(const Duration(days: 30)),
@@ -395,10 +375,12 @@ void main() {
                     'c': _t('c', 'Gym', mode: _mode(once, 'c')),
                   }.entries)
                     if (only == null || only.contains(e.key))
-                      e.key: e.value.copyWith(color: colors[e.key]),
+                      e.key: e.value.copyWith(
+                        color: colors[e.key],
+                        enabled: !hidden.contains(e.key),
+                      ),
                 },
                 lossThreshold: lossThreshold,
-                hiddenEvents: hidden,
                 onHideEvent: onHide,
                 onViewportChanged: (_, _) {},
                 onCreateOnDay: onCreate ?? (_) {},
@@ -536,10 +518,7 @@ void main() {
         ], reason: '$kind');
         final hide = find.byKey(const ValueKey('dot-menu-hide'));
         expect(
-          find.descendant(
-            of: hide,
-            matching: find.byIcon(Icons.visibility_off_outlined),
-          ),
+          find.descendant(of: hide, matching: find.byIcon(eventHiddenIcon)),
           findsOneWidget,
         );
         // The taller menu still fits on screen.
@@ -561,9 +540,10 @@ void main() {
       await tester.pump(const Duration(seconds: 6));
     });
 
-    testWidgets('a hidden event loses its lane, name and dots; the others '
-        're-stack with no gap; the balance and its step dots are unchanged; '
-        'all hidden leaves just the line', (tester) async {
+    testWidgets('a hidden (excluded) event loses its lane, name and dots; '
+        'the others re-stack with no gap; all hidden leaves just the line', (
+      tester,
+    ) async {
       final names = <String>[];
       final steps = <String>[];
       final painted = <String?>[];
@@ -601,7 +581,6 @@ void main() {
       expect(some.names, {'Rent', 'Gym'});
       expect(some.dots.keys, isNot(contains('b')));
       expect(some.dots.keys, isNot(contains(null)), reason: 'no line dot');
-      expect(some.steps.toSet(), all.steps.toSet(), reason: 'balance as is');
       // Re-stacked: two lanes share the ribbon (Gym moves up into b's slot).
       final ys = {
         for (final id in ['a', 'c']) id: some.dots[id]!.first.dy,
@@ -619,7 +598,7 @@ void main() {
       // Shown again: back as before.
       final back = await paint({});
       expect(back.names, all.names);
-      expect(back.steps.toSet(), all.steps.toSet());
+      expect(back.dots.keys, containsAll(['a', 'b', 'c']));
     });
 
     testWidgets('hovering a lane reveals no dot and no popup; clicking the '

@@ -1,7 +1,7 @@
 // Events list include checkboxes: click toggles; press and drag
 // across rows paints them all to the pressed row's new value (sets, never
 // toggles), saved in one batch with one timeline refresh; failures roll
-// back. Works scrolled, with touch (a drag from a checkbox paints instead
+// back. Works scrolled, with touch (a drag from an eye paints instead
 // of scrolling) and from the keyboard.
 import 'dart:async';
 
@@ -15,6 +15,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:budget_client/theme/app_theme.dart';
+import 'package:budget_client/widgets/eye_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final _stream = BudgetStream(
@@ -103,13 +105,21 @@ Future<void> _pump(
   await tester.pumpAndSettle();
 }
 
-Finder _box(int i) => find.byKey(ValueKey('row-check-t$i'));
+Finder _box(int i) => find.byKey(ValueKey('row-eye-t$i'));
 
-bool _checked(WidgetTester tester, int i) => tester
-    .widget<Checkbox>(
-      find.descendant(of: _box(i), matching: find.byType(Checkbox)),
-    )
-    .value!;
+/// The row's eye shows "shown" (eye) rather than "hidden" (eye-off).
+bool _checked(WidgetTester tester, int i) {
+  final shown = find
+      .descendant(of: _box(i), matching: find.byIcon(eventShownIcon))
+      .evaluate()
+      .isNotEmpty;
+  final hidden = find
+      .descendant(of: _box(i), matching: find.byIcon(eventHiddenIcon))
+      .evaluate()
+      .isNotEmpty;
+  expect(shown != hidden, isTrue, reason: 'one icon per row');
+  return shown;
+}
 
 Finder get _listFinder =>
     find.ancestor(of: _box(0), matching: find.byType(Scrollable)).first;
@@ -263,7 +273,7 @@ void main() {
     expect(changed.length, greaterThan(5));
   });
 
-  testWidgets('touch: a drag from a checkbox paints instead of scrolling; '
+  testWidgets('touch: a drag from an eye paints instead of scrolling; '
       'elsewhere it scrolls', (tester) async {
     await _pump(tester, size: const Size(390, 844), count: 30);
     final pos = _list(tester);
@@ -311,19 +321,22 @@ void main() {
     expect(_changed, 1);
   });
 
-  testWidgets('Space toggles a focused checkbox; it reads as a checkbox', (
-    tester,
-  ) async {
+  testWidgets('no checkboxes left; Space / Enter toggle a focused eye; it '
+      'reads as a toggle named for the event', (tester) async {
     final sem = tester.ensureSemantics();
     await _pump(tester);
+    expect(find.byType(Checkbox), findsNothing);
+    final button = find.descendant(
+      of: _box(0),
+      matching: find.byType(IconButton),
+    );
     expect(
-      tester.getSemantics(
-        find.descendant(of: _box(0), matching: find.byType(Checkbox)),
-      ),
+      tester.getSemantics(button),
       matchesSemantics(
-        label: 'Include Item 0 in balance',
-        hasCheckedState: true,
-        isChecked: true,
+        label: 'Show Item 0 (on the timeline and in the balance)',
+        hasToggledState: true,
+        isToggled: true,
+        isButton: true,
         hasEnabledState: true,
         isEnabled: true,
         isFocusable: true,
@@ -331,25 +344,88 @@ void main() {
         hasFocusAction: true,
       ),
     );
-    final inner = find.descendant(
-      of: find.descendant(of: _box(0), matching: find.byType(Checkbox)),
-      matching: find.byType(CustomPaint),
-    );
-    Focus.of(tester.element(inner.first)).requestFocus();
+    Focus.of(
+      tester.element(find.descendant(of: button, matching: find.byType(Icon))),
+    ).requestFocus();
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pumpAndSettle();
     expect(_checked(tester, 0), isFalse);
     expect(_repo.calls, ['t0=false']);
     expect(_changed, 1);
+    expect(
+      tester.getSemantics(button),
+      matchesSemantics(
+        label: 'Show Item 0 (on the timeline and in the balance)',
+        hasToggledState: true,
+        isToggled: false,
+        isButton: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        isFocusable: true,
+        isFocused: true,
+        hasTapAction: true,
+        hasFocusAction: true,
+      ),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_checked(tester, 0), isTrue);
     sem.dispose();
+  });
+
+  testWidgets('phone: the eye is a 44px target; a hidden row shows eye-off, '
+      'dimmed, still two lines; Show N hidden shows them all in one batch', (
+    tester,
+  ) async {
+    await _pump(tester, size: const Size(390, 844), count: 4, disabled: {1, 2});
+    expect(tester.getSize(_box(0)), const Size(44, 44));
+    expect(_checked(tester, 0), isTrue);
+    expect(_checked(tester, 1), isFalse);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('dismiss-t1'))),
+      tester.getSize(find.byKey(const ValueKey('dismiss-t0'))),
+    );
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('row-line2-t1'))).maxLines,
+      1,
+    );
+    // Dimmed: the hidden row's name is faint.
+    final name = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('row-line1-t1')),
+        matching: find.text('Item 1'),
+      ),
+    );
+    expect(name.style?.color, AppTheme.textFaint);
+    expect(find.text('Show 2 hidden'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('show-all-hidden')));
+    await tester.pumpAndSettle();
+    expect(_repo.calls..sort(), ['t1=true', 't2=true']);
+    expect(_changed, 1, reason: 'one refresh for the batch');
+    expect(_checked(tester, 1), isTrue);
+    expect(find.byKey(const ValueKey('show-all-hidden')), findsNothing);
+  });
+
+  testWidgets('hiding the first event never shifts the rows (the Show N '
+      'hidden chip sits below the list)', (tester) async {
+    await _pump(tester, count: 4);
+    final before = tester.getRect(_box(2));
+    await tester.tap(_box(0));
+    await tester.pumpAndSettle();
+    expect(find.text('Show 1 hidden'), findsOneWidget);
+    expect(tester.getRect(_box(2)), before);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('show-all-hidden'))).dy,
+      greaterThan(tester.getBottomLeft(_box(3)).dy),
+    );
   });
 
   testWidgets('reorder handles still drag rows', (tester) async {
     await _pump(tester, count: 6);
     final handle = find.byIcon(Icons.drag_indicator_rounded).first;
     expect(handle, findsOneWidget);
-    // The handle sits apart from the checkbox; pressing it paints nothing.
+    // The handle sits apart from the eye; pressing it paints nothing.
     final g = await tester.startGesture(tester.getCenter(handle));
     await g.moveBy(const Offset(0, 40));
     await g.up();

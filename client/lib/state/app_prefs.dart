@@ -40,6 +40,9 @@ const appPrefs = AppPrefs();
 /// `budget_events_docked`). Values are kept; an existing new key wins.
 /// Safe to call on every start.
 void migrateLegacyLocalKeys() {
+  // The short-lived device-only "hidden events" list (now the event's own
+  // include flag, the Events list's eye): dropped.
+  page.localRemove('${AppPrefs.prefix}timeline.hiddenEvents');
   for (final key in page.localKeys()) {
     if (!key.startsWith('budget') && !key.startsWith('budgie.')) continue;
     final renamed = legacyLocalKey(key);
@@ -67,7 +70,4 @@ String? legacyLocalKey(String key) {
 abstract final class PrefKeys {
   /// Docked Events list width, logical px.
   static const dockedListWidth = 'timeline.dockedListWidth';
-
-  /// Event ids hidden from the timeline (JSON list; see hidden_events.dart).
-  static const hiddenEvents = 'timeline.hiddenEvents';
 }

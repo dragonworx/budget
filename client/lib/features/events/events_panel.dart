@@ -4,11 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../../state/hidden_events.dart';
-
 import 'package:intl/intl.dart';
 
+import '../../widgets/eye_icons.dart';
 import '../../boot/page_stub.dart'
     if (dart.library.js_interop) '../../boot/page_web.dart';
 import '../../data/api_client.dart';
@@ -353,7 +351,8 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     super.dispose();
   }
 
-  // ---- Include checkboxes: click / tap, or press and paint across rows.
+  // ---- Eye toggles (shown + counted / hidden + excluded): click / tap,
+  // or press and paint across rows.
 
   /// Include values shown ahead of the server (a paint in progress, or
   /// saves in flight); dropped when they land (or roll back on failure).
@@ -672,12 +671,11 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                         TxFilter.all => 'All',
                         TxFilter.credit => 'Money in',
                         TxFilter.debit => 'Money out',
-                        TxFilter.disabled => 'Excluded',
+                        TxFilter.disabled => 'Hidden',
                       }),
                       selected: _filter == f,
                       onSelected: (_) => setState(() => _filter = f),
                     ),
-                  ?_showHiddenChip(async.valueOrNull),
                 ],
               ),
             ),
@@ -689,27 +687,45 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                 data: (items) => _list(context, items),
               ),
             ),
+            // Below the list (not beside the filters) so hiding the first
+            // event never shifts the rows under the pointer mid-drag.
+            if (_showHiddenChip(async.valueOrNull) case final chip?) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+                child: Align(alignment: Alignment.centerLeft, child: chip),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  /// "Show N hidden": this stream's events hidden from the timeline, shown
-  /// again in one go (null: none hidden).
+  /// "Show N hidden": shows (and counts) every hidden event again in one
+  /// batch (null: none hidden, or view only).
   Widget? _showHiddenChip(List<BudgetEvent>? items) {
-    final hidden = ref.watch(hiddenEventsProvider);
+    if (_readOnly) return null;
     final ids = [
       for (final t in items ?? const <BudgetEvent>[])
-        if (hidden.contains(t.id)) t.id,
+        if (!_isIncluded(t) && !_hidden.contains(t.id)) t.id,
     ];
     if (ids.isEmpty) return null;
     return ActionChip(
       key: const ValueKey('show-all-hidden'),
-      avatar: const Icon(Icons.visibility_outlined, size: 16),
+      avatar: const Icon(eventShownIcon, size: 16),
       label: Text('Show ${ids.length} hidden'),
-      tooltip: 'Show every hidden event on the timeline again',
-      onPressed: () => ref.read(hiddenEventsProvider.notifier).showAll(ids),
+      tooltip: 'Show every hidden event and count it in the balance again',
+      onPressed: _paintValue != null
+          ? null
+          : () {
+              setState(() {
+                for (final id in ids) {
+                  _included[id] = true;
+                }
+              });
+              _saveIncluded({for (final id in ids) id: true});
+            },
     );
   }
 
@@ -752,9 +768,8 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     // event has no lane: its own colour, else faint).
     final lanes = buildLaneSet(
       order: [for (final t in ordered) t.id],
-      events: {for (final t in ordered) t.id: t},
+      events: {for (final t in ordered) t.id: t.copyWith(enabled: true)},
     );
-    final hidden = ref.watch(hiddenEventsProvider);
     Color colorOf(BudgetEvent t) {
       final i = lanes.indexOf(t.id);
       return colorFromHex(t.color) ??
@@ -776,9 +791,6 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       onDelete: () => _deleteFromList(context, t),
       onToggle: (v) => _toggleOne(t, v),
       onPaintStart: (down) => _paintStart(t, down),
-      hiddenOnTimeline: hidden.contains(t.id),
-      onHiddenChanged: (v) =>
-          ref.read(hiddenEventsProvider.notifier).setHidden(t.id, v),
     );
     if (!canReorder) {
       return KeyedSubtree(
@@ -816,7 +828,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   }
 }
 
-/// Wins a pointer the moment it lands (on an include checkbox), so the
+/// Wins a pointer the moment it lands (on a row's eye toggle), so the
 /// list doesn't scroll, the row doesn't swipe or open, and the drag paints
 /// (the panel follows the pointer from there).
 class _PaintDragRecognizer extends OneSequenceGestureRecognizer {
@@ -857,16 +869,9 @@ class _TxRow extends StatelessWidget {
     this.highlighted = false,
     this.highlightKey,
     this.readOnly = false,
-    this.hiddenOnTimeline = false,
-    this.onHiddenChanged,
   });
 
   final bool readOnly;
-
-  /// Hidden from the timeline (a view setting, any role): the row dims and
-  /// its eye toggle shows eye-off; the toggle shows it again.
-  final bool hiddenOnTimeline;
-  final ValueChanged<bool>? onHiddenChanged;
 
   /// The event's graph line colour (the row's colour bar).
   final Color color;
@@ -961,50 +966,37 @@ class _TxRow extends StatelessWidget {
                       )
                     else
                       const SizedBox(width: 6),
-                    // Hidden from the timeline: dimmed (still listed).
-                    Expanded(
-                      child: Opacity(
-                        key: ValueKey('row-body-${t.id}'),
-                        opacity: hiddenOnTimeline ? 0.45 : 1,
-                        child: Row(
-                          children: [
-                            // The graph line's colour.
-                            Container(
-                              key: ValueKey('row-colour-${t.id}'),
-                              width: 4,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: t.enabled
-                                    ? color
-                                    : color.withValues(alpha: 0.35),
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Tooltip(
-                              message: t.isTransfer
-                                  ? 'Transfer · ${transferPhrase(t)}'
-                                  : credit
-                                  ? 'Money in'
-                                  : 'Money out',
-                              waitDuration: const Duration(milliseconds: 600),
-                              excludeFromSemantics: true,
-                              child: t.isTransfer
-                                  ? _TransferBadge(muted: !t.enabled)
-                                  : DirectionBadge(
-                                      credit: credit,
-                                      size: 28,
-                                      muted: !t.enabled,
-                                    ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _lines(context, t, name, amount, credit),
-                            ),
-                          ],
-                        ),
+                    // The graph line's colour.
+                    Container(
+                      key: ValueKey('row-colour-${t.id}'),
+                      width: 4,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: t.enabled
+                            ? color
+                            : color.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: t.isTransfer
+                          ? 'Transfer · ${transferPhrase(t)}'
+                          : credit
+                          ? 'Money in'
+                          : 'Money out',
+                      waitDuration: const Duration(milliseconds: 600),
+                      excludeFromSemantics: true,
+                      child: t.isTransfer
+                          ? _TransferBadge(muted: !t.enabled)
+                          : DirectionBadge(
+                              credit: credit,
+                              size: 28,
+                              muted: !t.enabled,
+                            ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: _lines(context, t, name, amount, credit)),
                     // Delete (editors only): a ⋮ menu on touch, an icon with
                     // a mouse. Tapping the row opens it in the editor.
                     if (readOnly)
@@ -1045,7 +1037,6 @@ class _TxRow extends StatelessWidget {
                         ),
                       ),
                     _eyeToggle(t, name, touch),
-                    _includeBox(context, t, name, touch),
                   ],
                 ),
               ),
@@ -1083,8 +1074,7 @@ class _TxRow extends StatelessWidget {
       t.recurrenceMode == RecurrenceMode.once ? 'on ${d.start}' : d.start,
       ?d.end,
       if (t.recurrenceMode != RecurrenceMode.once) ?next,
-      if (muted) 'excluded from balance',
-      if (hiddenOnTimeline) 'hidden on timeline',
+      if (muted) 'hidden and excluded from balance',
     ].join(', ');
     final full = [
       d.frequency,
@@ -1217,64 +1207,47 @@ class _TxRow extends StatelessWidget {
     );
   }
 
-  /// Show / hide on the timeline: a compact eye (shown) / eye-off
-  /// (hidden) toggle. A view setting only: the balance is unchanged.
+  /// Show / hide: one compact eye toggle per row (eye: shown on the
+  /// timeline and counted in the balance; eye-off: hidden from the timeline
+  /// and excluded from the balance: the event's `enabled` flag). Pressing
+  /// it flips it; dragging on across rows sets each to the same value.
+  /// Enter / Space (and screen readers) toggle it too.
   Widget _eyeToggle(BudgetEvent t, String name, bool touch) {
-    final size = touch ? 40.0 : 32.0;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: IconButton(
-        key: ValueKey('row-eye-${t.id}'),
-        tooltip: hiddenOnTimeline ? 'Show on timeline' : 'Hide on timeline',
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        isSelected: hiddenOnTimeline,
-        onPressed: onHiddenChanged == null
-            ? null
-            : () => onHiddenChanged!(!hiddenOnTimeline),
-        icon: Icon(
-          hiddenOnTimeline
-              ? Icons.visibility_off_outlined
-              : Icons.visibility_outlined,
-          size: 18,
-          color: hiddenOnTimeline ? AppTheme.textMuted : AppTheme.textFaint,
-          semanticLabel: hiddenOnTimeline
-              ? 'Show $name on timeline'
-              : 'Hide $name on timeline',
+    final size = touch ? 44.0 : 36.0;
+    final shown = t.enabled;
+    final label = shown
+        ? 'Shown and counted in balance'
+        : 'Hidden and excluded from balance';
+    // The press itself is the paint recognizer's (it wins the pointer at
+    // once); onPressed serves the keyboard and screen readers.
+    // One node: a toggle named for the event, on = shown and counted.
+    final button = MergeSemantics(
+      child: Semantics(
+        toggled: shown,
+        label: 'Show $name (on the timeline and in the balance)',
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          constraints: BoxConstraints.tightFor(width: size, height: size),
+          onPressed: readOnly ? null : () => onToggle(!shown),
+          icon: Icon(
+            shown ? eventShownIcon : eventHiddenIcon,
+            size: 20,
+            color: shown ? AppTheme.accent : AppTheme.textFaint,
+          ),
         ),
       ),
     );
-  }
-
-  /// Include in balance: a compact checkbox (checked = included). Pressing
-  /// it flips it; dragging on across rows sets each to the same value.
-  /// Space toggles it from the keyboard.
-  Widget _includeBox(
-    BuildContext context,
-    BudgetEvent t,
-    String name,
-    bool touch,
-  ) {
-    final size = touch ? 44.0 : 36.0;
-    final box = Checkbox(
-      value: t.enabled,
-      onChanged: readOnly ? null : (v) => onToggle(v ?? false),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      visualDensity: VisualDensity.compact,
-      semanticLabel: 'Include $name in balance',
-    );
     return Tooltip(
-      message: t.enabled ? 'Included in balance' : 'Excluded from balance',
+      message: label,
       waitDuration: const Duration(milliseconds: 600),
-      // The checkbox names itself; its checked state says the rest.
       excludeFromSemantics: true,
       child: SizedBox(
-        key: ValueKey('row-check-${t.id}'),
+        key: ValueKey('row-eye-${t.id}'),
         width: size,
         height: size,
         child: readOnly
-            ? Center(child: box)
+            ? Center(child: button)
             : RawGestureDetector(
                 behavior: HitTestBehavior.opaque,
                 gestures: {
@@ -1285,7 +1258,7 @@ class _TxRow extends StatelessWidget {
                         r.onStart = onPaintStart;
                       }),
                 },
-                child: Center(child: box),
+                child: Center(child: button),
               ),
       ),
     );
