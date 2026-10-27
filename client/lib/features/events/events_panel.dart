@@ -4,6 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../state/hidden_events.dart';
+
 import 'package:intl/intl.dart';
 
 import '../../boot/page_stub.dart'
@@ -674,6 +677,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                       selected: _filter == f,
                       onSelected: (_) => setState(() => _filter = f),
                     ),
+                  ?_showHiddenChip(async.valueOrNull),
                 ],
               ),
             ),
@@ -688,6 +692,24 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
           ],
         ),
       ),
+    );
+  }
+
+  /// "Show N hidden": this stream's events hidden from the timeline, shown
+  /// again in one go (null: none hidden).
+  Widget? _showHiddenChip(List<BudgetEvent>? items) {
+    final hidden = ref.watch(hiddenEventsProvider);
+    final ids = [
+      for (final t in items ?? const <BudgetEvent>[])
+        if (hidden.contains(t.id)) t.id,
+    ];
+    if (ids.isEmpty) return null;
+    return ActionChip(
+      key: const ValueKey('show-all-hidden'),
+      avatar: const Icon(Icons.visibility_outlined, size: 16),
+      label: Text('Show ${ids.length} hidden'),
+      tooltip: 'Show every hidden event on the timeline again',
+      onPressed: () => ref.read(hiddenEventsProvider.notifier).showAll(ids),
     );
   }
 
@@ -732,6 +754,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       order: [for (final t in ordered) t.id],
       events: {for (final t in ordered) t.id: t},
     );
+    final hidden = ref.watch(hiddenEventsProvider);
     Color colorOf(BudgetEvent t) {
       final i = lanes.indexOf(t.id);
       return colorFromHex(t.color) ??
@@ -753,6 +776,9 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       onDelete: () => _deleteFromList(context, t),
       onToggle: (v) => _toggleOne(t, v),
       onPaintStart: (down) => _paintStart(t, down),
+      hiddenOnTimeline: hidden.contains(t.id),
+      onHiddenChanged: (v) =>
+          ref.read(hiddenEventsProvider.notifier).setHidden(t.id, v),
     );
     if (!canReorder) {
       return KeyedSubtree(
@@ -831,9 +857,16 @@ class _TxRow extends StatelessWidget {
     this.highlighted = false,
     this.highlightKey,
     this.readOnly = false,
+    this.hiddenOnTimeline = false,
+    this.onHiddenChanged,
   });
 
   final bool readOnly;
+
+  /// Hidden from the timeline (a view setting, any role): the row dims and
+  /// its eye toggle shows eye-off; the toggle shows it again.
+  final bool hiddenOnTimeline;
+  final ValueChanged<bool>? onHiddenChanged;
 
   /// The event's graph line colour (the row's colour bar).
   final Color color;
@@ -928,37 +961,50 @@ class _TxRow extends StatelessWidget {
                       )
                     else
                       const SizedBox(width: 6),
-                    // The graph line's colour.
-                    Container(
-                      key: ValueKey('row-colour-${t.id}'),
-                      width: 4,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: t.enabled
-                            ? color
-                            : color.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(2),
+                    // Hidden from the timeline: dimmed (still listed).
+                    Expanded(
+                      child: Opacity(
+                        key: ValueKey('row-body-${t.id}'),
+                        opacity: hiddenOnTimeline ? 0.45 : 1,
+                        child: Row(
+                          children: [
+                            // The graph line's colour.
+                            Container(
+                              key: ValueKey('row-colour-${t.id}'),
+                              width: 4,
+                              height: 30,
+                              decoration: BoxDecoration(
+                                color: t.enabled
+                                    ? color
+                                    : color.withValues(alpha: 0.35),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Tooltip(
+                              message: t.isTransfer
+                                  ? 'Transfer · ${transferPhrase(t)}'
+                                  : credit
+                                  ? 'Money in'
+                                  : 'Money out',
+                              waitDuration: const Duration(milliseconds: 600),
+                              excludeFromSemantics: true,
+                              child: t.isTransfer
+                                  ? _TransferBadge(muted: !t.enabled)
+                                  : DirectionBadge(
+                                      credit: credit,
+                                      size: 28,
+                                      muted: !t.enabled,
+                                    ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _lines(context, t, name, amount, credit),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Tooltip(
-                      message: t.isTransfer
-                          ? 'Transfer · ${transferPhrase(t)}'
-                          : credit
-                          ? 'Money in'
-                          : 'Money out',
-                      waitDuration: const Duration(milliseconds: 600),
-                      excludeFromSemantics: true,
-                      child: t.isTransfer
-                          ? _TransferBadge(muted: !t.enabled)
-                          : DirectionBadge(
-                              credit: credit,
-                              size: 28,
-                              muted: !t.enabled,
-                            ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(child: _lines(context, t, name, amount, credit)),
                     // Delete (editors only): a ⋮ menu on touch, an icon with
                     // a mouse. Tapping the row opens it in the editor.
                     if (readOnly)
@@ -998,6 +1044,7 @@ class _TxRow extends StatelessWidget {
                           size: 18,
                         ),
                       ),
+                    _eyeToggle(t, name, touch),
                     _includeBox(context, t, name, touch),
                   ],
                 ),
@@ -1037,6 +1084,7 @@ class _TxRow extends StatelessWidget {
       ?d.end,
       if (t.recurrenceMode != RecurrenceMode.once) ?next,
       if (muted) 'excluded from balance',
+      if (hiddenOnTimeline) 'hidden on timeline',
     ].join(', ');
     final full = [
       d.frequency,
@@ -1164,6 +1212,36 @@ class _TxRow extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Show / hide on the timeline: a compact eye (shown) / eye-off
+  /// (hidden) toggle. A view setting only: the balance is unchanged.
+  Widget _eyeToggle(BudgetEvent t, String name, bool touch) {
+    final size = touch ? 40.0 : 32.0;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: IconButton(
+        key: ValueKey('row-eye-${t.id}'),
+        tooltip: hiddenOnTimeline ? 'Show on timeline' : 'Hide on timeline',
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        isSelected: hiddenOnTimeline,
+        onPressed: onHiddenChanged == null
+            ? null
+            : () => onHiddenChanged!(!hiddenOnTimeline),
+        icon: Icon(
+          hiddenOnTimeline
+              ? Icons.visibility_off_outlined
+              : Icons.visibility_outlined,
+          size: 18,
+          color: hiddenOnTimeline ? AppTheme.textMuted : AppTheme.textFaint,
+          semanticLabel: hiddenOnTimeline
+              ? 'Show $name on timeline'
+              : 'Hide $name on timeline',
         ),
       ),
     );

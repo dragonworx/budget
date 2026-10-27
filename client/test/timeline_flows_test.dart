@@ -2967,6 +2967,140 @@ void main() {
       '2026-04-05',
     );
   });
+
+  group('hide an event from the timeline', () {
+    const key = 'budgie.prefs.v1.timeline.hiddenEvents';
+    setUp(page.clearLocal);
+    tearDown(page.clearLocal);
+
+    Set<String> hiddenOnChart(WidgetTester tester) => tester
+        .widget<BalanceChart>(find.byType(BalanceChart, skipOffstage: false))
+        .hiddenEvents;
+
+    for (final (size, kind) in const [
+      (Size(1440, 900), PointerDeviceKind.mouse),
+      (Size(390, 844), PointerDeviceKind.touch),
+    ]) {
+      testWidgets('${kind.name}: Hide in a lane\'s menu hides the series '
+          '(stored on this device, nothing sent), Hid "Rent" offers Undo', (
+        tester,
+      ) async {
+        final placed = <(String?, Offset)>[];
+        final names = <String>[];
+        debugLaneDot = (id, c) => placed.add((id, c));
+        debugLaneName = (name, _) => names.add(name);
+        addTearDown(() {
+          debugLaneDot = null;
+          debugLaneName = null;
+        });
+        final store = await _pump(tester, size: size, setup: _singles);
+        store.calls.clear();
+        expect(names, contains('Rent'));
+        final chart = tester.getRect(find.byType(BalanceChart));
+        final dot = placed
+            .where(
+              (p) =>
+                  p.$1 == 'rent' &&
+                  p.$2.dx > chart.width * 0.3 &&
+                  p.$2.dx < chart.width * 0.8,
+            )
+            .first
+            .$2;
+        await tester.tapAt(
+          chart.topLeft + dot + const Offset(4, 0),
+          kind: kind,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Hide Series'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('dot-menu-hide')),
+          kind: kind,
+        );
+        await tester.pumpAndSettle();
+        expect(hiddenOnChart(tester), {'rent'});
+        expect(page.localGet(key), '["rent"]');
+        expect(find.text('Hid "Rent"'), findsOneWidget);
+        expect(find.text('Undo'), findsOneWidget);
+        names.clear();
+        placed.clear();
+        await tester.pump();
+        tester
+            .renderObjectList(find.byType(CustomPaint))
+            .forEach((r) => r.markNeedsPaint());
+        await tester.pump();
+        expect(names, isNot(contains('Rent')));
+        expect(names, contains('Salary'));
+        expect(placed.map((p) => p.$1), isNot(contains('rent')));
+        // A view setting: no server call, the event still counts.
+        expect(store.calls.where((c) => !c.startsWith('balance')), isEmpty);
+        expect(store.txs['rent']!.enabled, isTrue);
+        await tester.tap(find.text('Undo'));
+        await tester.pumpAndSettle();
+        expect(hiddenOnChart(tester), isEmpty);
+        expect(page.localGet(key), isNull);
+        await tester.pump(const Duration(seconds: 6));
+      });
+
+      testWidgets('${kind.name}: hidden survives a reload; the list row '
+          'dims with an eye-off toggle (still two lines) that shows it '
+          'again; Show N hidden shows them all', (tester) async {
+        page.localSet(key, '["rent"]');
+        final store = await _pump(tester, size: size);
+        expect(hiddenOnChart(tester), {'rent'});
+        await tester.tap(find.byKey(const ValueKey('open-events')));
+        await tester.pumpAndSettle();
+        Finder eye(String id, IconData icon) => find.descendant(
+          of: find.byKey(ValueKey('row-eye-$id')),
+          matching: find.byIcon(icon),
+        );
+        expect(eye('rent', Icons.visibility_off_outlined), findsOneWidget);
+        expect(eye('salary', Icons.visibility_outlined), findsOneWidget);
+        double opacity(String id) => tester
+            .widget<Opacity>(find.byKey(ValueKey('row-body-$id')))
+            .opacity;
+        expect(opacity('rent'), lessThan(1));
+        expect(opacity('salary'), 1);
+        // Same compact two-line row as the others.
+        expect(
+          tester.getSize(find.byKey(const ValueKey('dismiss-rent'))),
+          tester.getSize(find.byKey(const ValueKey('dismiss-salary'))),
+        );
+        for (final id in ['rent', 'salary']) {
+          expect(find.byKey(ValueKey('row-line1-$id')), findsOneWidget);
+          expect(
+            tester.widget<Text>(find.byKey(ValueKey('row-line2-$id'))).maxLines,
+            1,
+          );
+          final line = tester.getRect(find.byKey(ValueKey('row-line1-$id')));
+          final eyeBox = tester.getRect(find.byKey(ValueKey('row-eye-$id')));
+          expect(line.right, lessThanOrEqualTo(eyeBox.left));
+        }
+        expect(find.text('Show 1 hidden'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('row-eye-rent')),
+          kind: kind,
+        );
+        await tester.pumpAndSettle();
+        expect(hiddenOnChart(tester), isEmpty);
+        expect(page.localGet(key), isNull);
+        expect(eye('rent', Icons.visibility_outlined), findsOneWidget);
+        expect(find.byKey(const ValueKey('show-all-hidden')), findsNothing);
+        // Hide both from the list (all hidden: the list stays reachable),
+        // then show them all at once.
+        for (final id in ['rent', 'salary']) {
+          await tester.tap(find.byKey(ValueKey('row-eye-$id')), kind: kind);
+          await tester.pumpAndSettle();
+        }
+        expect(hiddenOnChart(tester), {'rent', 'salary'});
+        expect(find.text('Show 2 hidden'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.byKey(const ValueKey('show-all-hidden')));
+        await tester.pumpAndSettle();
+        expect(hiddenOnChart(tester), isEmpty);
+        expect(store.calls.where((c) => !c.startsWith('balance')), isEmpty);
+      });
+    }
+  });
 }
 
 /// The first day clear of the left strip (what Go to date… opens on).

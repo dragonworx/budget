@@ -66,7 +66,7 @@ class StackLane {
 }
 
 class LaneSet {
-  LaneSet(this.lanes)
+  LaneSet(this.lanes, {this.hidden = const {}})
     : _index = {for (final (i, l) in lanes.indexed) l.id: i},
       maxActive = _maxConcurrent(lanes);
 
@@ -76,6 +76,10 @@ class LaneSet {
   /// viewed stream's lanes, then each other stream's, in the streams' order).
   final List<StackLane> lanes;
   final Map<String, int> _index;
+
+  /// Events hidden from the timeline (a view setting): they get no lane,
+  /// no name and no dot, though they still count in the balance.
+  final Set<String> hidden;
 
   /// The most lanes active on any one day: sizes the lane thickness, so it
   /// stays the same however the view is panned.
@@ -135,11 +139,17 @@ LaneSet buildLaneSet({
   required Map<String, BudgetEvent> events,
   Map<String, BudgetEvent> others = const {},
   List<String> otherOrder = const [],
+  Set<String> hidden = const {},
 }) {
   final seen = <String>{};
   final lanes = <StackLane>[];
+  // Colour slots count hidden events too, so hiding one leaves every
+  // other lane its own colour (the rest re-stack without a gap).
+  var slot = 0;
   void add(String id, BudgetEvent? t, {required bool other}) {
     if (t == null || !t.enabled || !seen.add(id)) return;
+    final colorIndex = slot++;
+    if (hidden.contains(id)) return;
     final span = _span(t);
     final name = t.name.trim();
     lanes.add(
@@ -148,7 +158,7 @@ LaneSet buildLaneSet({
         name: name.isEmpty ? 'Event' : name,
         credit: t.direction == EventDirection.credit,
         amount: t.signedAmount.toDouble(),
-        colorIndex: lanes.length,
+        colorIndex: colorIndex,
         start: span.$1,
         end: span.$2,
         streamId: other ? t.streamId : null,
@@ -169,7 +179,7 @@ LaneSet buildLaneSet({
   for (final e in others.entries) {
     add(e.key, e.value, other: true);
   }
-  return LaneSet(lanes);
+  return LaneSet(lanes, hidden: hidden);
 }
 
 (DateTime, DateTime?) _span(BudgetEvent t) {
@@ -444,6 +454,8 @@ class LaneDot {
     final li = lanes.indexOf(e.key);
     final slot = li == null ? -1 : active.indexOf(li);
     if (slot < 0) {
+      // A hidden event draws nothing (its money still moves the line).
+      if (lanes.hidden.contains(e.key)) continue;
       orphans.add(e);
       continue;
     }

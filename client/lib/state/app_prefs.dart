@@ -67,4 +67,7 @@ String? legacyLocalKey(String key) {
 abstract final class PrefKeys {
   /// Docked Events list width, logical px.
   static const dockedListWidth = 'timeline.dockedListWidth';
+
+  /// Event ids hidden from the timeline (JSON list; see hidden_events.dart).
+  static const hiddenEvents = 'timeline.hiddenEvents';
 }

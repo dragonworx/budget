@@ -94,6 +94,57 @@ void main() {
   });
 
   group('lane set', () {
+    test('hidden events get no lane; the rest re-stack with no gap and '
+        'keep their own colours', () {
+      final events = {'a': _t('a', 'A'), 'b': _t('b', 'B'), 'c': _t('c', 'C')};
+      final all = buildLaneSet(order: ['a', 'b', 'c'], events: events);
+      final some = buildLaneSet(
+        order: ['a', 'b', 'c'],
+        events: events,
+        hidden: {'b'},
+      );
+      expect([for (final l in some.lanes) l.id], ['a', 'c']);
+      expect(some.indexOf('c'), 1, reason: 'no gap where b was');
+      expect(some.indexOf('b'), isNull);
+      expect(some.hidden, {'b'});
+      for (final id in ['a', 'c']) {
+        expect(
+          some.lanes[some.indexOf(id)!].color,
+          all.lanes[all.indexOf(id)!].color,
+          reason: '$id keeps its colour',
+        );
+      }
+      expect(some.maxActive, 2);
+      // A hidden event's occurrence draws no dot (not even on the line).
+      final day = _start;
+      final group = DayGroup(day, [
+        for (final id in ['a', 'b', 'c'])
+          Occurrence(eventId: id, date: day, signedDelta: Decimal.fromInt(-10)),
+      ]);
+      final dots = laneDotsForDay(
+        lanes: some,
+        group: group,
+        balanceY: 100,
+        thickness: 10,
+      ).dots;
+      expect([for (final d in dots) d.txId], ['a', 'c']);
+      final none = buildLaneSet(
+        order: ['a', 'b', 'c'],
+        events: events,
+        hidden: {'a', 'b', 'c'},
+      );
+      expect(none.isEmpty, isTrue);
+      expect(
+        laneDotsForDay(
+          lanes: none,
+          group: group,
+          balanceY: 100,
+          thickness: 10,
+        ).dots,
+        isEmpty,
+      );
+    });
+
     test('lanes follow the list order, then the rest in loaded order', () {
       final lanes = buildLaneSet(
         order: ['c', 'a'],
@@ -287,6 +338,8 @@ void main() {
       bool canEdit = true,
       double lossThreshold = 0,
       Map<String, String> colors = const {},
+      Set<String> hidden = const {},
+      void Function(BudgetEvent t)? onHide,
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -345,6 +398,8 @@ void main() {
                       e.key: e.value.copyWith(color: colors[e.key]),
                 },
                 lossThreshold: lossThreshold,
+                hiddenEvents: hidden,
+                onHideEvent: onHide,
                 onViewportChanged: (_, _) {},
                 onCreateOnDay: onCreate ?? (_) {},
                 onNewOnDay: log != null && canEdit
@@ -452,6 +507,120 @@ void main() {
     };
 
     final day0 = _ymd(_start), day7 = _ymd(_start.add(const Duration(days: 7)));
+
+    testWidgets('a lane menu offers Hide (eye-off) after Edit; it hides '
+        'the whole series (Hide Event for a once-off)', (tester) async {
+      final hid = <String>[];
+      final at = steps(
+        await pump(
+          tester,
+          ['a', 'b', 'c'],
+          log: [],
+          once: {'c'},
+          onHide: (t) => hid.add(t.id),
+        ),
+      );
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      final dayPx = ChartLayout.of(const Size(1440, 800), 30).plot.width / 30;
+      for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+        await tester.tapAt(
+          origin + at['b']![1] + Offset(dayPx * 3, 0),
+          kind: kind,
+        );
+        await tester.pumpAndSettle();
+        expect(_menuLabels(tester), [
+          'New Event From Here',
+          'Trim From Here',
+          'Edit Series',
+          'Hide Series',
+        ], reason: '$kind');
+        final hide = find.byKey(const ValueKey('dot-menu-hide'));
+        expect(
+          find.descendant(
+            of: hide,
+            matching: find.byIcon(Icons.visibility_off_outlined),
+          ),
+          findsOneWidget,
+        );
+        // The taller menu still fits on screen.
+        final r = tester.getRect(hide);
+        expect(r.bottom, lessThanOrEqualTo(800));
+        expect(r.right, lessThanOrEqualTo(1440));
+        await tester.tap(hide, kind: kind);
+        await tester.pumpAndSettle();
+        expect(hid, ['b'], reason: '$kind');
+        hid.clear();
+        await tester.pump(const Duration(milliseconds: 400));
+      }
+      await tester.tapAt(origin + at['c']![0], kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      expect(_menuLabels(tester).last, 'Hide Event');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(hid, isEmpty, reason: 'Esc hides nothing');
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets('a hidden event loses its lane, name and dots; the others '
+        're-stack with no gap; the balance and its step dots are unchanged; '
+        'all hidden leaves just the line', (tester) async {
+      final names = <String>[];
+      final steps = <String>[];
+      final painted = <String?>[];
+      debugLaneName = (name, _) => names.add(name);
+      debugStepDotPainted = (s, c, r, _) =>
+          steps.add('${s.day} ${s.before}->${s.balance} $c');
+      debugLaneDotPainted = (id, _, _) => painted.add(id);
+      final labels = <String>[];
+      debugVertexLabel = (name, _, _) => labels.add(name);
+      addTearDown(() {
+        debugStepDotPainted = null;
+        debugVertexLabel = null;
+      });
+      Future<
+        ({
+          Set<String> names,
+          List<String> steps,
+          Map<String?, List<Offset>> dots,
+        })
+      >
+      paint(Set<String> hidden) async {
+        names.clear();
+        steps.clear();
+        painted.clear();
+        labels.clear();
+        final dots = await pump(tester, ['a', 'b', 'c'], hidden: hidden);
+        await tester.pump();
+        return (names: names.toSet(), steps: [...steps], dots: dots);
+      }
+
+      final all = await paint({});
+      expect(all.names, {'Rent', 'Salary', 'Gym'});
+      expect(all.steps, isNotEmpty);
+      final some = await paint({'b'});
+      expect(some.names, {'Rent', 'Gym'});
+      expect(some.dots.keys, isNot(contains('b')));
+      expect(some.dots.keys, isNot(contains(null)), reason: 'no line dot');
+      expect(some.steps.toSet(), all.steps.toSet(), reason: 'balance as is');
+      // Re-stacked: two lanes share the ribbon (Gym moves up into b's slot).
+      final ys = {
+        for (final id in ['a', 'c']) id: some.dots[id]!.first.dy,
+      };
+      final ysAll = {
+        for (final id in ['a', 'b', 'c']) id: all.dots[id]!.first.dy,
+      };
+      expect(ys['c']! - ys['a']!, lessThan(ysAll['c']! - ysAll['a']!));
+      final none = await paint({'a', 'b', 'c'});
+      expect(none.names, isEmpty);
+      expect(none.dots, isEmpty);
+      expect(painted, isEmpty);
+      expect(labels, isEmpty, reason: 'no occurrence labels on the line');
+      expect(tester.takeException(), isNull);
+      // Shown again: back as before.
+      final back = await paint({});
+      expect(back.names, all.names);
+      expect(back.steps.toSet(), all.steps.toSet());
+    });
 
     testWidgets('hovering a lane reveals no dot and no popup; clicking the '
         'lane opens its action menu', (tester) async {

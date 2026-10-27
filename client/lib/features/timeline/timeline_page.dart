@@ -43,6 +43,7 @@ import 'combined.dart';
 import 'view_menu.dart';
 import '../../state/auth_providers.dart';
 import '../../state/stream_cleanup.dart';
+import '../../state/hidden_events.dart';
 import '../../state/app_prefs.dart';
 import 'dock_split.dart';
 import 'fit_ranges.dart';
@@ -1309,6 +1310,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                                 )
                                               : null,
                                           eventNames: eventNames,
+                                          // A view setting (any role):
+                                          // shown again from the list.
+                                          hiddenEvents: ref.watch(
+                                            hiddenEventsProvider,
+                                          ),
+                                          onHideEvent: (t) =>
+                                              _hideEvent(context, t),
                                           laneOrder: stream.eventOrder,
                                           otherLaneOrder: combo == null
                                               ? const []
@@ -2019,6 +2027,19 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// or trimming from the first occurrence) it asks, then deletes, with
   /// the usual "Deleted" Undo. A transfer's other side follows (the server
   /// mirrors the end date and the delete).
+  /// A lane menu's Hide: hides the event (the whole series) from the
+  /// timeline on this device; the balance is unchanged. Undo shows it.
+  void _hideEvent(BuildContext context, BudgetEvent t) {
+    final n = ref.read(hiddenEventsProvider.notifier);
+    n.hide(t.id);
+    final name = t.name.trim().isEmpty ? 'Event' : t.name.trim();
+    showUndoBar(
+      ScaffoldMessenger.of(context),
+      text: 'Hid "$name"',
+      onUndo: () async => n.show(t.id),
+    );
+  }
+
   Future<void> _trimAt(
     BuildContext context,
     BudgetEvent t,
