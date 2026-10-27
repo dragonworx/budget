@@ -453,8 +453,8 @@ void main() {
 
     final day0 = _ymd(_start), day7 = _ymd(_start.add(const Duration(days: 7)));
 
-    testWidgets('hovering anywhere on a lane shows only its dot, with no '
-        'popup; clicking the dot opens its action menu', (tester) async {
+    testWidgets('hovering a lane reveals no dot and no popup; clicking the '
+        'lane opens its action menu', (tester) async {
       final painted = <(String?, Offset)>[];
       debugLaneDotPainted = (id, c, _) => painted.add((id, c));
       final log = <String>[];
@@ -476,11 +476,8 @@ void main() {
         await tester.pump();
         expect(tip, findsNothing, reason: 'no hover popup ($id)');
         expect(menu, findsNothing);
-        // Only the hovered lane's dot, at its step's left edge.
-        expect(painted, isNotEmpty);
-        expect(painted.map((p) => p.$1).toSet(), {id});
-        expect(painted.last.$2.dx, closeTo(dot.dx, 0.01));
-        expect(painted.last.$2.dy, closeTo(dot.dy, 0.01));
+        // Event lanes never reveal a hover dot.
+        expect(painted, isEmpty, reason: 'no hover dot ($id)');
       }
       // Onto the revealed dot (a few px off centre: a 32px target), click.
       final dot = at['a']![1];
@@ -505,9 +502,7 @@ void main() {
           )
           .forEach((r) => r.markNeedsPaint());
       await tester.pump();
-      expect(painted.map((p) => p.$1).toSet(), {
-        'a',
-      }, reason: 'the dot stays shown under its menu');
+      expect(painted, isEmpty, reason: 'no lane dot under its menu');
       expect(tip, findsNothing);
       expect(_menuLabels(tester), [
         'New Event From Here',
@@ -1743,7 +1738,7 @@ void main() {
         kind: PointerDeviceKind.touch,
       );
       await tester.pumpAndSettle();
-      expect(painted, contains('b'));
+      expect(painted, isEmpty, reason: 'lanes draw no dots');
       await tester.tap(find.byKey(const ValueKey('dot-menu-edit')));
       await tester.pumpAndSettle();
       expect(log, ['edit b $day0']);

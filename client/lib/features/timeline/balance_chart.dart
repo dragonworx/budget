@@ -20,6 +20,7 @@ import 'ghost_line.dart';
 import 'occurrence_info.dart';
 import 'selection_period.dart';
 import 'stack_lanes.dart';
+import 'step_dots.dart';
 import 'tap_menu.dart';
 import 'trim.dart';
 import 'alert_fill.dart';
@@ -439,6 +440,16 @@ class _BalanceChartState extends State<BalanceChart>
   /// Dots under the mouse (several when they overlap) and where it is.
   final ValueNotifier<_DotTip?> _hoverDots = ValueNotifier(null);
 
+  /// The balance step whose dot is hovered (mouse) or tapped: its
+  /// tooltip (net change, balance after) and axis guides show.
+  final _StepTip _stepTip = _StepTip();
+
+  /// [_stepTip] was set by a tap / click: it stays until a tap elsewhere,
+  /// another dot, or a pan (hover leaving the dot keeps it).
+  bool _stepPinned = false;
+
+  late final Listenable _paintTips = Listenable.merge([_hoverDots, _stepTip]);
+
   /// Day of the hover "+" button the current press started on, if any.
   DateTime? _downOnAdd;
 
@@ -745,6 +756,7 @@ class _BalanceChartState extends State<BalanceChart>
     _switchTimer?.cancel();
     _hoverDay.dispose();
     _hoverDots.dispose();
+    _stepTip.dispose();
     _focus.dispose();
     super.dispose();
   }
@@ -1048,6 +1060,7 @@ class _BalanceChartState extends State<BalanceChart>
       _mode = _Gesture.pinch;
       _dragged = true;
     });
+    _clearStepTip();
   }
 
   void _onPointerMove(PointerMoveEvent event) {
@@ -1078,6 +1091,7 @@ class _BalanceChartState extends State<BalanceChart>
     if (!_dragged && dx * dx + dy * dy > slop * slop) {
       _dragged = true;
       _holdTimer?.cancel();
+      _clearStepTip();
       if (_longPressTip) {
         _longPressTip = false;
         _hoverDots.value = null;
@@ -1306,14 +1320,32 @@ class _BalanceChartState extends State<BalanceChart>
     _tapTipTimer?.cancel();
     final layout = _layout;
     final onPlot = layout.plot.contains(pos);
-    // A net chip keeps its whole-day popup.
-    final chip = !onPlot || _laneSet().isEmpty
+    // Right on a step dot (its drawn size and a few px), the dot wins;
+    // otherwise a net chip keeps its whole-day popup.
+    final onDot = onPlot ? _stepOnDot(layout, pos) : null;
+    final chip = onDot != null || !onPlot || _laneSet().isEmpty
         ? null
         : _labelDotAt(layout, pos, slop: 0);
     // A tap / click anywhere on an event's lane (or, with a mouse, on its
     // hover-revealed dot) opens that event's action menu at the tap, in
     // one step (touch has no reveal-then-tap). Its day: the step at or
     // before the tapped x (the revealed dot's step for a dot click).
+    // A balance step's dot: its net change and balance (never creates or
+    // edits anything).
+    final step =
+        onDot ??
+        (chip != null || !onPlot
+            ? null
+            : _stepHit(layout, pos, touch: _touchDown));
+    if (step != null) {
+      _tapTip = false;
+      _hoverDots.value = null;
+      _stepPinned = true;
+      _stepTip.value = step.step;
+      if (_touchDown) _stepTip.bumpSoon(() => mounted && _stepPinned);
+      return;
+    }
+    _clearStepTip();
     final lane = chip != null || !onPlot
         ? null
         : (_touchDown ? null : _laneDotHit(layout, pos, touch: false)) ??
@@ -1686,6 +1718,7 @@ class _BalanceChartState extends State<BalanceChart>
           if (_rowMenuOpen) return;
           _hoverDots.value = null;
           _tapTip = false;
+          if (!_stepPinned) _stepTip.value = null;
           if (_overAdd || _overDot) {
             setState(() {
               _overAdd = false;
@@ -1709,9 +1742,9 @@ class _BalanceChartState extends State<BalanceChart>
                   onPointerSignal: _onPointerSignal,
                   // Own layer: moving the hover "+" button must not repaint the chart.
                   child: RepaintBoundary(
-                    child: ValueListenableBuilder<_DotTip?>(
-                      valueListenable: _hoverDots,
-                      builder: (context, tip, _) => CustomPaint(
+                    child: ListenableBuilder(
+                      listenable: _paintTips,
+                      builder: (context, _) => CustomPaint(
                         key: _chartPaintKey,
                         painter: _BalanceChartPainter(
                           labelMemory: _labelMemory,
@@ -1742,10 +1775,9 @@ class _BalanceChartState extends State<BalanceChart>
                           dataFrom: widget.dataFrom,
                           dataThrough: widget.dataThrough,
                           yRange: yRange,
-                          highlightY: _tipShown(tip) && !_isLaneTip(tip!)
-                              ? _highlightDot(tip).balanceY
-                              : null,
-                          revealDot: _tipShown(tip) ? _revealOf(tip!) : null,
+                          highlightY: _paintHighlightY(),
+                          stepDots: _stepDots(_layout),
+                          activeStep: _stepTip.value?.day,
                         ),
                         child: const SizedBox.expand(),
                       ),
@@ -1786,6 +1818,16 @@ class _BalanceChartState extends State<BalanceChart>
                         _tooltip(theme, tip),
                       ],
                     );
+                  },
+                ),
+                ValueListenableBuilder<BalanceStep?>(
+                  valueListenable: _stepTip,
+                  builder: (context, step, _) {
+                    final dot = step == null || _selA != null
+                        ? null
+                        : _stepDotOf(step);
+                    if (dot == null) return const SizedBox.shrink();
+                    return Stack(children: _stepOverlay(theme, dot));
                   },
                 ),
               ],
@@ -1867,6 +1909,212 @@ class _BalanceChartState extends State<BalanceChart>
     );
   }
 
+  /// Y of the pill the axis labels keep clear of: the shown dot tip's, else
+  /// the shown step dot's.
+  double? _paintHighlightY() {
+    final tip = _hoverDots.value;
+    if (_tipShown(tip) && !_isLaneTip(tip!)) return _highlightDot(tip).balanceY;
+    final step = _stepTip.value;
+    final dot = step == null || _selA != null ? null : _stepDotOf(step);
+    return dot?.center.dy;
+  }
+
+  List<StepDot>? _stepDotsMemo;
+  Object? _stepDotsKey;
+
+  /// The balance line's step dots in view, as the painter draws them
+  /// (stacked lanes only: a lane-less chart already dots every day).
+  List<StepDot> _stepDots(ChartLayout layout) {
+    final range = _ensureYRange();
+    if (range == null || _size == Size.zero || _laneSet().isEmpty) {
+      return const [];
+    }
+    final key = (
+      widget.series,
+      widget.viewStart,
+      widget.visibleDays,
+      range.min,
+      range.max,
+      layout.plot,
+      _lineStart,
+      widget.dataFrom,
+    );
+    if (_stepDotsKey == key && _stepDotsMemo != null) return _stepDotsMemo!;
+    _stepDotsKey = key;
+    // The line begins at the later of its start and the loaded data: a
+    // close there has no riser, so no step.
+    var start = _lineStart;
+    final from = widget.dataFrom;
+    if (from != null && from.isAfter(start)) start = from;
+    final scale = _YScale(range.min, range.max, layout.plot);
+    return _stepDotsMemo = visibleStepDots(
+      steps: balanceSteps(widget.series, lineStart: start),
+      xOf: (d) => layout.xOf(d, widget.viewStart, widget.visibleDays),
+      yOf: scale.yOf,
+      plot: layout.plot,
+      dayPx: layout.plot.width / math.max(widget.visibleDays, 0.001),
+    );
+  }
+
+  /// [step]'s drawn dot, if it is in view (and not thinned out).
+  StepDot? _stepDotOf(BalanceStep step) {
+    for (final d in _stepDots(_layout)) {
+      if (d.step.day == step.day) return d;
+    }
+    return null;
+  }
+
+  /// Mouse hover over a step dot shows its tooltip (true: the pointer is on
+  /// one, so lanes get no hover). Off every dot, an unpinned tip hides.
+  bool _stepHover(ChartLayout layout, Offset pos) {
+    final hit = layout.plot.contains(pos)
+        ? _stepHit(layout, pos, touch: false)
+        : null;
+    if (hit == null) {
+      if (!_stepPinned && _stepTip.value != null) _stepTip.value = null;
+      return false;
+    }
+    if (_stepTip.value?.day != hit.step.day) {
+      _stepPinned = false;
+      _stepTip.value = hit.step;
+    }
+    if (_hoverDots.value != null) {
+      _hoverDots.value = null;
+      _tapTip = false;
+    }
+    _switchTimer?.cancel();
+    _switchTimer = null;
+    if (_overDot) setState(() => _overDot = false);
+    return true;
+  }
+
+  /// The step dot a press at [pos] is for: within its hit radius (22px
+  /// mouse / 44px touch target) above the line and level with the dot;
+  /// lower down only where no event lane is (a lane's own tap opens its
+  /// menu).
+  StepDot? _stepHit(ChartLayout layout, Offset pos, {required bool touch}) {
+    final hit = stepDotAt(_stepDots(layout), pos, touch: touch);
+    if (hit == null) return null;
+    if (pos.dy <= hit.center.dy + hit.radius + 3) return hit;
+    return _laneDotAt(layout, pos, slop: touch ? 6 : 2) == null ? hit : null;
+  }
+
+  /// A step dot [pos] is right on (within 6px of its edge), which beats
+  /// a nearby net chip.
+  StepDot? _stepOnDot(ChartLayout layout, Offset pos) {
+    for (final d in _stepDots(layout)) {
+      if ((d.center - pos).distance <= d.radius + 6) return d;
+    }
+    return null;
+  }
+
+  void _clearStepTip() {
+    _stepPinned = false;
+    if (_stepTip.value != null) _stepTip.value = null;
+  }
+
+  /// A step dot's guides (balance on the y axis, date on the x axis) and
+  /// its tooltip.
+  List<Widget> _stepOverlay(ThemeData theme, StepDot dot) {
+    final s = dot.step;
+    final r = dot.radius + 2;
+    return [
+      ..._yGuide(
+        theme,
+        y: dot.center.dy,
+        toX: dot.center.dx - r - 2,
+        label: formatStepBalance(s.balance),
+      ),
+      ..._xGuide(
+        theme,
+        x: dot.center.dx,
+        fromY: dot.center.dy + r + 2,
+        day: s.day,
+      ),
+      Positioned.fill(
+        child: IgnorePointer(
+          child: CustomSingleChildLayout(
+            delegate: _StepTipLayout(dot.center, r + 10, _layout.plot),
+            child: _stepCard(theme, s),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _stepCard(ThemeData theme, BalanceStep s) {
+    final base = theme.textTheme.bodySmall ?? const TextStyle();
+    final faint = base.copyWith(
+      color: AppTheme.textFaint,
+      fontWeight: FontWeight.w600,
+    );
+    return Container(
+      key: const ValueKey('step-tooltip'),
+      constraints: const BoxConstraints(maxWidth: 240),
+      padding: const EdgeInsets.fromLTRB(10, 7, 10, 8),
+      decoration: BoxDecoration(
+        color: AppTheme.raised,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black54,
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            formatSelectedDate(s.day),
+            key: const ValueKey('step-tooltip-date'),
+            style: faint,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            formatStepDelta(s.delta),
+            key: const ValueKey('step-tooltip-delta'),
+            style: (theme.textTheme.titleMedium ?? const TextStyle()).copyWith(
+              color: s.delta < 0 ? AppTheme.debitColor : AppTheme.creditColor,
+              fontWeight: FontWeight.w800,
+            ),
+            maxLines: 1,
+          ),
+          const SizedBox(height: 2),
+          Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(text: 'Balance '),
+                TextSpan(
+                  text: formatStepBalance(s.balance),
+                  style: const TextStyle(
+                    color: AppTheme.text,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            key: const ValueKey('step-tooltip-balance'),
+            style: base.copyWith(color: AppTheme.textMuted),
+            maxLines: 1,
+          ),
+          if (s.events > 0)
+            Text(
+              formatStepEvents(s.events),
+              key: const ValueKey('step-tooltip-events'),
+              style: faint,
+              maxLines: 1,
+            ),
+        ],
+      ),
+    );
+  }
+
   bool _tipShown(_DotTip? tip) =>
       tip != null &&
       _selA == null &&
@@ -1874,17 +2122,6 @@ class _BalanceChartState extends State<BalanceChart>
           !_longPressTip &&
           !_stickyTip &&
           _mode != _Gesture.scrub);
-
-  /// The lane dot(s) a shown tip reveals: its lane dot, or all of a day's
-  /// for a net chip.
-  LaneReveal? _revealOf(_DotTip tip) {
-    final d = _highlightDot(tip);
-    final day = d.day;
-    if (day == null) return null;
-    if (d.wholeDay) return (day: day, txId: null);
-    final id = d.txId;
-    return id == null ? null : (day: day, txId: id);
-  }
 
   /// The dot whose balance the y-axis highlight shows: the day's dot
   /// (end-of-day balance) for a group, else the seed diamond.
@@ -1895,8 +2132,23 @@ class _BalanceChartState extends State<BalanceChart>
   /// balance on a pill in the y gutter.
   List<Widget> _yHighlight(ThemeData theme, _DotTip tip) {
     final dot = _highlightDot(tip);
+    return _yGuide(
+      theme,
+      y: dot.balanceY,
+      toX: dot.center.dx - dot.radius - 2,
+      label: formatMoneyAmount(dot.balanceAfter),
+    );
+  }
+
+  /// A guide at [y] from the left axis to [toX], with [label] on a pill
+  /// in the y gutter.
+  List<Widget> _yGuide(
+    ThemeData theme, {
+    required double y,
+    required double toX,
+    required String label,
+  }) {
     final layout = _layout;
-    final y = dot.balanceY;
     if (y < layout.plot.top || y > layout.plot.bottom) return const [];
     // Cyan, so the dot's crosshair never reads as the (mint) today line.
     const color = guideColor;
@@ -1919,7 +2171,7 @@ class _BalanceChartState extends State<BalanceChart>
             key: const ValueKey('y-highlight-line'),
             painter: _GuideLinePainter(
               from: Offset(layout.plot.left, y),
-              to: Offset(dot.center.dx - dot.radius - 2, y),
+              to: Offset(toX, y),
               color: color.withValues(alpha: 0.7),
             ),
           ),
@@ -1942,7 +2194,7 @@ class _BalanceChartState extends State<BalanceChart>
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: color, width: 1.2),
             ),
-            child: Text(formatMoneyAmount(dot.balanceAfter), style: style),
+            child: Text(label, style: style),
           ),
         ),
       ),
@@ -1960,10 +2212,24 @@ class _BalanceChartState extends State<BalanceChart>
   /// day's tick is thinned out. Same lifetime as [_yHighlight].
   List<Widget> _xHighlight(ThemeData theme, _DotTip tip) {
     final dot = _highlightDot(tip);
+    return _xGuide(
+      theme,
+      x: dot.center.dx,
+      fromY: dot.center.dy + dot.radius + 2,
+      day: _highlightDay(dot),
+    );
+  }
+
+  /// A guide at [x] from [fromY] down to the date lanes, [day] lit across
+  /// them and its date on a pill in the day lane.
+  List<Widget> _xGuide(
+    ThemeData theme, {
+    required double x,
+    required double fromY,
+    required DateTime day,
+  }) {
     final layout = _layout;
-    final x = dot.center.dx;
     if (x < layout.plot.left || x > layout.plot.right) return const [];
-    final day = _highlightDay(dot);
     // Cyan, so the dot's crosshair never reads as the (mint) today line.
     const color = guideColor;
     final axis = layout.axis;
@@ -2001,7 +2267,7 @@ class _BalanceChartState extends State<BalanceChart>
           child: CustomPaint(
             key: const ValueKey('x-highlight-line'),
             painter: _GuideLinePainter(
-              from: Offset(x, dot.center.dy + dot.radius + 2),
+              from: Offset(x, fromY),
               to: Offset(x, axis.top),
               color: color.withValues(alpha: 0.7),
             ),
@@ -2798,7 +3064,9 @@ class _BalanceChartState extends State<BalanceChart>
       if (_overAdd) setState(() => _overAdd = false);
       return;
     }
-    if (!_hasSelection) _updateDotHover(layout, pos);
+    if (!_hasSelection && !_stepHover(layout, pos)) {
+      _updateDotHover(layout, pos);
+    }
     final axisBottom =
         (layout.dayBand ?? layout.weekBand ?? layout.monthBand).bottom;
     final inColumns =
@@ -4362,14 +4630,17 @@ void Function(String? txId, Offset center)? debugLaneDot;
 /// Tests: the balance fill as split at the alert line, each paint.
 void Function(AlertFill fill, double alertY)? debugAlertFill;
 
-/// Test hook: called for every lane dot actually painted (lane dots stay
-/// hidden until the pointer is on their lane); [idle] is a ring.
+/// Test hook: called for every lane dot actually painted (only lane-less
+/// occurrences, on the line itself: event lanes draw no dots); [idle] is a
+/// ring.
 @visibleForTesting
 void Function(String? txId, Offset center, bool idle)? debugLaneDotPainted;
 
-/// Which lane dot(s) to draw: [txId]'s on [day], or all of [day]'s when
-/// [txId] is null.
-typedef LaneReveal = ({DateTime day, String? txId});
+/// Test hook: called for every balance step dot painted, with its step,
+/// centre and radius (the hovered / tapped one with active true).
+@visibleForTesting
+void Function(BalanceStep step, Offset center, double radius, bool active)?
+debugStepDotPainted;
 
 /// Test hook: a lane's dot place at a step its event does not occur on
 /// (shown or not).
@@ -4572,7 +4843,8 @@ class _BalanceChartPainter extends CustomPainter {
     this.dataThrough,
     this.yRange,
     this.highlightY,
-    this.revealDot,
+    this.stepDots = const [],
+    this.activeStep,
   }) : lineStart = dateOnly(lineStart ?? seedDate);
 
   /// Balance range shown top to bottom. Null falls back to fitting the view.
@@ -4582,10 +4854,12 @@ class _BalanceChartPainter extends CustomPainter {
   /// would collide with its pill are skipped.
   final double? highlightY;
 
-  /// Lane dots are hidden until the pointer is on a lane: the one dot this
-  /// names is drawn ([LaneReveal.txId] null: every dot of that day, for a
-  /// day's net chip). Null: no lane dot is drawn.
-  final LaneReveal? revealDot;
+  /// The balance line's step dots in view (stacked lanes only), as
+  /// [visibleStepDots] placed and thinned them.
+  final List<StepDot> stepDots;
+
+  /// The day of the hovered / tapped step dot (drawn larger, white ring).
+  final DateTime? activeStep;
   final DateTime? dataFrom;
   final DateTime? dataThrough;
   final BalanceSeries series;
@@ -4662,6 +4936,7 @@ class _BalanceChartPainter extends CustomPainter {
     _paintMarkers(canvas, layout, viewEnd, dateOnly(seedDate));
     _paintSeries(canvas, layout, scale, visible, seed, viewEnd);
     _paintOccurrences(canvas, layout, scale, viewEnd, seed);
+    if (!lanes.isEmpty) _paintStepDots(canvas, layout, scale);
     // Axis values float over the plot: drawn after the line and dots.
     for (final (y, text) in gridLabels) {
       _paintYText(canvas, layout, y, text, labelStyle);
@@ -5792,8 +6067,6 @@ class _BalanceChartPainter extends CustomPainter {
           thickness: h,
         );
         final inView = x >= plot.left - r - 4 && x <= plot.right + r + 4;
-        final reveal = revealDot;
-        final dayShown = reveal != null && reveal.day == day;
         if (inView) {
           for (final d in laneDots.dots) {
             final center = Offset(x, d.y);
@@ -5802,12 +6075,9 @@ class _BalanceChartPainter extends CustomPainter {
             } else {
               debugLaneDot?.call(d.txId, center);
             }
-            // Hidden until the pointer is on its lane (a lane-less
-            // occurrence, on the line itself, always shows).
-            if (d.txId != null &&
-                !(dayShown && (reveal.txId == null || reveal.txId == d.txId))) {
-              continue;
-            }
+            // Event lanes draw no dots (the line's step dots carry the
+            // day's net); a lane-less occurrence, on the line, shows.
+            if (d.txId != null) continue;
             debugLaneDotPainted?.call(d.txId, center, d.idle);
             if (d.idle) {
               // The lane has no event on this step: a small dimmed
@@ -5946,6 +6216,48 @@ class _BalanceChartPainter extends CustomPainter {
   }
 
   bool _isLoss(double value) => belowAlert(value, lossThreshold);
+
+  /// A dot on the balance line wherever it steps: the line's colour (red
+  /// below the alert, like the line) with a dark ring, over the line and
+  /// the lanes. The hovered / tapped one is larger with a white ring.
+  void _paintStepDots(Canvas canvas, ChartLayout layout, _YScale scale) {
+    if (stepDots.isEmpty) return;
+    canvas.save();
+    canvas.clipRect(layout.plot.inflate(1));
+    final ring = Paint()
+      ..color = _plotBg
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    StepDot? active;
+    for (final d in stepDots) {
+      if (d.step.day == activeStep) {
+        active = d;
+        continue;
+      }
+      final fill = _isLoss(d.step.balance) ? AppTheme.debitColor : _lineColor;
+      canvas.drawCircle(d.center, d.radius, Paint()..color = fill);
+      canvas.drawCircle(d.center, d.radius, ring);
+      debugStepDotPainted?.call(d.step, d.center, d.radius, false);
+    }
+    if (active != null) {
+      final r = active.radius + 2;
+      final fill = _isLoss(active.step.balance)
+          ? AppTheme.debitColor
+          : _lineColor;
+      canvas.drawCircle(active.center, r + 2, Paint()..color = _plotBg);
+      canvas.drawCircle(active.center, r, Paint()..color = fill);
+      canvas.drawCircle(
+        active.center,
+        r,
+        Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+      debugStepDotPainted?.call(active.step, active.center, r, true);
+    }
+    canvas.restore();
+  }
 
   /// A chip at the bottom edge when balances in view dip below the
   /// vertical range, so a clipped low (or overdraft) is noticed (drag or
@@ -6624,7 +6936,8 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.dataFrom != dataFrom ||
         oldDelegate.yRange?.min != yRange?.min ||
         oldDelegate.highlightY != highlightY ||
-        oldDelegate.revealDot != revealDot ||
+        !identical(oldDelegate.stepDots, stepDots) ||
+        oldDelegate.activeStep != activeStep ||
         oldDelegate.yRange?.max != yRange?.max ||
         oldDelegate.dataThrough != dataThrough ||
         !mapEquals(oldDelegate.eventNames, eventNames) ||
@@ -6750,6 +7063,46 @@ class _RowAction {
   final IconData icon;
   final String label;
   final VoidCallback run;
+}
+
+/// The hovered / tapped balance step; [bumpSoon] re-notifies so Safari
+/// presents a freshly tapped tooltip (see `_repaintSoon`).
+class _StepTip extends ValueNotifier<BalanceStep?> {
+  _StepTip() : super(null);
+
+  void bumpSoon(bool Function() still) {
+    if (!kIsWeb) return;
+    for (final ms in const [50, 200]) {
+      Timer(Duration(milliseconds: ms), () {
+        if (still() && value != null) notifyListeners();
+      });
+    }
+  }
+}
+
+/// Places a step tooltip over its dot, inside the plot ([placeStepTip]).
+class _StepTipLayout extends SingleChildLayoutDelegate {
+  _StepTipLayout(this.anchor, this.gap, this.bounds);
+
+  final Offset anchor;
+  final double gap;
+  final Rect bounds;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints.loose(
+        Size(math.max(0.0, bounds.width - 8), math.max(0.0, bounds.height - 8)),
+      );
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) =>
+      placeStepTip(childSize, anchor, gap, bounds);
+
+  @override
+  bool shouldRelayout(_StepTipLayout oldDelegate) =>
+      oldDelegate.anchor != anchor ||
+      oldDelegate.gap != gap ||
+      oldDelegate.bounds != bounds;
 }
 
 class _DotTip {
