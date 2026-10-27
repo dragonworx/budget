@@ -1774,6 +1774,9 @@ class _BalanceChartState extends State<BalanceChart>
                           textScaler: MediaQuery.textScalerOf(context),
                           dataFrom: widget.dataFrom,
                           dataThrough: widget.dataThrough,
+                          // Read now, as the step dots below are: a tip
+                          // rebuild never paints the line and its dots
+                          // from two different balance ranges.
                           yRange: yRange,
                           highlightY: _paintHighlightY(),
                           stepDots: _stepDots(_layout),
@@ -1956,6 +1959,53 @@ class _BalanceChartState extends State<BalanceChart>
     );
   }
 
+  /// The drawn step dot on [day], if any (in view, not thinned out).
+  StepDot? _stepDotOn(ChartLayout layout, DateTime day) {
+    for (final d in _stepDots(layout)) {
+      if (d.step.day == day) return d;
+    }
+    return null;
+  }
+
+  /// Where the hovered / tapped dot's highlight ring goes, from the current
+  /// geometry (the very dot the painter draws, even after a resize, a
+  /// balance-axis zoom or new data moved it since the tip opened). Null for
+  /// a lane tip: event lanes draw no dots, so there is nothing to ring.
+  ({Offset center, double radius})? _tipRing(_DotTip tip) {
+    final first = tip.dots.first;
+    if (_isLaneTip(tip)) return null;
+    final layout = _layout;
+    final day = first.day;
+    if (first.wholeDay && day != null) {
+      // The day's net stands on the line, at its step dot (lanes draw no
+      // dots of their own): never the first lane's slot under the line.
+      final step = _stepDotOn(layout, day);
+      if (step != null) return (center: step.center, radius: step.radius);
+      // No step drawn (a zero net, or thinned out): the same spot on the
+      // line, from today's layout.
+      for (final o in _dots(layout)) {
+        if (o.day == day) {
+          return (
+            center: Offset(o.center.dx, o.balanceY),
+            radius: stepDotRadius(
+              layout.plot.width / math.max(widget.visibleDays, 0.001),
+            ),
+          );
+        }
+      }
+      return (center: Offset(first.center.dx, first.balanceY), radius: 3.5);
+    }
+    for (final o in _dots(layout)) {
+      if (o.txId == null &&
+          o.day == day &&
+          o.isSeed == first.isSeed &&
+          (day != null || first.isSeed)) {
+        return (center: o.center, radius: o.radius);
+      }
+    }
+    return (center: tip.anchor, radius: first.radius);
+  }
+
   /// [step]'s drawn dot, if it is in view (and not thinned out).
   StepDot? _stepDotOf(BalanceStep step) {
     for (final d in _stepDots(_layout)) {
@@ -2132,10 +2182,15 @@ class _BalanceChartState extends State<BalanceChart>
   /// balance on a pill in the y gutter.
   List<Widget> _yHighlight(ThemeData theme, _DotTip tip) {
     final dot = _highlightDot(tip);
+    // Up to the ring, on the dot's current spot (so a resize or a new
+    // balance range never leaves the guide off its dot).
+    final ring = _tipRing(tip);
     return _yGuide(
       theme,
-      y: dot.balanceY,
-      toX: dot.center.dx - dot.radius - 2,
+      y: ring?.center.dy ?? dot.balanceY,
+      toX: ring != null
+          ? ring.center.dx - ring.radius - 7
+          : dot.center.dx - dot.radius - 2,
       label: formatMoneyAmount(dot.balanceAfter),
     );
   }
@@ -2212,10 +2267,13 @@ class _BalanceChartState extends State<BalanceChart>
   /// day's tick is thinned out. Same lifetime as [_yHighlight].
   List<Widget> _xHighlight(ThemeData theme, _DotTip tip) {
     final dot = _highlightDot(tip);
+    final ring = dot.wholeDay ? _tipRing(tip) : null;
     return _xGuide(
       theme,
-      x: dot.center.dx,
-      fromY: dot.center.dy + dot.radius + 2,
+      x: ring?.center.dx ?? dot.center.dx,
+      fromY: ring != null
+          ? ring.center.dy + ring.radius + 7
+          : dot.center.dy + dot.radius + 2,
       day: _highlightDay(dot),
     );
   }
@@ -3313,6 +3371,8 @@ class _BalanceChartState extends State<BalanceChart>
     for (final o in _dots(layout)) {
       if (o.day == day) all.addAll(o.occurrences);
     }
+    // Its card anchors at the first lane's slot (clear of the next
+    // days' chips); its ring and guides go on the step dot ([_tipRing]).
     return _Dot(
       d.center,
       d.radius,
@@ -4517,7 +4577,8 @@ class _BalanceChartState extends State<BalanceChart>
       left = o.dx;
       top = o.dy;
     }
-    final ring = tip.dots.first.radius + 5;
+    final ringAt = _tipRing(tip);
+    debugTipRing?.call(ringAt?.center, ringAt?.radius);
     // With actions (or rows to scroll) the card takes taps, so they are
     // reachable on touch and a tap on the card never falls through to the
     // chart; otherwise the whole popup stays pointer-transparent.
@@ -4525,22 +4586,24 @@ class _BalanceChartState extends State<BalanceChart>
     return Positioned.fill(
       child: Stack(
         children: [
-          // Highlight ring on the hovered dot.
-          Positioned(
-            left: tip.anchor.dx - ring,
-            top: tip.anchor.dy - ring,
-            width: ring * 2,
-            height: ring * 2,
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppTheme.accent.withValues(alpha: 0.18),
-                  border: Border.all(color: AppTheme.accent, width: 1.5),
+          // Highlight ring on the hovered dot (centred on the drawn dot).
+          if (ringAt != null)
+            Positioned(
+              left: ringAt.center.dx - ringAt.radius - 5,
+              top: ringAt.center.dy - ringAt.radius - 5,
+              width: (ringAt.radius + 5) * 2,
+              height: (ringAt.radius + 5) * 2,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  key: const ValueKey('dot-tip-ring'),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppTheme.accent.withValues(alpha: 0.18),
+                    border: Border.all(color: AppTheme.accent, width: 1.5),
+                  ),
                 ),
               ),
             ),
-          ),
           Positioned(
             left: left,
             top: top,
@@ -4625,6 +4688,10 @@ double _laneHeight(LaneSet lanes, ChartLayout layout) => laneThickness(
 /// Test hook: called for every stacked-lane dot's place in view (shown or
 /// not), with its event (null: no lane) and centre in chart coordinates.
 @visibleForTesting
+/// Test hook: the tooltip's highlight ring (chart-local centre and the
+/// ringed dot's radius), or nulls when the tip has no ring (a lane tip).
+void Function(Offset? center, double? radius)? debugTipRing;
+
 void Function(String? txId, Offset center)? debugLaneDot;
 
 /// Tests: the balance fill as split at the alert line, each paint.

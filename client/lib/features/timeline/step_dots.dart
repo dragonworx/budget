@@ -94,6 +94,16 @@ double stepDotRadius(double dayPx) => dayPx >= 12 ? 4.5 : 3.5;
 /// and a pixel, so neighbouring dots never touch.
 double stepDotMinGap(double radius) => radius * 2 + 1;
 
+/// Where a step's dot sits: its day's left edge (where the line rises or
+/// falls) at the balance after the step. The one geometry for the dot, its
+/// hover / selected ring and its guides, so they always coincide.
+Offset stepCenter(
+  DateTime day,
+  double balance, {
+  required double Function(DateTime day) xOf,
+  required double Function(double value) yOf,
+}) => Offset(xOf(day), yOf(balance));
+
 /// The step dots in view, thinned left to right so no two drawn dots are
 /// closer than [stepDotMinGap] (a dense zoom keeps every other / every
 /// few dots rather than a smear).
@@ -109,13 +119,13 @@ List<StepDot> visibleStepDots({
   final out = <StepDot>[];
   double? lastX;
   for (final s in steps) {
-    final x = xOf(s.day);
+    final c = stepCenter(s.day, s.balance, xOf: xOf, yOf: yOf);
+    final x = c.dx, y = c.dy;
     if (x < plot.left - r) continue;
     if (x > plot.right + r) break;
-    final y = yOf(s.balance);
     if (y < plot.top - r || y > plot.bottom + r) continue;
     if (lastX != null && x - lastX < gap) continue;
-    out.add(StepDot(s, Offset(x, y), r));
+    out.add(StepDot(s, c, r));
     lastX = x;
   }
   return out;

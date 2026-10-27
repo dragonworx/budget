@@ -7,6 +7,7 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/step_dots.dart';
+import 'package:budget_client/features/timeline/combined.dart';
 import 'package:budget_client/theme/app_theme.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
@@ -208,6 +209,7 @@ void main() {
   group('chart', () {
     tearDown(() {
       debugStepDotPainted = null;
+      debugTipRing = null;
       debugLaneDotPainted = null;
       debugLaneDot = null;
     });
@@ -221,6 +223,10 @@ void main() {
       List<DateTime>? created,
       List<String>? log,
       Map<String, List<Offset>>? lanes,
+      double lossThreshold = -100000,
+      BalanceExtents? yRange,
+      int yToken = 0,
+      Map<String, CombinedStream> combined = const {},
     }) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
@@ -246,7 +252,10 @@ void main() {
                 eventNames: {for (final e in _events.values) e.id: e.name},
                 laneOrder: const ['a', 'b', 'c', 'd'],
                 events: _events,
-                lossThreshold: -100000,
+                lossThreshold: lossThreshold,
+                restoreYRange: yRange,
+                yRestoreToken: yToken,
+                combinedStreams: combined,
                 onViewportChanged: (_, _) {},
                 onCreateOnDay: (d) => created?.add(d),
                 onNewOnDay: (d) => log?.add('new $d'),
@@ -442,6 +451,151 @@ void main() {
       expect(find.byKey(const ValueKey('day-net')), findsOneWidget);
       expect(tip(), findsNothing);
       await tester.pump(const Duration(seconds: 6));
+    });
+
+    /// The net chip of [day]'s step (chart-local), found by the dot it
+    /// is painted for being straight under / over it.
+    Future<Rect> chipOf(WidgetTester tester, Offset dot) async {
+      final chips = await chartChips(tester);
+      chips.sort(
+        (a, b) => (a.left - dot.dx).abs().compareTo((b.left - dot.dx).abs()),
+      );
+      return chips.first;
+    }
+
+    /// The ring drawn now (chart-local centre), checked against the
+    /// overlay widget's own rect too.
+    Offset? ringNow(WidgetTester tester) {
+      final f = find.byKey(const ValueKey('dot-tip-ring'));
+      if (f.evaluate().isEmpty) return null;
+      return tester.getCenter(f) - tester.getTopLeft(find.byType(BalanceChart));
+    }
+
+    void expectOn(Offset? ring, Offset dot, String why) {
+      expect(ring, isNotNull, reason: why);
+      expect(
+        (ring! - dot).distance,
+        lessThan(0.01),
+        reason: '$why: $ring vs $dot',
+      );
+    }
+
+    for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+      for (final (name, size, days) in [
+        ('desktop', const Size(1440, 800), 20.0),
+        ('zoomed in', const Size(1440, 800), 8.0),
+        ('zoomed out', const Size(1440, 800), 40.0),
+        ('phone', const Size(390, 844), 14.0),
+      ]) {
+        testWidgets('a net chip\'s ring sits on its step dot ($name, $kind)', (
+          tester,
+        ) async {
+          final dots = await pump(tester, size: size, visibleDays: days);
+          final origin = tester.getTopLeft(find.byType(BalanceChart));
+          var checked = 0;
+          for (final day in [_day(0), _day(3), _day(10)]) {
+            final dot = dots[day];
+            if (dot == null) continue;
+            final chip = await chipOf(tester, dot);
+            if ((chip.left - dot.dx).abs() > 40) continue;
+            if (kind == PointerDeviceKind.mouse) {
+              final mouse = await tester.createGesture(kind: kind);
+              await mouse.addPointer(location: origin + const Offset(2, 2));
+              await tester.pump();
+              await mouse.moveTo(origin + chip.center);
+              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 300));
+              final shown = find
+                  .byKey(const ValueKey('day-net'))
+                  .evaluate()
+                  .isNotEmpty;
+              if (shown) {
+                expectOn(ringNow(tester), dot, '$name $day hover');
+                checked++;
+              }
+              await mouse.moveTo(origin + const Offset(2, 2));
+              await mouse.removePointer();
+              await tester.pump(const Duration(seconds: 6));
+              continue;
+            } else {
+              await tester.tapAt(origin + chip.center, kind: kind);
+              await tester.pump();
+            }
+            if (find.byKey(const ValueKey('day-net')).evaluate().isEmpty) {
+              await tester.pump(const Duration(seconds: 6));
+              continue;
+            }
+            expectOn(ringNow(tester), dot, '$name $day');
+            checked++;
+            await tester.pump(const Duration(seconds: 6));
+            await tester.tapAt(origin + const Offset(5, 5), kind: kind);
+            await tester.pumpAndSettle();
+          }
+          expect(checked, greaterThan(0));
+        });
+      }
+    }
+
+    testWidgets('ring follows its dot through a resize, a balance-axis '
+        'change and alerts / combined streams', (tester) async {
+      Future<Map<DateTime, Offset>> at(
+        Size size, {
+        BalanceExtents? y,
+        int token = 0,
+      }) => pump(
+        tester,
+        size: size,
+        lossThreshold: 6000, // every step below the alert: red dots
+        yRange: y,
+        yToken: token,
+        combined: const {
+          's2': CombinedStream(
+            id: 's2',
+            name: 'Savings',
+            color: Color(0xFFAA66FF),
+            canEdit: true,
+          ),
+        },
+      );
+      var dots = await at(const Size(1440, 800));
+      await revealDayTip(tester, PointerDeviceKind.touch);
+      final ring0 = ringNow(tester)!;
+      final day = dots.entries
+          .firstWhere((e) => (e.value - ring0).distance < 0.01)
+          .key;
+      expectOn(ring0, dots[day]!, 'opened');
+      // The window shrinks: the dot moves and the ring with it.
+      dots = await at(const Size(1200, 700));
+      expect((dots[day]! - ring0).distance, greaterThan(1));
+      expectOn(ringNow(tester), dots[day]!, 'resized');
+      // The balance axis is rescaled (a restored / wheel-scaled range).
+      dots = await at(
+        const Size(1200, 700),
+        y: const BalanceExtents(3000, 9000),
+        token: 1,
+      );
+      final ring = ringNow(tester);
+      if (ring != null) expectOn(ring, dots[day]!, 'y rescaled');
+      await tester.pump(const Duration(seconds: 6));
+    });
+
+    testWidgets('a lane tip draws no ring (lanes have no dots)', (
+      tester,
+    ) async {
+      final lanes = <String, List<Offset>>{};
+      final rings = <Offset?>[];
+      debugTipRing = (c, _) => rings.add(c);
+      await pump(tester, lanes: lanes);
+      final origin = tester.getTopLeft(find.byType(BalanceChart));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(
+        location: origin + lanes['c']!.first + const Offset(40, 0),
+      );
+      addTearDown(mouse.removePointer);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const ValueKey('dot-tip-ring')), findsNothing);
+      expect(rings.whereType<Offset>(), isEmpty);
     });
 
     testWidgets('zoomed far out, dots thin out so none touch', (tester) async {
