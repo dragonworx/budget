@@ -383,9 +383,7 @@ class _CalendarState extends State<_Calendar> {
                                 isToday: widget.grid[i] == widget.today,
                                 isSelected: widget.grid[i] == widget.selected,
                                 isTipped: widget.grid[i] == _tip,
-                                totals: DayTotals.of(
-                                  widget.byDay[widget.grid[i]] ?? const [],
-                                ),
+                                items: widget.byDay[widget.grid[i]] ?? const [],
                               ),
                             ),
                           if (_tip != null && widget.grid.contains(_tip))
@@ -510,17 +508,41 @@ class _DayCell extends StatelessWidget {
     required this.isToday,
     required this.isSelected,
     required this.isTipped,
-    required this.totals,
+    required this.items,
   });
 
   final DateTime date;
   final bool inMonth, isToday, isSelected, isTipped;
-  final DayTotals totals;
+  final List<ReminderItem> items;
+
+  /// Screen readers hear the day and its events (name, gain / loss and
+  /// amount), one after another.
+  String get _semantics {
+    final day = DateFormat('EEEE d MMMM').format(date);
+    if (items.isEmpty) return '$day, no events';
+    return [
+      '$day, ${items.length} event${items.length == 1 ? '' : 's'}',
+      for (final i in items)
+        '${i.event.name.trim().isEmpty ? 'Event' : i.event.name.trim()} '
+            '${i.isGain ? 'gain' : 'loss'} '
+            '${formatMoneyAmount(i.amount.toDouble())}',
+    ].join(', ');
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    final color = toneColor(totals.tone);
+    final key = '${date.year}-${date.month}-${date.day}';
+    return Semantics(
+      key: ValueKey('reminders-day-semantics-$key'),
+      container: true,
+      label: _semantics,
+      selected: isSelected,
+      child: ExcludeSemantics(child: _cell(t)),
+    );
+  }
+
+  Widget _cell(TextTheme t) {
     return Padding(
       padding: const EdgeInsets.all(2),
       child: AnimatedContainer(
@@ -544,52 +566,182 @@ class _DayCell extends StatelessWidget {
             width: isSelected ? 2 : 1,
           ),
         ),
-        child: Stack(
-          children: [
-            Positioned(
-              left: 6,
-              top: 4,
-              child: Text(
-                '${date.day}',
-                style: t.labelMedium?.copyWith(
-                  color: isToday
-                      ? AppTheme.accent
-                      : inMonth
-                      ? AppTheme.text
-                      : AppTheme.textFaint,
-                  fontWeight: isToday ? FontWeight.w700 : null,
-                ),
-              ),
-            ),
-            if (totals.count > 0)
-              Align(
-                alignment: const Alignment(0, 0.45),
-                child: Container(
-                  key: ValueKey(
-                    'reminders-badge-${date.year}-${date.month}-${date.day}',
-                  ),
-                  constraints: const BoxConstraints(minWidth: 20),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: inMonth ? 0.9 : 0.45),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+        // Short cells (small phones) tighten the day number and the names so
+        // at least one name line still fits under it.
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final compact = c.maxHeight < DayNameList.compactBelow;
+            return Stack(
+              children: [
+                Positioned(
+                  left: compact ? 4 : 6,
+                  top: compact ? 1 : 4,
                   child: Text(
-                    '${totals.count}',
-                    textAlign: TextAlign.center,
-                    style: t.labelSmall?.copyWith(
-                      color: AppTheme.bg,
-                      fontWeight: FontWeight.w700,
+                    '${date.day}',
+                    style: t.labelMedium?.copyWith(
+                      fontSize: compact ? 11 : null,
+                      height: compact ? 1.1 : null,
+                      color: isToday
+                          ? AppTheme.accent
+                          : inMonth
+                          ? AppTheme.text
+                          : AppTheme.textFaint,
+                      fontWeight: isToday ? FontWeight.w700 : null,
                     ),
                   ),
                 ),
-              ),
-          ],
+                if (items.isNotEmpty)
+                  Positioned(
+                    left: compact ? 3 : 5,
+                    right: compact ? 2 : 3,
+                    top: compact ? 14 : 22,
+                    bottom: compact ? 1 : 3,
+                    child: DayNameList(
+                      key: ValueKey(
+                        'reminders-names-${date.year}-${date.month}-${date.day}',
+                      ),
+                      items: items,
+                      dim: !inMonth,
+                      compact: compact,
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+/// A day cell's events: one name a line, green for a gain and red for a
+/// loss, each ellipsised. When they don't all fit the cell's height, the
+/// last line that fits says how many more there are ("+3 more").
+class DayNameList extends StatelessWidget {
+  const DayNameList({
+    super.key,
+    required this.items,
+    this.dim = false,
+    this.compact = false,
+  });
+
+  final List<ReminderItem> items;
+
+  /// Outside the shown month: faded.
+  final bool dim;
+
+  /// Tighter type for short cells.
+  final bool compact;
+
+  /// Day cells shorter than this use the [compact] layout.
+  static const compactBelow = 46.0;
+
+  static const fontSize = 10.0;
+  static const lineHeight = 1.25;
+  static const compactFontSize = 9.0;
+  static const compactLineHeight = 1.15;
+
+  static double rowFor({bool compact = false}) =>
+      compact ? compactFontSize * compactLineHeight : fontSize * lineHeight;
+
+  /// Rows that fit [height]; how many names show for [count] events.
+  static ({int names, int more}) fit(
+    int count,
+    double height, {
+    bool compact = false,
+  }) {
+    final rows = (height / rowFor(compact: compact) + 0.01).floor();
+    if (rows <= 0 || count == 0) return (names: 0, more: count);
+    if (count <= rows) return (names: count, more: 0);
+    // One row speaks for the rest; with a single row, the first name
+    // carries the count beside it.
+    final names = rows == 1 ? 1 : rows - 1;
+    return (names: names, more: count - names);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = (Theme.of(context).textTheme.labelSmall ?? const TextStyle())
+        .copyWith(
+          fontSize: compact ? compactFontSize : fontSize,
+          height: compact ? compactLineHeight : lineHeight,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+        );
+    final a = dim ? 0.5 : 1.0;
+    final faint = base.copyWith(color: AppTheme.textFaint.withValues(alpha: a));
+    return LayoutBuilder(
+      builder: (context, c) {
+        final row = rowFor(compact: compact);
+        final (:names, :more) = fit(
+          items.length,
+          c.maxHeight,
+          compact: compact,
+        );
+        Widget name(ReminderItem i) => Text(
+          i.event.name.trim().isEmpty ? 'Event' : i.event.name.trim(),
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: base.copyWith(
+            color: (i.isGain ? AppTheme.creditColor : AppTheme.debitColor)
+                .withValues(alpha: a),
+          ),
+        );
+        // "+6 more", or just "+6" when the cell is too narrow for it.
+        final long = '+$more more';
+        final fits =
+            (TextPainter(
+              text: TextSpan(text: long, style: faint),
+              maxLines: 1,
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+            )..layout()).width <=
+            c.maxWidth;
+        final moreText = Text(
+          fits ? long : '+$more',
+          key: const ValueKey('reminders-names-more'),
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: faint,
+        );
+        final oneRow = names == 1 && more > 0 && c.maxHeight < 2 * row - 0.01;
+        // Never an overflow: the list lays out unbounded and is clipped.
+        return ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            minHeight: 0,
+            maxHeight: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (oneRow)
+                  Row(
+                    children: [
+                      Flexible(flex: 3, child: name(items.first)),
+                      Flexible(
+                        flex: 2,
+                        child: Text(
+                          ' +$more',
+                          style: faint,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.clip,
+                        ),
+                      ),
+                    ],
+                  )
+                else ...[
+                  for (final i in items.take(names)) name(i),
+                  if (more > 0) moreText,
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

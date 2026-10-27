@@ -2,6 +2,7 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/reminders/reminders_model.dart';
 import 'package:budget_client/features/reminders/reminders_page.dart';
 import 'package:budget_client/state/providers.dart';
+import 'package:budget_client/theme/app_theme.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -150,7 +151,13 @@ void main() {
   testWidgets('side by side when wide, stacked when tall', (tester) async {
     await pump(tester, const Size(1440, 900));
     expect(find.byKey(const ValueKey('reminders-row')), findsOneWidget);
-    expect(find.text('pay'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('reminders-list')),
+        matching: find.text('pay'),
+      ),
+      findsOneWidget,
+    );
     await pump(tester, const Size(390, 844));
     expect(find.byKey(const ValueKey('reminders-column')), findsOneWidget);
     final cal = tester.getRect(find.byKey(const ValueKey('reminders-grid')));
@@ -158,15 +165,130 @@ void main() {
     expect(cal.bottom, lessThanOrEqualTo(list.top));
   });
 
-  testWidgets('badge counts and tap shows tooltip + highlights list', (
+  Color? colorOf(WidgetTester tester, Finder cell, String name) => tester
+      .widget<Text>(find.descendant(of: cell, matching: find.text(name)))
+      .style
+      ?.color;
+
+  testWidgets('day cells list event names, green gains and red losses', (
     tester,
   ) async {
+    fakeEvents = defaultEvents;
     await pump(tester, const Size(1440, 900));
-    final badge = find.byKey(const ValueKey('reminders-badge-2026-10-19'));
     expect(
-      find.descendant(of: badge, matching: find.text('2')),
-      findsOneWidget,
+      find.byKey(const ValueKey('reminders-badge-2026-10-19')),
+      findsNothing,
     );
+    final cell = find.byKey(const ValueKey('reminders-names-2026-10-19'));
+    expect(cell, findsOneWidget);
+    expect(colorOf(tester, cell, 'pay'), AppTheme.creditColor);
+    expect(colorOf(tester, cell, 'rent'), AppTheme.debitColor);
+    // Gains (largest first) above losses, as the list orders them.
+    expect(
+      tester
+          .getTopLeft(find.descendant(of: cell, matching: find.text('pay')))
+          .dy,
+      lessThan(
+        tester
+            .getTopLeft(find.descendant(of: cell, matching: find.text('rent')))
+            .dy,
+      ),
+    );
+    expect(find.byKey(const ValueKey('reminders-names-more')), findsNothing);
+    // Days without events have no list.
+    expect(
+      find.byKey(const ValueKey('reminders-names-2026-10-20')),
+      findsNothing,
+    );
+  });
+
+  test('name list fits rows to height', () {
+    const row = DayNameList.fontSize * DayNameList.lineHeight;
+    expect(DayNameList.fit(3, row * 3), (names: 3, more: 0));
+    expect(DayNameList.fit(5, row * 3), (names: 2, more: 3));
+    expect(DayNameList.fit(5, row * 1.5), (names: 1, more: 4));
+    expect(DayNameList.fit(5, row * 0.5), (names: 0, more: 5));
+    expect(DayNameList.fit(0, 100), (names: 0, more: 0));
+    const small = DayNameList.compactFontSize * DayNameList.compactLineHeight;
+    expect(DayNameList.fit(4, small * 1.02, compact: true), (
+      names: 1,
+      more: 3,
+    ));
+  });
+
+  for (final size in const [Size(320, 568), Size(390, 844), Size(1440, 900)]) {
+    testWidgets('busy day clips with "+N more", no overflow at $size', (
+      tester,
+    ) async {
+      fakeEvents = [
+        for (var i = 0; i < 12; i++)
+          tx(
+            'Long event name number $i',
+            dir: i.isEven ? EventDirection.credit : EventDirection.debit,
+            amount: '${100 + i}',
+          ),
+      ];
+      addTearDown(() => fakeEvents = defaultEvents);
+      await pump(tester, size);
+      expect(tester.takeException(), isNull);
+      final cell = find.byKey(const ValueKey('reminders-names-2026-10-19'));
+      // ignore: avoid_print
+      print(
+        'cell ${tester.getRect(find.byKey(const ValueKey('reminders-day-2026-10-19')))} names ${tester.getRect(cell)}',
+      );
+      final more = find.descendant(
+        of: cell,
+        matching: find.textContaining(RegExp(r'^ ?\+\d+')),
+      );
+      expect(more, findsOneWidget);
+      final shown = find
+          .descendant(of: cell, matching: find.textContaining('Long event'))
+          .evaluate()
+          .length;
+      final n = int.parse(
+        RegExp(r'\d+').firstMatch(tester.widget<Text>(more).data!)!.group(0)!,
+      );
+      expect(shown + n, 12);
+      // Wide cells spell it out; narrow ones keep just the count.
+      if (size.width >= 1000) {
+        expect(tester.widget<Text>(more).data, endsWith('more'));
+      }
+      // Each name is one ellipsised line.
+      final first = tester.widget<Text>(
+        find
+            .descendant(of: cell, matching: find.textContaining('Long event'))
+            .first,
+      );
+      expect(first.maxLines, 1);
+      expect(first.overflow, TextOverflow.ellipsis);
+      // The visible list stays inside its day cell.
+      final day = tester.getRect(
+        find.byKey(const ValueKey('reminders-day-2026-10-19')),
+      );
+      expect(tester.getRect(more).bottom, lessThanOrEqualTo(day.bottom + 0.5));
+    });
+  }
+
+  testWidgets('day cell semantics list the events', (tester) async {
+    fakeEvents = defaultEvents;
+    final handle = tester.ensureSemantics();
+    await pump(tester, const Size(1440, 900));
+    final node = tester.getSemantics(
+      find.byKey(const ValueKey('reminders-day-semantics-2026-10-19')),
+    );
+    expect(node.label, contains('Monday 19 October, 2 events'));
+    expect(node.label, contains('pay gain'));
+    expect(node.label, contains('rent loss'));
+    final empty = tester.getSemantics(
+      find.byKey(const ValueKey('reminders-day-semantics-2026-10-20')),
+    );
+    expect(empty.label, contains('no events'));
+    handle.dispose();
+  });
+
+  testWidgets('tap shows tooltip + highlights list', (tester) async {
+    fakeEvents = defaultEvents;
+    await pump(tester, const Size(1440, 900));
     await tester.tap(find.byKey(const ValueKey('reminders-day-2026-10-19')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('reminders-tooltip')), findsOneWidget);
@@ -174,10 +296,13 @@ void main() {
   });
 }
 
+List<BudgetEvent> fakeEvents = defaultEvents;
+final defaultEvents = [
+  tx('pay', dir: EventDirection.credit, amount: '1000'),
+  tx('rent', amount: '400'),
+];
+
 class _FakeTx extends EventsNotifier {
   @override
-  Future<List<BudgetEvent>> build(String arg) async => [
-    tx('pay', dir: EventDirection.credit, amount: '1000'),
-    tx('rent', amount: '400'),
-  ];
+  Future<List<BudgetEvent>> build(String arg) async => fakeEvents;
 }
