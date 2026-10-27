@@ -3016,7 +3016,7 @@ void main() {
         final hide = find.byKey(const ValueKey('dot-menu-hide'));
         expect(find.text('Hide Series'), findsOneWidget);
         expect(
-          find.descendant(of: hide, matching: find.byIcon(eventHiddenIcon)),
+          find.descendant(of: hide, matching: find.byIcon(eventShownIcon)),
           findsOneWidget,
         );
         await tester.tap(hide, kind: kind);

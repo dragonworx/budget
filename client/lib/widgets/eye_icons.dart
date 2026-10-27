@@ -6,3 +6,7 @@ import 'package:flutter/material.dart';
 /// and excluded from the balance, the event's `enabled` flag).
 const IconData eventShownIcon = Icons.visibility_outlined;
 const IconData eventHiddenIcon = Icons.visibility_off_outlined;
+
+/// The timeline lane menu's "Hide Series" / "Hide Event" wears the plain eye:
+/// the very icon on a shown row's list toggle, the one you tap to hide it.
+const IconData hideActionIcon = eventShownIcon;

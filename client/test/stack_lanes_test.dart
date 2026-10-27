@@ -518,9 +518,36 @@ void main() {
         ], reason: '$kind');
         final hide = find.byKey(const ValueKey('dot-menu-hide'));
         expect(
-          find.descendant(of: hide, matching: find.byIcon(eventHiddenIcon)),
+          find.descendant(of: hide, matching: find.byIcon(eventShownIcon)),
           findsOneWidget,
         );
+        // The very eye on a shown list row (the toggle that hides it), as
+        // visible as the other items' icons: every item has one, same size
+        // and accent colour, and no crossed-out eye anywhere in the menu.
+        expect(hideActionIcon, eventShownIcon);
+        final icons = [
+          for (final k in const [
+            'dot-menu-new',
+            'dot-menu-trim',
+            'dot-menu-edit',
+            'dot-menu-hide',
+          ])
+            tester.widget<Icon>(
+              find.descendant(
+                of: find.byKey(ValueKey(k)),
+                matching: find.byType(Icon),
+              ),
+            ),
+        ];
+        expect(icons.map((i) => i.icon), [
+          Icons.add_rounded,
+          Icons.content_cut_rounded,
+          Icons.edit_outlined,
+          eventShownIcon,
+        ]);
+        expect(icons.map((i) => i.size).toSet(), {18.0});
+        expect(icons.map((i) => i.color).toSet(), {AppTheme.accent});
+        expect(find.byIcon(eventHiddenIcon), findsNothing);
         // The taller menu still fits on screen.
         final r = tester.getRect(hide);
         expect(r.bottom, lessThanOrEqualTo(800));

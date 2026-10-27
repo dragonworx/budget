@@ -4004,7 +4004,7 @@ class _BalanceChartState extends State<BalanceChart>
         if (hasHide)
           item(
             'dot-menu-hide',
-            eventHiddenIcon,
+            hideActionIcon,
             once ? 'Hide Event' : 'Hide Series',
             3,
             hide,
