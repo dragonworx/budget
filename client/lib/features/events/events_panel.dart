@@ -16,6 +16,7 @@ import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
 import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
+import '../timeline/stack_lanes.dart';
 import '../timeline/zoom_level.dart';
 import 'editor_outcome.dart';
 import 'event_editor.dart';
@@ -73,6 +74,48 @@ String startPhrase(BudgetEvent t, DateTime today, {bool compact = false}) {
       ? DateFormat('d MMM y').format(d)
       : formatOccurrenceDate(d);
   return d.isAfter(dateOnly(today)) ? 'Starts $when' : 'Started $when';
+}
+
+/// The list's frequency word: "Once", "Daily", "Weekly", "Monthly",
+/// "Yearly", or "Every 2 weeks".
+String frequencyLabel(BudgetEvent t) {
+  if (t.recurrenceMode == RecurrenceMode.once) return 'Once';
+  final n = t.interval ?? 1;
+  final unit = t.unit ?? RecurrenceUnit.months;
+  if (n == 1) {
+    return switch (unit) {
+      RecurrenceUnit.days => 'Daily',
+      RecurrenceUnit.weeks => 'Weekly',
+      RecurrenceUnit.months => 'Monthly',
+      RecurrenceUnit.years => 'Yearly',
+    };
+  }
+  return 'Every $n ${unit.name}';
+}
+
+/// The parts of an Events list row's second line, most important first
+/// (the line ellipsises from the end): frequency, start ("from 5 Nov
+/// 2026"; a one-off's date), the other stream of a transfer, then how it
+/// ends ("until 30 Jun 2027" / "12 times").
+({String frequency, String start, String? transfer, String? end}) rowDetail(
+  BudgetEvent t,
+) {
+  final date = DateFormat('d MMM y').format(dateOnly(t.startDate));
+  final once = t.recurrenceMode == RecurrenceMode.once;
+  return (
+    frequency: frequencyLabel(t),
+    start: once ? date : 'from $date',
+    transfer: t.isTransfer ? transferPhrase(t) : null,
+    end: once
+        ? null
+        : switch (t.endMode) {
+            EndMode.untilDate when t.endDate != null =>
+              'until ${DateFormat('d MMM y').format(t.endDate!)}',
+            EndMode.count when t.occurrenceCount != null =>
+              '${t.occurrenceCount} times',
+            _ => null,
+          },
+  );
 }
 
 /// Side panel listing a stream's events: search, filter, toggle,
@@ -683,8 +726,21 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     }
     _shown = shown;
     _rowKeys.removeWhere((id, _) => !shown.any((t) => t.id == id));
+    // Each row's colour bar wears its graph line's colour (an excluded
+    // event has no lane: its own colour, else faint).
+    final lanes = buildLaneSet(
+      order: [for (final t in ordered) t.id],
+      events: {for (final t in ordered) t.id: t},
+    );
+    Color colorOf(BudgetEvent t) {
+      final i = lanes.indexOf(t.id);
+      return colorFromHex(t.color) ??
+          (i == null ? AppTheme.textFaint : lanes.lanes[i].color);
+    }
+
     Widget row(int index, BudgetEvent t) => _TxRow(
       key: ValueKey(t.id),
+      color: colorOf(t),
       rowKey: _rowKeys[t.id] ??= GlobalKey(),
       highlightKey: t.id == _highlightId ? _highlightKey : null,
       highlighted: t.id == _highlightId,
@@ -770,6 +826,7 @@ class _TxRow extends StatelessWidget {
     required this.onToggle,
     required this.onDelete,
     required this.onPaintStart,
+    this.color = AppTheme.textFaint,
     this.rowKey,
     this.highlighted = false,
     this.highlightKey,
@@ -777,6 +834,9 @@ class _TxRow extends StatelessWidget {
   });
 
   final bool readOnly;
+
+  /// The event's graph line colour (the row's colour bar).
+  final Color color;
 
   final bool highlighted;
   final Key? highlightKey;
@@ -792,7 +852,6 @@ class _TxRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final t = event;
     final credit = t.direction == EventDirection.credit;
     final amount = t.amount.toDouble() * (credit ? 1 : -1);
@@ -852,14 +911,14 @@ class _TxRow extends StatelessWidget {
             child: InkWell(
               onTap: onTap,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+                padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
                 child: Row(
                   children: [
                     if (index != null)
                       ReorderableDragStartListener(
                         index: index!,
                         child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          padding: EdgeInsets.symmetric(horizontal: 2),
                           child: Icon(
                             Icons.drag_indicator_rounded,
                             size: 18,
@@ -868,68 +927,38 @@ class _TxRow extends StatelessWidget {
                         ),
                       )
                     else
-                      const SizedBox(width: 8),
-                    t.isTransfer
-                        ? _TransferBadge(muted: !t.enabled)
-                        : DirectionBadge(credit: credit, muted: !t.enabled),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            t.name.isEmpty ? 'Untitled' : t.name,
-                            maxLines: 1,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: t.enabled ? null : AppTheme.textFaint,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (t.isTransfer)
-                            Text(
-                              transferPhrase(t),
-                              key: ValueKey('row-transfer-${t.id}'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppTheme.transferColor,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          Text(
-                            [
-                              describeRecurrence(t),
-                              ?scheduleHint(t, DateTime.now()),
-                            ].join(' · '),
-                            style: theme.textTheme.bodySmall,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          // Its first (seed) date; a one-off's is the date
-                          // above.
-                          if (t.recurrenceMode != RecurrenceMode.once)
-                            Text(
-                              startPhrase(t, DateTime.now(), compact: touch),
-                              key: ValueKey('row-start-${t.id}'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppTheme.textMuted,
-                              ),
-                            ),
-                        ],
+                      const SizedBox(width: 6),
+                    // The graph line's colour.
+                    Container(
+                      key: ValueKey('row-colour-${t.id}'),
+                      width: 4,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: t.enabled
+                            ? color
+                            : color.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      formatSignedAmount(amount),
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: !t.enabled
-                            ? AppTheme.textFaint
-                            : credit
-                            ? AppTheme.creditColor
-                            : AppTheme.debitColor,
-                      ),
+                    Tooltip(
+                      message: t.isTransfer
+                          ? 'Transfer · ${transferPhrase(t)}'
+                          : credit
+                          ? 'Money in'
+                          : 'Money out',
+                      waitDuration: const Duration(milliseconds: 600),
+                      excludeFromSemantics: true,
+                      child: t.isTransfer
+                          ? _TransferBadge(muted: !t.enabled)
+                          : DirectionBadge(
+                              credit: credit,
+                              size: 28,
+                              muted: !t.enabled,
+                            ),
                     ),
+                    const SizedBox(width: 10),
+                    Expanded(child: _lines(context, t, name, amount, credit)),
                     // Delete (editors only): a ⋮ menu on touch, an icon with
                     // a mouse. Tapping the row opens it in the editor.
                     if (readOnly)
@@ -975,6 +1004,122 @@ class _TxRow extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Exactly two lines of text: name + amount, then frequency · start
+  /// (· the other stream of a transfer · how it ends, while they fit).
+  /// One semantics label says it all, including what got ellipsised.
+  Widget _lines(
+    BuildContext context,
+    BudgetEvent t,
+    String name,
+    double amount,
+    bool credit,
+  ) {
+    final theme = Theme.of(context);
+    final d = rowDetail(t);
+    final muted = !t.enabled;
+    final detail = theme.textTheme.bodySmall?.copyWith(
+      color: muted ? AppTheme.textFaint : AppTheme.textMuted,
+      height: 1.25,
+    );
+    final money = formatSignedAmount(amount);
+    final next = scheduleHint(t, DateTime.now());
+    final label = [
+      name,
+      money,
+      if (t.isTransfer) 'transfer, ${d.transfer}',
+      d.frequency,
+      t.recurrenceMode == RecurrenceMode.once ? 'on ${d.start}' : d.start,
+      ?d.end,
+      if (t.recurrenceMode != RecurrenceMode.once) ?next,
+      if (muted) 'excluded from balance',
+    ].join(', ');
+    final full = [
+      d.frequency,
+      d.start,
+      ?d.transfer,
+      ?d.end,
+      if (t.recurrenceMode != RecurrenceMode.once) ?next,
+    ].join(' · ');
+    return Semantics(
+      label: label,
+      child: ExcludeSemantics(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              key: ValueKey('row-line1-${t.id}'),
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: muted ? AppTheme.textFaint : null,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Never squeezed by the name; a huge amount shrinks to fit.
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 140),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      money,
+                      key: ValueKey('row-amount-${t.id}'),
+                      maxLines: 1,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        height: 1.25,
+                        color: muted
+                            ? AppTheme.textFaint
+                            : credit
+                            ? AppTheme.creditColor
+                            : AppTheme.debitColor,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Tooltip(
+              message: full,
+              waitDuration: const Duration(milliseconds: 600),
+              excludeFromSemantics: true,
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: '${d.frequency} · ${d.start}'),
+                    if (d.transfer != null)
+                      TextSpan(
+                        text: ' · ${d.transfer}',
+                        style: TextStyle(
+                          color: muted
+                              ? AppTheme.textFaint
+                              : AppTheme.transferColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    if (d.end != null) TextSpan(text: ' · ${d.end}'),
+                  ],
+                ),
+                key: ValueKey('row-line2-${t.id}'),
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: detail,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1040,13 +1185,13 @@ class _TransferBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = muted ? AppTheme.textFaint : AppTheme.transferColor;
     return Container(
-      width: 32,
-      height: 32,
+      width: 28,
+      height: 28,
       decoration: BoxDecoration(
         color: muted ? AppTheme.overlay : AppTheme.transferSoft,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(9),
       ),
-      child: Icon(Icons.swap_horiz_rounded, size: 18, color: color),
+      child: Icon(Icons.swap_horiz_rounded, size: 16, color: color),
     );
   }
 }
