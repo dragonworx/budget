@@ -93,10 +93,10 @@ String frequencyLabel(BudgetEvent t) {
   return 'Every $n ${unit.name}';
 }
 
-/// The parts of an Events list row's second line, most important first
-/// (the line ellipsises from the end): frequency, start ("from 5 Nov
-/// 2026"; a one-off's date), the other stream of a transfer, then how it
-/// ends ("until 30 Jun 2027" / "12 times").
+/// The parts of an Events list row: the other stream of a transfer (line
+/// 1, after the name), then line 2's frequency, start ("from 5 Nov 2026";
+/// a one-off's date) and how it ends ("until 30 Jun 2027" / "12 times",
+/// last, so it's what ellipsises).
 ({String frequency, String start, String? transfer, String? end}) rowDetail(
   BudgetEvent t,
 ) {
@@ -1009,8 +1009,8 @@ class _TxRow extends StatelessWidget {
     );
   }
 
-  /// Exactly two lines of text: name + amount, then frequency · start
-  /// (· the other stream of a transfer · how it ends, while they fit).
+  /// Exactly two lines of text: name (· a transfer's other stream) +
+  /// amount, then frequency · start (· how it ends, while it fits).
   /// One semantics label says it all, including what got ellipsised.
   Widget _lines(
     BuildContext context,
@@ -1030,8 +1030,8 @@ class _TxRow extends StatelessWidget {
     final next = scheduleHint(t, DateTime.now());
     final label = [
       name,
-      money,
       if (t.isTransfer) 'transfer, ${d.transfer}',
+      money,
       d.frequency,
       t.recurrenceMode == RecurrenceMode.once ? 'on ${d.start}' : d.start,
       ?d.end,
@@ -1041,7 +1041,6 @@ class _TxRow extends StatelessWidget {
     final full = [
       d.frequency,
       d.start,
-      ?d.transfer,
       ?d.end,
       if (t.recurrenceMode != RecurrenceMode.once) ?next,
     ].join(' · ');
@@ -1052,44 +1051,99 @@ class _TxRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              key: ValueKey('row-line1-${t.id}'),
-              children: [
-                Expanded(
-                  child: Text(
-                    name,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: muted ? AppTheme.textFaint : null,
-                      height: 1.25,
-                    ),
+            // The amount keeps up to 40% of the line (140px).
+            LayoutBuilder(
+              builder: (context, line) => Row(
+                key: ValueKey('row-line1-${t.id}'),
+                children: [
+                  // A transfer's other stream right after the name: the name
+                  // ellipsises first, down to a few letters (48px, or 30% of
+                  // a cramped line); only then does the stream ellipsise.
+                  Expanded(
+                    child: d.transfer == null
+                        ? Text(
+                            name,
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: muted ? AppTheme.textFaint : null,
+                              height: 1.25,
+                            ),
+                          )
+                        : LayoutBuilder(
+                            builder: (context, c) => Row(
+                              crossAxisAlignment: CrossAxisAlignment.baseline,
+                              textBaseline: TextBaseline.alphabetic,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    name,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      color: muted ? AppTheme.textFaint : null,
+                                      height: 1.25,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: math.max(
+                                      0,
+                                      c.maxWidth -
+                                          6 -
+                                          math.min(48, (c.maxWidth - 6) * 0.3),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    d.transfer!,
+                                    key: ValueKey('row-transfer-${t.id}'),
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          height: 1.25,
+                                          color: muted
+                                              ? AppTheme.textFaint
+                                              : AppTheme.transferColor,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                // Never squeezed by the name; a huge amount shrinks to fit.
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 140),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      money,
-                      key: ValueKey('row-amount-${t.id}'),
-                      maxLines: 1,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        height: 1.25,
-                        color: muted
-                            ? AppTheme.textFaint
-                            : credit
-                            ? AppTheme.creditColor
-                            : AppTheme.debitColor,
+                  const SizedBox(width: 8),
+                  // Never squeezed by the name; a huge amount shrinks to fit.
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: math.min(140, line.maxWidth * 0.4),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        money,
+                        key: ValueKey('row-amount-${t.id}'),
+                        maxLines: 1,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          height: 1.25,
+                          color: muted
+                              ? AppTheme.textFaint
+                              : credit
+                              ? AppTheme.creditColor
+                              : AppTheme.debitColor,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             Tooltip(
               message: full,
@@ -1099,16 +1153,6 @@ class _TxRow extends StatelessWidget {
                 TextSpan(
                   children: [
                     TextSpan(text: '${d.frequency} · ${d.start}'),
-                    if (d.transfer != null)
-                      TextSpan(
-                        text: ' · ${d.transfer}',
-                        style: TextStyle(
-                          color: muted
-                              ? AppTheme.textFaint
-                              : AppTheme.transferColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
                     if (d.end != null) TextSpan(text: ' · ${d.end}'),
                   ],
                 ),

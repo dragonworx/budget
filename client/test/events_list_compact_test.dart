@@ -3,6 +3,8 @@
 // one consistent height, no overflow with long names or amounts, a colour
 // bar in the event's graph colour, and a semantics label that still says
 // everything (including what the second line ellipsised).
+import 'dart:math' as math;
+
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
@@ -90,6 +92,22 @@ final _items = [
     end: EndMode.count,
   ),
   _ev('long', name: _long, amount: '123456789.99'),
+  _ev(
+    'longx',
+    name: _long,
+    amount: '98765.43',
+    transfer: const TransferLink(peerStreamId: 's', peerStreamName: 'Savings'),
+  ),
+  _ev(
+    'topup',
+    name: 'Top up',
+    amount: '75',
+    dir: EventDirection.credit,
+    transfer: const TransferLink(
+      peerStreamId: 'h',
+      peerStreamName: 'The family holiday and emergency fund account',
+    ),
+  ),
 ];
 
 class _StreamRepo extends StreamRepository {
@@ -212,7 +230,11 @@ void main() {
             ))
               w.text.toPlainText(),
         ];
-        expect(texts, hasLength(3), reason: '${t.id}: $texts');
+        expect(
+          texts,
+          hasLength(t.isTransfer ? 4 : 3),
+          reason: '${t.id}: $texts',
+        );
         expect(onLines, texts, reason: t.id);
         final bands = {
           for (final w
@@ -238,7 +260,7 @@ void main() {
       expect(_line2(tester, 'once'), 'Once · 5 Nov 2026');
       expect(
         _line2(tester, 'save'),
-        'Monthly · from 5 Nov 2026 · To: Savings · until 30 Jun 2027',
+        'Monthly · from 5 Nov 2026 · until 30 Jun 2027',
       );
       expect(_line2(tester, 'gym'), 'Monthly · from 5 Nov 2026 · 12 times');
       expect(find.text('Started 5 Nov 2026'), findsNothing);
@@ -254,14 +276,24 @@ void main() {
       expect(heights, hasLength(1), reason: '$heights');
       expect(heights.single, lessThanOrEqualTo(size.width < 600 ? 54 : 48));
       final row = tester.getRect(_row('long'));
-      final name = tester.getRect(find.text(_long));
+      final name = tester.getRect(
+        find.descendant(
+          of: find.byKey(const ValueKey('row-line1-long')),
+          matching: find.text(_long),
+        ),
+      );
       final amount = tester.getRect(
         find.byKey(const ValueKey('row-amount-long')),
       );
       expect(name.right, lessThanOrEqualTo(amount.left));
       expect(amount.right, lessThanOrEqualTo(row.right));
       final para = tester.renderObject<RenderParagraph>(
-        find.descendant(of: find.text(_long), matching: find.byType(RichText)),
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('row-line1-long')),
+              matching: find.byType(RichText),
+            )
+            .first,
       );
       expect(para.didExceedMaxLines, isTrue); // ellipsised, one line
       // The amount is the whole string, scaled if need be, never cut.
@@ -277,8 +309,8 @@ void main() {
       expect(
         find.bySemanticsLabel(
           RegExp(
-            '^Save, ${RegExp.escape(formatSignedAmount(-500))}, transfer, '
-            'To: Savings, Monthly, from 5 Nov 2026, until 30 Jun 2027, '
+            '^Save, transfer, To: Savings, '
+            '${RegExp.escape(formatSignedAmount(-500))}, Monthly, from 5 Nov 2026, until 30 Jun 2027, '
             r'(next|ended) \w{3} \d+ \w{3} \d{4}$',
           ),
         ),
@@ -295,6 +327,110 @@ void main() {
         findsOneWidget,
       );
       handle.dispose();
+    });
+  }
+
+  for (final (label, size) in [
+    ('phone', const Size(390, 844)),
+    ('narrow phone (320 wide)', const Size(320, 1100)),
+    ('desktop', const Size(1440, 900)),
+  ]) {
+    testWidgets('$label: a transfer\'s other stream sits on line 1 right '
+        'after the name; the name ellipsises first, the amount stays whole', (
+      tester,
+    ) async {
+      await _pump(tester, size);
+      expect(tester.takeException(), isNull);
+      Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
+      bool cut(Finder f) => tester
+          .renderObject<RenderParagraph>(
+            find.descendant(of: f, matching: find.byType(RichText)),
+          )
+          .didExceedMaxLines;
+      for (final id in ['save', 'longx', 'topup']) {
+        final line1 = find.byKey(ValueKey('row-line1-$id'));
+        final transfer = find.byKey(ValueKey('row-transfer-$id'));
+        expect(
+          find.descendant(of: line1, matching: transfer),
+          findsOneWidget,
+          reason: id,
+        );
+        final name = find
+            .descendant(of: line1, matching: find.byType(Text))
+            .first;
+        final n = tester.getRect(name);
+        final x = r('row-transfer-$id');
+        final a = r('row-amount-$id');
+        final row = tester.getRect(_row(id));
+        expect(n.right, lessThanOrEqualTo(x.left), reason: id);
+        expect(x.right, lessThanOrEqualTo(a.left), reason: id);
+        expect(a.right, lessThanOrEqualTo(row.right), reason: id);
+        expect((x.center.dy - n.center.dy).abs(), lessThan(4), reason: id);
+        // Line 2 no longer repeats it.
+        expect(_line2(tester, id), isNot(contains('Savings')));
+      }
+      // The stream gets all it needs, up to all but 54px (or 30% of a
+      // cramped line) of it, so the name keeps a few letters; the name is
+      // what ellipsises.
+      for (final id in ['longx', 'topup']) {
+        final key = ValueKey('row-transfer-$id');
+        final para = tester.renderObject<RenderParagraph>(
+          find.descendant(of: find.byKey(key), matching: find.byType(RichText)),
+        );
+        final want = para.getMaxIntrinsicWidth(double.infinity);
+        final line = tester
+            .getRect(
+              find
+                  .ancestor(
+                    of: find.byKey(key),
+                    matching: find.byType(LayoutBuilder),
+                  )
+                  .first,
+            )
+            .width;
+        final cap = math.max(0, line - 6 - math.min(48, (line - 6) * 0.3));
+        final x = tester.getRect(find.byKey(key)).width;
+        expect(x, closeTo(math.min(want, cap), 1), reason: id);
+        expect(para.didExceedMaxLines, want > cap + 0.5, reason: id);
+        final name = tester
+            .getRect(
+              find
+                  .descendant(
+                    of: find.byKey(ValueKey('row-line1-$id')),
+                    matching: find.byType(Text),
+                  )
+                  .first,
+            )
+            .width;
+        expect(name, greaterThanOrEqualTo(math.min(47.5, line - x - 6.5)));
+        expect(x, lessThanOrEqualTo(line - 6 + 0.5));
+        expect(x, greaterThan(0), reason: '$id: the stream always shows');
+      }
+      expect(
+        cut(
+          find.descendant(
+            of: find.byKey(const ValueKey('row-line1-longx')),
+            matching: find.text(_long),
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('row-transfer-longx')))
+            .data,
+        'To: Savings',
+      );
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('row-transfer-topup')))
+            .data,
+        'From: The family holiday and emergency fund account',
+      );
+      final mine = tester.widget<Text>(
+        find.byKey(const ValueKey('row-transfer-save')),
+      );
+      expect(mine.style?.color, AppTheme.transferColor);
     });
   }
 
