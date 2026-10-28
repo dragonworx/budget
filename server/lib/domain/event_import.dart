@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 
 import 'enums.dart';
@@ -76,7 +77,11 @@ class ImportItem {
     this.endOffset,
     this.skippedOffsets = const [],
     this.color,
+    this.days = const [],
   });
+
+  /// The structured rule's days (weekdays 1–7 or month days 1–31).
+  final List<int> days;
 
   final int index;
   final String? id;
@@ -109,6 +114,13 @@ class ImportItem {
         'recurrenceMode': recurrenceMode.name,
         'interval': interval,
         'unit': unit?.name,
+        'days': days,
+        'frequency': Frequency.fromLegacy(
+          once: recurrenceMode == RecurrenceMode.once,
+          interval: interval,
+          unit: unit?.name,
+          days: days,
+        ).toJson(),
         'endMode': endMode.apiName,
         'endDate': endDate == null ? null : _fmt(endDate!),
         'occurrenceCount': occurrenceCount,
@@ -310,14 +322,35 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
       startDate = resolveOffset(root, startOffset);
     }
 
+    // `recurrence` is either the structured rule
+    //   {"rule": "weekly" | "every_n_weeks" | …, "interval": N, "days": […]}
+    // or the original cadence {"mode": "once"} /
+    //   {"mode": "every", "interval": N, "unit": "days|weeks|months|years"}
+    // (which may also carry "days" for weeks / months).
     RecurrenceMode? mode;
     int? interval;
     RecurrenceUnit? unit;
+    var days = const <int>[];
     final rec = m['recurrence'];
+    Frequency? freq;
     if (rec is! Map) {
       bad('recurrence', rec == null ? 'is required' : 'must be an object');
+    } else if (rec.containsKey('rule')) {
+      try {
+        freq = Frequency.fromJson(rec.cast<String, Object?>());
+      } on FormatException catch (e) {
+        final field = e.message.contains('day') || e.message.contains('Day')
+            ? 'recurrence.days'
+            : e.message.contains('nterval')
+                ? 'recurrence.interval'
+                : 'recurrence.rule';
+        bad(field, e.message);
+      }
     } else if (rec['mode'] == 'once') {
       mode = RecurrenceMode.once;
+      if (rec['days'] is List && (rec['days'] as List).isNotEmpty) {
+        bad('recurrence.days', 'a one-off has no days');
+      }
     } else if (rec['mode'] == 'every') {
       mode = RecurrenceMode.every;
       final iv = rec['interval'];
@@ -334,8 +367,43 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
       } else {
         bad('recurrence.unit', 'must be one of days, weeks, months, years');
       }
+      if (interval != null && unit != null) {
+        try {
+          final d = rec['days'];
+          freq = Frequency.fromLegacy(
+            once: false,
+            interval: interval,
+            unit: unit.name,
+            days: d == null
+                ? const []
+                : d is List
+                    ? [
+                        for (final x in d)
+                          x is int
+                              ? x
+                              : x is num && x == x.roundToDouble()
+                                  ? x.toInt()
+                                  : throw const FormatException(
+                                      'days must be whole numbers'),
+                      ]
+                    : throw const FormatException('days must be a list'),
+          );
+        } on FormatException catch (e) {
+          bad(
+              e.message.contains('nterval')
+                  ? 'recurrence.interval'
+                  : 'recurrence.days',
+              e.message);
+        }
+      }
     } else {
       bad('recurrence.mode', 'must be "once" or "every"');
+    }
+    if (freq != null) {
+      mode = freq.repeats ? RecurrenceMode.every : RecurrenceMode.once;
+      interval = freq.repeats ? freq.legacyInterval : null;
+      unit = freq.repeats ? RecurrenceUnit.parse(freq.legacyUnit!) : null;
+      days = freq.days;
     }
 
     var endMode = EndMode.never;
@@ -450,6 +518,7 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
         recurrenceMode: mode!,
         interval: interval,
         unit: unit,
+        days: days,
         endMode: endMode,
         endDate: endDate,
         occurrenceCount: count,

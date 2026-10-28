@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -77,22 +78,12 @@ String startPhrase(BudgetEvent t, DateTime today, {bool compact = false}) {
   return d.isAfter(dateOnly(today)) ? 'Starts $when' : 'Started $when';
 }
 
-/// The list's frequency word: "Once", "Daily", "Weekly", "Monthly",
-/// "Yearly", or "Every 2 weeks".
-String frequencyLabel(BudgetEvent t) {
-  if (t.recurrenceMode == RecurrenceMode.once) return 'Once';
-  final n = t.interval ?? 1;
-  final unit = t.unit ?? RecurrenceUnit.months;
-  if (n == 1) {
-    return switch (unit) {
-      RecurrenceUnit.days => 'Daily',
-      RecurrenceUnit.weeks => 'Weekly',
-      RecurrenceUnit.months => 'Monthly',
-      RecurrenceUnit.years => 'Yearly',
-    };
-  }
-  return 'Every $n ${unit.name}';
-}
+/// The list's frequency phrase, from the structured rule: "Once", "Every
+/// day", "Every week", "Every week on Mon, Tue", "Every 2 weeks on Mon,
+/// Wed", "Monthly", "Monthly on the 1st and 15th", "Every 3 months",
+/// "Yearly".
+String frequencyLabel(BudgetEvent t) =>
+    describeFrequency(t.frequency, toRuleDate(t.startDate), compact: true);
 
 /// The parts of an Events list row: the other stream of a transfer (line
 /// 1, after the name), then line 2's frequency, start ("from 5 Nov 2026";

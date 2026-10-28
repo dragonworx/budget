@@ -42,13 +42,16 @@ BudgetEvent _ev(
   bool enabled = true,
   TransferLink? transfer,
   String? color,
+  DateTime? start,
+  List<int> days = const [],
 }) => BudgetEvent(
   id: id,
   streamId: 'p',
   name: name ?? id,
   direction: dir,
   amount: Decimal.parse(amount),
-  startDate: DateTime(2026, 11, 5),
+  startDate: start ?? DateTime(2026, 11, 5),
+  days: days,
   recurrenceMode: mode,
   interval: mode == RecurrenceMode.once ? null : interval,
   unit: mode == RecurrenceMode.once ? null : unit,
@@ -110,6 +113,27 @@ final _items = [
   ),
 ];
 
+/// Structured rules (rule + days) for line 2.
+final _structured = [
+  _ev(
+    'monTue',
+    name: 'Gym class',
+    unit: RecurrenceUnit.weeks,
+    days: const [2, 1],
+    start: DateTime(2026, 10, 8),
+  ),
+  _ev('m115', name: 'Pay', days: const [15, 1], start: DateTime(2026, 10, 8)),
+  _ev(
+    'm31',
+    name: 'Quarterly',
+    interval: 3,
+    days: const [31],
+    start: DateTime(2026, 10, 8),
+    end: EndMode.count,
+    count: 4,
+  ),
+];
+
 class _StreamRepo extends StreamRepository {
   _StreamRepo() : super(ApiClient());
   @override
@@ -117,12 +141,18 @@ class _StreamRepo extends StreamRepository {
 }
 
 class _EventRepo extends EventRepository {
-  _EventRepo() : super(ApiClient());
+  _EventRepo([this.items]) : super(ApiClient());
+  final List<BudgetEvent>? items;
   @override
-  Future<List<BudgetEvent>> listForStream(String streamId) async => _items;
+  Future<List<BudgetEvent>> listForStream(String streamId) async =>
+      items ?? _items;
 }
 
-Future<void> _pump(WidgetTester tester, Size size) async {
+Future<void> _pump(
+  WidgetTester tester,
+  Size size, [
+  List<BudgetEvent>? items,
+]) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -130,7 +160,7 @@ Future<void> _pump(WidgetTester tester, Size size) async {
     ProviderScope(
       overrides: [
         streamRepositoryProvider.overrideWithValue(_StreamRepo()),
-        eventRepositoryProvider.overrideWithValue(_EventRepo()),
+        eventRepositoryProvider.overrideWithValue(_EventRepo(items)),
       ],
       child: MaterialApp(
         theme: AppTheme.dark(),
@@ -174,10 +204,49 @@ String _line2(WidgetTester tester, String id) => tester
     .toPlainText();
 
 void main() {
-  test('frequencyLabel: Once, Daily … Yearly, Every n units', () {
+  for (final (label, size) in [
+    ('phone', const Size(390, 844)),
+    ('desktop', const Size(1440, 900)),
+  ]) {
+    testWidgets('$label: line 2 renders the structured rule, in two lines', (
+      tester,
+    ) async {
+      await _pump(tester, size, _structured);
+      // Built from the structured rule (rule + days).
+      expect(
+        _line2(tester, 'monTue'),
+        'Every week on Mon, Tue · from 8 Oct 2026',
+      );
+      expect(
+        _line2(tester, 'm115'),
+        'Monthly on the 1st and 15th · from 8 Oct 2026',
+      );
+      expect(
+        _line2(tester, 'm31'),
+        'Every 3 months on the 31st · from 8 Oct 2026 · 4 times',
+      );
+      for (final t in _structured) {
+        for (final key in ['row-line1-${t.id}', 'row-line2-${t.id}']) {
+          expect(
+            tester.getSize(find.byKey(ValueKey(key))).height,
+            lessThan(24),
+            reason: key,
+          );
+        }
+      }
+    });
+  }
+
+  test('rowDetail of a weekly Mon/Tue rule', () {
+    final d = rowDetail(_structured.first);
+    expect(d.frequency, 'Every week on Mon, Tue');
+    expect(d.start, 'from 8 Oct 2026');
+  });
+
+  test('frequencyLabel: the structured rule\'s phrase', () {
     expect(frequencyLabel(_ev('a', mode: RecurrenceMode.once)), 'Once');
-    expect(frequencyLabel(_ev('a', unit: RecurrenceUnit.days)), 'Daily');
-    expect(frequencyLabel(_ev('a', unit: RecurrenceUnit.weeks)), 'Weekly');
+    expect(frequencyLabel(_ev('a', unit: RecurrenceUnit.days)), 'Every day');
+    expect(frequencyLabel(_ev('a', unit: RecurrenceUnit.weeks)), 'Every week');
     expect(frequencyLabel(_ev('a')), 'Monthly');
     expect(frequencyLabel(_ev('a', unit: RecurrenceUnit.years)), 'Yearly');
     expect(

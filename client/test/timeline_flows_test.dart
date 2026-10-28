@@ -368,7 +368,10 @@ void main() {
     // Once by default (every entry point); Repeats ends on the period's
     // last day.
     expect(find.byType(SegmentedButton<EndMode>), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('editor-repeats-every')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('editor-freq-weekly')),
+    );
+    await tester.tap(find.byKey(const ValueKey('editor-freq-weekly')));
     await tester.pumpAndSettle();
     expect(find.text(fmt(end)), findsWidgets, reason: 'end pre-filled');
     final ends = tester.widget<SegmentedButton<EndMode>>(
@@ -550,14 +553,14 @@ void main() {
     final store = await _pump(tester);
     await _editFromPanel(tester, 'Rent');
     final balanceCalls = store.calls.where((c) => c == 'balance').length;
-    // Rent is weekly: Every [1] week; step up to every 2 weeks.
-    expect(find.text('week'), findsWidgets);
+    // Rent is weekly; pick Every N weeks (starts at 2).
+    expect(_phrase(tester), startsWith('Every week'));
     await tester.ensureVisible(
-      find.byKey(const ValueKey('editor-interval-plus')),
+      find.byKey(const ValueKey('editor-freq-every_n_weeks')),
     );
-    await tester.tap(find.byKey(const ValueKey('editor-interval-plus')));
+    await tester.tap(find.byKey(const ValueKey('editor-freq-every_n_weeks')));
     await tester.pumpAndSettle();
-    expect(find.text('weeks'), findsWidgets);
+    expect(_phrase(tester), startsWith('Every 2 weeks'));
     await tester.tap(find.byKey(const ValueKey('editor-save')));
     await tester.pumpAndSettle();
     expect(store.calls, contains('update rent 2 weeks'));
@@ -1442,11 +1445,9 @@ void main() {
       // Once by default; just Details and Schedule.
       expect(
         tester
-            .widget<SegmentedButton<bool>>(
-              find.byKey(const ValueKey('editor-repeats')),
-            )
+            .widget<ChoiceChip>(find.byKey(const ValueKey('editor-freq-once')))
             .selected,
-        {false},
+        isTrue,
       );
       expect(find.byKey(const ValueKey('editor-interval')), findsNothing);
       expect(sectionTitles(tester), ['Details', 'Schedule']);
@@ -1454,13 +1455,16 @@ void main() {
       expect(find.text('Solve from a target total…'), findsNothing);
       // viaMenu: switch to Repeats, which starts at every 1 week.
       if (viaMenu) {
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('editor-freq-weekly')),
+        );
+        await tester.pumpAndSettle();
         await tester.tap(
-          find.byKey(const ValueKey('editor-repeats-every')),
+          find.byKey(const ValueKey('editor-freq-weekly')),
           kind: kind,
         );
         await tester.pumpAndSettle();
-        expect(find.text('week'), findsWidgets);
-        expect(find.text('month'), findsNothing);
+        expect(_phrase(tester), 'Every week');
         // Still no Occurrences / Options for a new series.
         expect(sectionTitles(tester), ['Details', 'Schedule']);
       }
@@ -1513,8 +1517,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(page.primeSoftKeyboardCalls, primed);
     expect(nameFocused(tester), isFalse);
-    expect(find.text('months'), findsWidgets);
-    expect(find.text('week'), findsNothing);
+    expect(_phrase(tester), 'Every 3 months');
+    expect(_intervalText(tester), '3');
     // Editing is just Details and Schedule too (no Occurrences / Options),
     // to the end of the form.
     final scroll = find
@@ -1523,10 +1527,13 @@ void main() {
           matching: find.byType(Scrollable),
         )
         .first;
-    await tester.drag(scroll, const Offset(0, -2000));
+    // (Jumped, not dragged: a drag that lands on the month-day chips
+    // paints them instead of scrolling.)
+    final pos = tester.state<ScrollableState>(scroll).position;
+    pos.jumpTo(pos.maxScrollExtent);
     await tester.pumpAndSettle();
     expect(find.text('Include in balance'), findsNothing);
-    await tester.drag(scroll, const Offset(0, 2000));
+    pos.jumpTo(0);
     await tester.pumpAndSettle();
     expect(sectionTitles(tester), ['Details', 'Schedule']);
     await tester.pump(const Duration(seconds: 6));
@@ -3155,3 +3162,17 @@ Future<void> _pasteImport(WidgetTester tester, String json) async {
   await tester.tap(find.byKey(const ValueKey('import-paste')));
   await tester.pumpAndSettle();
 }
+
+/// The editor's live frequency phrase.
+String _phrase(WidgetTester tester) =>
+    tester.widget<Text>(find.byKey(const ValueKey('editor-freq-phrase'))).data!;
+
+String _intervalText(WidgetTester tester) => tester
+    .widget<EditableText>(
+      find.descendant(
+        of: find.byKey(const ValueKey('editor-interval')),
+        matching: find.byType(EditableText),
+      ),
+    )
+    .controller
+    .text;

@@ -1,3 +1,4 @@
+import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 
 import 'enums.dart';
@@ -68,9 +69,25 @@ class BudgetEvent {
     this.version = 1,
     this.overrides = const {},
     this.color,
+    this.days = const [],
   });
 
   final int version;
+
+  /// The rule's days (sorted, unique): weekdays 1 (Mon) – 7 (Sun) for the
+  /// week rules, month days 1–31 for the month rules; empty = the plain
+  /// cadence from the start date.
+  final List<int> days;
+
+  /// The structured rule (rule, interval, days) this event fires on; the
+  /// legacy (recurrenceMode, interval, unit) fields are its cadence view
+  /// (years read as 12·N months).
+  Frequency get frequency => Frequency.fromLegacy(
+        once: recurrenceMode == RecurrenceMode.once,
+        interval: interval,
+        unit: unit?.name,
+        days: days,
+      );
 
   /// The event's colour as "#RRGGBB" (its timeline lane); null = the
   /// client's positional palette colour.
@@ -116,6 +133,8 @@ class BudgetEvent {
         'recurrenceMode': recurrenceMode.name,
         'interval': interval,
         'unit': unit?.name,
+        'frequency': frequency.toJson(),
+        'days': frequency.days,
         'endMode': endMode.apiName,
         'endDate': endDate == null ? null : formatDate(endDate!),
         'occurrenceCount': occurrenceCount,
@@ -153,8 +172,10 @@ class BudgetEvent {
     bool clearOccurrenceCount = false,
     String? color,
     bool clearColor = false,
+    List<int>? days,
   }) {
     return BudgetEvent(
+      days: days ?? this.days,
       color: clearColor ? null : (color ?? this.color),
       id: id ?? this.id,
       streamId: streamId ?? this.streamId,
@@ -180,6 +201,7 @@ class BudgetEvent {
 
   BudgetEvent withOverrides(Map<DateTime, AmountOverride> overrides) =>
       BudgetEvent(
+        days: days,
         color: color,
         id: id,
         streamId: streamId,

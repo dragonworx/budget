@@ -106,6 +106,7 @@ Router buildStreamsApi(Session conn) {
           recurrenceMode: parsed.recurrenceMode,
           interval: parsed.interval,
           unit: parsed.unit,
+          days: parsed.days,
           endMode: parsed.endMode,
           endDate: parsed.endDate,
           occurrenceCount: parsed.occurrenceCount,

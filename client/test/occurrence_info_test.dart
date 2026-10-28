@@ -106,7 +106,7 @@ void main() {
 
   test('describes recurrence', () {
     expect(describeRecurrence(tx(mode: RecurrenceMode.once)), 'One-off');
-    expect(describeRecurrence(tx()), 'Every month');
+    expect(describeRecurrence(tx()), 'Monthly');
     expect(
       describeRecurrence(
         tx(
@@ -120,7 +120,7 @@ void main() {
     );
     expect(
       describeRecurrence(tx(end: EndMode.count, count: 12)),
-      'Every month, 12 times',
+      'Monthly, 12 times',
     );
   });
 

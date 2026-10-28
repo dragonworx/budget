@@ -353,4 +353,26 @@ void main() {
       ('Monthly', '6 times'),
     );
   });
+
+  test('importFrequency: a structured rule with days reads as its phrase', () {
+    Map<String, dynamic> rule(String r, int n, List<int> days) => {
+      ..._item('a', mode: 'repeat', interval: n, unit: 'weeks'),
+      'frequency': {'rule': r, 'interval': n, 'days': days},
+      'days': days,
+    };
+    expect(
+      importFrequency(rule('weekly', 1, [2, 1])).$1,
+      'Every week on Mon, Tue',
+    );
+    expect(
+      importFrequency(rule('monthly', 1, [15, 1])).$1,
+      'Monthly on the 1st and 15th',
+    );
+    expect(
+      importFrequency(rule('every_n_months', 3, [31])).$1,
+      'Every 3 months on the 31st',
+    );
+    // No days: the editor wording stays.
+    expect(importFrequency(rule('every_n_weeks', 2, [])).$1, 'Fortnightly');
+  });
 }

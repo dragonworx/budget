@@ -323,6 +323,9 @@ class EventRepository {
         'amount': moneyToJson(edited.amount),
         'interval': ?edited.interval,
         'unit': ?edited.unit?.toJson(),
+        // The new series' rule with its days (wins over interval / unit).
+        if (edited.recurrenceMode == RecurrenceMode.every)
+          'frequency': edited.frequency.toJson(),
         'enabled': edited.enabled,
         // The new series' colour (null: the positional one).
         'color': edited.color,

@@ -1,3 +1,4 @@
+import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/models.dart';
@@ -35,15 +36,16 @@ String formatSelectedDate(DateTime date, {DateTime? now}) {
   return date.year == year ? base : '$base ${date.year}';
 }
 
-/// Human recurrence summary: "One-off", "Every 2 weeks, ends 30 Jun 2027",
-/// "Every month, 12 times".
+/// Human recurrence summary from the structured rule: "One-off", "Every
+/// 2 weeks on Mon, Wed, ends 30 Jun 2027", "Monthly on the 1st and 15th,
+/// 12 times".
 String describeRecurrence(BudgetEvent t) {
   if (t.recurrenceMode == RecurrenceMode.once) return 'One-off';
-  final n = t.interval ?? 1;
-  final unit = (t.unit ?? RecurrenceUnit.months).name;
-  final every = n == 1
-      ? 'Every ${unit.substring(0, unit.length - 1)}'
-      : 'Every $n $unit';
+  final every = describeFrequency(
+    t.frequency,
+    toRuleDate(t.startDate),
+    compact: true,
+  );
   return switch (t.endMode) {
     EndMode.untilDate when t.endDate != null =>
       '$every, ends ${DateFormat('d MMM y').format(t.endDate!)}',

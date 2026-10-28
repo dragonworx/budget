@@ -3,6 +3,8 @@
 FROM dart:stable AS build
 WORKDIR /src
 COPY pubspec.yaml pubspec.lock ./
+# The recurrence engine shared with the web client (a path dependency).
+COPY packages ./packages
 RUN dart pub get
 COPY . .
 RUN dart pub get --offline \

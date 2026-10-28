@@ -1,3 +1,4 @@
+import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:uuid/uuid.dart';
@@ -11,7 +12,9 @@ const _enrichedCols = '''
   t.id, t.stream_id, t.name, t.direction, t.amount, t.start_date,
   t.recurrence_mode, t.interval, t.unit, t.end_mode, t.end_date,
   t.occurrence_count, t.enabled, t.created_at, t.transfer_id,
-  p.id, pa.id, pa.name, t.version AS t_version, t.color AS t_color''';
+  p.id, pa.id, pa.name, t.version AS t_version, t.color AS t_color,
+  t.freq_rule AS t_freq_rule, t.freq_interval AS t_freq_interval,
+  t.freq_days AS t_freq_days''';
 const _peerJoin = '''
   LEFT JOIN events p
     ON t.transfer_id IS NOT NULL AND p.transfer_id = t.transfer_id AND p.id <> t.id
@@ -177,6 +180,7 @@ class EventRepo {
     required Decimal amount,
     int? interval,
     RecurrenceUnit? unit,
+    List<int>? days,
     bool? enabled,
     String? color,
     bool clearColor = false,
@@ -201,6 +205,7 @@ class EventRepo {
           amount: amount,
           interval: interval,
           unit: unit,
+          days: days,
           enabled: enabled,
           color: color,
           clearColor: clearColor))!;
@@ -224,6 +229,9 @@ class EventRepo {
       recurrenceMode: RecurrenceMode.every,
       interval: interval ?? t.interval,
       unit: unit ?? t.unit,
+      days: days ??
+          _keptDays(
+              t, RecurrenceMode.every, interval ?? t.interval, unit ?? t.unit),
       endMode: t.endMode,
       endDate: t.endMode == EndMode.untilDate ? t.endDate : null,
       occurrenceCount: remaining,
@@ -308,11 +316,13 @@ class EventRepo {
     bool enabled = true,
     String? transferId,
     String? color,
+    List<int> days = const [],
   }) async {
-    _validateShape(
+    final f = _validateShape(
       recurrenceMode: recurrenceMode,
       interval: interval,
       unit: unit,
+      days: days,
       endMode: endMode,
       endDate: endDate,
       occurrenceCount: occurrenceCount,
@@ -325,11 +335,13 @@ class EventRepo {
         INSERT INTO events (
           id, stream_id, name, direction, amount, start_date,
           recurrence_mode, interval, unit, end_mode, end_date,
-          occurrence_count, enabled, transfer_id, color
+          occurrence_count, enabled, transfer_id, color,
+          freq_rule, freq_interval, freq_days
         ) VALUES (
           @id, @streamId, @name, @direction, @amount, @startDate,
           @recurrenceMode, @interval, @unit, @endMode, @endDate,
-          @occurrenceCount, @enabled, @transferId::uuid, @color
+          @occurrenceCount, @enabled, @transferId::uuid, @color,
+          @freqRule, @freqInterval, @freqDays::int[]::smallint[]
         )
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -344,9 +356,7 @@ class EventRepo {
         'direction': direction.name,
         'amount': amount.toString(),
         'startDate': _date(startDate),
-        'recurrenceMode': recurrenceMode.name,
-        'interval': interval,
-        'unit': unit?.name,
+        ..._freqParams(f),
         'endMode': endMode.apiName,
         'endDate': endDate == null ? null : _date(endDate),
         'occurrenceCount': occurrenceCount,
@@ -389,6 +399,7 @@ class EventRepo {
     bool clearOccurrenceCount = false,
     String? color,
     bool clearColor = false,
+    List<int>? days,
   }) async {
     final existing = await get(id);
     if (existing == null) return null;
@@ -403,10 +414,11 @@ class EventRepo {
         : (occurrenceCount ?? existing.occurrenceCount);
     final nextAmount = amount ?? existing.amount;
 
-    _validateShape(
+    final f = _validateShape(
       recurrenceMode: nextMode,
       interval: nextInterval,
       unit: nextUnit,
+      days: days ?? _keptDays(existing, nextMode, nextInterval, nextUnit),
       endMode: nextEnd,
       endDate: nextEndDate,
       occurrenceCount: nextCount,
@@ -423,6 +435,9 @@ class EventRepo {
           recurrence_mode = @recurrenceMode,
           interval = @interval,
           unit = @unit,
+          freq_rule = @freqRule,
+          freq_interval = @freqInterval,
+          freq_days = @freqDays::int[]::smallint[],
           end_mode = @endMode,
           end_date = @endDate,
           occurrence_count = @occurrenceCount,
@@ -441,9 +456,7 @@ class EventRepo {
         'direction': (direction ?? existing.direction).name,
         'amount': nextAmount.toString(),
         'startDate': _date(startDate ?? existing.startDate),
-        'recurrenceMode': nextMode.name,
-        'interval': nextInterval,
-        'unit': nextUnit?.name,
+        ..._freqParams(f),
         'endMode': nextEnd.apiName,
         'endDate': nextEndDate == null ? null : _date(nextEndDate),
         'occurrenceCount': nextCount,
@@ -550,10 +563,11 @@ class EventRepo {
         skipped.add(item.id!);
         continue;
       }
-      _validateShape(
+      final f = _validateShape(
         recurrenceMode: item.recurrenceMode,
         interval: item.interval,
         unit: item.unit,
+        days: item.days,
         endMode: item.endMode,
         endDate: item.endDate,
         occurrenceCount: item.occurrenceCount,
@@ -565,11 +579,13 @@ class EventRepo {
           INSERT INTO events (
             id, stream_id, name, direction, amount, start_date,
             recurrence_mode, interval, unit, end_mode, end_date,
-            occurrence_count, enabled, color
+            occurrence_count, enabled, color,
+            freq_rule, freq_interval, freq_days
           ) VALUES (
             @id, @streamId, @name, @direction, @amount, @startDate,
             @recurrenceMode, @interval, @unit, @endMode, @endDate,
-            @occurrenceCount, @enabled, @color
+            @occurrenceCount, @enabled, @color,
+            @freqRule, @freqInterval, @freqDays::int[]::smallint[]
           )
         '''),
         parameters: {
@@ -579,9 +595,7 @@ class EventRepo {
           'direction': item.direction.name,
           'amount': item.amount.toString(),
           'startDate': _date(item.startDate),
-          'recurrenceMode': item.recurrenceMode.name,
-          'interval': item.interval,
-          'unit': item.unit?.name,
+          ..._freqParams(f),
           'endMode': item.endMode.apiName,
           'endDate': item.endDate == null ? null : _date(item.endDate!),
           'occurrenceCount': item.occurrenceCount,
@@ -650,10 +664,37 @@ class EventRepo {
     return map;
   }
 
-  void _validateShape({
+  /// The days an update keeps when it sends none: the saved days while the
+  /// rule stays in the same family (week or month), else none.
+  List<int> _keptDays(BudgetEvent existing, RecurrenceMode mode, int? interval,
+      RecurrenceUnit? unit) {
+    if (existing.days.isEmpty || mode == RecurrenceMode.once) return const [];
+    final was = existing.frequency.rule;
+    final unitNow = unit?.name;
+    final week = unitNow == 'weeks', month = unitNow == 'months';
+    if ((week && was.weekFamily) || (month && was.monthFamily)) {
+      return existing.days;
+    }
+    return const [];
+  }
+
+  /// Legacy columns (never 'years' any more: N years are written as 12·N
+  /// months, the same dates) and the structured freq_* columns.
+  static Map<String, Object?> _freqParams(Frequency f) => {
+        'recurrenceMode': f.repeats ? 'every' : 'once',
+        'interval': f.repeats ? f.legacyInterval : null,
+        'unit': f.repeats ? f.legacyUnit : null,
+        'freqRule': f.rule.apiName,
+        'freqInterval': f.interval,
+        'freqDays': f.days,
+      };
+
+  /// Validates the event's shape and returns its structured rule.
+  Frequency _validateShape({
     required RecurrenceMode recurrenceMode,
     required int? interval,
     required RecurrenceUnit? unit,
+    List<int> days = const [],
     required EndMode endMode,
     required DateTime? endDate,
     required int? occurrenceCount,
@@ -695,6 +736,12 @@ class EventRepo {
           throw FormatException('count must not set endDate');
         }
     }
+    return Frequency.fromLegacy(
+      once: recurrenceMode == RecurrenceMode.once,
+      interval: interval,
+      unit: unit?.name,
+      days: days,
+    );
   }
 
   DateTime _date(DateTime d) => DateTime.utc(d.year, d.month, d.day);
@@ -707,10 +754,30 @@ class EventRepo {
       final e = endRaw as DateTime;
       endDate = DateTime.utc(e.year, e.month, e.day);
     }
-    final unitRaw = row[8] as String?;
+    var unitRaw = row[8] as String?;
     final cols = row.toColumnMap();
     final version = cols['t_version'];
+    // The structured rule is the source of truth; the cadence fields are
+    // its legacy view.
+    var mode = RecurrenceMode.parse(row[6] as String);
+    var interval = row[7] as int?;
+    var days = const <int>[];
+    final ruleRaw = cols['t_freq_rule'] as String?;
+    if (ruleRaw != null) {
+      final f = Frequency(
+        FreqRule.parse(ruleRaw),
+        interval: cols['t_freq_interval'] as int? ?? 1,
+        days: [
+          for (final d in (cols['t_freq_days'] as List? ?? const [])) d as int
+        ],
+      );
+      mode = f.repeats ? RecurrenceMode.every : RecurrenceMode.once;
+      interval = f.repeats ? f.legacyInterval : null;
+      unitRaw = f.repeats ? f.legacyUnit : null;
+      days = f.days;
+    }
     return BudgetEvent(
+      days: days,
       color: cols['t_color'] as String?,
       version: version is int ? version : 1,
       id: row[0].toString(),
@@ -719,8 +786,8 @@ class EventRepo {
       direction: Direction.parse(row[3] as String),
       amount: Decimal.parse(row[4].toString()),
       startDate: DateTime.utc(start.year, start.month, start.day),
-      recurrenceMode: RecurrenceMode.parse(row[6] as String),
-      interval: row[7] as int?,
+      recurrenceMode: mode,
+      interval: interval,
       unit: unitRaw == null ? null : RecurrenceUnit.parse(unitRaw),
       endMode: EndMode.parse(row[9] as String),
       endDate: endDate,
@@ -761,6 +828,7 @@ class EventRepo {
       recurrenceMode: source.recurrenceMode,
       interval: source.interval,
       unit: source.unit,
+      days: source.days,
       endMode: source.endMode,
       endDate: source.endDate,
       occurrenceCount: source.occurrenceCount,
@@ -797,6 +865,8 @@ class EventRepo {
           amount = s.amount, start_date = s.start_date,
           recurrence_mode = s.recurrence_mode, interval = s.interval,
           unit = s.unit, end_mode = s.end_mode, end_date = s.end_date,
+          freq_rule = s.freq_rule, freq_interval = s.freq_interval,
+          freq_days = s.freq_days,
           occurrence_count = s.occurrence_count, enabled = s.enabled,
           color = s.color
         FROM events s

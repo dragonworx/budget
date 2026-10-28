@@ -21,13 +21,16 @@ DateTime _d(DateTime d) => DateTime.utc(d.year, d.month, d.day);
 
 /// [t] under "end every event on [day]" (end dates are inclusive, so
 /// [day]'s own occurrence stays): null when nothing of [t] falls after
-/// [day] (or it is disabled), [EndOnDay.delete] when it starts after
+/// [day] (or it is disabled), [EndOnDay.delete] when it first fires after
 /// [day], else [EndOnDay.end].
 EndOnDay? endOnDayPlan(BudgetEvent t, DateTime day) {
   if (!t.enabled) return null;
   final d = _d(day);
   final start = _d(t.startDate);
-  if (start.isAfter(d)) return EndOnDay.delete;
+  // "Starts" = first fires: a weekly Mon/Tue series that begins on a
+  // Thursday starts the next Monday.
+  final first = OccurrenceGenerator.nthDate(t, 1) ?? start;
+  if (first.isAfter(d)) return EndOnDay.delete;
   if (t.recurrenceMode != RecurrenceMode.every) return null;
   switch (t.endMode) {
     case EndMode.never:

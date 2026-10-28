@@ -1,6 +1,7 @@
 import 'package:decimal/decimal.dart';
 
 import '../../data/models.dart';
+import '../timeline/occurrence_dates.dart';
 import '../timeline/zoom_level.dart';
 
 /// One dated occurrence of an event series.
@@ -124,54 +125,13 @@ String skipKey(String eventId, DateTime date) {
   return '$eventId|${d.year}-${d.month}-${d.day}';
 }
 
-/// Occurrence dates of [t] that fall in [lo]..[hi] (date-only, inclusive).
+/// Occurrence dates of [t] that fall in [lo]..[hi] (date-only, inclusive),
+/// from its structured rule (the shared engine).
 Iterable<DateTime> occurrenceDatesBetween(
   BudgetEvent t,
   DateTime lo,
   DateTime hi,
-) sync* {
-  final start = dateOnly(t.startDate);
-  if (t.recurrenceMode == RecurrenceMode.once) {
-    if (!start.isBefore(lo) && !start.isAfter(hi)) yield start;
-    return;
-  }
-  final interval = (t.interval ?? 1).clamp(1, 100000);
-  final unit = t.unit ?? RecurrenceUnit.days;
-  final endCap = t.endMode == EndMode.untilDate && t.endDate != null
-      ? dateOnly(t.endDate!)
-      : null;
-  final maxCount = t.endMode == EndMode.count ? t.occurrenceCount : null;
-
-  // Jump close to [lo] rather than walking from the start.
-  var i = 0;
-  if (start.isBefore(lo)) {
-    final days = lo.difference(start).inDays;
-    i = switch (unit) {
-      RecurrenceUnit.days => days ~/ interval,
-      RecurrenceUnit.weeks => days ~/ (7 * interval),
-      RecurrenceUnit.months =>
-        ((lo.year - start.year) * 12 + lo.month - start.month) ~/ interval,
-      RecurrenceUnit.years => (lo.year - start.year) ~/ interval,
-    };
-    i = (i - 1).clamp(0, 1 << 30);
-  }
-  var guard = 0;
-  while (guard++ < 2000) {
-    if (maxCount != null && i >= maxCount) return;
-    final d = _step(start, interval * i, unit);
-    if (d.isAfter(hi)) return;
-    if (endCap != null && d.isAfter(endCap)) return;
-    if (!d.isBefore(lo)) yield d;
-    i++;
-  }
-}
-
-DateTime _step(DateTime start, int n, RecurrenceUnit unit) => switch (unit) {
-  RecurrenceUnit.days => DateTime(start.year, start.month, start.day + n),
-  RecurrenceUnit.weeks => DateTime(start.year, start.month, start.day + 7 * n),
-  RecurrenceUnit.months => _addMonths(start, n),
-  RecurrenceUnit.years => _addMonths(start, 12 * n),
-};
+) => occurrenceDatesIn(t, dateOnly(lo), dateOnly(hi));
 
 DateTime _addMonths(DateTime date, int months) {
   final zero = (date.month - 1) + months;

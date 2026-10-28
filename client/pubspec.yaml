@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  budget_recurrence:
+    path: ../server/packages/budget_recurrence
   flutter_localizations:
     sdk: flutter
   flutter_riverpod: ^2.6.1

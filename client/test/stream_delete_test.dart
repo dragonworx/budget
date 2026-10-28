@@ -234,8 +234,8 @@ void main() {
         ),
       );
       expect(find.text('Transfers with other streams'), findsOneWidget);
-      expect(find.text('To Savings · Every month'), findsOneWidget);
-      expect(find.text('From Kids · Every month'), findsOneWidget);
+      expect(find.text('To Savings · Monthly'), findsOneWidget);
+      expect(find.text('From Kids · Monthly'), findsOneWidget);
       String amountIn(String id) => tester
           .widgetList<Text>(
             find.descendant(

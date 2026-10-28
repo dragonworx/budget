@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +14,7 @@ import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
+import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
 
 /// Shown wherever import is unavailable because no day is selected.
@@ -564,9 +566,11 @@ DateTime? _parseDay(Object? iso) {
   return DateTime(p[0]!, p[1]!, p[2]!);
 }
 
-/// A previewed item's frequency in the editor's wording ("Once", "Weekly",
-/// "Fortnightly", "Monthly", or "Every 5 days" when no preset matches) and
-/// its end ("until 26 Jan 2027", "12 times"), if any.
+/// A previewed item's frequency: the structured rule's phrase when the
+/// server sends one ("Every week on Mon, Tue", "Monthly on the 1st and
+/// 15th"), else the editor's wording ("Once", "Weekly", "Fortnightly",
+/// "Monthly", or "Every 5 days" when no preset matches), and its end
+/// ("until 26 Jan 2027", "12 times"), if any.
 @visibleForTesting
 (String, String?) importFrequency(Map<String, dynamic> item) {
   if (item['recurrenceMode'] == 'once') return ('Once', null);
@@ -577,11 +581,23 @@ DateTime? _parseDay(Object? iso) {
   );
   final preset = FrequencyPreset.of(once: false, interval: n, unit: unit);
   final name = unit.name;
-  final label = preset != FrequencyPreset.custom
+  var label = preset != FrequencyPreset.custom
       ? preset.label
       : (n == 1
             ? 'Every ${name.substring(0, name.length - 1)}'
             : 'Every $n $name');
+  final freq = item['frequency'];
+  final start = _parseDay(item['startDate']);
+  if (freq is Map && start != null) {
+    try {
+      final f = Frequency.fromJson(freq.cast<String, dynamic>());
+      if (f.days.isNotEmpty) {
+        label = describeFrequency(f, toRuleDate(start), compact: true);
+      }
+    } on FormatException {
+      // Keep the cadence wording.
+    }
+  }
   final end = switch (item['endMode']) {
     'until_date' => switch (_parseDay(item['endDate'])) {
       final d? => 'until ${DateFormat('d MMM y').format(d)}',

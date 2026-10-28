@@ -1,9 +1,11 @@
-# Root context is used by client/Dockerfile (needs client/ and deploy/ only).
-**/.dart_tool/
-**/build/
-server/
+# Root context is used by client/Dockerfile (needs client/, deploy/ and the
+# shared recurrence package server/packages/budget_recurrence only).
+server/*
+!server/packages/
 docs/
 .git/
 .env
 *.log
 node_modules/
+**/.dart_tool/
+**/build/

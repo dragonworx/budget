@@ -1,3 +1,4 @@
+import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 
 DateTime parseDate(dynamic value) {
@@ -342,7 +343,40 @@ class BudgetEvent {
     this.version,
     this.overrides = const {},
     this.color,
+    this.days = const [],
   });
+
+  /// The rule's days (weekdays 1 = Mon … 7 = Sun for the week rules, month
+  /// days 1–31 for the month rules); empty = the plain cadence from the
+  /// start date.
+  final List<int> days;
+
+  /// The structured rule this series fires on (shared with the server,
+  /// package:budget_recurrence). The legacy [recurrenceMode] / [interval] /
+  /// [unit] fields are its cadence view; days that do not fit the cadence
+  /// (mid-edit) are dropped.
+  Frequency get frequency {
+    final once = recurrenceMode == RecurrenceMode.once;
+    try {
+      return Frequency.fromLegacy(
+        once: once,
+        interval: once ? null : (interval ?? 1).clamp(1, maxFrequencyInterval),
+        unit: once ? null : (unit ?? RecurrenceUnit.days).name,
+        days: days,
+      );
+    } on FormatException {
+      if (once) return Frequency.once;
+      try {
+        return Frequency.fromLegacy(
+          once: false,
+          interval: (interval ?? 1).clamp(1, maxFrequencyInterval),
+          unit: (unit ?? RecurrenceUnit.days).name,
+        );
+      } on FormatException {
+        return Frequency(FreqRule.daily);
+      }
+    }
+  }
 
   /// The graph line's colour, "#RRGGBB"; null: the lane's positional
   /// palette colour (see `eventColor`).
@@ -401,14 +435,33 @@ class BudgetEvent {
           ? null
           : RecurrenceUnit.fromJson(unitRaw as String);
     } else {
-      recurrenceMode = RecurrenceMode.fromJson(
-        (json['recurrenceMode'] ?? json['recurrence_mode']) as String,
-      );
+      // Absent when only the structured `frequency` is sent (below).
+      final mode = json['recurrenceMode'] ?? json['recurrence_mode'];
+      recurrenceMode = mode == null
+          ? RecurrenceMode.once
+          : RecurrenceMode.fromJson(mode as String);
       interval = json['interval'] as int?;
       final unitRaw = json['unit'];
       unit = unitRaw == null
           ? null
           : RecurrenceUnit.fromJson(unitRaw as String);
+    }
+
+    // The structured rule (newer servers) wins over the cadence fields.
+    var days = <int>[
+      for (final d in (json['days'] as List?) ?? const []) (d as num).toInt(),
+    ];
+    final freqRaw = json['frequency'];
+    if (freqRaw is Map) {
+      try {
+        final f = Frequency.fromJson(freqRaw.cast<String, dynamic>());
+        recurrenceMode = f.repeats ? RecurrenceMode.every : RecurrenceMode.once;
+        interval = f.legacyInterval;
+        unit = f.repeats ? RecurrenceUnit.fromJson(f.legacyUnit!) : null;
+        days = f.days;
+      } on FormatException {
+        // Unknown rule: keep the cadence fields.
+      }
     }
 
     EndMode endMode;
@@ -442,6 +495,7 @@ class BudgetEvent {
       recurrenceMode: recurrenceMode,
       interval: interval,
       unit: unit,
+      days: days,
       endMode: endMode,
       endDate: endDate,
       occurrenceCount: occurrenceCount,
@@ -471,6 +525,8 @@ class BudgetEvent {
     'recurrenceMode': recurrenceMode.toJson(),
     'interval': interval,
     'unit': unit?.toJson(),
+    'frequency': frequency.toJson(),
+    'days': frequency.days,
     'endMode': endMode.toJson(),
     'endDate': endDate == null ? null : formatDate(endDate!),
     'occurrenceCount': occurrenceCount,
@@ -487,6 +543,8 @@ class BudgetEvent {
     'recurrenceMode': recurrenceMode.toJson(),
     if (interval != null) 'interval': interval,
     if (unit != null) 'unit': unit!.toJson(),
+    // The structured rule (rule, interval, days); the server prefers it.
+    'frequency': frequency.toJson(),
     'endMode': endMode.toJson(),
     if (endDate != null) 'endDate': formatDate(endDate!),
     if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
@@ -522,8 +580,10 @@ class BudgetEvent {
     bool clearVersion = false,
     String? color,
     bool clearColor = false,
+    List<int>? days,
   }) {
     return BudgetEvent(
+      days: days ?? this.days,
       color: clearColor ? null : (color ?? this.color),
       version: clearVersion ? null : (version ?? this.version),
       transfer: clearTransfer ? null : (transfer ?? this.transfer),

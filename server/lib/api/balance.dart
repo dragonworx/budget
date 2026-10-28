@@ -104,6 +104,7 @@ void attachBalanceRoutes(Router router, Session conn) {
           recurrenceMode: p.recurrenceMode,
           interval: p.interval,
           unit: p.unit,
+          days: p.days,
           endMode: p.endMode,
           endDate: p.endDate,
           occurrenceCount: p.occurrenceCount,

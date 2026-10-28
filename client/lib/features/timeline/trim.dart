@@ -76,7 +76,12 @@ TrimPlan? trimFromHere(BudgetEvent t, DateTime day) {
     if (!dates.any((x) => !dateOnly(x).isBefore(d))) return null;
   }
   final end = DateTime(d.year, d.month, d.day - 1);
-  if (end.isBefore(start)) return const TrimPlan.delete();
+  // Nothing fires before [day] (the rule's first firing can be after the
+  // start date, e.g. a Wednesday start on a Mon-only rule): delete.
+  final first = estimateOccurrenceDates(t, maxCount: 1);
+  if (end.isBefore(start) || first.isEmpty || !first.first.isBefore(d)) {
+    return const TrimPlan.delete();
+  }
   return TrimPlan.end(trimmedEvent(t, end), end);
 }
 
@@ -98,6 +103,12 @@ DayTrim? endOnDay(BudgetEvent t, DateTime day) {
   if (!t.enabled) return null;
   final d = dateOnly(day);
   if (dateOnly(t.startDate).isAfter(d)) return DayTrim.delete;
+  // A rule whose first firing is after [day] keeps nothing (the server's
+  // endOnDayPlan does the same).
+  if (t.recurrenceMode == RecurrenceMode.every) {
+    final first = estimateOccurrenceDates(t, maxCount: 1);
+    if (first.isNotEmpty && first.first.isAfter(d)) return DayTrim.delete;
+  }
   return canTrimAtOccurrence(t, d) ? DayTrim.end : null;
 }
 

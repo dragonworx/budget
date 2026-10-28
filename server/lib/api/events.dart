@@ -1,3 +1,4 @@
+import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
@@ -39,9 +40,19 @@ Router eventsRouter(Session conn) {
         unit = u == null ? null : RecurrenceUnit.parse(u.toString());
       }
 
-      final clearInterval =
+      var interval = optionalInt(body, 'interval');
+      var clearInterval =
           body.containsKey('interval') && body['interval'] == null;
-      final clearUnit = body.containsKey('unit') && body['unit'] == null;
+      var clearUnit = body.containsKey('unit') && body['unit'] == null;
+      final f = parseFrequencyFields(body);
+      if (f.frequency != null) {
+        final fr = f.frequency!;
+        recurrenceMode =
+            fr.repeats ? RecurrenceMode.every : RecurrenceMode.once;
+        interval = fr.legacyInterval;
+        unit = fr.repeats ? RecurrenceUnit.parse(fr.legacyUnit!) : null;
+        clearInterval = clearUnit = !fr.repeats;
+      }
       final clearEndDate =
           body.containsKey('endDate') && body['endDate'] == null;
       final clearCount = body.containsKey('occurrenceCount') &&
@@ -61,8 +72,9 @@ Router eventsRouter(Session conn) {
               ? parseDate(requireString(body, 'startDate'))
               : null,
           recurrenceMode: recurrenceMode,
-          interval: optionalInt(body, 'interval'),
+          interval: interval,
           unit: unit,
+          days: f.days,
           endMode: endMode,
           endDate: body.containsKey('endDate') && body['endDate'] != null
               ? parseDate(body['endDate'].toString())
@@ -193,17 +205,27 @@ Router eventsRouter(Session conn) {
       }
       final body = await readJsonObject(request);
       final date = parseDate(requireString(body, 'date'));
-      final unit = body['unit'] == null
+      var unit = body['unit'] == null
           ? null
           : RecurrenceUnit.parse(body['unit'].toString());
+      var interval = optionalInt(body, 'interval');
+      final f = parseFrequencyFields(body);
+      if (f.frequency != null) {
+        if (!f.frequency!.repeats) {
+          throw const FormatException('a split series must repeat');
+        }
+        interval = f.frequency!.legacyInterval;
+        unit = RecurrenceUnit.parse(f.frequency!.legacyUnit!);
+      }
       final r = await txOf(conn).runTx((tx) => EventRepo(tx).splitAt(
             id,
             date,
             name: requireString(body, 'name'),
             direction: Direction.parse(requireString(body, 'direction')),
             amount: parseDecimal(body['amount']),
-            interval: optionalInt(body, 'interval'),
+            interval: interval,
             unit: unit,
+            days: f.days,
             enabled: optionalBool(body, 'enabled'),
             color: parseEventColor(body['color']),
             clearColor: body.containsKey('color') &&
@@ -236,9 +258,11 @@ class ParsedEventBody {
     this.occurrenceCount,
     required this.enabled,
     this.color,
+    this.days = const [],
   });
 
   final String? color;
+  final List<int> days;
   final String name;
   final Direction direction;
   final Decimal amount;
@@ -253,18 +277,35 @@ class ParsedEventBody {
 }
 
 ParsedEventBody parseEventBody(Map<String, dynamic> body) {
-  final recurrenceMode =
+  var recurrenceMode =
       RecurrenceMode.parse(optionalString(body, 'recurrenceMode') ?? 'once');
   final endMode = EndMode.parse(optionalString(body, 'endMode') ?? 'never');
-  final unitRaw = optionalString(body, 'unit');
+  var unitRaw = optionalString(body, 'unit');
+  var interval = optionalInt(body, 'interval');
+  final f = parseFrequencyFields(body);
+  if (f.frequency != null) {
+    final fr = f.frequency!;
+    recurrenceMode = fr.repeats ? RecurrenceMode.every : RecurrenceMode.once;
+    interval = fr.legacyInterval;
+    unitRaw = fr.legacyUnit;
+  } else if (f.days != null && f.days!.isNotEmpty) {
+    // Legacy cadence plus days: validated as one rule.
+    Frequency.fromLegacy(
+      once: recurrenceMode == RecurrenceMode.once,
+      interval: interval,
+      unit: unitRaw,
+      days: f.days!,
+    );
+  }
 
   return ParsedEventBody(
+    days: f.days ?? const [],
     name: optionalString(body, 'name') ?? '',
     direction: Direction.parse(requireString(body, 'direction')),
     amount: parseDecimal(body['amount']),
     startDate: parseDate(requireString(body, 'startDate')),
     recurrenceMode: recurrenceMode,
-    interval: optionalInt(body, 'interval'),
+    interval: interval,
     unit: unitRaw == null ? null : RecurrenceUnit.parse(unitRaw),
     endMode: endMode,
     endDate: optionalString(body, 'endDate') == null
@@ -274,4 +315,42 @@ ParsedEventBody parseEventBody(Map<String, dynamic> body) {
     enabled: optionalBool(body, 'enabled') ?? true,
     color: parseEventColor(body['color']),
   );
+}
+
+/// The structured frequency of an event body: `frequency` =
+/// `{"rule": "weekly", "interval": 1, "days": [1, 2]}` (it then wins over
+/// the legacy recurrenceMode / interval / unit fields), and / or a top
+/// level `days` list next to the legacy fields. Days must be whole
+/// numbers in range for the rule's family; the stored list is sorted with
+/// duplicates removed. Throws [FormatException] (a 400) otherwise.
+({Frequency? frequency, List<int>? days}) parseFrequencyFields(
+    Map<String, dynamic> body) {
+  List<int>? days;
+  if (body.containsKey('days')) {
+    final raw = body['days'];
+    if (raw == null) {
+      days = const [];
+    } else if (raw is! List || raw.any((d) => d is! int)) {
+      throw const FormatException('days must be a list of whole numbers');
+    } else {
+      days = [for (final d in raw) d as int];
+    }
+  }
+  final raw = body['frequency'];
+  if (raw == null) return (frequency: null, days: days);
+  if (raw is! Map) {
+    throw const FormatException(
+        'frequency must be an object {rule, interval, days}');
+  }
+  final m = raw.cast<String, dynamic>();
+  final rd = m['days'];
+  if (rd != null && (rd is! List || rd.any((d) => d is! int))) {
+    throw const FormatException(
+        'frequency.days must be a list of whole numbers');
+  }
+  if (m['interval'] != null && m['interval'] is! int) {
+    throw const FormatException('frequency.interval must be a whole number');
+  }
+  final f = Frequency.fromJson(m);
+  return (frequency: f, days: f.days);
 }

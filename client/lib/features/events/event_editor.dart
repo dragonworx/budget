@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,8 +20,9 @@ import '../../theme/app_theme.dart';
 import '../../widgets/stream_picker.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/money_text.dart';
-import '../../widgets/recurrence_interval_field.dart';
+import '../../widgets/frequency_picker.dart';
 import '../../widgets/ui.dart';
+import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
 import '../timeline/stack_lanes.dart';
 
@@ -175,8 +177,19 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   late bool _transferMode;
   TransferLink? _transfer;
   String? _transferError;
-  late RecurrenceMode _recurrenceMode;
-  late RecurrenceUnit _unit;
+
+  /// The structured rule picked (Once … Every N months); the N families
+  /// read N from [_interval]. Day chips per family, so switching between
+  /// week and month rules keeps each one's picks.
+  late FreqRule _rule;
+  Set<int> _weekDays = {};
+  Set<int> _monthDays = {};
+
+  /// A saved "every N days" (N > 1) keeps its N editable under Daily.
+  late bool _dailyN;
+
+  RecurrenceMode get _recurrenceMode =>
+      _rule == FreqRule.once ? RecurrenceMode.once : RecurrenceMode.every;
   late EndMode _endMode;
   late DateTime _startDate;
   DateTime? _endDate;
@@ -207,8 +220,10 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     final existing = widget.existing;
     _name = TextEditingController(text: existing?.name ?? '');
     _amount = TextEditingController(text: existing?.amount.toString() ?? '');
+    final savedFreq = existing?.frequency;
     _interval = TextEditingController(
-      text: (existing?.interval ?? 1).toString(),
+      text:
+          '${savedFreq != null && savedFreq.interval > 1 ? savedFreq.interval : 2}',
     );
     _count = TextEditingController(
       text: (existing?.occurrenceCount ?? 12).toString(),
@@ -218,10 +233,15 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     _transferMode = _transfer != null;
     // New events start as a one-off from every entry point (saved
     // ones keep theirs). Switching to Repeats starts at every 1 week.
-    _recurrenceMode = widget.onceOnly || existing == null
-        ? RecurrenceMode.once
-        : existing.recurrenceMode;
-    _unit = existing?.unit ?? RecurrenceUnit.weeks;
+    _rule = widget.onceOnly || existing == null
+        ? FreqRule.once
+        : existing.frequency.rule;
+    _dailyN = _rule == FreqRule.daily && (savedFreq?.interval ?? 1) > 1;
+    if (savedFreq != null && savedFreq.rule.weekFamily) {
+      _weekDays = {...savedFreq.days};
+    } else if (savedFreq != null && savedFreq.rule.monthFamily) {
+      _monthDays = {...savedFreq.days};
+    }
     _endMode = existing?.endMode ?? EndMode.never;
     if (existing == null && _recurrenceMode == RecurrenceMode.once) {
       _endMode = EndMode.never;
@@ -332,8 +352,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       _amount.text.trim(),
       d.startDate,
       d.recurrenceMode,
-      d.interval,
-      d.unit,
+      d.frequency,
       d.endMode,
       d.endDate,
       d.occurrenceCount,
@@ -385,13 +404,39 @@ class _EventEditorState extends ConsumerState<EventEditor> {
 
   static DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
 
-  int get _intervalValue => int.tryParse(_interval.text.trim()) ?? 1;
+  int get _intervalValue =>
+      (int.tryParse(_interval.text.trim()) ?? 2).clamp(1, maxRuleInterval);
+
+  /// The rule as picked (N families read [_interval]; days per family).
+  Frequency get _frequency {
+    final n = _intervalValue;
+    return switch (_rule) {
+      FreqRule.once => Frequency.once,
+      FreqRule.daily => Frequency(FreqRule.daily, interval: _dailyN ? n : 1),
+      FreqRule.weekly => Frequency(FreqRule.weekly, days: _weekDays.toList()),
+      FreqRule.everyNWeeks => Frequency(
+        FreqRule.everyNWeeks,
+        interval: n,
+        days: _weekDays.toList(),
+      ),
+      FreqRule.monthly => Frequency(
+        FreqRule.monthly,
+        days: _monthDays.toList(),
+      ),
+      FreqRule.everyNMonths => Frequency(
+        FreqRule.everyNMonths,
+        interval: n,
+        days: _monthDays.toList(),
+      ),
+    };
+  }
 
   BudgetEvent _draft({Decimal? amount, int? count, DateTime? endDate}) {
     final parsedAmount =
         amount ?? parseMoneyInput(_amount.text) ?? Decimal.zero;
     final repeating = _recurrenceMode == RecurrenceMode.every;
     final endMode = repeating ? _endMode : EndMode.never;
+    final f = _frequency;
     return BudgetEvent(
       id: widget.existing?.id ?? 'preview',
       streamId: widget.streamId,
@@ -400,8 +445,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       amount: parsedAmount,
       startDate: _startDate,
       recurrenceMode: _recurrenceMode,
-      interval: repeating ? _intervalValue : null,
-      unit: repeating ? _unit : null,
+      interval: f.legacyInterval,
+      unit: f.repeats ? RecurrenceUnit.fromJson(f.legacyUnit!) : null,
+      days: f.days,
       endMode: endMode,
       endDate: endMode == EndMode.untilDate ? (endDate ?? _endDate) : null,
       occurrenceCount: endMode == EndMode.count
@@ -1087,66 +1133,118 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     );
   }
 
-  /// Once / Repeats: whether the series recurs at all.
-  Widget _repeatsToggle() {
-    return SegmentedButton<bool>(
-      key: const ValueKey('editor-repeats'),
-      showSelectedIcon: false,
-      segments: const [
-        ButtonSegment(
-          value: false,
-          label: Text('Once', key: ValueKey('editor-repeats-once')),
-          icon: Icon(Icons.event_rounded, size: 18),
+  /// Picks a rule: Once … Every N months (inline chips, no dialog).
+  void _pickRule(FreqRule r) => setState(() {
+    final wasOnce = _rule == FreqRule.once;
+    _rule = r;
+    if (r == FreqRule.once) {
+      _endMode = EndMode.never;
+      _endDateError = null;
+      return;
+    }
+    final n = int.tryParse(_interval.text.trim()) ?? 0;
+    if ((r == FreqRule.everyNWeeks || r == FreqRule.everyNMonths) && n < 2) {
+      _interval.text = '2';
+    }
+    // A new one from a selected period: repeating ends on its last day.
+    final presetEnd = widget.initialEndDate;
+    if (wasOnce && _isNew && presetEnd != null && _endMode == EndMode.never) {
+      _endMode = EndMode.untilDate;
+      _endDate = DateTime(presetEnd.year, presetEnd.month, presetEnd.day);
+    }
+  });
+
+  /// The frequency picker, the day chips (fading in only for the week and
+  /// month families) and the live phrase.
+  Widget _frequencyBlock(ThemeData theme) {
+    final week = _rule.weekFamily, month = _rule.monthFamily;
+    final family = week ? 'week' : (month ? 'month' : 'none');
+    final phrase = describeFrequency(_frequency, toRuleDate(_startDate));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('Frequency', style: theme.textTheme.bodySmall),
+        const SizedBox(height: 6),
+        FrequencyPicker(
+          rule: _rule,
+          interval: _interval,
+          showDailyInterval: _dailyN,
+          enabled: !widget.readOnly,
+          onRuleChanged: _pickRule,
+          onIntervalChanged: () => setState(() {}),
         ),
-        ButtonSegment(
-          value: true,
-          label: Text('Repeats', key: ValueKey('editor-repeats-every')),
-          icon: Icon(Icons.event_repeat_rounded, size: 18),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, a) => FadeTransition(
+              opacity: a,
+              child: SizeTransition(
+                sizeFactor: a,
+                alignment: Alignment.topCenter,
+                child: child,
+              ),
+            ),
+            child: family == 'none'
+                ? const SizedBox(
+                    key: ValueKey('no-days'),
+                    width: double.infinity,
+                  )
+                : Padding(
+                    key: ValueKey('days-$family'),
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          week
+                              ? 'On these days (none: the start date\'s weekday)'
+                              : 'On these days of the month (none: the '
+                                    'start date\'s day)',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppTheme.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        DayChips(
+                          monthDays: month,
+                          selected: week ? _weekDays : _monthDays,
+                          enabled: !widget.readOnly,
+                          onChanged: (v) => setState(() {
+                            if (week) {
+                              _weekDays = v;
+                            } else {
+                              _monthDays = v;
+                            }
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          phrase,
+          key: const ValueKey('editor-freq-phrase'),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: AppTheme.accent,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ],
-      selected: {_recurrenceMode == RecurrenceMode.every},
-      onSelectionChanged: (v) => setState(() {
-        if (v.first) {
-          _recurrenceMode = RecurrenceMode.every;
-          // A new one from a selected period: repeating ends on its last day.
-          final presetEnd = widget.initialEndDate;
-          if (_isNew && presetEnd != null && _endMode == EndMode.never) {
-            _endMode = EndMode.untilDate;
-            _endDate = DateTime(presetEnd.year, presetEnd.month, presetEnd.day);
-          }
-        } else {
-          _recurrenceMode = RecurrenceMode.once;
-          _endMode = EndMode.never;
-          _endDateError = null;
-        }
-      }),
     );
   }
-
-  /// Every [− N +] [unit ▾] (shared with the Plan panels).
-  Widget _intervalRow(ThemeData theme) => RecurrenceIntervalField(
-    controller: _interval,
-    unit: _unit,
-    onChanged: () => setState(() {}),
-    onUnitChanged: (u) => setState(() => _unit = u),
-    validator: (value) {
-      if (_recurrenceMode != RecurrenceMode.every) return null;
-      final v = int.tryParse(value ?? '');
-      return v == null || v < 1 || v > maxRecurrenceInterval
-          ? '1–$maxRecurrenceInterval'
-          : null;
-    },
-  );
 
   Widget _scheduleSection(ThemeData theme) {
     final repeating = _recurrenceMode == RecurrenceMode.every;
     return SectionCard(
       title: 'Schedule',
       icon: Icons.event_repeat_rounded,
-      trailing: Text(
-        describeRecurrence(_draft()),
-        style: theme.textTheme.labelMedium?.copyWith(color: AppTheme.accent),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1156,9 +1254,8 @@ class _EventEditorState extends ConsumerState<EventEditor> {
             value: _startDate,
             onPicked: (d) => setState(() => _startDate = d),
           ),
-          const SizedBox(height: 12),
-          _repeatsToggle(),
-          if (repeating) ...[const SizedBox(height: 14), _intervalRow(theme)],
+          const SizedBox(height: 14),
+          _frequencyBlock(theme),
           if (repeating) ...[
             const SizedBox(height: 14),
             Text('Ends', style: theme.textTheme.bodySmall),
@@ -1224,9 +1321,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     if (e == null) return false;
     final d = _draft();
     return _day(e.startDate) == _day(d.startDate) &&
-        e.recurrenceMode == d.recurrenceMode &&
-        e.interval == d.interval &&
-        e.unit == d.unit &&
+        e.frequency == d.frequency &&
         e.endMode == d.endMode &&
         e.endDate == d.endDate &&
         e.occurrenceCount == d.occurrenceCount;

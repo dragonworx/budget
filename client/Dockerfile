@@ -10,6 +10,8 @@ RUN apt-get update \
  && git clone --depth 1 --branch ${FLUTTER_VERSION} https://github.com/flutter/flutter.git /opt/flutter
 ENV PATH=/opt/flutter/bin:$PATH FLUTTER_SUPPRESS_ANALYTICS=true
 RUN flutter config --no-analytics --enable-web >/dev/null && flutter precache --web
+# The recurrence engine shared with the server (a path dependency).
+COPY server/packages/budget_recurrence /src/server/packages/budget_recurrence
 WORKDIR /src/client
 COPY client/pubspec.yaml client/pubspec.lock ./
 RUN flutter pub get
