@@ -471,15 +471,11 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
               ),
             ],
             const SizedBox(height: 20),
-            _StatusPanel(
-              result: _result,
-              error: _error,
-              solving: _solving,
-              direction: _direction,
-              unit: _unit,
-              defaulted: _defaulted,
-            ),
-            const SizedBox(height: 20),
+            // A complete plan shows no summary: the fields already say it.
+            if (_StatusPanel.shows(_result, _error)) ...[
+              _StatusPanel(result: _result, error: _error, solving: _solving),
+              const SizedBox(height: 20),
+            ],
             FilledButton(
               key: const ValueKey('solve-commit'),
               onPressed:
@@ -843,17 +839,17 @@ class _StatusPanel extends StatelessWidget {
     required this.result,
     required this.error,
     required this.solving,
-    required this.direction,
-    required this.unit,
-    this.defaulted = const {},
   });
 
-  final Set<SolveVar> defaulted;
+  /// Whether there is anything to say: an error, solving / invalid input,
+  /// already on track, or a hint for the missing fields. A complete plan
+  /// shows no panel at all.
+  static bool shows(SolveResult? result, String? error) =>
+      error != null || result == null || result.onTrack || !result.isComplete;
+
   final SolveResult? result;
   final String? error;
   final bool solving;
-  final EventDirection direction;
-  final RecurrenceUnit unit;
 
   @override
   Widget build(BuildContext context) {
@@ -916,72 +912,8 @@ class _StatusPanel extends StatelessWidget {
       );
     }
 
-    final v = r.values;
-    final event = r.event!;
-    final once = event.recurrenceMode == RecurrenceMode.once;
-    final directionColor = direction == EventDirection.credit
-        ? AppTheme.creditColor
-        : AppTheme.debitColor;
-    final schedule = once
-        ? 'once on ${formatDate(v.startDate!)}'
-        : 'every ${v.interval == 1 ? '' : '${v.interval} '}'
-              '${unitLabel(unit, v.interval ?? 1)}, ${v.count} times, '
-              '${formatDate(v.startDate!)} → '
-              '${formatDate(v.lastOccurrenceDate ?? v.endDate!)}';
-    final rounded =
-        v.total != null && v.actualTotal != null && v.total != v.actualTotal;
-    final dates = r.previewOccurrences.map((o) => o.date).toList();
-
-    return _panel(
-      context,
-      color: scheme.secondaryContainer,
-      icon: Icons.check_circle_outline,
-      iconColor: directionColor,
-      children: [
-        Text(
-          '${direction == EventDirection.credit ? 'Credit' : 'Debit'} '
-          '${v.amount} $schedule',
-          style: theme.textTheme.titleSmall,
-        ),
-        const SizedBox(height: 4),
-        Text('Total ${v.actualTotal ?? v.total}'),
-        ?btLine,
-        if (rounded)
-          Text(
-            'Rounded from the ${v.total} target.',
-            style: theme.textTheme.bodySmall,
-          ),
-        if (r.solved.isNotEmpty)
-          Text(
-            'Calculated: ${_joinAnd(r.solved.map((s) => s.label).toList())}.',
-            style: theme.textTheme.bodySmall,
-          ),
-        if (defaulted.isNotEmpty)
-          Text(
-            'Assumed: ${_joinAnd([for (final d in defaulted) d == SolveVar.startDate ? 'starting today' : 'every 1 ${unitLabel(unit, 1)}'])} — enter a value to change.',
-            style: theme.textTheme.bodySmall,
-          ),
-        if (dates.length > 1) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final d in dates.take(8))
-                Chip(
-                  label: Text(formatDate(d)),
-                  visualDensity: VisualDensity.compact,
-                ),
-              if (dates.length > 8)
-                Chip(
-                  label: Text('+${dates.length - 8} more'),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
-          ),
-        ],
-      ],
-    );
+    // Complete: the parent leaves the panel out ([shows] is false).
+    return const SizedBox.shrink();
   }
 
   Widget _panel(
@@ -1015,8 +947,6 @@ class _StatusPanel extends StatelessWidget {
 }
 
 String _joinOr(List<String> items) => _join(items, 'or');
-
-String _joinAnd(List<String> items) => _join(items, 'and');
 
 String _join(List<String> items, String word) {
   if (items.isEmpty) return '';

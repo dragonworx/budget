@@ -52,7 +52,16 @@ class _FakeRepo extends StreamRepository {
         'endMode': 'count',
         'occurrenceCount': 13,
       },
-      'previewOccurrences': <Object>[],
+      'previewOccurrences': [
+        for (final d in ['2026-10-12', '2026-10-19', '2026-10-26'])
+          {'eventId': 's1', 'date': d, 'signedDelta': '-75'},
+      ],
+      // The balance-target gap only the old summary showed.
+      'balanceTarget': {
+        'projectedBalance': '200',
+        'targetBalance': '1200',
+        'gap': '1000',
+      },
     });
   }
 }
@@ -106,8 +115,64 @@ void main() {
     expect(repo.requests.last.occurrenceCount, isNull);
     expect(find.text('Calculated: 13 times'), findsOneWidget);
     expect(find.text('Calculated: 2027-01-04'), findsOneWidget);
-    expect(find.text('Rounded from the 1000 target.'), findsOneWidget);
     expect(tester.widget<FilledButton>(create).onPressed, isNotNull);
+  });
+
+  testWidgets('a complete plan shows no summary panel: no schedule, total, '
+      'rounding, calculated / assumed lines or date chips; the hint panel is '
+      'gone and Create stays reachable and works', (tester) async {
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final repo = _FakeRepo();
+    SolveResult? committed;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [streamRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SolveSheet(
+              streamId: 'acc',
+              initial: SolveRequest(
+                name: 'Planned event',
+                direction: EventDirection.debit,
+                unit: RecurrenceUnit.weeks,
+                interval: 1,
+                startDate: DateTime(2026, 10, 12),
+                targetTotal: Decimal.parse('1000'),
+                amount: Decimal.parse('75'),
+              ),
+              saveOnCommit: false,
+              onDone: (r) => committed = r,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(repo.requests, isNotEmpty);
+    expect(find.textContaining('Fill in one more'), findsNothing);
+    expect(find.byIcon(Icons.lightbulb_outline), findsNothing);
+    expect(find.textContaining('every week, 13 times'), findsNothing);
+    expect(find.textContaining('Total 975'), findsNothing);
+    expect(find.textContaining('Rounded from'), findsNothing);
+    expect(find.textContaining('Calculated: end date'), findsNothing);
+    expect(find.textContaining('Assumed:'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('plan-balance-target-info')),
+      findsNothing,
+    );
+    expect(find.byType(Chip), findsNothing);
+    expect(find.byIcon(Icons.check_circle_outline), findsNothing);
+
+    final create = find.byKey(const ValueKey('solve-commit'));
+    await tester.ensureVisible(create);
+    expect(tester.widget<FilledButton>(create).onPressed, isNotNull);
+    await tester.tap(create);
+    await tester.pumpAndSettle();
+    expect(committed?.event?.amount, Decimal.parse('75'));
   });
 
   testWidgets('Plan (credit-only) has no debit option and plans a credit', (
