@@ -190,6 +190,7 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showUndoBar(
   final screen = MediaQuery.maybeSizeOf(messenger.context)?.width;
   final width = screen == null ? null : math.min(520.0, screen - 24);
   void replaceWith(SnackBar bar) {
+    if (!messenger.mounted) return;
     messenger
       ..clearSnackBars()
       ..removeCurrentSnackBar();
@@ -237,12 +238,13 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showUndoBar(
   );
   // Backstop: the messenger's own timer only runs while its route is on
   // top (and starts after the entrance animation), so also hide it 5s after
-  // it was shown, whatever is open.
+  // it was shown, whatever is open. Its messenger may be gone by then (the
+  // events panel that hosted it was closed): nothing left to hide.
   var closed = false;
   final backstop = Timer(
     undoTipDuration + const Duration(milliseconds: 300),
     () {
-      if (!closed) {
+      if (!closed && messenger.mounted) {
         messenger.hideCurrentSnackBar(reason: SnackBarClosedReason.timeout);
       }
     },

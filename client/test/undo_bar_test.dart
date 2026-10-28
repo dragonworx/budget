@@ -7,6 +7,7 @@
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
+import 'package:budget_client/features/events/editor_outcome.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/occurrence_info.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
@@ -359,5 +360,31 @@ void main() {
     await tester.pumpAndSettle();
     expect(_tip, findsNothing);
     expect(trimFromHere(store.txs['gym']!, cut), isNull);
+  });
+
+  testWidgets('the bar\'s backstop timer is harmless once its messenger is '
+      'gone (the events panel that showed it was closed)', (tester) async {
+    final key = GlobalKey<ScaffoldMessengerState>();
+    final open = ValueNotifier(true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<bool>(
+          valueListenable: open,
+          builder: (_, isOpen, _) => isOpen
+              ? ScaffoldMessenger(
+                  key: key,
+                  child: const Scaffold(body: SizedBox()),
+                )
+              : const SizedBox(),
+        ),
+      ),
+    );
+    showUndoBar(key.currentState!, text: 'Created "X"', onUndo: () async {});
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byKey(const ValueKey('undo-tip')), findsOneWidget);
+    open.value = false;
+    await tester.pump();
+    await tester.pump(undoTipDuration + const Duration(seconds: 1));
+    expect(tester.takeException(), isNull);
   });
 }
