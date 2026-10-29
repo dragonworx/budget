@@ -75,7 +75,7 @@ TimeSpan monthContaining(DateTime moment) {
   var last = first;
   var openEnded = false;
   for (final t in events) {
-    if (!t.enabled) continue;
+    if (!t.active) continue;
     final start = dateOnly(t.startDate);
     if (start.isBefore(first)) first = start;
     DateTime? end;

@@ -2485,7 +2485,7 @@ class _BalanceChartState extends State<BalanceChart>
         continue;
       }
       // Same rule as [dayNetTotals].
-      if (!countsInDayTotals(o, enabled: _txOf(o.eventId)?.enabled)) {
+      if (!countsInDayTotals(o, enabled: _txOf(o.eventId)?.active)) {
         continue;
       }
       final v = o.signedDelta.toDouble();
@@ -4336,6 +4336,7 @@ class _BalanceChartState extends State<BalanceChart>
             if (o.netted) 'Transfer between combined streams: nets out',
             if (o.skipped) 'Skipped',
             if (t != null && !t.enabled) 'Disabled',
+            if (t != null && t.enabled && t.categoryHidden) 'Category hidden',
             if (t != null && t.overrideOn(o.date) != null)
               'Once-off (series ${formatSignedAmount(t.signedAmount.toDouble())})',
           ])

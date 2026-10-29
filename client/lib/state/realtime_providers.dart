@@ -175,10 +175,26 @@ class RealtimeController {
             forgetDeletedStream(ref.invalidate, aid, userId: _me);
           }
         }
+      case 'category':
+        if (aid != null) {
+          ref.invalidate(categoriesProvider(aid));
+          ref.invalidate(streamProvider(aid));
+          _stream(aid);
+        }
+        // Deleting one deletes transfers' other sides elsewhere.
+        if (e.action == 'category.deleted' ||
+            e.action == 'category.events_deleted') {
+          ref.invalidate(eventsProvider);
+          ref.invalidate(balanceProvider);
+        }
       case 'event':
       case 'events':
       case 'skip':
-        if (aid != null) _stream(aid);
+        if (aid != null) {
+          _stream(aid);
+          // A write can create a category (counts change too).
+          if (e.kind != 'skip') ref.invalidate(categoriesProvider(aid));
+        }
         final peer = e.peerStreamId;
         if (peer != null) _stream(peer);
       case 'scenario':

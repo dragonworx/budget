@@ -5,7 +5,7 @@ import 'zoom_level.dart';
 /// Whether [t] can be trimmed to end on [day]: a repeating, enabled series
 /// that started on or before [day] and still runs after it.
 bool canTrimOn(BudgetEvent t, DateTime day) {
-  if (t.recurrenceMode != RecurrenceMode.every || !t.enabled) return false;
+  if (t.recurrenceMode != RecurrenceMode.every || !t.active) return false;
   final d = dateOnly(day);
   if (dateOnly(t.startDate).isAfter(d)) return false;
   final end = t.endMode == EndMode.untilDate ? t.endDate : null;
@@ -100,7 +100,7 @@ enum DayTrim {
 /// after [day] (once-offs on or before it, series already ending by then)
 /// or it is excluded from the balance.
 DayTrim? endOnDay(BudgetEvent t, DateTime day) {
-  if (!t.enabled) return null;
+  if (!t.active) return null;
   final d = dateOnly(day);
   if (dateOnly(t.startDate).isAfter(d)) return DayTrim.delete;
   // A rule whose first firing is after [day] keeps nothing (the server's

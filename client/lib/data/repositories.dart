@@ -195,6 +195,86 @@ class StreamRepository {
   }
 }
 
+/// A stream's categories (`/api/streams/:id/categories`).
+class CategoryRepository {
+  CategoryRepository(this._api);
+
+  final ApiClient _api;
+
+  Future<List<Category>> list(String streamId) async {
+    final data = await _api.get('/api/streams/$streamId/categories');
+    final raw = data is Map ? data['categories'] : data;
+    return [
+      for (final j in (raw as List?) ?? const [])
+        Category.fromJson(Map<String, dynamic>.from(j as Map)),
+    ];
+  }
+
+  /// Throws [ApiException] 409 when the name is taken.
+  Future<Category> create(
+    String streamId, {
+    required String name,
+    String? color,
+  }) async {
+    final data = await _api.post(
+      '/api/streams/$streamId/categories',
+      body: {'name': name, 'color': ?color},
+    );
+    return Category.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<Category> update(
+    String streamId,
+    String id, {
+    String? name,
+    String? color,
+    bool? hidden,
+  }) async {
+    final data = await _api.patch(
+      '/api/streams/$streamId/categories/$id',
+      body: {'name': ?name, 'color': ?color, 'hidden': ?hidden},
+    );
+    return Category.fromJson(data as Map<String, dynamic>);
+  }
+
+  /// How many events deleting [id] removes (`events` in it, `counterparts`:
+  /// transfers' other sides in other streams).
+  Future<({int events, int counterparts})> deletePreview(
+    String streamId,
+    String id,
+  ) async {
+    final data = await _api.get(
+      '/api/streams/$streamId/categories/$id/delete-preview',
+    ) as Map<String, dynamic>;
+    return (
+      events: (data['events'] as num?)?.toInt() ?? 0,
+      counterparts: (data['counterparts'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Deletes the category and all its events (and their transfer sides).
+  Future<void> delete(String streamId, String id) =>
+      _api.delete('/api/streams/$streamId/categories/$id');
+
+  /// Deletes all events of [id], keeping the category. Returns the undo
+  /// batch (see [EventRepository.undoEndAllOn]) and the deleted ids.
+  Future<({String? batchId, List<String> deleted})> deleteEvents(
+    String streamId,
+    String id,
+  ) async {
+    final data = await _api.delete(
+      '/api/streams/$streamId/categories/$id/events',
+    ) as Map<String, dynamic>?;
+    return (
+      batchId: data?['batchId'] as String?,
+      deleted: [
+        for (final x in (data?['deletedEvents'] as List?) ?? const [])
+          x as String,
+      ],
+    );
+  }
+}
+
 class EventRepository {
   EventRepository(this._api);
 
@@ -205,10 +285,24 @@ class EventRepository {
     return _asList(data).map(BudgetEvent.fromJson).toList();
   }
 
-  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
+  /// With [newCategory] the event goes into a new category of that name
+  /// (a plan's own; 409 when the name is taken), else into its
+  /// `categoryId` (or its name's category).
+  Future<BudgetEvent> create(
+    String streamId,
+    BudgetEvent draft, {
+    ({String name, String? color})? newCategory,
+  }) async {
     final data = await _api.post(
       '/api/streams/$streamId/events',
-      body: draft.toCreateJson(),
+      body: {
+        ...draft.toCreateJson(),
+        if (newCategory != null)
+          'newCategory': {
+            'name': newCategory.name,
+            'color': ?newCategory.color,
+          },
+      },
     );
     return BudgetEvent.fromJson(data as Map<String, dynamic>);
   }
@@ -327,8 +421,8 @@ class EventRepository {
         if (edited.recurrenceMode == RecurrenceMode.every)
           'frequency': edited.frequency.toJson(),
         'enabled': edited.enabled,
-        // The new series' colour (null: the positional one).
-        'color': edited.color,
+        // The new series' category (its colour comes with it).
+        'categoryId': ?edited.categoryId,
         if (!force && edited.version != null) 'version': edited.version,
       },
     ) as Map<String, dynamic>;

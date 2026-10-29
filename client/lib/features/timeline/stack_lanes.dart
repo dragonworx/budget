@@ -144,7 +144,7 @@ LaneSet buildLaneSet({
   void add(String id, BudgetEvent? t, {required bool other}) {
     if (t == null || !seen.add(id)) return;
     final colorIndex = slot++;
-    if (!t.enabled) return;
+    if (!t.active) return;
     final span = _span(t);
     final name = t.name.trim();
     lanes.add(

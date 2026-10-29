@@ -140,11 +140,12 @@ class ApiClient {
     if (!sent) put(path, body: body).catchError((Object _) => null);
   }
 
-  Future<void> delete(String path) async {
+  /// The decoded body, if any (null when empty).
+  Future<dynamic> delete(String path) async {
     final response = await _track(
       () => _http.delete(_uri(path), headers: _headers()),
     );
-    _decode(response, allowEmpty: true, path: path);
+    return _decode(response, allowEmpty: true, path: path);
   }
 
   Map<String, String> _headers() => {

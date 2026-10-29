@@ -103,7 +103,7 @@ List<ReminderItem> expandOccurrences(
   final lo = dateOnly(from), hi = dateOnly(to);
   final out = <ReminderItem>[];
   for (final t in events) {
-    if (!t.enabled) continue;
+    if (!t.active) continue;
     for (final d in occurrenceDatesBetween(t, lo, hi)) {
       if (skipped.contains(skipKey(t.id, d))) continue;
       out.add(ReminderItem(event: t, date: d));

@@ -23,6 +23,94 @@ final eventRepositoryProvider = Provider<EventRepository>((ref) {
   return EventRepository(ref.watch(apiClientProvider));
 });
 
+final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
+  return CategoryRepository(ref.watch(apiClientProvider));
+});
+
+/// A stream's categories, oldest first (the manage pills' order).
+final categoriesProvider =
+    AsyncNotifierProvider.family<CategoriesNotifier, List<Category>, String>(
+      CategoriesNotifier.new,
+    );
+
+/// The category the last event saved in a stream used (this session): a
+/// new event's default.
+final lastCategoryProvider = StateProvider.family<String?, String>(
+  (ref, streamId) => null,
+);
+
+class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
+  @override
+  Future<List<Category>> build(String streamId) {
+    return ref.read(categoryRepositoryProvider).list(streamId);
+  }
+
+  CategoryRepository get _repo => ref.read(categoryRepositoryProvider);
+
+  /// Throws [ApiException] 409 when the name is taken.
+  Future<Category> create(String name, {String? color}) async {
+    final c = await _repo.create(arg, name: name, color: color);
+    state = AsyncData([...state.valueOrNull ?? const <Category>[], c]);
+    return c;
+  }
+
+  /// Rename / recolour / show-hide: the events wear the category's name and
+  /// colour, and a hidden one leaves the balance, so those reload too.
+  Future<Category> edit(
+    String id, {
+    String? name,
+    String? color,
+    bool? hidden,
+  }) async {
+    final c = await _repo.update(
+      arg,
+      id,
+      name: name,
+      color: color,
+      hidden: hidden,
+    );
+    state = AsyncData([
+      for (final x in state.valueOrNull ?? const <Category>[])
+        x.id == id ? c : x,
+    ]);
+    _dataChanged();
+    return c;
+  }
+
+  /// Deletes the category with all its events (and their transfer sides).
+  Future<void> delete(String id) async {
+    await _repo.delete(arg, id);
+    state = AsyncData([
+      for (final x in state.valueOrNull ?? const <Category>[])
+        if (x.id != id) x,
+    ]);
+    _dataChanged(orderToo: true);
+  }
+
+  /// Deletes every event of [id], keeping the category. Returns the batch
+  /// id for [undoDeleteEvents] (null: nothing was deleted).
+  Future<String?> deleteEvents(String id) async {
+    final r = await _repo.deleteEvents(arg, id);
+    _dataChanged(orderToo: true);
+    return r.batchId;
+  }
+
+  /// Brings back what [deleteEvents] deleted (same ids, list positions).
+  Future<void> undoDeleteEvents(String batchId) async {
+    await ref.read(eventRepositoryProvider).undoEndAllOn(arg, batchId);
+    _dataChanged(orderToo: true);
+  }
+
+  void _dataChanged({bool orderToo = false}) {
+    // Every stream: transfers' other sides live in other streams.
+    ref.invalidate(eventsProvider);
+    ref.invalidate(balanceProvider);
+    ref.invalidate(todayBalanceProvider);
+    ref.invalidate(insightsProvider);
+    if (orderToo) ref.invalidate(streamProvider(arg));
+  }
+}
+
 /// Every stream I can open: mine first (display order), then those shared
 /// with me. Streams are top level (no projects).
 final streamsProvider =
@@ -123,11 +211,17 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     );
   }
 
-  Future<BudgetEvent> create(BudgetEvent draft) async {
-    final created = await ref.read(eventRepositoryProvider).create(arg, draft);
+  Future<BudgetEvent> create(
+    BudgetEvent draft, {
+    ({String name, String? color})? newCategory,
+  }) async {
+    final created = await ref
+        .read(eventRepositoryProvider)
+        .create(arg, draft, newCategory: newCategory);
     final current = state.valueOrNull ?? [];
     state = AsyncData([...current, created]);
     _touchPeer(created.transfer);
+    _categoriesMayChange(created.transfer);
     return created;
   }
 
@@ -142,6 +236,14 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     ]);
     _touchPeer(before?.transfer);
     _touchPeer(updated.transfer);
+    _categoriesMayChange(updated.transfer);
+  }
+
+  /// A write can create a category (a plan's own, a transfer's far side's
+  /// same-named one): refetch the lists.
+  void _categoriesMayChange(TransferLink? link) {
+    ref.invalidate(categoriesProvider(arg));
+    if (link != null) ref.invalidate(categoriesProvider(link.peerStreamId));
   }
 
   /// Includes / excludes several series at once (the list's checkbox

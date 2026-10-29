@@ -344,7 +344,21 @@ class BudgetEvent {
     this.overrides = const {},
     this.color,
     this.days = const [],
+    this.categoryId,
+    this.categoryHidden = false,
   });
+
+  /// The event's category (every saved event has one). [name] is the
+  /// category's name and [color] its colour, kept in sync by the server.
+  final String? categoryId;
+
+  /// The category is hidden (eye menu): the event counts like a disabled
+  /// one while its own [enabled] flag is kept.
+  final bool categoryHidden;
+
+  /// Counts on the timeline and in the balance: its own eye is on and its
+  /// category is shown.
+  bool get active => enabled && !categoryHidden;
 
   /// The rule's days (weekdays 1 = Mon … 7 = Sun for the week rules, month
   /// days 1–31 for the month rules); empty = the plain cadence from the
@@ -505,6 +519,8 @@ class BudgetEvent {
           : null,
       version: (json['version'] as num?)?.toInt(),
       color: normalizeEventColor(json['color'] ?? json['colour']),
+      categoryId: json['categoryId'] as String?,
+      categoryHidden: (json['categoryHidden'] as bool?) ?? false,
       overrides: {
         for (final o in (json['overrides'] as List?) ?? const [])
           parseDate((o as Map)['date']): OccurrenceOverride(
@@ -533,6 +549,8 @@ class BudgetEvent {
     'enabled': enabled,
     'transfer': transfer?.toJson(),
     'color': color,
+    'categoryId': categoryId,
+    'categoryHidden': categoryHidden,
   };
 
   Map<String, dynamic> toCreateJson() => {
@@ -551,9 +569,10 @@ class BudgetEvent {
     'enabled': enabled,
     // Always sent: null on a patch turns a transfer back into a plain series.
     'transferToStreamId': transfer?.peerStreamId,
-    // Always sent too: null is the positional colour (a transfer's other
-    // side follows).
-    'color': color,
+    // The category (its name and colour come from it); the name above is
+    // its legacy alias for older servers. No `color`: on the server that
+    // would recolour the whole category.
+    if (categoryId != null) 'categoryId': categoryId,
   };
 
   BudgetEvent copyWith({
@@ -581,8 +600,12 @@ class BudgetEvent {
     String? color,
     bool clearColor = false,
     List<int>? days,
+    String? categoryId,
+    bool? categoryHidden,
   }) {
     return BudgetEvent(
+      categoryId: categoryId ?? this.categoryId,
+      categoryHidden: categoryHidden ?? this.categoryHidden,
       days: days ?? this.days,
       color: clearColor ? null : (color ?? this.color),
       version: clearVersion ? null : (version ?? this.version),
@@ -1055,4 +1078,82 @@ class BalanceInsights {
       days: (json['days'] as int?) ?? 365,
     );
   }
+}
+
+/// An event category of a stream (the server's `categories`): every event
+/// has exactly one; its name is the events' name and its colour their
+/// graph lines'. Names are unique per stream (case-insensitive, trimmed).
+class Category {
+  const Category({
+    required this.id,
+    required this.streamId,
+    required this.name,
+    required this.color,
+    this.hidden = false,
+    this.eventCount = 0,
+    this.version,
+  });
+
+  final String id;
+  final String streamId;
+  final String name;
+
+  /// "#RRGGBB".
+  final String color;
+
+  /// Hidden from the timeline and left out of the balance (eye menu).
+  final bool hidden;
+
+  /// Events in it when listed (the live count comes from the events).
+  final int eventCount;
+  final int? version;
+
+  factory Category.fromJson(Map<String, dynamic> j) => Category(
+    id: j['id'] as String,
+    streamId: (j['streamId'] ?? '') as String,
+    name: (j['name'] ?? '') as String,
+    color: normalizeEventColor(j['color']) ?? '#3D6FD8',
+    hidden: (j['hidden'] as bool?) ?? false,
+    eventCount: (j['eventCount'] as num?)?.toInt() ?? 0,
+    version: (j['version'] as num?)?.toInt(),
+  );
+
+  Category copyWith({String? name, String? color, bool? hidden}) => Category(
+    id: id,
+    streamId: streamId,
+    name: name ?? this.name,
+    color: color ?? this.color,
+    hidden: hidden ?? this.hidden,
+    eventCount: eventCount,
+    version: version,
+  );
+}
+
+/// Longest category name (the server's limit).
+const int maxCategoryNameLength = 60;
+
+/// [raw] as the server stores a category name: trimmed, inner runs of
+/// spaces collapsed.
+String normalizeCategoryName(String raw) =>
+    raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+/// Why [raw] can't name a new (or renamed, [except] = its id) category of
+/// [existing]; null when it can.
+String? categoryNameProblem(
+  String raw,
+  Iterable<Category> existing, {
+  String? except,
+}) {
+  final name = normalizeCategoryName(raw);
+  if (name.isEmpty) return 'Enter a name';
+  if (name.length > maxCategoryNameLength) {
+    return 'At most $maxCategoryNameLength characters';
+  }
+  final lower = name.toLowerCase();
+  for (final c in existing) {
+    if (c.id != except && c.name.toLowerCase() == lower) {
+      return 'A category named "${c.name}" already exists';
+    }
+  }
+  return null;
 }
