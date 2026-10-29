@@ -234,12 +234,22 @@ class _ViewMenuState extends State<ViewMenu> {
         key: const ValueKey('categories-heading'),
         padding: const EdgeInsets.fromLTRB(14, 6, 14, 4),
         child: Text(
-          'CATEGORIES (SHOWN ON TIMELINE)',
+          'CATEGORIES (ALL STREAMS)',
           style: small?.copyWith(
             letterSpacing: 1,
             fontWeight: FontWeight.w700,
             color: AppTheme.textFaint,
           ),
+        ),
+      ),
+      Padding(
+        key: const ValueKey('categories-heading-note'),
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 4),
+        child: Text(
+          widget.canEditCategories
+              ? 'Unticked ones are hidden in every stream.'
+              : 'Only the owner can show or hide them.',
+          style: small?.copyWith(color: AppTheme.textFaint),
         ),
       ),
       if (widget.categories.isEmpty)
@@ -292,9 +302,7 @@ class _ViewMenuState extends State<ViewMenu> {
           leadingIcon: const Icon(Icons.sell_outlined, size: 18),
           onPressed: widget.onManageCategories,
           child: Text(
-            widget.canEditCategories
-                ? 'Manage categories…'
-                : 'View categories…',
+            widget.canEditCategories ? 'Edit categories…' : 'View categories…',
           ),
         ),
     ];

@@ -889,7 +889,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   void _refreshAfterImport() {
     ref.invalidate(eventsProvider(widget.streamId));
     // Imported names map to (or make) categories.
-    ref.invalidate(categoriesProvider(widget.streamId));
+    ref.invalidate(categoriesProvider);
     ref.invalidate(streamProvider(widget.streamId));
     _invalidateBalance();
   }
@@ -1652,6 +1652,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 : Text('Dates count from ${formatOccurrenceDate(_pinnedDay!)}'),
           ),
         ),
+      // Everyone opens it (viewers read only); categories are shared by
+      // all the owner's streams.
+      const PopupMenuItem(
+        key: ValueKey('more-categories'),
+        value: 'categories',
+        child: ListTile(
+          leading: Icon(Icons.sell_outlined),
+          title: Text('Edit categories'),
+        ),
+      ),
       const PopupMenuItem(
         key: ValueKey('shortcuts-help'),
         value: 'shortcuts',
@@ -1760,6 +1770,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               _showShortcuts(context);
             case 'share':
               _share(context, stream);
+            case 'categories':
+              showCategoriesManager(
+                context,
+                streamId: widget.streamId,
+                canEdit: canEdit,
+              );
           }
         },
         itemBuilder: (context) => more,
@@ -1796,7 +1812,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       categories:
           ref.watch(categoriesProvider(widget.streamId)).valueOrNull ??
           const [],
-      canEditCategories: stream.role.canEdit,
+      // Hiding a category hides it in all the owner's streams: owner only.
+      canEditCategories: stream.role.isOwner,
       onToggleCategory: (c) => _toggleCategory(c),
       onManageCategories: () => showCategoriesManager(
         context,

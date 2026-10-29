@@ -151,7 +151,10 @@ void main() {
     expect(_checked(tester, 1), isTrue);
     expect(_saved(1), isTrue);
     // The row didn't open in the editor.
-    expect(find.byKey(const ValueKey('events-search')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('events-category-filter')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('press and drag across rows sets them all, one batch', (

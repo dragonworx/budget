@@ -27,7 +27,9 @@ final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
   return CategoryRepository(ref.watch(apiClientProvider));
 });
 
-/// A stream's categories, oldest first (the manage pills' order).
+/// The categories a stream's events use, oldest first: since categories
+/// are global per owner, every stream of one owner lists the same set (the
+/// counts cover all those streams).
 final categoriesProvider =
     AsyncNotifierProvider.family<CategoriesNotifier, List<Category>, String>(
       CategoriesNotifier.new,
@@ -51,6 +53,7 @@ class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
   Future<Category> create(String name, {String? color}) async {
     final c = await _repo.create(arg, name: name, color: color);
     state = AsyncData([...state.valueOrNull ?? const <Category>[], c]);
+    _refetchAll();
     return c;
   }
 
@@ -74,6 +77,7 @@ class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
         x.id == id ? c : x,
     ]);
     _dataChanged();
+    _refetchAll();
     return c;
   }
 
@@ -102,13 +106,21 @@ class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
   }
 
   void _dataChanged({bool orderToo = false}) {
-    // Every stream: transfers' other sides live in other streams.
+    // Every stream: categories (and so their events) span all the owner's
+    // streams, and transfers' other sides live in other streams.
     ref.invalidate(eventsProvider);
     ref.invalidate(balanceProvider);
     ref.invalidate(todayBalanceProvider);
     ref.invalidate(insightsProvider);
-    if (orderToo) ref.invalidate(streamProvider(arg));
+    if (orderToo) {
+      ref.invalidate(streamProvider);
+      _refetchAll();
+    }
   }
+
+  /// Every stream of the owner lists this same set: refetch them all
+  /// (this one included; it keeps its value while reloading).
+  void _refetchAll() => ref.invalidate(categoriesProvider);
 }
 
 /// Every stream I can open: mine first (display order), then those shared
@@ -240,11 +252,10 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
   }
 
   /// A write can create a category (a plan's own, a transfer's far side's
-  /// same-named one): refetch the lists.
-  void _categoriesMayChange(TransferLink? link) {
-    ref.invalidate(categoriesProvider(arg));
-    if (link != null) ref.invalidate(categoriesProvider(link.peerStreamId));
-  }
+  /// same-named one) and moves the per-category counts (which span all the
+  /// owner's streams): refetch every list.
+  void _categoriesMayChange([TransferLink? link]) =>
+      ref.invalidate(categoriesProvider);
 
   /// Includes / excludes several series at once (the list's checkbox
   /// paint-drag): the requests run together and the list updates once.
@@ -293,6 +304,7 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     final gone = current.where((s) => s.id == id).firstOrNull;
     state = AsyncData(current.where((s) => s.id != id).toList());
     _touchPeer(gone?.transfer);
+    _categoriesMayChange();
   }
 
   Future<void> setSkip(
@@ -354,6 +366,7 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     final fresh = await ref.read(eventRepositoryProvider).listForStream(arg);
     state = AsyncData(fresh);
     _touchPeer(r.original.transfer);
+    _categoriesMayChange();
     return r;
   }
 
@@ -397,6 +410,7 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     );
     // The list order is the stream's (restored on undo).
     ref.invalidate(streamProvider(arg));
+    _categoriesMayChange();
     for (final l in links) {
       _touchPeer(l);
     }

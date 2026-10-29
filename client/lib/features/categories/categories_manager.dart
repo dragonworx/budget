@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
@@ -45,28 +46,21 @@ String freeCategoryName(String base, Iterable<Category> existing) {
   }
 }
 
-/// Live number of events per category of [streamId] (from the loaded
-/// events; the listed counts until they load).
-Map<String, int> categoryEventCounts(WidgetRef ref, String streamId) {
-  final events = ref.watch(eventsProvider(streamId)).valueOrNull;
-  if (events == null) {
-    return {
-      for (final c
-          in ref.watch(categoriesProvider(streamId)).valueOrNull ??
-              const <Category>[])
-        c.id: c.eventCount,
-    };
-  }
-  final counts = <String, int>{};
-  for (final e in events) {
-    final id = e.categoryId;
-    if (id != null) counts[id] = (counts[id] ?? 0) + 1;
-  }
-  return counts;
-}
+/// Live number of events per category of [streamId]'s owner, across all
+/// that owner's streams (the listed counts; the list refetches whenever
+/// events change).
+Map<String, int> categoryEventCounts(WidgetRef ref, String streamId) => {
+  for (final c
+      in ref.watch(categoriesProvider(streamId)).valueOrNull ??
+          const <Category>[])
+    c.id: c.eventCount,
+};
 
-/// Opens the category manager of [streamId] (a dialog on every screen
-/// size). Resolves to the id of the last category created in it, if any.
+/// Opens the category manager of [streamId]'s owner (a dialog on every
+/// screen size). [canEdit]: may add categories (editors and the owner);
+/// renaming, recolouring and deleting reach every stream of the owner, so
+/// only the owner gets those. Resolves to the id of the last category
+/// created in it, if any.
 Future<String?> showCategoriesManager(
   BuildContext context, {
   required String streamId,
@@ -77,21 +71,23 @@ Future<String?> showCategoriesManager(
     context: context,
     builder: (_) => Dialog(
       insetPadding: EdgeInsets.symmetric(
-        horizontal: width < 600 ? 10 : 40,
+        horizontal: width < 600 ? 8 : 40,
         vertical: 24,
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600),
+        constraints: const BoxConstraints(maxWidth: 640),
         child: CategoriesManager(streamId: streamId, canEdit: canEdit),
       ),
     ),
   );
 }
 
-/// The category manager: the stream's categories as wrapped pills, each
-/// with a ⋮ menu (Edit, Delete, Delete N Events), and a last, dashed
-/// "+ New category" pill that turns into a name field with a colour.
-/// Viewers see the pills only.
+/// The category manager: a table of the owner's categories (shared by all
+/// their streams). Columns: colour (tap to change), name (tap to rename in
+/// place), event count (all streams), and two icon buttons: delete the
+/// events (keeping the category; undoable) and delete the category with
+/// its events. The last row is a dashed "new category" row. Viewers see
+/// the table read-only; editors may only add.
 class CategoriesManager extends ConsumerStatefulWidget {
   const CategoriesManager({
     super.key,
@@ -100,6 +96,8 @@ class CategoriesManager extends ConsumerStatefulWidget {
   });
 
   final String streamId;
+
+  /// May add (editor or owner). Managing also needs ownership.
   final bool canEdit;
 
   @override
@@ -107,45 +105,143 @@ class CategoriesManager extends ConsumerStatefulWidget {
 }
 
 class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
-  bool _creating = false;
   bool _busy = false;
   final _newName = TextEditingController();
   final _newFocus = FocusNode(debugLabel: 'new category name');
-  String _newColor = '#3D6FD8';
+  String? _newColor;
   String? _newError;
   String? _lastCreated;
   String? _error;
 
-  /// The undo strip after "Delete N Events" (text, batch to undo).
+  /// The row whose name is being edited in place.
+  String? _editingId;
+  final _editName = TextEditingController();
+  late final _editFocus = FocusNode(debugLabel: 'category name')
+    ..addListener(_editFocusChanged);
+  String? _editError;
+
+  /// The undo strip after "Delete N events" (text, batch to undo).
   ({String text, String batchId})? _undo;
   Timer? _undoTimer;
 
   CategoriesNotifier get _notifier =>
       ref.read(categoriesProvider(widget.streamId).notifier);
 
+  List<Category> get _list =>
+      ref.read(categoriesProvider(widget.streamId)).valueOrNull ??
+      const <Category>[];
+
+  /// Rename, recolour, delete: the owner only (they reach every stream).
+  bool get _canManage {
+    if (!widget.canEdit) return false;
+    final role = ref.watch(streamProvider(widget.streamId)).valueOrNull?.role;
+    return role?.isOwner ?? true;
+  }
+
+  bool get _touch {
+    final p = Theme.of(context).platform;
+    return p == TargetPlatform.android || p == TargetPlatform.iOS;
+  }
+
   @override
   void dispose() {
     _newName.dispose();
     _newFocus.dispose();
+    _editName.dispose();
+    _editFocus.dispose();
     _undoTimer?.cancel();
     super.dispose();
   }
 
-  void _startCreate(List<Category> list) {
+  // ---- in-place rename ----
+
+  void _startEdit(Category c) {
+    if (_busy) return;
     setState(() {
-      _creating = true;
-      _newName.clear();
-      _newError = null;
-      _newColor = pickCategoryColor(list);
+      _editingId = c.id;
+      _editName.text = c.name;
+      _editName.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: c.name.length,
+      );
+      _editError = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _newFocus.requestFocus();
+      if (mounted) _editFocus.requestFocus();
     });
   }
 
-  Future<void> _create(List<Category> list) async {
+  /// When the last in-place edit was cancelled (an Escape that the web
+  /// engine also reports as a dismiss must not close the dialog too).
+  DateTime? _cancelledAt;
+
+  void _cancelEdit() {
+    _cancelledAt = DateTime.now();
+    setState(() {
+      _editingId = null;
+      _editError = null;
+    });
+  }
+
+  /// Escape: cancels an in-place edit, else closes (with the last created
+  /// category).
+  void _dismiss() {
+    if (_editingId != null) return _cancelEdit();
+    final t = _cancelledAt;
+    if (t != null &&
+        DateTime.now().difference(t) < const Duration(milliseconds: 400)) {
+      return;
+    }
+    Navigator.of(context).pop(_lastCreated);
+  }
+
+  /// Blur commits (when valid; an invalid name stays open with its error).
+  void _editFocusChanged() {
+    if (!_editFocus.hasFocus && _editingId != null) _commitEdit();
+  }
+
+  Future<void> _commitEdit() async {
+    final id = _editingId;
+    if (id == null || _busy) return;
+    final c = _list.where((x) => x.id == id).firstOrNull;
+    if (c == null) return _cancelEdit();
+    final name = normalizeCategoryName(_editName.text);
+    if (name == c.name) return _cancelEdit();
+    final problem = categoryNameProblem(name, _list, except: id);
+    if (problem != null) {
+      setState(() => _editError = problem);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _notifier.edit(id, name: name);
+      if (mounted) setState(() => _editingId = null);
+    } catch (e) {
+      if (!mounted) return;
+      setState(
+        () => _editError = e is ApiException && e.statusCode == 409
+            ? 'That name is taken'
+            : friendlyError(e),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // ---- the new row ----
+
+  String? _newProblem(String v) =>
+      v.trim().isEmpty ? null : categoryNameProblem(v, _list);
+
+  bool get _newValid =>
+      _newName.text.trim().isNotEmpty && _newProblem(_newName.text) == null;
+
+  Future<void> _create() async {
     if (_busy) return;
-    final problem = categoryNameProblem(_newName.text, list);
+    final problem = categoryNameProblem(_newName.text, _list);
     if (problem != null) {
       setState(() => _newError = problem);
       _newFocus.requestFocus();
@@ -155,13 +251,14 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     try {
       final c = await _notifier.create(
         normalizeCategoryName(_newName.text),
-        color: _newColor,
+        color: _newColor ?? pickCategoryColor(_list),
       );
       if (!mounted) return;
       setState(() {
         _lastCreated = c.id;
-        _creating = false;
+        _newName.clear();
         _newError = null;
+        _newColor = null; // a fresh random one for the next
       });
     } catch (e) {
       if (!mounted) return;
@@ -175,20 +272,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     }
   }
 
-  Future<void> _edit(Category c, List<Category> list) async {
-    final r = await showDialog<({String name, String color})>(
-      context: context,
-      builder: (_) => _EditCategoryDialog(category: c, all: list),
-    );
-    if (r == null || !mounted) return;
-    await _run(
-      () => _notifier.edit(
-        c.id,
-        name: r.name == c.name ? null : r.name,
-        color: r.color == c.color ? null : r.color,
-      ),
-    );
-  }
+  // ---- deletes ----
 
   Future<int> _counterparts(Category c) async {
     try {
@@ -203,6 +287,10 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
 
   static String _events(int n) => n == 1 ? '1 event' : '$n events';
 
+  static String _others(int others) => others > 0
+      ? ', plus ${others == 1 ? 'the other side of 1 transfer' : 'the other sides of $others transfers'}'
+      : '';
+
   Future<void> _delete(Category c, int n) async {
     final others = n == 0 ? 0 : await _counterparts(c);
     if (!mounted) return;
@@ -210,10 +298,10 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
       context,
       title: 'Delete category "${c.name}"?',
       message: n == 0
-          ? 'It has no events. Only the category is deleted.'
-          : 'This deletes "${c.name}" and all ${_events(n)} in it'
-                '${others > 0 ? ', plus ${others == 1 ? 'the transfer\'s other side' : '$others transfer counterparts'} in other streams' : ''}. '
-                'This can\'t be undone.',
+          ? 'No stream has events in it. Only the category is deleted.'
+          : 'This deletes "${c.name}" and '
+                '${n == 1 ? 'its 1 event' : 'all $n of its events'} across '
+                'all your streams${_others(others)}. This can\'t be undone.',
       confirmLabel: n == 0 ? 'Delete category' : 'Delete category and events',
     );
     if (!ok || !mounted) return;
@@ -231,9 +319,9 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
       context,
       title: 'Delete ${_events(n)}?',
       message:
-          'All ${_events(n)} in "${c.name}" are deleted'
-          '${others > 0 ? ', plus ${others == 1 ? 'the transfer\'s other side' : '$others transfer counterparts'} in other streams' : ''}. '
-          'The category stays.',
+          '${n == 1 ? 'The 1 event' : 'All $n events'} in "${c.name}" '
+          '${n == 1 ? 'is' : 'are'} deleted across all your streams'
+          '${_others(others)}. The category stays.',
       confirmLabel: 'Delete ${_events(n)}',
     );
     if (!ok || !mounted) return;
@@ -275,15 +363,51 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     }
   }
 
+  // ---- layout ----
+
+  double get _button => _touch ? 40 : 36;
+  static const double _countWidth = 52;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final async = ref.watch(categoriesProvider(widget.streamId));
     final counts = categoryEventCounts(ref, widget.streamId);
     final list = async.valueOrNull ?? const <Category>[];
+    final manage = _canManage;
+    final narrow = MediaQuery.sizeOf(context).width < 420;
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: AppTheme.textMuted,
+    );
+    return Actions(
+      actions: {
+        DismissIntent: CallbackAction<DismissIntent>(
+          onInvoke: (_) {
+            _dismiss();
+            return null;
+          },
+        ),
+      },
+      // Its own scope: a blurred field leaves focus here (below these
+      // actions), so Escape still cancels an open edit first.
+      child: FocusScope(
+        child: _body(theme, async, counts, list, manage, narrow, muted),
+      ),
+    );
+  }
+
+  Widget _body(
+    ThemeData theme,
+    AsyncValue<List<Category>> async,
+    Map<String, int> counts,
+    List<Category> list,
+    bool manage,
+    bool narrow,
+    TextStyle? muted,
+  ) {
     return Padding(
       key: const ValueKey('categories-manager'),
-      padding: const EdgeInsets.fromLTRB(20, 14, 10, 18),
+      padding: EdgeInsets.fromLTRB(narrow ? 12 : 20, 14, narrow ? 4 : 10, 18),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -304,16 +428,19 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
             ],
           ),
           Padding(
-            padding: const EdgeInsets.only(right: 10, bottom: 14),
+            padding: const EdgeInsets.only(right: 8, bottom: 10),
             child: Text(
-              widget.canEdit
-                  ? 'Every event has one category: its name and colour show '
-                        'on the timeline and in the list. Use ⋮ to edit or '
-                        'delete one.'
-                  : 'View only: you have viewer access to this stream.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: AppTheme.textMuted,
-              ),
+              key: const ValueKey('categories-description'),
+              !widget.canEdit
+                  ? 'View only: you have viewer access. Categories are shared '
+                        'by all the owner\'s streams.'
+                  : manage
+                  ? 'Shared by all your streams: counts and deletes cover '
+                        'every stream. Tap a name to rename it, a dot to '
+                        'recolour.'
+                  : 'Shared by all the owner\'s streams. You can add '
+                        'categories; only the owner renames or deletes them.',
+              style: muted,
             ),
           ),
           if (async.isLoading && async.valueOrNull == null)
@@ -342,35 +469,22 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
           else
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.only(right: 10, bottom: 4),
-                child: Wrap(
-                  key: const ValueKey('category-pills'),
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                padding: const EdgeInsets.only(right: 6, bottom: 4),
+                child: Column(
+                  key: const ValueKey('categories-table'),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final c in list)
-                      CategoryPill(
-                        key: ValueKey('category-pill-${c.id}'),
-                        category: c,
-                        count: counts[c.id] ?? 0,
-                        menu: widget.canEdit
-                            ? _menu(c, counts[c.id] ?? 0, list)
-                            : null,
-                      ),
-                    if (widget.canEdit) _newPill(list),
+                    _headerRow(muted, manage),
+                    const Divider(height: 1),
+                    for (final c in list) ...[
+                      _row(c, counts[c.id] ?? 0, manage),
+                      const Divider(height: 1),
+                    ],
+                    if (widget.canEdit) ...[
+                      const SizedBox(height: 10),
+                      _newRow(),
+                    ],
                   ],
-                ),
-              ),
-            ),
-          if (_newError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6, right: 10),
-              child: Text(
-                _newError!,
-                key: const ValueKey('category-new-error'),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
                 ),
               ),
             ),
@@ -413,235 +527,312 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     );
   }
 
-  Widget _menu(Category c, int n, List<Category> list) {
-    final touch =
-        Theme.of(context).platform == TargetPlatform.android ||
-        Theme.of(context).platform == TargetPlatform.iOS;
-    return MenuAnchor(
-      menuChildren: [
-        MenuItemButton(
-          key: ValueKey('category-edit-${c.id}'),
-          leadingIcon: const Icon(Icons.edit_outlined, size: 18),
-          onPressed: _busy ? null : () => _edit(c, list),
-          child: const Text('Edit'),
-        ),
-        MenuItemButton(
-          key: ValueKey('category-delete-${c.id}'),
-          leadingIcon: const Icon(Icons.delete_outline_rounded, size: 18),
-          onPressed: _busy ? null : () => _delete(c, n),
-          child: const Text('Delete'),
-        ),
-        MenuItemButton(
-          key: ValueKey('category-delete-events-${c.id}'),
-          leadingIcon: const Icon(Icons.layers_clear_outlined, size: 18),
-          // Nothing to delete: shown, disabled.
-          onPressed: _busy || n == 0 ? null : () => _deleteEvents(c, n),
-          child: Text('Delete $n ${n == 1 ? 'Event' : 'Events'}'),
-        ),
-      ],
-      builder: (context, controller, _) => IconButton(
-        key: ValueKey('category-menu-${c.id}'),
-        tooltip: 'Options for ${c.name}',
-        visualDensity: VisualDensity.compact,
-        constraints: BoxConstraints.tightFor(
-          width: touch ? 40 : 32,
-          height: touch ? 40 : 32,
-        ),
-        padding: EdgeInsets.zero,
-        iconSize: 18,
-        onPressed: () =>
-            controller.isOpen ? controller.close() : controller.open(),
-        icon: const Icon(Icons.more_vert_rounded),
+  Widget _headerRow(TextStyle? style, bool manage) {
+    final s = style?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.5);
+    return Padding(
+      key: const ValueKey('categories-header'),
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          SizedBox(width: _button + 4),
+          Expanded(child: Text('NAME', style: s)),
+          Tooltip(
+            message: 'Events in all streams',
+            child: SizedBox(
+              width: _countWidth,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('EVENTS', style: s, maxLines: 1),
+                ),
+              ),
+            ),
+          ),
+          if (manage) SizedBox(width: _button * 2 + 6),
+        ],
       ),
     );
   }
 
-  Widget _newPill(List<Category> list) {
-    if (!_creating) {
-      return CustomPaint(
-        key: const ValueKey('category-new'),
-        painter: _DashedPillPainter(color: AppTheme.textFaint),
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            customBorder: const StadiumBorder(),
-            onTap: _busy ? null : () => _startCreate(list),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.add_rounded, size: 18, color: AppTheme.textMuted),
-                  SizedBox(width: 6),
-                  Text(
-                    'New category',
-                    style: TextStyle(
-                      color: AppTheme.textMuted,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-    final color = colorFromHex(_newColor) ?? laneColor(0);
-    return CustomPaint(
-      key: const ValueKey('category-new-editing'),
-      painter: _DashedPillPainter(color: color),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 2, 2, 2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ColorDotMenu(
-              key: const ValueKey('category-new-color'),
-              color: _newColor,
-              onPicked: (c) => setState(() => _newColor = c),
-            ),
-            SizedBox(
-              width: 170,
-              child: TextField(
-                key: const ValueKey('category-new-name'),
-                controller: _newName,
-                focusNode: _newFocus,
-                maxLength: maxCategoryNameLength,
-                textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(
-                  hintText: 'Category name',
-                  isDense: true,
-                  counterText: '',
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  filled: false,
-                  contentPadding: EdgeInsets.symmetric(vertical: 10),
-                ),
-                // Checked as you type: a taken name shows before Create.
-                onChanged: (v) => setState(
-                  () => _newError = v.trim().isEmpty
-                      ? null
-                      : categoryNameProblem(v, list),
-                ),
-                onSubmitted: (_) => _create(list),
-              ),
-            ),
-            IconButton(
-              key: const ValueKey('category-new-save'),
-              tooltip: 'Create',
-              visualDensity: VisualDensity.compact,
-              onPressed: _busy || _newError != null
-                  ? null
-                  : () => _create(list),
-              icon: const Icon(Icons.check_rounded, color: AppTheme.accent),
-            ),
-            IconButton(
-              key: const ValueKey('category-new-cancel'),
-              tooltip: 'Cancel',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => setState(() {
-                _creating = false;
-                _newError = null;
-              }),
-              icon: const Icon(Icons.close_rounded, size: 18),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// One category as a pill: colour dot, name, event count, and [menu] (the
-/// ⋮ button) when editable. Hidden categories are dimmed with an eye-off.
-class CategoryPill extends StatelessWidget {
-  const CategoryPill({
-    super.key,
-    required this.category,
-    required this.count,
-    this.menu,
-  });
-
-  final Category category;
-  final int count;
-  final Widget? menu;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = colorFromHex(category.color) ?? laneColor(0);
-    final hidden = category.hidden;
-    return Semantics(
-      container: true,
-      label:
-          '${category.name}, ${count == 1 ? '1 event' : '$count events'}'
-          '${hidden ? ', hidden' : ''}',
-      child: Opacity(
-        opacity: hidden ? 0.6 : 1,
-        child: Container(
-          padding: EdgeInsets.fromLTRB(12, 0, menu == null ? 12 : 2, 0),
-          constraints: const BoxConstraints(minHeight: 40),
-          decoration: ShapeDecoration(
-            color: color.withValues(alpha: 0.16),
-            shape: StadiumBorder(
-              side: BorderSide(color: color.withValues(alpha: 0.7)),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 10,
-                height: 10,
+  Widget _row(Category c, int n, bool manage) {
+    final theme = Theme.of(context);
+    final color = colorFromHex(c.color) ?? laneColor(0);
+    final editing = manage && _editingId == c.id;
+    final b = _button;
+    final Widget swatch = manage
+        ? _ColorDotMenu(
+            key: ValueKey('category-color-${c.id}'),
+            color: c.color,
+            size: b,
+            onPicked: (v) {
+              if (v != c.color) _run(() => _notifier.edit(c.id, color: v));
+            },
+          )
+        : SizedBox(
+            width: b,
+            height: b,
+            child: Center(
+              child: Container(
+                width: 14,
+                height: 14,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
-              const SizedBox(width: 8),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 200),
-                child: ExcludeSemantics(
+            ),
+          );
+    final Widget name = editing
+        ? CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): _dismiss,
+            },
+            child: TextField(
+              key: ValueKey('category-name-field-${c.id}'),
+              controller: _editName,
+              focusNode: _editFocus,
+              maxLength: maxCategoryNameLength,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                isDense: true,
+                counterText: '',
+                errorText: _editError,
+                errorMaxLines: 3,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 10,
+                ),
+                suffixIconConstraints: BoxConstraints.tightFor(
+                  width: b,
+                  height: b,
+                ),
+                suffixIcon: IconButton(
+                  key: ValueKey('category-name-save-${c.id}'),
+                  tooltip: 'Save name',
+                  padding: EdgeInsets.zero,
+                  iconSize: 20,
+                  onPressed: _busy ? null : _commitEdit,
+                  icon: const Icon(Icons.check_rounded, color: AppTheme.accent),
+                ),
+              ),
+              onChanged: (v) {
+                if (_editError != null) {
+                  setState(
+                    () => _editError = categoryNameProblem(
+                      v,
+                      _list,
+                      except: c.id,
+                    ),
+                  );
+                }
+              },
+              onSubmitted: (_) => _commitEdit(),
+              // Enter keeps the focus (an invalid name stays editable).
+              onEditingComplete: () {},
+              // A tap anywhere else blurs, which commits (all platforms).
+              onTapOutside: (_) => _editFocus.unfocus(),
+            ),
+          )
+        : InkWell(
+            key: ValueKey('category-name-${c.id}'),
+            borderRadius: BorderRadius.circular(6),
+            onTap: manage && !_busy ? () => _startEdit(c) : null,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: b),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        c.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    if (c.hidden) ...[
+                      const SizedBox(width: 4),
+                      const Tooltip(
+                        message: 'Hidden on the timeline',
+                        child: Icon(
+                          Icons.visibility_off_outlined,
+                          size: 14,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      child: Opacity(
+        key: ValueKey('category-row-${c.id}'),
+        opacity: c.hidden && !editing ? 0.6 : 1,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(
+            crossAxisAlignment: editing
+                ? CrossAxisAlignment.start
+                : CrossAxisAlignment.center,
+            children: [
+              swatch,
+              const SizedBox(width: 4),
+              Expanded(child: name),
+              SizedBox(
+                width: _countWidth,
+                height: b,
+                child: Align(
+                  alignment: Alignment.centerRight,
                   child: Text(
-                    category.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    '$n',
+                    semanticsLabel: '${_events(n)} in all streams',
+                    key: ValueKey('category-count-${c.id}'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppTheme.textMuted,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              ExcludeSemantics(
-                child: Text(
-                  '$count',
-                  key: ValueKey('category-count-${category.id}'),
-                  style: const TextStyle(
-                    color: AppTheme.textMuted,
-                    fontSize: 12,
-                  ),
+              if (manage) ...[
+                const SizedBox(width: 6),
+                _action(
+                  key: ValueKey('category-delete-events-${c.id}'),
+                  tooltip: n == 0
+                      ? 'No events to delete'
+                      : 'Delete ${_events(n)} in all streams (keep category)',
+                  icon: Icons.playlist_remove_rounded,
+                  onPressed: _busy || n == 0 ? null : () => _deleteEvents(c, n),
                 ),
-              ),
-              if (hidden) ...[
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.visibility_off_outlined,
-                  size: 14,
-                  color: AppTheme.textMuted,
+                _action(
+                  key: ValueKey('category-delete-${c.id}'),
+                  tooltip: n == 0
+                      ? 'Delete category'
+                      : 'Delete category and its ${_events(n)}',
+                  icon: Icons.delete_outline_rounded,
+                  danger: true,
+                  onPressed: _busy ? null : () => _delete(c, n),
                 ),
               ],
-              if (menu != null) menu! else const SizedBox(width: 2),
             ],
           ),
         ),
       ),
     );
   }
+
+  Widget _action({
+    required Key key,
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    bool danger = false,
+  }) => IconButton(
+    key: key,
+    tooltip: tooltip,
+    padding: EdgeInsets.zero,
+    constraints: BoxConstraints.tightFor(width: _button, height: _button),
+    iconSize: 20,
+    color: danger ? Theme.of(context).colorScheme.error : null,
+    onPressed: onPressed,
+    icon: Icon(icon),
+  );
+
+  Widget _newRow() {
+    final theme = Theme.of(context);
+    final color = _newColor ??= pickCategoryColor(_list);
+    final b = _button;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        CustomPaint(
+          key: const ValueKey('category-new-row'),
+          painter: _DashedPillPainter(color: AppTheme.textFaint, radius: 10),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 3, 2, 3),
+            child: Row(
+              children: [
+                _ColorDotMenu(
+                  key: const ValueKey('category-new-color'),
+                  color: color,
+                  size: b,
+                  onPicked: (c) => setState(() => _newColor = c),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: TextField(
+                    key: const ValueKey('category-new-name'),
+                    controller: _newName,
+                    focusNode: _newFocus,
+                    maxLength: maxCategoryNameLength,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      hintText: 'New category name',
+                      isDense: true,
+                      counterText: '',
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 10,
+                      ),
+                    ),
+                    // Checked as you type: a taken name shows before Add.
+                    onChanged: (v) =>
+                        setState(() => _newError = _newProblem(v)),
+                    onSubmitted: (_) {
+                      if (_newValid) _create();
+                    },
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('category-new-save'),
+                  tooltip: 'Add category',
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints.tightFor(width: b, height: b),
+                  onPressed: _busy || !_newValid ? null : _create,
+                  icon: const Icon(Icons.add_rounded),
+                  color: AppTheme.accent,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_newError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 4),
+            child: Text(
+              _newError!,
+              key: const ValueKey('category-new-error'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 /// A colour dot that opens the palette.
 class _ColorDotMenu extends StatelessWidget {
-  const _ColorDotMenu({super.key, required this.color, required this.onPicked});
+  const _ColorDotMenu({
+    super.key,
+    required this.color,
+    required this.onPicked,
+    this.size = 40,
+  });
 
   final String color;
   final ValueChanged<String> onPicked;
+
+  /// The tap target's side.
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -667,7 +858,8 @@ class _ColorDotMenu extends StatelessWidget {
       ],
       builder: (context, controller, _) => IconButton(
         tooltip: 'Colour: ${i == null ? 'Custom' : laneColorNames[i]} (change)',
-        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: BoxConstraints.tightFor(width: size, height: size),
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),
         icon: Container(
@@ -743,109 +935,17 @@ class PaletteSwatches extends StatelessWidget {
   }
 }
 
-/// Edit: rename (unique) and recolour.
-class _EditCategoryDialog extends StatefulWidget {
-  const _EditCategoryDialog({required this.category, required this.all});
-
-  final Category category;
-  final List<Category> all;
-
-  @override
-  State<_EditCategoryDialog> createState() => _EditCategoryDialogState();
-}
-
-class _EditCategoryDialogState extends State<_EditCategoryDialog> {
-  late final _name = TextEditingController(text: widget.category.name);
-  late String _color = widget.category.color;
-  String? _error;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    final problem = categoryNameProblem(
-      _name.text,
-      widget.all,
-      except: widget.category.id,
-    );
-    if (problem != null) {
-      setState(() => _error = problem);
-      return;
-    }
-    Navigator.of(context)
-        .pop((name: normalizeCategoryName(_name.text), color: _color));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      key: const ValueKey('category-edit-dialog'),
-      title: const Text('Edit category'),
-      content: SizedBox(
-        width: 6 * 44,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              key: const ValueKey('category-edit-name'),
-              controller: _name,
-              autofocus: true,
-              maxLength: maxCategoryNameLength,
-              decoration: InputDecoration(
-                labelText: 'Name',
-                errorText: _error,
-                counterText: '',
-              ),
-              onChanged: (_) {
-                if (_error != null) setState(() => _error = null);
-              },
-              onSubmitted: (_) => _save(),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Colour',
-              style: TextStyle(
-                color: AppTheme.textMuted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            PaletteSwatches(
-              selected: _color,
-              onPicked: (c) => setState(() => _color = c),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          key: const ValueKey('category-edit-save'),
-          onPressed: _save,
-          child: const Text('Save'),
-        ),
-      ],
-    );
-  }
-}
-
-/// The dashed stadium outline of the "+ New category" pill.
+/// A dashed rounded outline ([radius]; null: a stadium), e.g. the "new
+/// category" row's.
 class _DashedPillPainter extends CustomPainter {
-  _DashedPillPainter({required this.color});
+  _DashedPillPainter({required this.color, this.radius});
 
   final Color color;
+  final double? radius;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final r = size.height / 2;
+    final r = radius ?? size.height / 2;
     final path = Path()
       ..addRRect(
         RRect.fromRectAndRadius(
@@ -867,7 +967,8 @@ class _DashedPillPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DashedPillPainter old) => old.color != color;
+  bool shouldRepaint(_DashedPillPainter old) =>
+      old.color != color || old.radius != radius;
 }
 
 /// The editor's category picker: read-only pills (pick one; categories

@@ -658,13 +658,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('editor-back')), findsOneWidget);
     // Only one panel route: the list is replaced, not stacked.
-    expect(find.byKey(const ValueKey('events-search')), findsNothing);
+    expect(find.byKey(const ValueKey('events-category-filter')), findsNothing);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('events-search')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('events-category-filter')),
+      findsOneWidget,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('events-search')), findsNothing);
+    expect(find.byKey(const ValueKey('events-category-filter')), findsNothing);
   });
 
   testWidgets('new event button creates and the count updates', (tester) async {

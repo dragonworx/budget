@@ -32,19 +32,25 @@ void main() {
     tx('Gym', enabled: false),
   ];
 
-  test('filters by text and amount', () {
-    expect(filterEvents(items, 'sal', TxFilter.all).map((t) => t.name), [
-      'Salary',
-    ]);
-    expect(filterEvents(items, '2100', TxFilter.all).single.name, 'Rent');
-    expect(filterEvents(items, '', TxFilter.all), hasLength(3));
+  test('filters by category', () {
+    final withCats = [
+      for (final t in items) t.copyWith(categoryId: 'cat-${t.name}'),
+    ];
+    expect(filterEvents(withCats, TxFilter.all), hasLength(3));
+    expect(
+      filterEvents(withCats, TxFilter.all, category: 'cat-Rent').single.name,
+      'Rent',
+    );
+    expect(
+      filterEvents(withCats, TxFilter.credit, category: 'cat-Rent'),
+      isEmpty,
+    );
   });
 
   test('filters by direction and enabled', () {
-    expect(filterEvents(items, '', TxFilter.credit).single.name, 'Salary');
-    expect(filterEvents(items, '', TxFilter.debit), hasLength(2));
-    expect(filterEvents(items, '', TxFilter.disabled).single.name, 'Gym');
-    expect(filterEvents(items, 'rent', TxFilter.credit), isEmpty);
+    expect(filterEvents(items, TxFilter.credit).single.name, 'Salary');
+    expect(filterEvents(items, TxFilter.debit), hasLength(2));
+    expect(filterEvents(items, TxFilter.disabled).single.name, 'Gym');
   });
 
   test('next occurrence is anchored and on/after today', () {

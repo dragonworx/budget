@@ -20,27 +20,21 @@ import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
 import '../timeline/stack_lanes.dart';
 import '../timeline/zoom_level.dart';
-import '../categories/categories_manager.dart';
 import 'editor_outcome.dart';
 import 'event_editor.dart';
 
 enum TxFilter { all, credit, debit, disabled }
 
-/// Filters [items] by a free-text [query] (name, amount), [filter] and
-/// [categories] (any of them; empty: every category).
+/// Filters [items] by [filter] and [category] (an id; null: every
+/// category).
 List<BudgetEvent> filterEvents(
   List<BudgetEvent> items,
-  String query,
   TxFilter filter, {
-  Set<String> categories = const {},
+  String? category,
 }) {
-  final q = query.trim().toLowerCase();
   return [
     for (final t in items)
-      if ((categories.isEmpty || categories.contains(t.categoryId)) &&
-          (q.isEmpty ||
-              t.name.toLowerCase().contains(q) ||
-              t.amount.toString().contains(q)) &&
+      if ((category == null || t.categoryId == category) &&
           switch (filter) {
             TxFilter.all => true,
             TxFilter.credit => t.direction == EventDirection.credit,
@@ -263,11 +257,10 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     );
   }
 
-  final _search = TextEditingController();
   TxFilter _filter = TxFilter.all;
 
-  /// The category filter (ids; empty: all categories).
-  Set<String> _catFilter = {};
+  /// The category filter (an id; null: all categories).
+  String? _catFilter;
 
   /// The row under the mouse (see [EventsPanel.onHoverEvent]).
   String? _hovered;
@@ -406,7 +399,6 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   @override
   void dispose() {
     _clearHover(later: true);
-    _search.dispose();
     _listScroll.dispose();
     _highlightTimer?.cancel();
     _autoScroll?.cancel();
@@ -661,6 +653,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       color: AppTheme.surface,
       child: SafeArea(
         child: Column(
+          key: const ValueKey('events-panel-body'),
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
@@ -689,16 +682,6 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                         label: const Text('Plan'),
                       ),
                   ],
-                  IconButton(
-                    key: const ValueKey('panel-categories'),
-                    tooltip: 'Categories',
-                    onPressed: () => showCategoriesManager(
-                      context,
-                      streamId: widget.stream.id,
-                      canEdit: !_readOnly,
-                    ),
-                    icon: const Icon(Icons.sell_outlined),
-                  ),
                   if (!_readOnly) _newSplitButton(),
                   IconButton(
                     key: const ValueKey('panel-close'),
@@ -716,24 +699,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: TextField(
-                key: const ValueKey('events-search'),
-                controller: _search,
-                autofocus: MediaQuery.sizeOf(context).width >= 600,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: 'Search by category or amount',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                  suffixIcon: _search.text.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Clear',
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                          onPressed: () => setState(_search.clear),
-                        ),
-                ),
-              ),
+              child: _categoryDropdown(),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
@@ -752,11 +718,9 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                       selected: _filter == f,
                       onSelected: (_) => setState(() => _filter = f),
                     ),
-                  _categoryFilterButton(),
                 ],
               ),
             ),
-            ?_categoryFilterChips(),
             const Divider(height: 1),
             Expanded(
               child: async.when(
@@ -780,116 +744,93 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     );
   }
 
-  /// The filtered categories that still exist, in the stream's order.
-  List<Category> _activeCategories() {
-    if (_catFilter.isEmpty) return const [];
-    return [
-      for (final c
-          in ref.watch(categoriesProvider(widget.stream.id)).valueOrNull ??
-              const <Category>[])
-        if (_catFilter.contains(c.id)) c,
-    ];
+  /// The filtered category, if it still exists.
+  Category? _activeCategory() {
+    final id = _catFilter;
+    if (id == null) return null;
+    for (final c
+        in ref.watch(categoriesProvider(widget.stream.id)).valueOrNull ??
+            const <Category>[]) {
+      if (c.id == id) return c;
+    }
+    return null;
   }
 
-  void _toggleCategoryFilter(String id) => setState(() {
-    _catFilter = _catFilter.contains(id)
-        ? ({..._catFilter}..remove(id))
-        : {..._catFilter, id};
-  });
+  static Widget _dot(Color? color) => Container(
+    width: 10,
+    height: 10,
+    decoration: BoxDecoration(
+      color: color ?? AppTheme.textFaint,
+      shape: BoxShape.circle,
+    ),
+  );
 
-  /// "Categories ▾": tick one or more categories to list only theirs.
-  Widget _categoryFilterButton() {
+  /// The full-width category filter: "All categories" (the default) or one
+  /// category, each with its colour dot.
+  Widget _categoryDropdown() {
     final list =
         ref.watch(categoriesProvider(widget.stream.id)).valueOrNull ??
         const <Category>[];
-    final n = _activeCategories().length;
-    return MenuAnchor(
-      style: MenuStyle(
-        maximumSize: WidgetStatePropertyAll(
-          Size(320, MediaQuery.sizeOf(context).height * 0.6),
+    final active = _activeCategory();
+    Widget entry(Category? c) => Row(
+      children: [
+        if (c == null)
+          const Icon(Icons.sell_outlined, size: 16, color: AppTheme.textMuted)
+        else
+          _dot(colorFromHex(c.color)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            c?.name ?? 'All categories',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      ),
-      menuChildren: [
-        if (list.isEmpty)
-          const MenuItemButton(onPressed: null, child: Text('No categories')),
-        for (final c in list)
-          KeyedSubtree(
-            key: ValueKey('filter-category-${c.id}'),
-            child: CheckboxMenuButton(
-              closeOnActivate: false,
-              value: _catFilter.contains(c.id),
-              onChanged: (_) => _toggleCategoryFilter(c.id),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: colorFromHex(c.color),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 200),
-                    child: Text(
-                      c.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
       ],
-      builder: (context, controller, _) => FilterChip(
-        key: const ValueKey('filter-categories'),
-        avatar: const Icon(Icons.sell_outlined, size: 16),
-        label: Text(n == 0 ? 'Categories' : 'Categories · $n'),
-        selected: n > 0,
-        showCheckmark: false,
-        onSelected: (_) =>
-            controller.isOpen ? controller.close() : controller.open(),
-      ),
     );
-  }
-
-  /// The filtered categories as removable chips, and Clear.
-  Widget? _categoryFilterChips() {
-    final cats = _activeCategories();
-    if (cats.isEmpty) return null;
-    return Padding(
-      key: const ValueKey('filter-category-chips'),
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          for (final c in cats)
-            InputChip(
-              key: ValueKey('filter-category-chip-${c.id}'),
-              avatar: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: colorFromHex(c.color),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              label: Text(c.name),
-              visualDensity: VisualDensity.compact,
-              deleteButtonTooltipMessage: 'Remove ${c.name}',
-              onDeleted: () => _toggleCategoryFilter(c.id),
-            ),
-          TextButton(
-            key: const ValueKey('filter-categories-clear'),
-            onPressed: () => setState(() => _catFilter = {}),
-            child: const Text('Clear'),
+    // A menu (not a route): the list changes under it without a pop.
+    return LayoutBuilder(
+      builder: (context, box) => MenuAnchor(
+        alignmentOffset: const Offset(0, 4),
+        style: MenuStyle(
+          minimumSize: WidgetStatePropertyAll(Size(box.maxWidth, 0)),
+          maximumSize: WidgetStatePropertyAll(
+            Size(box.maxWidth, MediaQuery.sizeOf(context).height * 0.6),
           ),
+        ),
+        menuChildren: [
+          for (final c in <Category?>[null, ...list])
+            SizedBox(
+              width: box.maxWidth,
+              child: MenuItemButton(
+                key: ValueKey('filter-category-${c?.id ?? 'all'}'),
+                onPressed: () => setState(() => _catFilter = c?.id),
+                trailingIcon: (c?.id == active?.id)
+                    ? const Icon(Icons.check_rounded, size: 18)
+                    : null,
+                child: entry(c),
+              ),
+            ),
         ],
+        builder: (context, controller, _) => InkWell(
+          key: const ValueKey('events-category-filter'),
+          borderRadius: BorderRadius.circular(12),
+          onTap: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+          child: InputDecorator(
+            isFocused: controller.isOpen,
+            decoration: const InputDecoration(
+              isDense: true,
+              contentPadding: EdgeInsets.fromLTRB(12, 10, 8, 10),
+              suffixIcon: Icon(Icons.arrow_drop_down_rounded),
+            ),
+            child: Semantics(
+              button: true,
+              label: 'Category filter',
+              child: entry(active),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -937,40 +878,24 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       );
     }
     final ordered = _ordered(items);
-    final cats = _activeCategories();
-    final shown = filterEvents(
-      ordered,
-      _search.text,
-      _filter,
-      categories: {for (final c in cats) c.id},
-    );
-    final canReorder =
-        !_readOnly &&
-        _search.text.trim().isEmpty &&
-        _filter == TxFilter.all &&
-        cats.isEmpty;
+    final cat = _activeCategory();
+    final shown = filterEvents(ordered, _filter, category: cat?.id);
+    final canReorder = !_readOnly && _filter == TxFilter.all && cat == null;
     if (shown.isEmpty) {
-      final names = cats.map((c) => c.name).join(', ');
       return EmptyState(
         key: const ValueKey('events-no-matches'),
-        icon: Icons.search_off_rounded,
+        icon: Icons.filter_alt_off_rounded,
         title: 'No matches',
-        message: cats.isEmpty
-            ? 'Nothing matches the search and filter.'
-            : 'No events in ${cats.length == 1 ? 'category' : 'categories'} '
-                  '$names match the search and filter.',
+        message: cat == null
+            ? 'No events match the filter.'
+            : 'No events in category ${cat.name} match the filter.',
         action: TextButton(
           key: const ValueKey('events-clear-filters'),
           onPressed: () => setState(() {
-            _search.clear();
             _filter = TxFilter.all;
-            _catFilter = {};
+            _catFilter = null;
           }),
-          child: Text(
-            cats.isEmpty
-                ? 'Clear search and filter'
-                : 'Clear search and filters',
-          ),
+          child: Text(cat == null ? 'Clear filter' : 'Clear filters'),
         ),
       );
     }
