@@ -20,6 +20,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/category_dropdown.dart';
 import 'support/fake_categories.dart';
 
 final _now = DateTime.now();
@@ -537,18 +538,41 @@ void main() {
     expect(find.textContaining('only the owner'), findsOneWidget);
   });
 
-  testWidgets('the editor: category is a read-only picker after the type; '
-      'the header wears its colour; Manage opens the manager', (tester) async {
-    final (store, _) = await _pump(tester);
+  Future<void> openEditor(WidgetTester tester) async {
     await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('panel-new-event')));
     await tester.pumpAndSettle();
+  }
+
+  String fieldText(WidgetTester tester) => tester
+      .widgetList<Text>(
+        find.descendant(
+          of: find.byKey(const ValueKey('editor-category-field')),
+          matching: find.byType(Text),
+        ),
+      )
+      .map((t) => t.data)
+      .join('|');
+
+  testWidgets('the editor: category is one full-width drop-down after the '
+      'type (no pills); picking recolours the header and saves; the last '
+      'used is the default next time', (tester) async {
+    final (store, _) = await _pump(tester);
+    await openEditor(tester);
     final picker = find.byKey(const ValueKey('editor-category'));
     expect(picker, findsOneWidget);
     expect(
       find.descendant(of: picker, matching: find.byType(TextField)),
       findsNothing,
+    );
+    // No pills: the rows exist only in the open menu.
+    expect(find.byKey(ValueKey('editor-category-$_groc')), findsNothing);
+    final field = find.byKey(const ValueKey('editor-category-field'));
+    final amount = find.byKey(const ValueKey('editor-amount'));
+    expect(
+      tester.getSize(field).width,
+      closeTo(tester.getSize(amount).width, 1),
     );
     expect(
       tester.getTopLeft(picker).dy,
@@ -556,8 +580,12 @@ void main() {
         tester.getTopLeft(find.byKey(const ValueKey('editor-kind'))).dy,
       ),
     );
-    await tester.tap(find.byKey(ValueKey('editor-category-$_groc')));
-    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: field, matching: find.text('Category')),
+      findsOneWidget,
+    );
+    await pickCategory(tester, _groc);
+    expect(fieldText(tester), contains('Groceries'));
     final header = tester.widget<AnimatedContainer>(
       find.byKey(const ValueKey('editor-header')),
     );
@@ -570,20 +598,254 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.calls.last, startsWith('create Groceries $_groc'));
     await tester.pump(const Duration(seconds: 6));
-    // Next time: the last used category is the default.
+    // Next time: the last used category is the default (checked in the
+    // menu).
     await tester.tap(find.byKey(const ValueKey('panel-new-event')));
     await tester.pumpAndSettle();
+    expect(fieldText(tester), contains('Groceries'));
+    await openCategoryMenu(tester);
     expect(
-      tester
-          .widget<Semantics>(find.byKey(ValueKey('editor-category-$_groc')))
-          .properties
-          .selected,
+      find.descendant(
+        of: find.byKey(ValueKey('editor-category-$_groc')).last,
+        matching: find.byIcon(Icons.check_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(ValueKey('editor-category-$_rent')).last,
+        matching: find.byIcon(Icons.check_rounded),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('the default: the event\'s own category, else the last used, '
+      'else the first by name', (tester) async {
+    final (store, _) = await _pump(tester);
+    await openEditor(tester);
+    // Nothing used yet: the first in the list as loaded (unchanged rule;
+    // the fake lists Wages first), whatever the menu's name order.
+    expect(fieldText(tester), contains('Wages'));
+    await pickCategory(tester, _groc);
+    await tester.enterText(_field('editor-amount'), '3');
+    await tester.tap(find.byKey(const ValueKey('editor-save')));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 6));
+    // A new one: the last used.
+    await tester.tap(find.byKey(const ValueKey('panel-new-event')));
+    await tester.pumpAndSettle();
+    expect(fieldText(tester), contains('Groceries'));
+    await tester.tap(find.byKey(const ValueKey('editor-close')));
+    await tester.pumpAndSettle();
+    // An existing event: its own (Rent), not the last used.
+    expect(store.txs['rent'], isNotNull);
+    if (find.byKey(const ValueKey('row-line1-rent')).evaluate().isEmpty) {
+      await tester.tap(find.byKey(const ValueKey('open-events')));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.byKey(const ValueKey('row-line1-rent')).first);
+    await tester.pumpAndSettle();
+    expect(fieldText(tester), contains('Rent'));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  testWidgets('"Manage categories…" is the menu\'s last row (after a '
+      'divider); it opens the manager and a category created there is '
+      'selected on return', (tester) async {
+    final (_, cats) = await _pump(tester, size: const Size(390, 844));
+    await openEditor(tester);
+    await openCategoryMenu(tester);
+    final manage = find.byKey(const ValueKey('editor-manage-categories'));
+    expect(manage, findsOneWidget);
+    expect(find.text('Manage categories…'), findsOneWidget);
+    for (final id in [_wages, _rent, _groc]) {
+      expect(
+        tester.getTopLeft(manage).dy,
+        greaterThan(
+          tester
+              .getTopLeft(find.byKey(ValueKey('editor-category-$id')).last)
+              .dy,
+        ),
+      );
+    }
+    // A divider sits between the last category row and Manage.
+    final wagesBottom = tester
+        .getRect(find.byKey(ValueKey('editor-category-$_wages')).last)
+        .bottom;
+    final manageTop = tester.getTopLeft(manage).dy;
+    expect(
+      find.byType(Divider).evaluate().any((e) {
+        final box = e.renderObject! as RenderBox;
+        final y = box.localToGlobal(Offset.zero).dy;
+        return y >= wagesBottom - 1 && y <= manageTop + 1;
+      }),
       isTrue,
     );
-    await tester.tap(find.byKey(const ValueKey('editor-manage-categories')));
+    await tester.tap(manage);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('categories-manager')), findsOneWidget);
+    await tester.enterText(_field('category-new-name'), 'Travel');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(cats.calls, contains('create Travel'));
+    await tester.tap(find.byKey(const ValueKey('categories-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('categories-manager')), findsNothing);
+    expect(fieldText(tester), contains('Travel'));
+    expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Esc closes only the open menu, not the editor; Enter / '
+      'Space open it, arrows move, Enter picks', (tester) async {
+    await _pump(tester);
+    await openEditor(tester);
+    final menuRow = find.byKey(ValueKey('editor-category-$_rent'));
+    await pickCategory(tester, _groc);
+    await openCategoryMenu(tester);
+    expect(menuRow, findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(menuRow, findsNothing, reason: 'menu closed');
+    expect(
+      find.byKey(const ValueKey('editor-save')),
+      findsOneWidget,
+      reason: 'editor open',
+    );
+    // Keyboard: focus the field, Enter opens, ↓ moves, Enter picks.
+    final field = find.byKey(const ValueKey('editor-category-field'));
+    Focus.of(
+      tester.element(
+        find.descendant(of: field, matching: find.byType(InputDecorator)),
+      ),
+    ).requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(menuRow, findsOneWidget, reason: 'Enter opens');
+    // The chosen row (Groceries) has focus; ↓ moves to Rent.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(menuRow, findsNothing);
+    expect(fieldText(tester), contains('Rent'));
+    // Space opens too; Esc again closes only the menu.
+    Focus.of(
+      tester.element(
+        find.descendant(of: field, matching: find.byType(InputDecorator)),
+      ),
+    ).requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(menuRow, findsOneWidget, reason: 'Space opens');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(menuRow, findsNothing);
+    expect(find.byKey(const ValueKey('editor-save')), findsOneWidget);
+    expect(fieldText(tester), contains('Rent'));
+  });
+
+  testWidgets('no categories: the field is a "Create a category" prompt '
+      'that opens the manager', (tester) async {
+    final (store, cats) = await _pump(tester);
+    store.txs.clear();
+    ProviderScope.containerOf(tester.element(find.byType(TimelinePage)))
+        .invalidate(categoriesProvider);
+    await tester.pumpAndSettle();
+    await openEditor(tester);
+    expect(find.byKey(const ValueKey('editor-category-field')), findsNothing);
+    final create = find.byKey(const ValueKey('editor-create-category'));
+    expect(create, findsOneWidget);
+    expect(find.text('Create a category'), findsOneWidget);
+    // Saving without one keeps the error.
+    await tester.enterText(_field('editor-amount'), '5');
+    await tester.tap(find.byKey(const ValueKey('editor-save')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('editor-category-error')), findsOneWidget);
+    expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+    await tester.tap(create);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('categories-manager')), findsOneWidget);
+    await tester.enterText(_field('category-new-name'), 'Food');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(cats.calls, contains('create Food'));
+    await tester.tap(find.byKey(const ValueKey('categories-close')));
+    await tester.pumpAndSettle();
+    expect(fieldText(tester), contains('Food'));
+    expect(find.byKey(const ValueKey('editor-category-error')), findsNothing);
+  });
+
+  testWidgets('viewers: the field shows the category, read-only, no menu', (
+    tester,
+  ) async {
+    await _pump(tester, role: Role.viewer);
+    await tester.tap(find.byKey(const ValueKey('open-events')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('row-line1-rent')).first);
+    await tester.pumpAndSettle();
+    final field = find.byKey(const ValueKey('editor-category-field'));
+    expect(field, findsOneWidget);
+    expect(fieldText(tester), contains('Rent'));
+    expect(tester.widget<InkWell>(field).onTap, isNull);
+    await tester.tap(field, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byKey(ValueKey('editor-category-$_groc')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('editor-manage-categories')),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 10));
+  });
+
+  for (final (label, size) in const [
+    ('desktop', Size(1440, 900)),
+    ('phone 320', Size(320, 640)),
+  ]) {
+    testWidgets('$label: long names ellipsise in the field and the menu; '
+        'many categories scroll', (tester) async {
+      final (_, cats) = await _pump(tester, size: size);
+      final long = 'A very long category name ${'that keeps going ' * 3}'
+          .trim();
+      final names = [long, for (var i = 1; i <= 30; i++) 'Cat $i'];
+      for (final n in names) {
+        await cats.create('acc', name: n.substring(0, n.length.clamp(0, 60)));
+      }
+      ProviderScope.containerOf(tester.element(find.byType(TimelinePage)))
+          .invalidate(categoriesProvider);
+      await tester.pumpAndSettle();
+      await openEditor(tester);
+      final longId = fakeCategoryId(
+        long.substring(0, long.length.clamp(0, 60)),
+      );
+      await pickCategory(tester, longId);
+      final field = find.byKey(const ValueKey('editor-category-field'));
+      final screen = tester.view.physicalSize.width;
+      expect(tester.getRect(field).right, lessThanOrEqualTo(screen));
+      await openCategoryMenu(tester);
+      final row = find.byKey(ValueKey('editor-category-$longId')).last;
+      expect(
+        tester.getRect(row).width,
+        closeTo(tester.getSize(field).width, 1),
+      );
+      final scrollables = find.ancestor(
+        of: row,
+        matching: find.byType(Scrollable),
+      );
+      expect(scrollables, findsWidgets);
+      // The last rows are reachable by scrolling; nothing overflows.
+      final last = find
+          .byKey(ValueKey('editor-category-${fakeCategoryId('Wages')}'))
+          .last;
+      await tester.scrollUntilVisible(last, 100, scrollable: scrollables.first);
+      expect(last.hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('eye menu: a Categories section (apart from streams) toggles '
       'a category\'s visibility', (tester) async {
@@ -954,21 +1216,18 @@ void main() {
       ]);
       await tester.tap(find.byKey(const ValueKey('filter-category-all')).last);
       await tester.pumpAndSettle();
-      // Editor picker (pills wrap: compare reading order).
+      // Editor picker: the drop-down's rows, Manage last.
       await tester.tap(find.byKey(const ValueKey('panel-new-event')));
       await tester.pumpAndSettle();
-      final pos = [
+      await openCategoryMenu(tester);
+      inOrder(tester, [
         for (final n in order)
-          tester.getTopLeft(find.byKey(ValueKey('editor-category-${idOf(n)}'))),
-      ];
-      for (var i = 1; i < pos.length; i++) {
-        final p = pos[i - 1], q = pos[i];
-        expect(
-          q.dy > p.dy + 1 || ((q.dy - p.dy).abs() <= 1 && q.dx > p.dx),
-          isTrue,
-          reason: '${order[i]} after ${order[i - 1]}',
-        );
-      }
+          find.byKey(ValueKey('editor-category-${idOf(n)}')),
+        find.byKey(const ValueKey('editor-manage-categories')),
+      ]);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-save')), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 10));
       expect(tester.takeException(), isNull);

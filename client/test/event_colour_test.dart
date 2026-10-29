@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/category_dropdown.dart';
 import 'support/fake_categories.dart';
 
 final _now = DateTime.now();
@@ -319,10 +320,7 @@ void main() {
     expect(find.byKey(const ValueKey('editor-name')), findsNothing);
     // Default: the first category (Rent, positional blue).
     expect(_headerColor(tester), laneColor(0));
-    await tester.tap(
-      find.byKey(ValueKey('editor-category-${fakeCategoryId('Gym')}')),
-    );
-    await tester.pumpAndSettle();
+    await pickCategory(tester, fakeCategoryId('Gym'));
     expect(_headerColor(tester), const Color(0xFF3C8A6E), reason: 'live');
     await tester.enterText(_field('editor-amount'), '12');
     await tester.tap(find.byKey(const ValueKey('editor-save')));

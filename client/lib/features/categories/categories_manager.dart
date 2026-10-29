@@ -9,6 +9,7 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/category_dropdown.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../events/editor_outcome.dart' show undoTipDuration;
 import '../timeline/stack_lanes.dart';
@@ -996,8 +997,11 @@ class _DashedPillPainter extends CustomPainter {
       old.color != color || old.radius != radius;
 }
 
-/// The editor's category picker: read-only pills (pick one; categories
-/// are made and changed in the manager), and a link to the manager.
+/// The editor's category picker: one full-width [CategoryDropdown] (pick
+/// one; categories are made and changed in the manager, reached from the
+/// menu's last row, "Manage categories…"). With none yet, the field is a
+/// "Create a category" prompt that opens the manager. Read-only
+/// ([enabled] false): the chosen category, no menu.
 class CategoryPicker extends ConsumerWidget {
   const CategoryPicker({
     super.key,
@@ -1020,143 +1024,86 @@ class CategoryPicker extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final async = ref.watch(categoriesProvider(streamId));
-    final list = sortedCategories(async.valueOrNull ?? const <Category>[]);
-    final label = theme.textTheme.labelMedium?.copyWith(
-      color: AppTheme.textMuted,
-    );
-    return Column(
-      key: const ValueKey('editor-category'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(child: Text('Category', style: label)),
-            if (enabled && list.isNotEmpty)
-              TextButton.icon(
-                key: const ValueKey('editor-manage-categories'),
-                onPressed: onManage,
-                icon: const Icon(Icons.tune_rounded, size: 16),
-                label: const Text('Manage'),
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        if (async.isLoading && async.valueOrNull == null)
-          const Padding(
-            padding: EdgeInsets.all(8),
-            child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          )
-        else if (list.isEmpty)
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'No categories yet.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: AppTheme.textMuted,
-                ),
-              ),
-              if (enabled)
-                TextButton(
-                  key: const ValueKey('editor-create-category'),
-                  onPressed: onManage,
-                  child: const Text('Create a category'),
-                ),
-            ],
-          )
-        else
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 168),
-            child: SingleChildScrollView(
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final c in list) _pickPill(c, c.id == selectedId),
-                ],
-              ),
-            ),
+    final list = async.valueOrNull ?? const <Category>[];
+    final Widget field;
+    if (list.isEmpty) {
+      // Loading, or none yet: a prompt field (opens the manager to create
+      // one), plain text for viewers.
+      final loading = async.isLoading && async.valueOrNull == null;
+      final create = enabled && !loading;
+      field = Semantics(
+        button: create,
+        label: 'Category',
+        child: InkWell(
+          key: ValueKey(
+            create ? 'editor-create-category' : 'editor-category-empty',
           ),
-        if (errorText != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
+          borderRadius: BorderRadius.circular(12),
+          onTap: create ? onManage : null,
+          child: InputDecorator(
+            decoration: InputDecoration(
+              labelText: 'Category',
+              enabled: create,
+              suffixIcon: loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(14),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : create
+                  ? const Icon(Icons.add_rounded)
+                  : null,
+              error: _error(theme),
+            ),
             child: Text(
-              errorText!,
-              key: const ValueKey('editor-category-error'),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
+              loading
+                  ? 'Loading…'
+                  : create
+                  ? 'Create a category'
+                  : 'No categories yet',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: create ? AppTheme.accent : AppTheme.textFaint,
               ),
             ),
           ),
-      ],
-    );
+        ),
+      );
+    } else {
+      field = CategoryDropdown(
+        categories: list,
+        selectedId: selectedId,
+        onSelected: (c) {
+          if (c != null) onSelected(c);
+        },
+        triggerKey: const ValueKey('editor-category-field'),
+        itemKeyPrefix: 'editor-category-',
+        labelText: 'Category',
+        errorText: errorText,
+        errorKey: const ValueKey('editor-category-error'),
+        enabled: enabled,
+        footer: CategoryDropdownAction(
+          key: const ValueKey('editor-manage-categories'),
+          icon: Icons.tune_rounded,
+          label: 'Manage categories…',
+          onPressed: onManage,
+        ),
+      );
+    }
+    return KeyedSubtree(key: const ValueKey('editor-category'), child: field);
   }
 
-  Widget _pickPill(Category c, bool selected) {
-    final color = colorFromHex(c.color) ?? laneColor(0);
-    return Semantics(
-      key: ValueKey('editor-category-${c.id}'),
-      container: true,
-      button: true,
-      selected: selected,
-      label: c.name,
-      excludeSemantics: true,
-      child: Material(
-        color: selected ? color : color.withValues(alpha: 0.12),
-        shape: StadiumBorder(
-          side: BorderSide(
-            color: selected ? laneTextColor : color.withValues(alpha: 0.6),
-            width: selected ? 2 : 1,
+  Widget? _error(ThemeData theme) => errorText == null
+      ? null
+      : Text(
+          errorText!,
+          key: const ValueKey('editor-category-error'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.error,
           ),
-        ),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: enabled ? () => onSelected(c) : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (selected)
-                  const Icon(
-                    Icons.check_rounded,
-                    size: 16,
-                    color: laneTextColor,
-                  )
-                else
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                const SizedBox(width: 6),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 180),
-                  child: Text(
-                    c.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: selected ? laneTextColor : AppTheme.text,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+        );
 }

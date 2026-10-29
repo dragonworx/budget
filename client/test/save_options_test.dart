@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:budget_client/widgets/ui.dart';
 
+import 'support/category_dropdown.dart';
 import 'support/fake_categories.dart';
 
 final _start = DateTime(2026, 10, 5);
@@ -244,13 +245,7 @@ void main() {
     final (repo, _) = await _pump(tester, focus: _focus);
     await _amount(tester, '250');
     // Another field: the category (its name).
-    final other = find.byKey(
-      ValueKey('editor-category-${fakeCategoryId('Groceries')}'),
-    );
-    await tester.ensureVisible(other);
-    await tester.pumpAndSettle();
-    await tester.tap(other);
-    await tester.pumpAndSettle();
+    await pickCategory(tester, fakeCategoryId('Groceries'));
     await _open(tester, kind: PointerDeviceKind.mouse);
     expect(_enabled(tester, _once), isFalse);
     expect(

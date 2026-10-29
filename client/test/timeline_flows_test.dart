@@ -1588,6 +1588,11 @@ void main() {
           tester.getTopLeft(find.byKey(ValueKey(k))).dy,
       ];
       expect([...y]..sort(), y, reason: '$y');
+      // The category is one drop-down field.
+      expect(
+        find.byKey(const ValueKey('editor-category-field')),
+        findsOneWidget,
+      );
       tester.testTextInput.enterText('4.5');
       await tester.pump();
       await tester.testTextInput.receiveAction(TextInputAction.done);

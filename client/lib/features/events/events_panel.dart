@@ -14,6 +14,7 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/category_dropdown.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
 import '../timeline/occurrence_dates.dart';
@@ -756,85 +757,21 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     return null;
   }
 
-  static Widget _dot(Color? color) => Container(
-    width: 10,
-    height: 10,
-    decoration: BoxDecoration(
-      color: color ?? AppTheme.textFaint,
-      shape: BoxShape.circle,
-    ),
-  );
-
   /// The full-width category filter: "All categories" (the default) or one
-  /// category, each with its colour dot.
-  Widget _categoryDropdown() {
-    final list = sortedCategories(
-      ref.watch(categoriesProvider(widget.stream.id)).valueOrNull ??
-          const <Category>[],
-    );
-    final active = _activeCategory();
-    Widget entry(Category? c) => Row(
-      children: [
-        if (c == null)
-          const Icon(Icons.sell_outlined, size: 16, color: AppTheme.textMuted)
-        else
-          _dot(colorFromHex(c.color)),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            c?.name ?? 'All categories',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-    // A menu (not a route): the list changes under it without a pop.
-    return LayoutBuilder(
-      builder: (context, box) => MenuAnchor(
-        alignmentOffset: const Offset(0, 4),
-        style: MenuStyle(
-          minimumSize: WidgetStatePropertyAll(Size(box.maxWidth, 0)),
-          maximumSize: WidgetStatePropertyAll(
-            Size(box.maxWidth, MediaQuery.sizeOf(context).height * 0.6),
-          ),
-        ),
-        menuChildren: [
-          for (final c in <Category?>[null, ...list])
-            SizedBox(
-              width: box.maxWidth,
-              child: MenuItemButton(
-                key: ValueKey('filter-category-${c?.id ?? 'all'}'),
-                onPressed: () => setState(() => _catFilter = c?.id),
-                trailingIcon: (c?.id == active?.id)
-                    ? const Icon(Icons.check_rounded, size: 18)
-                    : null,
-                child: entry(c),
-              ),
-            ),
-        ],
-        builder: (context, controller, _) => InkWell(
-          key: const ValueKey('events-category-filter'),
-          borderRadius: BorderRadius.circular(12),
-          onTap: () =>
-              controller.isOpen ? controller.close() : controller.open(),
-          child: InputDecorator(
-            isFocused: controller.isOpen,
-            decoration: const InputDecoration(
-              isDense: true,
-              contentPadding: EdgeInsets.fromLTRB(12, 10, 8, 10),
-              suffixIcon: Icon(Icons.arrow_drop_down_rounded),
-            ),
-            child: Semantics(
-              button: true,
-              label: 'Category filter',
-              child: entry(active),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  /// category, each with its colour dot. Hidden categories are listed like
+  /// any other (filtering to one still finds its events).
+  Widget _categoryDropdown() => CategoryDropdown(
+    categories:
+        ref.watch(categoriesProvider(widget.stream.id)).valueOrNull ??
+        const <Category>[],
+    selectedId: _activeCategory()?.id,
+    onSelected: (c) => setState(() => _catFilter = c?.id),
+    triggerKey: const ValueKey('events-category-filter'),
+    itemKeyPrefix: 'filter-category-',
+    allLabel: 'All categories',
+    semanticsLabel: 'Category filter',
+    dense: true,
+  );
 
   /// "Show N hidden": shows (and counts) every hidden event again in one
   /// batch (null: none hidden, or view only).
