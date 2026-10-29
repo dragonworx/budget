@@ -438,5 +438,121 @@ void main() {
       expect(_docked, findsNothing);
       expect(split, findsNothing);
     });
+
+    for (final (name, size, kind) in [
+      ('1440 mouse', const Size(1440, 900), PointerDeviceKind.mouse),
+      ('1180x820 touch', const Size(1180, 820), PointerDeviceKind.touch),
+    ]) {
+      testWidgets('$name: with the planner open (goal and payment) the same '
+          'splitter resizes it; saved and shared with the list; min 340 '
+          'without overflow; double-tap resets', (tester) async {
+        await _pump(tester, size);
+        await tester.tap(
+          find.descendant(
+            of: _docked,
+            matching: find.byKey(const ValueKey('panel-new-menu')),
+          ),
+          kind: kind,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Plan').last, kind: kind);
+        await tester.pumpAndSettle();
+        final plan = find.byKey(const ValueKey('plan-panel'));
+        expect(plan, findsOneWidget);
+        expect(find.byKey(const ValueKey('plan-split')), findsOneWidget);
+        expect(split, findsOneWidget);
+        double planW() => tester.getSize(plan).width;
+        final w0 = planW();
+        expect(w0, dockedListWidth(size.width));
+        final sr = tester.getRect(split);
+        expect(sr.width, 24);
+        expect(sr.center.dx, closeTo(tester.getRect(plan).left - 8, 0.5));
+        final before = _view(tester);
+
+        for (final tab in ['Plan a payment', 'Plan a goal']) {
+          await tester.tap(find.text(tab), kind: kind);
+          await tester.pumpAndSettle();
+          final from = planW();
+          final g = await tester.startGesture(
+            tester.getCenter(split),
+            kind: kind,
+          );
+          for (var i = 0; i < 8; i++) {
+            await g.moveBy(const Offset(-10, 0));
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          expect(planW(), closeTo(from + 80, 0.5), reason: '$tab: live');
+          await g.up();
+          await tester.pumpAndSettle();
+          expect(planW(), closeTo(from + 80, 0.5), reason: tab);
+          expect(double.parse(saved()!), closeTo(from + 80, 0.5));
+        }
+        final after = _view(tester);
+        expect(after.start, before.start, reason: 'left edge stays');
+        expect(after.width, closeTo(before.width - 160, 1));
+        expect(find.byKey(const ValueKey('selection-band')), findsNothing);
+
+        // Narrowest: 340 for the planner, nothing overflows.
+        await tester.drag(split, const Offset(900, 0), kind: kind);
+        await tester.pumpAndSettle();
+        expect(planW(), planPanelMinWidth);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('Plan a payment'), kind: kind);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(double.parse(saved()!), planPanelMinWidth);
+
+        // Double-tap: back to the default.
+        final c = tester.getCenter(split);
+        await tester.tapAt(c, kind: kind);
+        await tester.pump(const Duration(milliseconds: 60));
+        await tester.tapAt(c, kind: kind);
+        await tester.pumpAndSettle();
+        expect(planW(), w0);
+        expect(saved(), isNull);
+
+        // The width is shared: closing the planner, the list docks at it.
+        await tester.drag(split, const Offset(-100, 0), kind: kind);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('plan-close')), kind: kind);
+        await tester.pumpAndSettle();
+        expect(plan, findsNothing);
+        expect(panelW(tester), closeTo(w0 + 100, 0.5));
+      });
+    }
+
+    testWidgets('915x412 phone landscape (touch): the planner docks beside '
+        'the chart and the splitter has room to move', (tester) async {
+      expect(
+        dockedListMaxWidth(915, minWidth: 340, timelineMin: 320),
+        closeTo(549, 1e-9),
+      );
+      expect(dockedListMaxWidth(874, minWidth: 340, timelineMin: 320), 524.4);
+      expect(dockedListMaxWidth(600, minWidth: 340, timelineMin: 320), 340);
+      await _pump(tester, const Size(915, 412));
+      const kind = PointerDeviceKind.touch;
+      await tester.tap(find.byKey(const ValueKey('open-events')), kind: kind);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('panel-new-menu')),
+        kind: kind,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Plan').last, kind: kind);
+      await tester.pumpAndSettle();
+      final plan = find.byKey(const ValueKey('plan-panel'));
+      expect(plan, findsOneWidget);
+      expect(find.byKey(const ValueKey('plan-fullscreen')), findsNothing);
+      final w0 = tester.getSize(plan).width;
+      expect(w0, 384);
+      await tester.drag(split, const Offset(-120, 0), kind: kind);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(plan).width, closeTo(w0 + 120, 0.5));
+      expect(tester.getSize(find.byType(BalanceChart)).width, greaterThan(300));
+      await tester.drag(split, const Offset(-600, 0), kind: kind);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(plan).width, closeTo(549, 0.5));
+      expect(tester.takeException(), isNull);
+    });
   });
 }

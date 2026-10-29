@@ -15,17 +15,32 @@ double dockedListWidth(double screenWidth) =>
 
 /// Widest the docked list may be in a [screenWidth]-wide window: the
 /// timeline keeps [dockedTimelineMin] and at least 40% of the window.
-double dockedListMaxWidth(double screenWidth) {
-  final a = screenWidth - dockedTimelineMin, b = screenWidth * 0.6;
-  return (a < b ? a : b).clamp(dockedListMinDrag, double.infinity).toDouble();
+double dockedListMaxWidth(
+  double screenWidth, {
+  double minWidth = dockedListMinDrag,
+  double timelineMin = dockedTimelineMin,
+}) {
+  final a = screenWidth - timelineMin, b = screenWidth * 0.6;
+  return (a < b ? a : b).clamp(minWidth, double.infinity).toDouble();
 }
 
 /// The docked list width to use: the one this device chose by dragging
 /// ([saved], px) clamped to the window, else the default.
-double dockedListEffectiveWidth(double screenWidth, double? saved) =>
-    (saved ?? dockedListWidth(screenWidth))
-        .clamp(dockedListMinDrag, dockedListMaxWidth(screenWidth))
-        .toDouble();
+double dockedListEffectiveWidth(
+  double screenWidth,
+  double? saved, {
+  double minWidth = dockedListMinDrag,
+  double timelineMin = dockedTimelineMin,
+}) => (saved ?? dockedListWidth(screenWidth))
+    .clamp(
+      minWidth,
+      dockedListMaxWidth(
+        screenWidth,
+        minWidth: minWidth,
+        timelineMin: timelineMin,
+      ),
+    )
+    .toDouble();
 
 /// The splitter's hit area reaches this far past the 16px gap on each side
 /// (onto the cards' borders): ~24px to grab with a finger.
@@ -47,6 +62,9 @@ class DockSplit extends StatefulWidget {
     required this.savedWidth,
     required this.onWidthChanged,
     required this.onReset,
+    this.minWidth = dockedListMinDrag,
+    this.timelineMin = dockedTimelineMin,
+    this.label = 'Resize the events list',
   });
 
   final Widget timeline;
@@ -64,6 +82,17 @@ class DockSplit extends StatefulWidget {
 
   /// Double-click / double-tap: back to the default width.
   final VoidCallback onReset;
+
+  /// Narrowest the [panel] can be dragged (the planner needs more room
+  /// than the list).
+  final double minWidth;
+
+  /// Room the [timeline] always keeps (the planner also docks on phones in
+  /// landscape, where the list's 560px would leave it no travel).
+  final double timelineMin;
+
+  /// What the splitter resizes, for screen readers.
+  final String label;
 
   @override
   State<DockSplit> createState() => _DockSplitState();
@@ -84,7 +113,14 @@ class _DockSplitState extends State<DockSplit> {
   @override
   Widget build(BuildContext context) {
     final screen = MediaQuery.sizeOf(context).width;
-    final width = _drag ?? dockedListEffectiveWidth(screen, widget.savedWidth);
+    final width =
+        _drag ??
+        dockedListEffectiveWidth(
+          screen,
+          widget.savedWidth,
+          minWidth: widget.minWidth,
+          timelineMin: widget.timelineMin,
+        );
     final row = Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -133,7 +169,7 @@ class _DockSplitState extends State<DockSplit> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: Semantics(
-        label: 'Resize the events list',
+        label: widget.label,
         hint: 'Drag; double-tap to reset',
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -148,7 +184,14 @@ class _DockSplitState extends State<DockSplit> {
           onHorizontalDragUpdate: ready
               ? (d) {
                   final next = (_startWidth - (d.globalPosition.dx - _from))
-                      .clamp(dockedListMinDrag, dockedListMaxWidth(screen))
+                      .clamp(
+                        widget.minWidth,
+                        dockedListMaxWidth(
+                          screen,
+                          minWidth: widget.minWidth,
+                          timelineMin: widget.timelineMin,
+                        ),
+                      )
                       .toDouble();
                   if (next != _drag) setState(() => _drag = next);
                 }

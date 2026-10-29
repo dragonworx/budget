@@ -65,6 +65,14 @@ class TimelinePage extends ConsumerStatefulWidget {
 /// tablet) only; smaller ones keep the overlay panel.
 const double dockedListMinWidth = 1024;
 
+/// Narrowest the docked planner can be dragged: its fields need more room
+/// than the list's rows.
+const double planPanelMinWidth = 340;
+
+/// Room the timeline keeps beside the docked planner (it docks from 600px,
+/// phones in landscape included).
+const double planTimelineMin = 320;
+
 /// Tests: false lays the timeline out as on smaller screens (overlay list).
 @visibleForTesting
 bool dockedListEnabled = true;
@@ -126,6 +134,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// overwrites it.
   double? _dockWidthPref = appPrefs.getDouble(PrefKeys.dockedListWidth);
 
+  /// The side panel's width is one choice for this device, shared by the
+  /// docked list and the docked planner (same splitter, same gap).
+  void _saveDockWidth(double w) {
+    appPrefs.setDouble(PrefKeys.dockedListWidth, w);
+    setState(() => _dockWidthPref = w);
+  }
+
+  void _resetDockWidth() {
+    appPrefs.remove(PrefKeys.dockedListWidth);
+    setState(() => _dockWidthPref = null);
+  }
+
   void _toggleDock() {
     setState(() => _dockOpen = !_dockOpen);
     page.localSet(_dockStoreKey, _dockOpen ? '1' : '0');
@@ -152,14 +172,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       reveal: _dockCurve,
       open: _dockOpen,
       savedWidth: _dockWidthPref,
-      onWidthChanged: (w) {
-        appPrefs.setDouble(PrefKeys.dockedListWidth, w);
-        setState(() => _dockWidthPref = w);
-      },
-      onReset: () {
-        appPrefs.remove(PrefKeys.dockedListWidth);
-        setState(() => _dockWidthPref = null);
-      },
+      onWidthChanged: _saveDockWidth,
+      onReset: _resetDockWidth,
       timeline: child,
       panel: RepaintBoundary(
         child: ClipRRect(
@@ -1482,15 +1496,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         ],
       );
     }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(child: child),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(0, 12, 16, 10),
-          child: SizedBox(width: 400, child: panel),
-        ),
-      ],
+    // Beside the chart: the same splitter as the docked list (drag with
+    // mouse or finger, double-tap resets) and the same saved width.
+    return DockSplit(
+      key: const ValueKey('plan-split'),
+      reveal: kAlwaysCompleteAnimation,
+      open: true,
+      minWidth: planPanelMinWidth,
+      timelineMin: planTimelineMin,
+      label: 'Resize the planner',
+      savedWidth: _dockWidthPref,
+      onWidthChanged: _saveDockWidth,
+      onReset: _resetDockWidth,
+      timeline: child,
+      panel: panel,
     );
   }
 
