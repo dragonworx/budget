@@ -34,6 +34,7 @@ import 'selection_period.dart';
 import '../planning/goal_panel.dart';
 import '../planning/plan_panel.dart';
 import '../reminders/reminders_page.dart';
+import '../categories/categories_manager.dart';
 import '../events/event_editor.dart';
 import '../events/events_panel.dart';
 import 'balance_chart.dart';
@@ -589,6 +590,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _combinedCacheKey = null;
   }
 
+  /// The eye menu's category checkbox: shows / hides every event of [c]
+  /// on the timeline and in the balance (shared, like an event's eye).
+  Future<void> _toggleCategory(Category c) async {
+    try {
+      await ref
+          .read(categoriesProvider(widget.streamId).notifier)
+          .edit(c.id, hidden: !c.hidden);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(friendlyError(e))));
+    }
+  }
+
   void _toggleCombine(String otherId) {
     setState(() {
       _combine = {..._combine};
@@ -873,6 +888,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   void _refreshAfterImport() {
     ref.invalidate(eventsProvider(widget.streamId));
+    // Imported names map to (or make) categories.
+    ref.invalidate(categoriesProvider(widget.streamId));
     ref.invalidate(streamProvider(widget.streamId));
     _invalidateBalance();
   }
@@ -1776,6 +1793,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       onSeed: () => _goToAndSelect(stream.seedDate),
       onGoToDate: () => _goToDate(context),
       onToggleStream: _toggleCombine,
+      categories:
+          ref.watch(categoriesProvider(widget.streamId)).valueOrNull ??
+          const [],
+      canEditCategories: stream.role.canEdit,
+      onToggleCategory: (c) => _toggleCategory(c),
+      onManageCategories: () => showCategoriesManager(
+        context,
+        streamId: widget.streamId,
+        canEdit: stream.role.canEdit,
+      ),
       builder: (context, open) => icon
           ? IconButton(
               key: const ValueKey('fit-menu'),

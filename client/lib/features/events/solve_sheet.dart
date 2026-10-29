@@ -9,6 +9,7 @@ import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/recurrence_interval_field.dart';
+import '../categories/categories_manager.dart';
 import '../planning/plan_schedule.dart';
 
 /// Opens the event planner. Any values in [initial] are treated as known.
@@ -115,7 +116,16 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
   void initState() {
     super.initState();
     final i = widget.initial;
-    _name = TextEditingController(text: i.name);
+    // A plan makes its own category: start from a name not taken yet.
+    _name = TextEditingController(
+      text: widget.saveOnCommit
+          ? freeCategoryName(
+              i.name,
+              ref.read(categoriesProvider(widget.streamId)).valueOrNull ??
+                  const <Category>[],
+            )
+          : i.name,
+    );
     _amount = TextEditingController(text: i.amount?.toString() ?? '');
     _total = TextEditingController(text: i.targetTotal?.toString() ?? '');
     _interval = TextEditingController(text: i.interval?.toString() ?? '');
@@ -335,8 +345,16 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
             ),
             const SizedBox(height: 16),
             TextField(
+              key: const ValueKey('plan-name'),
               controller: _name,
-              decoration: const InputDecoration(labelText: 'Name'),
+              onChanged: (_) => setState(() => _nameTaken = null),
+              decoration: InputDecoration(
+                labelText: 'Name',
+                helperText: _nameProblem == null && widget.saveOnCommit
+                    ? 'Its events get a new category with this name'
+                    : null,
+                errorText: _nameProblem,
+              ),
             ),
             if (!widget.creditOnly) ...[
               const SizedBox(height: 12),
@@ -465,7 +483,8 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
                   !(widget.readOnly && widget.saveOnCommit) &&
                       _result?.isComplete == true &&
                       !_solving &&
-                      !_saving
+                      !_saving &&
+                      _nameProblem == null
                   ? _commit
                   : null,
               child: Text(
@@ -488,10 +507,24 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
     );
   }
 
+  /// The server said the name is taken (someone else made it meanwhile).
+  String? _nameTaken;
+
+  /// Why the plan's name can't name its new category (saving only).
+  String? get _nameProblem {
+    if (!widget.saveOnCommit || widget.readOnly) return null;
+    if (_nameTaken != null) return _nameTaken;
+    final list = ref.watch(categoriesProvider(widget.streamId)).valueOrNull;
+    if (list == null) return null;
+    final name = _name.text.trim().isEmpty ? widget.initial.name : _name.text;
+    return categoryNameProblem(name, list);
+  }
+
   Future<void> _commit() async {
     final result = _result;
     final event = result?.event;
     if (result == null || event == null) return;
+    if (_nameProblem != null) return;
     final named = event.copyWith(
       streamId: widget.streamId,
       name: _name.text.trim().isEmpty ? widget.initial.name : _name.text.trim(),
@@ -512,7 +545,16 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
     try {
       final created = await ref
           .read(eventsProvider(widget.streamId).notifier)
-          .create(named);
+          .create(
+            named,
+            newCategory: (
+              name: normalizeCategoryName(named.name),
+              color: pickCategoryColor(
+                ref.read(categoriesProvider(widget.streamId)).valueOrNull ??
+                    const <Category>[],
+              ),
+            ),
+          );
       if (mounted) {
         final done = _withEvent(
           result,
@@ -528,7 +570,11 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = friendlyError(error);
+          if (error is ApiException && error.statusCode == 409) {
+            _nameTaken = 'A category with this name already exists';
+          } else {
+            _error = friendlyError(error);
+          }
         });
       }
     } finally {

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../theme/app_theme.dart';
+import '../../data/models.dart';
 import 'combined.dart';
+import 'stack_lanes.dart' show colorFromHex;
 
 /// The timeline's View (eye) menu: on phones Go to today / seed, and
 /// "Combine with" (other streams as checkboxes; the
@@ -22,7 +24,20 @@ class ViewMenu extends StatefulWidget {
     required this.onGoToDate,
     required this.onToggleStream,
     required this.builder,
+    this.categories = const [],
+    this.canEditCategories = false,
+    this.onToggleCategory,
+    this.onManageCategories,
   });
+
+  /// The viewed stream's categories: a "Categories" section of shown /
+  /// hidden checkboxes (editors toggle; viewers see them disabled).
+  final List<Category> categories;
+  final bool canEditCategories;
+  final ValueChanged<Category>? onToggleCategory;
+
+  /// "Manage categories…" (null: not offered).
+  final VoidCallback? onManageCategories;
 
   final bool compact;
   final List<CombinedStream> streams;
@@ -212,6 +227,74 @@ class _ViewMenuState extends State<ViewMenu> {
                 ],
               ],
             ),
+          ),
+        ),
+      const Divider(height: 8),
+      Padding(
+        key: const ValueKey('categories-heading'),
+        padding: const EdgeInsets.fromLTRB(14, 6, 14, 4),
+        child: Text(
+          'CATEGORIES (SHOWN ON TIMELINE)',
+          style: small?.copyWith(
+            letterSpacing: 1,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textFaint,
+          ),
+        ),
+      ),
+      if (widget.categories.isEmpty)
+        MenuItemButton(
+          style: _style,
+          onPressed: null,
+          child: const Text('No categories'),
+        ),
+      for (final c in widget.categories)
+        KeyedSubtree(
+          key: ValueKey('view-category-${c.id}'),
+          child: CheckboxMenuButton(
+            style: _style,
+            closeOnActivate: false,
+            value: !c.hidden,
+            onChanged:
+                widget.canEditCategories && widget.onToggleCategory != null
+                ? (_) => widget.onToggleCategory!(c)
+                : null,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: colorFromHex(c.color),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: (screen.width - 150).clamp(80.0, 220.0),
+                  ),
+                  child: Text(
+                    c.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      if (widget.onManageCategories != null)
+        MenuItemButton(
+          key: const ValueKey('view-manage-categories'),
+          style: _style,
+          leadingIcon: const Icon(Icons.sell_outlined, size: 18),
+          onPressed: widget.onManageCategories,
+          child: Text(
+            widget.canEditCategories
+                ? 'Manage categories…'
+                : 'View categories…',
           ),
         ),
     ];

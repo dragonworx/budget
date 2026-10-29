@@ -294,7 +294,12 @@ class GoalResult {
 
   /// The plan as events to add (explicit button only): the
   /// recurring payment and/or the one-off.
-  List<BudgetEvent> toEvents(String streamId, {String name = 'Goal'}) {
+  /// With [oneOffSuffix] false the one-off keeps [name] too (same category).
+  List<BudgetEvent> toEvents(
+    String streamId, {
+    String name = 'Goal',
+    bool oneOffSuffix = true,
+  }) {
     final v = values;
     if (v == null) return const [];
     final out = <BudgetEvent>[];
@@ -323,7 +328,9 @@ class GoalResult {
               ),
       );
     }
-    if (v.oneOff != 0) out.add(base(v.oneOff, '$name (one-off)'));
+    if (v.oneOff != 0) {
+      out.add(base(v.oneOff, oneOffSuffix ? '$name (one-off)' : name));
+    }
     return out;
   }
 }

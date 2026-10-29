@@ -11,6 +11,7 @@ import '../../state/providers.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/recurrence_interval_field.dart';
 import '../timeline/duration_format.dart';
+import '../categories/categories_manager.dart';
 import 'goal_models.dart';
 import 'plan_schedule.dart';
 
@@ -68,6 +69,10 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     GoalVar.rate: TextEditingController(),
   };
   final _count = TextEditingController();
+
+  /// The plan's name: its events get a new category with this name.
+  final _name = TextEditingController();
+  String? _nameTaken;
   final _intervalText = TextEditingController(text: '1');
 
   Timer? _debounce;
@@ -81,6 +86,20 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   void initState() {
     super.initState();
     load(widget.initial ?? const GoalRequest(solveFor: GoalVar.amount));
+    _name.text = freeCategoryName(
+      'Goal',
+      ref.read(categoriesProvider(widget.stream.id)).valueOrNull ??
+          const <Category>[],
+    );
+  }
+
+  /// Why [_name] can't name the plan's new category, if it can't.
+  String? get _nameProblem {
+    if (!widget.stream.role.canEdit) return null;
+    if (_nameTaken != null) return _nameTaken;
+    final list = ref.watch(categoriesProvider(widget.stream.id)).valueOrNull;
+    if (list == null) return null;
+    return categoryNameProblem(_name.text, list);
   }
 
   @override
@@ -90,6 +109,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
       c.dispose();
     }
     _count.dispose();
+    _name.dispose();
     _intervalText.dispose();
     super.dispose();
   }
@@ -371,10 +391,26 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
             const SizedBox(height: 12),
           ] else
             const SizedBox(height: 6),
+          if (widget.stream.role.canEdit) ...[
+            TextField(
+              key: const ValueKey('goal-name'),
+              controller: _name,
+              onChanged: (_) => setState(() => _nameTaken = null),
+              decoration: InputDecoration(
+                labelText: 'Plan name',
+                helperText: _nameProblem == null
+                    ? 'Its events get a new category with this name'
+                    : null,
+                errorText: _nameProblem,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           FilledButton.icon(
             key: const ValueKey('goal-add-events'),
             onPressed:
                 !widget.stream.role.canEdit ||
+                    _nameProblem != null ||
                     _saving ||
                     _solving ||
                     (_result?.toEvents(widget.stream.id).isEmpty ?? true)
@@ -671,13 +707,39 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   }
 
   Future<void> _addEvents() async {
-    final txs = _result?.toEvents(widget.stream.id) ?? const [];
+    if (_nameProblem != null) return;
+    final name = normalizeCategoryName(_name.text);
+    final txs =
+        _result?.toEvents(widget.stream.id, name: name, oneOffSuffix: false) ??
+        const [];
     if (txs.isEmpty) return;
     setState(() => _saving = true);
     try {
       final notifier = ref.read(eventsProvider(widget.stream.id).notifier);
+      // The first event makes the plan's category; the rest join it.
+      String? categoryId;
       for (final t in txs) {
-        await notifier.create(t);
+        final created = categoryId == null
+            ? await notifier.create(
+                t,
+                newCategory: (
+                  name: name,
+                  color: pickCategoryColor(
+                    ref
+                            .read(categoriesProvider(widget.stream.id))
+                            .valueOrNull ??
+                        const <Category>[],
+                  ),
+                ),
+              )
+            : await notifier.create(t.copyWith(categoryId: categoryId));
+        categoryId ??= created.categoryId;
+      }
+      if (mounted) {
+        _name.text = freeCategoryName(name, [
+          ...?ref.read(categoriesProvider(widget.stream.id)).valueOrNull,
+          Category(id: '', streamId: '', name: name, color: '#000000'),
+        ]);
       }
       ref.invalidate(balanceProvider);
       if (mounted) {
@@ -691,7 +753,15 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
       }
       _schedule(immediate: true);
     } catch (e) {
-      if (mounted) setState(() => _error = friendlyError(e));
+      if (mounted) {
+        setState(() {
+          if (e is ApiException && e.statusCode == 409) {
+            _nameTaken = 'A category with this name already exists';
+          } else {
+            _error = friendlyError(e);
+          }
+        });
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }

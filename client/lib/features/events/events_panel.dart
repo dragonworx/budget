@@ -20,21 +20,25 @@ import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
 import '../timeline/stack_lanes.dart';
 import '../timeline/zoom_level.dart';
+import '../categories/categories_manager.dart';
 import 'editor_outcome.dart';
 import 'event_editor.dart';
 
 enum TxFilter { all, credit, debit, disabled }
 
-/// Filters [items] by a free-text [query] (name, amount) and [filter].
+/// Filters [items] by a free-text [query] (name, amount), [filter] and
+/// [categories] (any of them; empty: every category).
 List<BudgetEvent> filterEvents(
   List<BudgetEvent> items,
   String query,
-  TxFilter filter,
-) {
+  TxFilter filter, {
+  Set<String> categories = const {},
+}) {
   final q = query.trim().toLowerCase();
   return [
     for (final t in items)
-      if ((q.isEmpty ||
+      if ((categories.isEmpty || categories.contains(t.categoryId)) &&
+          (q.isEmpty ||
               t.name.toLowerCase().contains(q) ||
               t.amount.toString().contains(q)) &&
           switch (filter) {
@@ -262,6 +266,9 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   final _search = TextEditingController();
   TxFilter _filter = TxFilter.all;
 
+  /// The category filter (ids; empty: all categories).
+  Set<String> _catFilter = {};
+
   /// The row under the mouse (see [EventsPanel.onHoverEvent]).
   String? _hovered;
 
@@ -271,7 +278,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     if (inside) {
       _hovered = t.id;
       // A hidden event has no lane: nothing to emphasise.
-      report(t.enabled ? t.id : null);
+      report(t.active ? t.id : null);
     } else if (_hovered == t.id) {
       _hovered = null;
       report(null);
@@ -681,8 +688,18 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                         icon: const Icon(Icons.calculate_outlined, size: 18),
                         label: const Text('Plan'),
                       ),
-                  ] else
-                    _newSplitButton(),
+                  ],
+                  IconButton(
+                    key: const ValueKey('panel-categories'),
+                    tooltip: 'Categories',
+                    onPressed: () => showCategoriesManager(
+                      context,
+                      streamId: widget.stream.id,
+                      canEdit: !_readOnly,
+                    ),
+                    icon: const Icon(Icons.sell_outlined),
+                  ),
+                  if (!_readOnly) _newSplitButton(),
                   IconButton(
                     key: const ValueKey('panel-close'),
                     tooltip: widget.docked ? 'Hide events' : 'Close (Esc)',
@@ -706,7 +723,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   isDense: true,
-                  hintText: 'Search by name or amount',
+                  hintText: 'Search by category or amount',
                   prefixIcon: const Icon(Icons.search_rounded, size: 20),
                   suffixIcon: _search.text.isEmpty
                       ? null
@@ -735,9 +752,11 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                       selected: _filter == f,
                       onSelected: (_) => setState(() => _filter = f),
                     ),
+                  _categoryFilterButton(),
                 ],
               ),
             ),
+            ?_categoryFilterChips(),
             const Divider(height: 1),
             Expanded(
               child: async.when(
@@ -757,6 +776,120 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// The filtered categories that still exist, in the stream's order.
+  List<Category> _activeCategories() {
+    if (_catFilter.isEmpty) return const [];
+    return [
+      for (final c
+          in ref.watch(categoriesProvider(widget.stream.id)).valueOrNull ??
+              const <Category>[])
+        if (_catFilter.contains(c.id)) c,
+    ];
+  }
+
+  void _toggleCategoryFilter(String id) => setState(() {
+    _catFilter = _catFilter.contains(id)
+        ? ({..._catFilter}..remove(id))
+        : {..._catFilter, id};
+  });
+
+  /// "Categories ▾": tick one or more categories to list only theirs.
+  Widget _categoryFilterButton() {
+    final list =
+        ref.watch(categoriesProvider(widget.stream.id)).valueOrNull ??
+        const <Category>[];
+    final n = _activeCategories().length;
+    return MenuAnchor(
+      style: MenuStyle(
+        maximumSize: WidgetStatePropertyAll(
+          Size(320, MediaQuery.sizeOf(context).height * 0.6),
+        ),
+      ),
+      menuChildren: [
+        if (list.isEmpty)
+          const MenuItemButton(onPressed: null, child: Text('No categories')),
+        for (final c in list)
+          KeyedSubtree(
+            key: ValueKey('filter-category-${c.id}'),
+            child: CheckboxMenuButton(
+              closeOnActivate: false,
+              value: _catFilter.contains(c.id),
+              onChanged: (_) => _toggleCategoryFilter(c.id),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: colorFromHex(c.color),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 200),
+                    child: Text(
+                      c.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+      builder: (context, controller, _) => FilterChip(
+        key: const ValueKey('filter-categories'),
+        avatar: const Icon(Icons.sell_outlined, size: 16),
+        label: Text(n == 0 ? 'Categories' : 'Categories · $n'),
+        selected: n > 0,
+        showCheckmark: false,
+        onSelected: (_) =>
+            controller.isOpen ? controller.close() : controller.open(),
+      ),
+    );
+  }
+
+  /// The filtered categories as removable chips, and Clear.
+  Widget? _categoryFilterChips() {
+    final cats = _activeCategories();
+    if (cats.isEmpty) return null;
+    return Padding(
+      key: const ValueKey('filter-category-chips'),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (final c in cats)
+            InputChip(
+              key: ValueKey('filter-category-chip-${c.id}'),
+              avatar: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: colorFromHex(c.color),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              label: Text(c.name),
+              visualDensity: VisualDensity.compact,
+              deleteButtonTooltipMessage: 'Remove ${c.name}',
+              onDeleted: () => _toggleCategoryFilter(c.id),
+            ),
+          TextButton(
+            key: const ValueKey('filter-categories-clear'),
+            onPressed: () => setState(() => _catFilter = {}),
+            child: const Text('Clear'),
+          ),
+        ],
       ),
     );
   }
@@ -804,20 +937,40 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       );
     }
     final ordered = _ordered(items);
-    final shown = filterEvents(ordered, _search.text, _filter);
+    final cats = _activeCategories();
+    final shown = filterEvents(
+      ordered,
+      _search.text,
+      _filter,
+      categories: {for (final c in cats) c.id},
+    );
     final canReorder =
-        !_readOnly && _search.text.trim().isEmpty && _filter == TxFilter.all;
+        !_readOnly &&
+        _search.text.trim().isEmpty &&
+        _filter == TxFilter.all &&
+        cats.isEmpty;
     if (shown.isEmpty) {
+      final names = cats.map((c) => c.name).join(', ');
       return EmptyState(
+        key: const ValueKey('events-no-matches'),
         icon: Icons.search_off_rounded,
         title: 'No matches',
-        message: 'Nothing matches the search and filter.',
+        message: cats.isEmpty
+            ? 'Nothing matches the search and filter.'
+            : 'No events in ${cats.length == 1 ? 'category' : 'categories'} '
+                  '$names match the search and filter.',
         action: TextButton(
+          key: const ValueKey('events-clear-filters'),
           onPressed: () => setState(() {
             _search.clear();
             _filter = TxFilter.all;
+            _catFilter = {};
           }),
-          child: const Text('Clear search and filter'),
+          child: Text(
+            cats.isEmpty
+                ? 'Clear search and filter'
+                : 'Clear search and filters',
+          ),
         ),
       );
     }
@@ -1046,7 +1199,7 @@ class _TxRow extends StatelessWidget {
                         width: 4,
                         height: 30,
                         decoration: BoxDecoration(
-                          color: t.enabled
+                          color: t.active
                               ? color
                               : color.withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(2),
@@ -1062,11 +1215,11 @@ class _TxRow extends StatelessWidget {
                         waitDuration: const Duration(milliseconds: 600),
                         excludeFromSemantics: true,
                         child: t.isTransfer
-                            ? _TransferBadge(muted: !t.enabled)
+                            ? _TransferBadge(muted: !t.active)
                             : DirectionBadge(
                                 credit: credit,
                                 size: 28,
-                                muted: !t.enabled,
+                                muted: !t.active,
                               ),
                       ),
                       const SizedBox(width: 10),
@@ -1134,7 +1287,7 @@ class _TxRow extends StatelessWidget {
   ) {
     final theme = Theme.of(context);
     final d = rowDetail(t);
-    final muted = !t.enabled;
+    final muted = !t.active;
     final detail = theme.textTheme.bodySmall?.copyWith(
       color: muted ? AppTheme.textFaint : AppTheme.textMuted,
       height: 1.25,
