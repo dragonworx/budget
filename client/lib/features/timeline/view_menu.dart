@@ -258,7 +258,7 @@ class _ViewMenuState extends State<ViewMenu> {
           onPressed: null,
           child: const Text('No categories'),
         ),
-      for (final c in widget.categories)
+      for (final c in sortedCategories(widget.categories))
         KeyedSubtree(
           key: ValueKey('view-category-${c.id}'),
           child: CheckboxMenuButton(

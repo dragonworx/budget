@@ -1137,6 +1137,45 @@ const int maxCategoryNameLength = 60;
 String normalizeCategoryName(String raw) =>
     raw.trim().replaceAll(RegExp(r'\s+'), ' ');
 
+/// Natural, case-insensitive order of category names ("Bill 2" before
+/// "Bill 10", "apple" beside "Apple"); ties fall back to the exact text.
+int compareCategoryNames(String a, String b) {
+  final x = a.toLowerCase(), y = b.toLowerCase();
+  var i = 0, j = 0;
+  bool digit(int c) => c >= 0x30 && c <= 0x39;
+  while (i < x.length && j < y.length) {
+    final cx = x.codeUnitAt(i), cy = y.codeUnitAt(j);
+    if (digit(cx) && digit(cy)) {
+      var ei = i, ej = j;
+      while (ei < x.length && digit(x.codeUnitAt(ei))) {
+        ei++;
+      }
+      while (ej < y.length && digit(y.codeUnitAt(ej))) {
+        ej++;
+      }
+      final nx = x.substring(i, ei).replaceFirst(RegExp(r'^0+(?=\d)'), '');
+      final ny = y.substring(j, ej).replaceFirst(RegExp(r'^0+(?=\d)'), '');
+      if (nx.length != ny.length) return nx.length - ny.length;
+      final c = nx.compareTo(ny);
+      if (c != 0) return c;
+      i = ei;
+      j = ej;
+      continue;
+    }
+    if (cx != cy) return cx - cy;
+    i++;
+    j++;
+  }
+  final rest = (x.length - i) - (y.length - j);
+  if (rest != 0) return rest;
+  return a.compareTo(b);
+}
+
+/// [list] sorted by name with [compareCategoryNames] (a new list): the
+/// order every category list shows.
+List<Category> sortedCategories(Iterable<Category> list) =>
+    [...list]..sort((a, b) => compareCategoryNames(a.name, b.name));
+
 /// Why [raw] can't name a new (or renamed, [except] = its id) category of
 /// [existing]; null when it can.
 String? categoryNameProblem(

@@ -821,4 +821,157 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('already exists'), findsNothing);
   });
+
+  group('sorted by name', () {
+    test('natural, case-insensitive order', () {
+      final names = ['Cat 10', 'banana', 'Cat 2', 'apple', 'Apple', 'cat 1'];
+      names.sort(compareCategoryNames);
+      expect(names, ['Apple', 'apple', 'banana', 'cat 1', 'Cat 2', 'Cat 10']);
+      final cats = sortedCategories([
+        const Category(id: 'w', streamId: 's', name: 'Wages', color: '#000'),
+        const Category(id: 'g', streamId: 's', name: 'groceries', color: '#0'),
+      ]);
+      expect(cats.map((c) => c.id), ['g', 'w']);
+    });
+
+    /// Adds categories (created in this, unsorted, order) and reloads.
+    Future<void> addCats(
+      WidgetTester tester,
+      _Cats cats,
+      List<String> n,
+    ) async {
+      for (final name in n) {
+        await cats.create('acc', name: name);
+      }
+      ProviderScope.containerOf(tester.element(find.byType(TimelinePage)))
+          .invalidate(categoriesProvider);
+      await tester.pumpAndSettle();
+    }
+
+    void inOrder(WidgetTester tester, List<Finder> finders) {
+      final ys = [for (final f in finders) tester.getTopLeft(f.last).dy];
+      for (var i = 1; i < ys.length; i++) {
+        expect(ys[i], greaterThan(ys[i - 1]), reason: 'item $i out of order');
+      }
+    }
+
+    final order = ['apple', 'Cat 2', 'Cat 10', 'Groceries', 'Rent', 'Wages'];
+    String idOf(String n) => fakeCategoryId(n);
+
+    testWidgets('the manager lists rows by name with the new row last; a '
+        'rename re-sorts on commit (not while typing) and stays in view; a '
+        'created one lands in its place', (tester) async {
+      final (_, cats) = await _pump(tester, size: const Size(320, 640));
+      await addCats(tester, cats, ['Cat 10', 'apple', 'Cat 2']);
+      await _openManager(tester);
+      final scroll = find
+          .descendant(
+            of: find.byKey(const ValueKey('categories-manager')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      Rect view() => tester.getRect(scroll);
+      Future<void> show(String key) async {
+        await tester.scrollUntilVisible(
+          find.byKey(ValueKey(key)),
+          60,
+          scrollable: scroll,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      final rows = [
+        for (final n in order) find.byKey(ValueKey('category-row-${idOf(n)}')),
+      ];
+      for (final r in rows) {
+        expect(r, findsOneWidget);
+      }
+      inOrder(tester, [
+        ...rows,
+        find.byKey(const ValueKey('category-new-row')),
+      ]);
+
+      // Typing doesn't move the row; commit does.
+      final a = idOf('apple');
+      await tester.tap(find.byKey(ValueKey('category-name-$a')));
+      await tester.pumpAndSettle();
+      await tester.enterText(_field('category-name-field-$a'), 'Zucchini');
+      await tester.pumpAndSettle();
+      inOrder(tester, [
+        find.byKey(ValueKey('category-row-$a')),
+        find.byKey(ValueKey('category-row-${idOf('Cat 2')}')),
+      ]);
+      expect(_field('category-name-field-$a'), findsOneWidget);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(cats.calls, contains(startsWith('update $a Zucchini')));
+      inOrder(tester, [
+        find.byKey(ValueKey('category-row-${idOf('Wages')}')),
+        find.byKey(ValueKey('category-row-$a')),
+        find.byKey(const ValueKey('category-new-row')),
+      ]);
+      // Scrolled to where it went.
+      final r = tester.getRect(find.byKey(ValueKey('category-row-$a')));
+      expect(view().top, lessThanOrEqualTo(r.top + 0.5));
+      expect(view().bottom, greaterThanOrEqualTo(r.bottom - 0.5));
+
+      // A new one appears in its sorted place, the new row stays last.
+      await show('category-new-row');
+      await tester.enterText(_field('category-new-name'), 'Hobbies');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(cats.calls, contains('create Hobbies'));
+      inOrder(tester, [
+        find.byKey(ValueKey('category-row-${idOf('Groceries')}')),
+        find.byKey(ValueKey('category-row-${idOf('Hobbies')}')),
+        find.byKey(ValueKey('category-row-${idOf('Rent')}')),
+        find.byKey(const ValueKey('category-new-row')),
+      ]);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the editor picker, the list filter and the eye menu are '
+        'sorted the same way', (tester) async {
+      final (_, cats) = await _pump(tester);
+      await addCats(tester, cats, ['Cat 10', 'apple', 'Cat 2']);
+      // Eye menu.
+      await tester.tap(find.byKey(const ValueKey('fit-menu')));
+      await tester.pumpAndSettle();
+      inOrder(tester, [
+        for (final n in order) find.byKey(ValueKey('view-category-${idOf(n)}')),
+      ]);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      // Events list dropdown.
+      await tester.tap(find.byKey(const ValueKey('open-events')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('events-category-filter')));
+      await tester.pumpAndSettle();
+      inOrder(tester, [
+        find.byKey(const ValueKey('filter-category-all')),
+        for (final n in order)
+          find.byKey(ValueKey('filter-category-${idOf(n)}')),
+      ]);
+      await tester.tap(find.byKey(const ValueKey('filter-category-all')).last);
+      await tester.pumpAndSettle();
+      // Editor picker (pills wrap: compare reading order).
+      await tester.tap(find.byKey(const ValueKey('panel-new-event')));
+      await tester.pumpAndSettle();
+      final pos = [
+        for (final n in order)
+          tester.getTopLeft(find.byKey(ValueKey('editor-category-${idOf(n)}'))),
+      ];
+      for (var i = 1; i < pos.length; i++) {
+        final p = pos[i - 1], q = pos[i];
+        expect(
+          q.dy > p.dy + 1 || ((q.dy - p.dy).abs() <= 1 && q.dx > p.dx),
+          isTrue,
+          reason: '${order[i]} after ${order[i - 1]}',
+        );
+      }
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 10));
+      expect(tester.takeException(), isNull);
+    });
+  });
 }

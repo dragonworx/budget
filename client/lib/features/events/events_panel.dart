@@ -768,9 +768,10 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   /// The full-width category filter: "All categories" (the default) or one
   /// category, each with its colour dot.
   Widget _categoryDropdown() {
-    final list =
-        ref.watch(categoriesProvider(widget.stream.id)).valueOrNull ??
-        const <Category>[];
+    final list = sortedCategories(
+      ref.watch(categoriesProvider(widget.stream.id)).valueOrNull ??
+          const <Category>[],
+    );
     final active = _activeCategory();
     Widget entry(Category? c) => Row(
       children: [

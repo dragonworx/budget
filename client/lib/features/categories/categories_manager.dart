@@ -127,6 +127,24 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
   CategoriesNotifier get _notifier =>
       ref.read(categoriesProvider(widget.streamId).notifier);
 
+  /// One key per row (by category id).
+  final Map<String, GlobalKey> _rowKeys = {};
+
+  /// After a rename re-sorts the table: brings [id]'s row into view.
+  void _revealRow(String id) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _rowKeys[id]?.currentContext;
+      if (!mounted || ctx == null) return;
+      // Below the view: to its bottom edge; above: to its top edge.
+      for (final policy in const [
+        ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      ]) {
+        Scrollable.ensureVisible(ctx, alignmentPolicy: policy);
+      }
+    });
+  }
+
   List<Category> get _list =>
       ref.read(categoriesProvider(widget.streamId)).valueOrNull ??
       const <Category>[];
@@ -218,7 +236,10 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     });
     try {
       await _notifier.edit(id, name: name);
-      if (mounted) setState(() => _editingId = null);
+      if (mounted) {
+        setState(() => _editingId = null);
+        _revealRow(id);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(
@@ -373,7 +394,8 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     final theme = Theme.of(context);
     final async = ref.watch(categoriesProvider(widget.streamId));
     final counts = categoryEventCounts(ref, widget.streamId);
-    final list = async.valueOrNull ?? const <Category>[];
+    // By name; a rename re-sorts on commit (the list only changes then).
+    final list = sortedCategories(async.valueOrNull ?? const <Category>[]);
     final manage = _canManage;
     final narrow = MediaQuery.sizeOf(context).width < 420;
     final muted = theme.textTheme.bodySmall?.copyWith(
@@ -666,6 +688,9 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
             ),
           );
     return Semantics(
+      // Global: the row keeps its state as it moves to its sorted place,
+      // and a renamed row can be scrolled back into view.
+      key: _rowKeys.putIfAbsent(c.id, GlobalKey.new),
       container: true,
       explicitChildNodes: true,
       child: Opacity(
@@ -995,7 +1020,7 @@ class CategoryPicker extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final async = ref.watch(categoriesProvider(streamId));
-    final list = async.valueOrNull ?? const <Category>[];
+    final list = sortedCategories(async.valueOrNull ?? const <Category>[]);
     final label = theme.textTheme.labelMedium?.copyWith(
       color: AppTheme.textMuted,
     );
