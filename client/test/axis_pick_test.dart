@@ -1,6 +1,7 @@
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/occurrence_info.dart';
+import 'package:budget_client/widgets/day_add_button.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -167,6 +168,16 @@ void main() {
       await tester.pump();
       final pressed = look();
       expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
+      // The shared day "+" (the header's New event today wears it too).
+      expect(
+        identical(
+          tester
+              .widget<IconButton>(find.byKey(const ValueKey('pick-add')))
+              .icon,
+          dayAddIcon,
+        ),
+        isTrue,
+      );
       // + is the only button, in every state.
       void onlyAdd(String why) {
         expect(

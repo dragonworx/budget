@@ -22,6 +22,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/gestures.dart';
 import 'package:budget_client/state/realtime_providers.dart';
 import 'package:budget_client/widgets/list_glyph.dart';
+import 'package:budget_client/widgets/day_add_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -2031,7 +2032,7 @@ void main() {
     });
   }
 
-  // "New event today" (three pluses): always in the header, immediately
+  // "New event today" (the day popup's +): always in the header, immediately
   // before Reminders, at every width; never in More.
   for (final w in const [
     320.0,
@@ -2052,7 +2053,21 @@ void main() {
       expect(tester.takeException(), isNull);
       final btn = find.byKey(const ValueKey('new-event-today'));
       expect(btn, findsOneWidget);
-      expect(find.byKey(const ValueKey('three-plus-glyph')), findsOneWidget);
+      // The day popup's "+": same icon, same tonal circle.
+      final nb = tester.widget<IconButton>(btn);
+      expect(identical(nb.icon, dayAddIcon), isTrue);
+      expect((nb.icon as Icon).icon, Icons.add_rounded);
+      expect((nb.icon as Icon).size, 22);
+      final want = dayAddButtonStyle();
+      expect(
+        nb.style!.backgroundColor!.resolve({}),
+        want.backgroundColor!.resolve({}),
+      );
+      expect(
+        nb.style!.foregroundColor!.resolve({}),
+        want.foregroundColor!.resolve({}),
+      );
+      expect(nb.style!.visualDensity, VisualDensity.compact);
       expect(tester.widget<IconButton>(btn).tooltip, 'New event today');
       Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
       final n = tester.getRect(btn), rem = r('open-reminders');

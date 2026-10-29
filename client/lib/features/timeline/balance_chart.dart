@@ -21,6 +21,7 @@ import 'ghost_line.dart';
 import 'occurrence_info.dart';
 import 'selection_period.dart';
 import 'stack_lanes.dart';
+import '../../widgets/day_add_button.dart';
 import 'step_dots.dart';
 import 'tap_menu.dart';
 import 'trim.dart';
@@ -2514,11 +2515,7 @@ class _BalanceChartState extends State<BalanceChart>
     // A dark card like the dot popup, edged in the action colour, so the
     // day's green / red totals read clearly.
     const fg = AppTheme.accent;
-    final btn = IconButton.styleFrom(
-      backgroundColor: fg.withValues(alpha: 0.18),
-      foregroundColor: fg,
-      visualDensity: VisualDensity.compact,
-    );
+    final btn = dayAddButtonStyle();
     final small = theme.textTheme.labelSmall ?? const TextStyle();
     String money(double v) =>
         formatMoneyAmount(v, decimalDigits: v == 0 ? 0 : null);
@@ -2621,7 +2618,7 @@ class _BalanceChartState extends State<BalanceChart>
                 key: const ValueKey('pick-add'),
                 tooltip: 'Add an event on ${formatOccurrenceDate(day)}',
                 style: btn,
-                icon: const Icon(Icons.add_rounded, size: 22),
+                icon: dayAddIcon,
                 onPressed: _addFromPin,
               ),
             ],

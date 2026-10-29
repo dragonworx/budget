@@ -23,7 +23,7 @@ import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/stream_dialog.dart';
 import '../../widgets/list_glyph.dart';
-import '../../widgets/three_plus_glyph.dart';
+import '../../widgets/day_add_button.dart';
 import '../../widgets/stream_picker.dart';
 import '../../widgets/ui.dart';
 import '../events/editor_outcome.dart';
@@ -1556,7 +1556,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   // ---------------------------------------------------------------- header
 
   /// Every timeline action lives in the header row, right of the stream
-  /// name. The right end is always New event today (three pluses) ·
+  /// name. The right end is always New event today (the day popup's +) ·
   /// Reminders (prominent) · Events (plain list icon) · View · More (⋮,
   /// rightmost, takes what does not fit); the rest sits left of New event
   /// today, which never collapses:
@@ -1857,9 +1857,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// "New event today" (three pluses): the New event editor with today as
-  /// the start date. Never collapses into More; view-only streams show it
-  /// disabled.
+  /// "New event today": the day popup's "+" (same icon and tonal circle),
+  /// opening the New event editor with today as the start date. Never
+  /// collapses into More; view-only streams show it disabled.
   Widget _newTodayButton(
     BuildContext context,
     BudgetStream stream, {
@@ -1869,7 +1869,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     return IconButton(
       key: const ValueKey('new-event-today'),
       tooltip: canEdit ? 'New event today' : 'New event today (view only)',
-      style: style,
+      style: style == null
+          ? dayAddButtonStyle()
+          : dayAddButtonStyle().merge(style),
       constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       onPressed: canEdit
           ? () => _openEditor(
@@ -1878,7 +1880,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               initialDate: dateOnly(DateTime.now()),
             )
           : null,
-      icon: const ThreePlusGlyph(key: ValueKey('three-plus-glyph')),
+      icon: dayAddIcon,
     );
   }
 
