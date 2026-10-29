@@ -7,7 +7,7 @@ import 'trim_batch_repo.dart';
 /// Longest category name.
 const maxCategoryNameLength = 60;
 
-/// A category name that is blank, too long or already used in the stream.
+/// A category name that is blank, too long or already used in the set.
 class CategoryNameException implements Exception {
   CategoryNameException(this.message, {this.conflict = false});
   final String message;
@@ -31,21 +31,22 @@ String normalizeCategoryName(Object? raw) {
   return v;
 }
 
-/// Categories of a stream (see migration 024). Names are unique per stream,
-/// case-insensitively; events keep `events.name` equal to their category's
-/// name through DB triggers.
+/// Categories, one global set per owner (migrations 024, 025): every stream
+/// the owner has uses it. Names are unique in the set, case-insensitively;
+/// events keep `events.name` equal to their category's name through DB
+/// triggers.
 class CategoryRepo {
   CategoryRepo(this._conn);
 
   final Session _conn;
 
   static const _cols = '''
-    c.id::text, c.stream_id::text, c.name, c.color, c.hidden, c.created_at,
+    c.id::text, c.owner_id::text, c.name, c.color, c.hidden, c.created_at,
     c.version, (SELECT count(*) FROM events e WHERE e.category_id = c.id)::int''';
 
   Category _fromRow(ResultRow r) => Category(
         id: r[0] as String,
-        streamId: r[1] as String,
+        ownerId: r[1] as String,
         name: r[2] as String,
         color: r[3] as String,
         hidden: r[4] as bool,
@@ -54,14 +55,31 @@ class CategoryRepo {
         eventCount: r[7] as int,
       );
 
-  /// The stream's categories, oldest first (the order they were made).
-  Future<List<Category>> listByStream(String streamId) async {
+  /// The owner of [streamId] (whose categories its events use).
+  Future<String?> ownerOfStream(String streamId) async {
+    if (!uuidRe.hasMatch(streamId)) return null;
     final rows = await _conn.execute(
-      Sql.named('SELECT $_cols FROM categories c '
-          'WHERE c.stream_id = @s::uuid ORDER BY c.created_at, c.name'),
+      Sql.named('SELECT owner_id::text FROM streams WHERE id = @s::uuid'),
       parameters: {'s': streamId},
     );
+    return rows.isEmpty ? null : rows.first[0] as String;
+  }
+
+  /// [ownerId]'s categories, oldest first (the order they were made).
+  Future<List<Category>> listByOwner(String ownerId) async {
+    final rows = await _conn.execute(
+      Sql.named('SELECT $_cols FROM categories c '
+          'WHERE c.owner_id = @o::uuid ORDER BY c.created_at, c.name'),
+      parameters: {'o': ownerId},
+    );
     return rows.map(_fromRow).toList();
+  }
+
+  /// The categories [streamId]'s events use (its owner's set).
+  Future<List<Category>> listByStream(String streamId) async {
+    final owner = await ownerOfStream(streamId);
+    if (owner == null) return const [];
+    return listByOwner(owner);
   }
 
   Future<Category?> get(String id) async {
@@ -73,19 +91,18 @@ class CategoryRepo {
     return rows.isEmpty ? null : _fromRow(rows.first);
   }
 
-  /// [streamId]'s category named [name] (case-insensitive), if any.
-  Future<Category?> byName(String streamId, String name) async {
+  /// [ownerId]'s category named [name] (case-insensitive), if any.
+  Future<Category?> byName(String ownerId, String name) async {
     final rows = await _conn.execute(
-      Sql.named('SELECT $_cols FROM categories c WHERE c.stream_id = @s::uuid '
+      Sql.named('SELECT $_cols FROM categories c WHERE c.owner_id = @o::uuid '
           'AND lower(c.name) = lower(@n)'),
-      parameters: {'s': streamId, 'n': name.trim()},
+      parameters: {'o': ownerId, 'n': name.trim()},
     );
     return rows.isEmpty ? null : _fromRow(rows.first);
   }
 
-  Future<void> _checkFree(String streamId, String name,
-      {String? except}) async {
-    final other = await byName(streamId, name);
+  Future<void> _checkFree(String ownerId, String name, {String? except}) async {
+    final other = await byName(ownerId, name);
     if (other != null && other.id != except) {
       throw CategoryNameException(
           'A category named "${other.name}" already exists',
@@ -93,25 +110,26 @@ class CategoryRepo {
     }
   }
 
-  Future<Category> create(String streamId,
+  /// Adds a category to [ownerId]'s set.
+  Future<Category> create(String ownerId,
       {required String name, String? color, bool hidden = false}) async {
     final n = normalizeCategoryName(name);
-    await _checkFree(streamId, n);
-    color ??= await _unusedColor(streamId);
+    await _checkFree(ownerId, n);
+    color ??= await _unusedColor(ownerId);
     final rows = await _conn.execute(
-      Sql.named('INSERT INTO categories (stream_id, name, color, hidden) '
-          'VALUES (@s::uuid, @n, @c, @h) RETURNING id::text'),
-      parameters: {'s': streamId, 'n': n, 'c': color, 'h': hidden},
+      Sql.named('INSERT INTO categories (owner_id, name, color, hidden) '
+          'VALUES (@o::uuid, @n, @c, @h) RETURNING id::text'),
+      parameters: {'o': ownerId, 'n': n, 'c': color, 'h': hidden},
     );
     return (await get(rows.first[0] as String))!;
   }
 
-  /// The first lane palette colour no category of [streamId] uses (the
+  /// The first lane palette colour no category of [ownerId] uses (the
   /// next in turn when all are taken).
-  Future<String> _unusedColor(String streamId) async {
+  Future<String> _unusedColor(String ownerId) async {
     final rows = await _conn.execute(
-      Sql.named('SELECT color FROM categories WHERE stream_id = @s::uuid'),
-      parameters: {'s': streamId},
+      Sql.named('SELECT color FROM categories WHERE owner_id = @o::uuid'),
+      parameters: {'o': ownerId},
     );
     final used = {for (final r in rows) r[0] as String};
     for (final c in categoryPalette) {
@@ -127,7 +145,7 @@ class CategoryRepo {
     final c = await get(id);
     if (c == null) return null;
     final n = name == null ? c.name : normalizeCategoryName(name);
-    if (name != null) await _checkFree(c.streamId, n, except: id);
+    if (name != null) await _checkFree(c.ownerId, n, except: id);
     await _conn.execute(
       Sql.named('UPDATE categories SET name = @n, color = @c, hidden = @h '
           'WHERE id = @id::uuid'),
@@ -158,12 +176,15 @@ class CategoryRepo {
     return (events: r.first[0] as int, counterparts: r.first[1] as int);
   }
 
-  /// Deletes every event in [id] (and each transfer's other side, skips
-  /// and overrides) as one undoable batch (`POST .../events/trim/undo`
-  /// with the returned batch id); the category stays. Call inside a DB
-  /// transaction. Null when the category does not exist.
+  /// Deletes every event in [id] in ALL the owner's streams (and each
+  /// transfer's other side, skips and overrides) as one undoable batch
+  /// filed under [streamId] (`POST /streams/[streamId]/events/trim/undo`
+  /// with the returned batch id); the category stays. peerStreams: every
+  /// other stream touched. Call inside a DB transaction. Null when the
+  /// category does not exist.
   Future<({String? batchId, List<String> deleted, Set<String> peerStreams})?>
-      deleteEvents(String id, {required String userId}) async {
+      deleteEvents(String id,
+          {required String streamId, required String userId}) async {
     final c = await get(id);
     if (c == null) return null;
     final rows = await _conn.execute(
@@ -172,16 +193,17 @@ class CategoryRepo {
       parameters: {'id': id},
     );
     return TrimBatchRepo(_conn).deleteAsBatch(
-        c.streamId, [for (final r in rows) r[0] as String],
-        userId: userId);
+        streamId, [for (final r in rows) r[0] as String],
+        userId: userId, anyStream: true);
   }
 
   /// Deletes [id] with every event in it (see [deleteEvents]; the events'
   /// batch is not offered for undo since the category itself is gone).
   /// Null when the category does not exist.
   Future<({String? batchId, List<String> deleted, Set<String> peerStreams})?>
-      delete(String id, {required String userId}) async {
-    final r = await deleteEvents(id, userId: userId);
+      delete(String id,
+          {required String streamId, required String userId}) async {
+    final r = await deleteEvents(id, streamId: streamId, userId: userId);
     if (r == null) return null;
     await _conn.execute(
       Sql.named('DELETE FROM categories WHERE id = @id::uuid'),
@@ -191,13 +213,14 @@ class CategoryRepo {
   }
 
   /// The name an event body means: its `categoryId`'s name (it must be a
-  /// category of [streamId]), else the legacy `name` (mapped to / creating
-  /// a category by the DB). Throws [FormatException] for an unknown id.
+  /// category of [streamId]'s owner), else the legacy `name` (mapped to /
+  /// creating a category by the DB). Throws [FormatException] for an
+  /// unknown id.
   Future<String?> nameFor(
       String streamId, Object? categoryId, String? legacyName) async {
     if (categoryId == null) return legacyName;
     final c = await get(categoryId.toString());
-    if (c == null || c.streamId != streamId) {
+    if (c == null || c.ownerId != await ownerOfStream(streamId)) {
       throw FormatException('categoryId is not a category of this stream');
     }
     return c.name;

@@ -8,14 +8,18 @@ import '../repo/category_repo.dart';
 import 'streams.dart' show notifyPeers;
 import 'json_helpers.dart';
 
-// Stream categories (migration 024), mounted under `/api/streams`:
+// Categories (migrations 024, 025), mounted under `/api/streams`: the
+// stream OWNER's global set (shared by all their streams). Editors of a
+// shared stream may list and add; renaming, recolouring, hiding and
+// deleting (which reach every stream of the owner) are the owner's.
 //   GET    /<a>/categories            list (with eventCount)
 //   POST   /<a>/categories            {name, color?, hidden?} -> 201
 //   PATCH  /<a>/categories/<c>        {name?, color?, hidden?}
 //   GET    /<a>/categories/<c>/delete-preview  {events, counterparts}
 //   DELETE /<a>/categories/<c>        deletes it and all its events
 //   DELETE /<a>/categories/<c>/events deletes all its events, keeps it
-// Names are unique per stream (case-insensitive): a taken name is a 409.
+// Names are unique in the owner's set (case-insensitive): a taken name is
+// a 409.
 void attachCategoryRoutes(Router router, Session conn) {
   const nameError = categoryNameError;
 
@@ -27,7 +31,9 @@ void attachCategoryRoutes(Router router, Session conn) {
   router.post('/<a>/categories', (Request r, String a) async {
     try {
       final body = await readJsonObject(r);
-      final c = await txOf(conn).runTx((tx) => CategoryRepo(tx).create(a,
+      final owner = await CategoryRepo(conn).ownerOfStream(a);
+      if (owner == null) return jsonError(404, 'stream not found');
+      final c = await txOf(conn).runTx((tx) => CategoryRepo(tx).create(owner,
           name: body['name'] is String ? body['name'] as String : '',
           color: parseEventColor(body['color']),
           hidden: optionalBool(body, 'hidden') ?? false));
@@ -40,8 +46,11 @@ void attachCategoryRoutes(Router router, Session conn) {
   });
 
   Future<Category?> inStream(Session s, String a, String c) async {
-    final cat = await CategoryRepo(s).get(c);
-    return cat != null && cat.streamId == a ? cat : null;
+    final repo = CategoryRepo(s);
+    final cat = await repo.get(c);
+    return cat != null && cat.ownerId == await repo.ownerOfStream(a)
+        ? cat
+        : null;
   }
 
   router.patch('/<a>/categories/<c>', (Request r, String a, String c) async {
@@ -81,8 +90,8 @@ void attachCategoryRoutes(Router router, Session conn) {
       return jsonError(404, 'category not found');
     }
     final me = requireAuth(r).user.id;
-    final res = await txOf(conn)
-        .runTx((tx) => CategoryRepo(tx).deleteEvents(c, userId: me));
+    final res = await txOf(conn).runTx(
+        (tx) => CategoryRepo(tx).deleteEvents(c, streamId: a, userId: me));
     if (res == null) return jsonError(404, 'category not found');
     await notifyPeers(conn, r, me, res.peerStreams, 'events.deleted');
     // batchId: undo with POST /streams/:a/events/trim/undo.
@@ -95,8 +104,8 @@ void attachCategoryRoutes(Router router, Session conn) {
       return jsonError(404, 'category not found');
     }
     final me = requireAuth(r).user.id;
-    final res =
-        await txOf(conn).runTx((tx) => CategoryRepo(tx).delete(c, userId: me));
+    final res = await txOf(conn)
+        .runTx((tx) => CategoryRepo(tx).delete(c, streamId: a, userId: me));
     if (res == null) return jsonError(404, 'category not found');
     await notifyPeers(conn, r, me, res.peerStreams, 'events.deleted');
     return jsonOk({'id': c, 'deletedEvents': res.deleted});
@@ -111,7 +120,7 @@ Response categoryNameError(CategoryNameException e) =>
 /// The event name (= category name) an event write in [streamId] means:
 /// `newCategory: {name, color}` creates that category first (a taken name
 /// throws [CategoryNameException], so plans never reuse one), else
-/// `categoryId` (must be a category of [streamId]), else [legacyName]
+/// `categoryId` (must be one of [streamId]'s owner's), else [legacyName]
 /// (mapped to, or creating, the category by name in the DB). Null when the
 /// body names none.
 Future<String?> resolveEventCategory(
@@ -121,7 +130,9 @@ Future<String?> resolveEventCategory(
   final nc = body['newCategory'];
   if (nc != null) {
     if (nc is! Map) throw FormatException('newCategory must be {name, color}');
-    final c = await repo.create(streamId,
+    final owner = await repo.ownerOfStream(streamId);
+    if (owner == null) throw FormatException('stream not found');
+    final c = await repo.create(owner,
         name: nc['name'] is String ? nc['name'] as String : '',
         color: parseEventColor(nc['color']));
     return c.name;

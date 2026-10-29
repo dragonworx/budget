@@ -7,6 +7,11 @@ Future<String> testOwnerId(Session c,
     (await UserRepo(c).ensure(email, isAdmin: false)).id;
 
 /// Removes every stream [ownerId] owns (cascades to their data).
-Future<void> deleteOwnedStreams(Session c, String ownerId) =>
-    c.execute(Sql.named('DELETE FROM streams WHERE owner_id = @o::uuid'),
-        parameters: {'o': ownerId});
+/// Deletes [ownerId]'s streams (and their events) and categories (global
+/// per owner since migration 025).
+Future<void> deleteOwnedStreams(Session c, String ownerId) async {
+  await c.execute(Sql.named('DELETE FROM streams WHERE owner_id = @o::uuid'),
+      parameters: {'o': ownerId});
+  await c.execute(Sql.named('DELETE FROM categories WHERE owner_id = @o::uuid'),
+      parameters: {'o': ownerId});
+}

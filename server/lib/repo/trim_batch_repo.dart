@@ -155,20 +155,21 @@ class TrimBatchRepo {
         batchId: batchId, ended: ended, deleted: deleted, blocked: blocked);
   }
 
-  /// Deletes [ids] (events of [streamId]; each transfer's other side goes
+  /// Deletes [ids] (events of [streamId], or of any stream when
+  /// [anyStream]: the caller checked access; each transfer's other side goes
   /// with it) as one undoable batch, like [endAllOn]'s deletions: [undo]
   /// brings them back with the same ids, skips, overrides and list
   /// positions. Returns the batch id (null when nothing was deleted) and
   /// the deleted ids, peers included. Call inside one DB transaction.
   Future<({String? batchId, List<String> deleted, Set<String> peerStreams})>
       deleteAsBatch(String streamId, List<String> ids,
-          {required String userId}) async {
+          {required String userId, bool anyStream = false}) async {
     final targets = <BudgetEvent>[];
     final seen = <String>{};
     for (final id in ids) {
       if (seen.contains(id)) continue;
       final t = await _events.get(id);
-      if (t == null || t.streamId != streamId) continue;
+      if (t == null || (!anyStream && t.streamId != streamId)) continue;
       targets.add(t);
       seen.add(t.id);
       if (t.transfer?.peerId != null) seen.add(t.transfer!.peerId!);
@@ -180,6 +181,7 @@ class TrimBatchRepo {
     final deleted = <String>[];
     final peerStreams = <String>{};
     for (final t in targets) {
+      if (t.streamId != streamId) peerStreams.add(t.streamId);
       if (await _events.delete(t.id)) deleted.add(t.id);
       final peer = t.transfer?.peerId;
       if (peer != null) {

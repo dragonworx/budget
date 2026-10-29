@@ -242,12 +242,13 @@ class BudgetEvent {
       );
 }
 
-/// A stream's event category: unique name (case-insensitive) in its stream,
-/// the lane colour of its events, and a shared hidden flag.
+/// An event category of one owner (global: every stream the owner has,
+/// migration 025): unique name (case-insensitive) in the owner's set, the
+/// lane colour of its events, and a shared hidden flag.
 class Category {
   Category({
     required this.id,
-    required this.streamId,
+    required this.ownerId,
     required this.name,
     required this.color,
     required this.hidden,
@@ -257,20 +258,20 @@ class Category {
   });
 
   final String id;
-  final String streamId;
+  final String ownerId;
   final String name;
   final String color;
   final bool hidden;
   final DateTime createdAt;
   final int version;
 
-  /// Events in the category (the events a delete removes, before transfer
-  /// counterparts).
+  /// Events in the category across all the owner's streams (the events a
+  /// delete removes, before transfer counterparts).
   final int eventCount;
 
   Map<String, Object?> toJson() => {
         'id': id,
-        'streamId': streamId,
+        'ownerId': ownerId,
         'name': name,
         'color': color,
         'hidden': hidden,

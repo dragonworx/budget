@@ -20,6 +20,7 @@ void main() {
   Connection? admin;
   Connection? db;
   late Directory old;
+  late Directory upTo024;
   final base = Uri.parse(Platform.environment['TEST_DATABASE_URL'] ??
       'postgres://budget:budget@127.0.0.1:5432/budget_test');
 
@@ -41,9 +42,11 @@ void main() {
       return;
     }
     old = Directory.systemTemp.createTempSync('mig023');
+    upTo024 = Directory.systemTemp.createTempSync('mig024');
     for (final f in Directory('migrations').listSync().whereType<File>()) {
       final name = f.uri.pathSegments.last;
       if (name.compareTo('024') < 0) f.copySync('${old.path}/$name');
+      if (name.compareTo('025') < 0) f.copySync('${upTo024.path}/$name');
     }
   });
 
@@ -53,6 +56,7 @@ void main() {
       await admin!.execute('DROP DATABASE IF EXISTS $_scratch');
       await admin!.close();
       old.deleteSync(recursive: true);
+      upTo024.deleteSync(recursive: true);
     }
   });
 
@@ -108,7 +112,7 @@ void main() {
     final countBefore =
         (await c.execute('SELECT count(*) FROM events')).first[0];
 
-    await applyMigrations(c, migrationsDir: 'migrations');
+    await applyMigrations(c, migrationsDir: upTo024.path);
 
     final after =
         await c.execute('SELECT id::text, version FROM events ORDER BY id');
@@ -169,7 +173,7 @@ void main() {
             "VALUES ('$_s1', 'food', '#3D6FD8')"),
         throwsA(isA<ServerException>()));
     // A second run is a no-op.
-    await applyMigrations(c, migrationsDir: 'migrations');
+    await applyMigrations(c, migrationsDir: upTo024.path);
     expect((await c.execute('SELECT count(*) FROM categories')).first[0], 7);
   });
 }
