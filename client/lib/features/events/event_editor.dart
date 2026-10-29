@@ -860,36 +860,36 @@ class _EventEditorState extends ConsumerState<EventEditor> {
           // Narrow (docked list, small phones): labels only, one line.
           LayoutBuilder(
             builder: (context, c) {
-              final icons = c.maxWidth >= 330;
+              // Icons only when every label still fits beside one.
+              final icons = c.maxWidth >= 420;
+              Widget label(String text, {Key? key}) => FittedBox(
+                // Never clipped: a label shrinks a little rather than cut.
+                fit: BoxFit.scaleDown,
+                child: Text(text, key: key, maxLines: 1, softWrap: false),
+              );
               return SegmentedButton<_Kind>(
                 key: const ValueKey('editor-kind'),
                 showSelectedIcon: false,
                 segments: [
                   ButtonSegment(
                     value: _Kind.credit,
-                    label: const Text('Money in', maxLines: 1, softWrap: false),
+                    label: label('Money in'),
                     icon: icons
                         ? const Icon(Icons.south_west_rounded, size: 18)
                         : null,
                   ),
                   ButtonSegment(
                     value: _Kind.debit,
-                    label: const Text(
-                      'Money out',
-                      maxLines: 1,
-                      softWrap: false,
-                    ),
+                    label: label('Money out'),
                     icon: icons
                         ? const Icon(Icons.north_east_rounded, size: 18)
                         : null,
                   ),
                   ButtonSegment(
                     value: _Kind.transfer,
-                    label: const Text(
+                    label: label(
                       'Transfer',
-                      key: ValueKey('editor-kind-transfer'),
-                      maxLines: 1,
-                      softWrap: false,
+                      key: const ValueKey('editor-kind-transfer'),
                     ),
                     icon: icons
                         ? const Icon(Icons.swap_horiz_rounded, size: 18)
