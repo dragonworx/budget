@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
@@ -24,6 +23,7 @@ import '../../widgets/frequency_picker.dart';
 import '../../widgets/ui.dart';
 import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
+import '../categories/categories_manager.dart';
 import '../timeline/stack_lanes.dart';
 
 enum EditorAction {
@@ -108,8 +108,8 @@ Future<EditorOutcome?> showEventEditor(
   bool readOnly = false,
 }) {
   // Still inside the tap: lets iOS / Android web raise the keyboard for
-  // the Name field that focuses once the panel is built.
-  if (existing == null && !readOnly) primeSoftKeyboard();
+  // the Amount field that focuses once the panel is built.
+  if (!readOnly && existing == null) primeSoftKeyboard();
   return showSidePanel<EditorOutcome>(
     context,
     label: existing == null ? 'New event' : 'Edit event',
@@ -166,7 +166,6 @@ class EventEditor extends ConsumerStatefulWidget {
 
 class _EventEditorState extends ConsumerState<EventEditor> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _name;
   late final TextEditingController _amount;
   late final TextEditingController _interval;
   late final TextEditingController _count;
@@ -195,13 +194,10 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   DateTime? _endDate;
   late bool _enabled;
 
-  /// The graph line's colour, shown as the header's background. New: a
-  /// random palette colour (one the stream's lanes don't wear yet, if any
-  /// is left). Edit: the colour the lane wears now (its own, else the
-  /// positional one), saved only once the user picks another, so an event
-  /// on the positional palette stays there until then.
-  late Color _color;
-  bool _colorPicked = false;
+  /// The category picked (null: the default, see [_category]). The
+  /// category gives the event its name and the header / graph line colour.
+  String? _categoryId;
+  String? _categoryError;
   bool _saving = false;
   String? _endDateError;
   late Set<DateTime> _skipped;
@@ -218,7 +214,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     final id = widget.existing?.id;
     _openedEvent = id == null ? null : ref.read(remoteChangesProvider)[id]?.id;
     final existing = widget.existing;
-    _name = TextEditingController(text: existing?.name ?? '');
+    _categoryId = existing?.categoryId;
     _amount = TextEditingController(text: existing?.amount.toString() ?? '');
     final savedFreq = existing?.frequency;
     _interval = TextEditingController(
@@ -257,7 +253,6 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       _endDate = DateTime(presetEnd.year, presetEnd.month, presetEnd.day);
     }
     _enabled = existing?.enabled ?? true;
-    _color = _initialColor();
     _skipped = {for (final d in widget.skippedDates) _day(d)};
     _skippedInitially = {..._skipped};
     _initialSignature = _signature();
@@ -265,77 +260,79 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     // Ctrl+Enter reach this editor's shortcuts.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_isNew) {
-        _nameFocus.requestFocus();
+      if (!widget.readOnly && widget.existing == null) {
+        _focusAmount();
       } else if (!_scope.hasFocus) {
         _scope.requestFocus();
       }
     });
-    // New: Name again once the panel / sheet has animated in, unless the
-    // user has already moved focus inside the editor. Something closing in
-    // the same frame (the New ▾ menu restoring its focus) or the opening
-    // route can otherwise take it away.
-    if (_isNew) {
+    // Amount again once the panel / sheet has animated in, unless the user
+    // has already moved focus inside the editor. Something closing in the
+    // same frame (the New ▾ menu restoring its focus) or the opening route
+    // can otherwise take it away.
+    // (New events only: editing doesn't pop the keyboard over the form.)
+    if (!widget.readOnly && widget.existing == null) {
       _refocus = Timer(nameRefocusDelay, () {
-        if (!mounted || _nameFocus.hasFocus) return;
+        if (!mounted || _amountFocus.hasFocus) return;
         final primary = FocusManager.instance.primaryFocus;
         final inEditor =
             primary != null &&
             primary != _scope &&
             primary.ancestors.contains(_scope);
-        if (!inEditor) _nameFocus.requestFocus();
+        if (!inEditor) _focusAmount();
       });
     }
   }
 
   Timer? _refocus;
 
-  /// See [_color]. Random generator overridable for tests.
-  Color _initialColor() {
-    final events = {
-      for (final t
-          in ref.read(eventsProvider(widget.streamId)).valueOrNull ??
-              const <BudgetEvent>[])
-        t.id: t,
-    };
-    final order =
-        ref.read(streamProvider(widget.streamId)).valueOrNull?.eventOrder ??
-        [for (final id in events.keys) id];
+  /// The event's category: the one picked (or the saved one), else the
+  /// last one used in this stream, else the first. Null only while the
+  /// list loads or when the stream has none.
+  Category? get _category {
+    final list =
+        ref.read(categoriesProvider(widget.streamId)).valueOrNull ??
+        const <Category>[];
+    Category? by(String? id) =>
+        id == null ? null : list.where((c) => c.id == id).firstOrNull;
+    if (_categoryId != null) {
+      final picked = by(_categoryId);
+      if (picked != null || list.isEmpty) return picked;
+    }
+    // An existing event keeps its own (by name when its id isn't known).
     final existing = widget.existing;
     if (existing != null) {
-      return colorFromHex(existing.color) ??
-          laneColorFor(existing.id, order: order, events: events) ??
-          laneColor(0);
+      final key = normalizeCategoryName(existing.name).toLowerCase();
+      final named = list.where((c) => c.name.toLowerCase() == key).firstOrNull;
+      if (named != null) return named;
     }
-    return pickNewEventColor(
-      buildLaneSet(order: order, events: events),
-      eventColorRandom ?? math.Random(),
-    );
+    return by(ref.read(lastCategoryProvider(widget.streamId))) ??
+        list.firstOrNull;
   }
 
-  /// What is saved as the event's colour: new events always get theirs;
-  /// an edited one keeps its stored value (possibly null = positional)
-  /// unless the user picked a colour.
-  String? get _savedColor =>
-      _isNew || _colorPicked ? colorToHex(_color) : widget.existing!.color;
+  /// The header's colour: the category's.
+  Color get _color =>
+      colorFromHex(_category?.color) ??
+      colorFromHex(widget.existing?.color) ??
+      laneColor(0);
+
+  Future<void> _manageCategories() async {
+    final created = await showCategoriesManager(
+      context,
+      streamId: widget.streamId,
+      canEdit: !widget.readOnly,
+    );
+    if (!mounted) return;
+    setState(() {
+      if (created != null) _categoryId = created;
+      _categoryError = null;
+    });
+  }
 
   final _scope = FocusScopeNode(debugLabel: 'EventEditor');
 
-  /// Tab from Name goes straight to Amount (skipping Money in / out /
-  /// Transfer and the transfer stream); Enter / Next does too (see Name's
-  /// onFieldSubmitted). Shift+Tab keeps the normal order.
-  late final _nameFocus = FocusNode(
-    debugLabel: 'editor-name',
-    onKeyEvent: (node, event) {
-      if (event is! KeyDownEvent ||
-          event.logicalKey != LogicalKeyboardKey.tab ||
-          HardwareKeyboard.instance.isShiftPressed) {
-        return KeyEventResult.ignored;
-      }
-      _focusAmount();
-      return KeyEventResult.handled;
-    },
-  );
+  /// Amount comes first (focused on open), then the type, the category
+  /// and the schedule.
   final _amountFocus = FocusNode(debugLabel: 'editor-amount');
 
   void _focusAmount() {
@@ -347,7 +344,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   String _signature() {
     final d = _draft();
     return [
-      d.name,
+      _categoryId,
       d.direction,
       _amount.text.trim(),
       d.startDate,
@@ -358,7 +355,6 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       d.occurrenceCount,
       d.enabled,
       d.transfer?.peerStreamId,
-      d.color,
     ].join('|');
   }
 
@@ -391,13 +387,11 @@ class _EventEditorState extends ConsumerState<EventEditor> {
 
   @override
   void dispose() {
-    _name.dispose();
     _amount.dispose();
     _interval.dispose();
     _count.dispose();
     _scope.dispose();
     _refocus?.cancel();
-    _nameFocus.dispose();
     _amountFocus.dispose();
     super.dispose();
   }
@@ -440,7 +434,8 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     return BudgetEvent(
       id: widget.existing?.id ?? 'preview',
       streamId: widget.streamId,
-      name: _name.text.trim(),
+      name: _category?.name ?? widget.existing?.name ?? '',
+      categoryId: _category?.id ?? widget.existing?.categoryId,
       direction: _direction,
       amount: parsedAmount,
       startDate: _startDate,
@@ -455,7 +450,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
           : null,
       enabled: _enabled,
       transfer: _transferMode ? _transfer : null,
-      color: _savedColor,
+      color: _category?.color ?? widget.existing?.color,
     );
   }
 
@@ -544,11 +539,12 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Rebuild when the categories change (names, colours, the default).
+    ref.watch(categoriesProvider(widget.streamId));
+    final name = _category?.name ?? widget.existing?.name ?? '';
     final title = _isNew
         ? 'New event'
-        : (widget.existing!.name.isEmpty
-              ? 'Untitled series'
-              : widget.existing!.name);
+        : (name.isEmpty ? 'Untitled series' : name);
 
     return PopScope(
       // Barrier clicks / system back go through the discard check too.
@@ -713,7 +709,6 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                 ],
               ),
             ),
-            _colorButton(),
             IconButton(
               key: const ValueKey('editor-close'),
               tooltip: widget.onClosePanel != null
@@ -723,132 +718,6 @@ class _EventEditorState extends ConsumerState<EventEditor> {
               icon: const Icon(Icons.close_rounded),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  final _colorMenu = MenuController();
-
-  /// The header's colour swatch: opens the palette (12 swatches, the
-  /// current one ticked). Keyboard: Tab to it, Enter / Space opens, Tab /
-  /// arrows between swatches, Enter picks, Esc closes.
-  Widget _colorButton() {
-    final i = laneColorIndexOf(_color);
-    final name = i == null ? 'Custom' : laneColorNames[i];
-    return MenuAnchor(
-      controller: _colorMenu,
-      alignmentOffset: const Offset(-120, 4),
-      style: MenuStyle(
-        padding: const WidgetStatePropertyAll(EdgeInsets.all(10)),
-        backgroundColor: const WidgetStatePropertyAll(AppTheme.raised),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        ),
-      ),
-      menuChildren: [_colorGrid()],
-      builder: (context, controller, _) => IconButton(
-        key: const ValueKey('editor-color'),
-        tooltip: widget.readOnly ? 'Colour: $name' : 'Colour: $name (change)',
-        onPressed: widget.readOnly || _saving
-            ? null
-            : () => controller.isOpen ? controller.close() : controller.open(),
-        icon: Container(
-          width: 26,
-          height: 26,
-          decoration: BoxDecoration(
-            color: _color,
-            shape: BoxShape.circle,
-            border: Border.all(color: laneTextColor, width: 2),
-            boxShadow: const [
-              BoxShadow(color: Color(0x55000000), blurRadius: 4),
-            ],
-          ),
-          child: const Icon(
-            Icons.palette_outlined,
-            size: 14,
-            color: laneTextColor,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _colorGrid() {
-    final selected = laneColorIndexOf(_color);
-    return FocusTraversalGroup(
-      child: SizedBox(
-        key: const ValueKey('editor-color-grid'),
-        width: 6 * 44,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
-              child: Text(
-                'Graph line colour',
-                style: TextStyle(
-                  color: AppTheme.textMuted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            Wrap(
-              children: [
-                for (var i = 0; i < laneColors.length; i++)
-                  _swatch(i, selected == i),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _swatch(int i, bool selected) {
-    final c = laneColors[i];
-    return Semantics(
-      selected: selected,
-      button: true,
-      label: '${laneColorNames[i]}${selected ? ', selected' : ''}',
-      excludeSemantics: true,
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: InkResponse(
-          key: ValueKey('color-swatch-$i'),
-          autofocus: selected,
-          radius: 22,
-          onTap: () {
-            setState(() {
-              _color = c;
-              _colorPicked = true;
-            });
-            _colorMenu.close();
-          },
-          child: Tooltip(
-            message: laneColorNames[i],
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: c,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: selected ? laneTextColor : Colors.transparent,
-                  width: 2.5,
-                ),
-              ),
-              child: selected
-                  ? const Icon(
-                      Icons.check_rounded,
-                      size: 20,
-                      color: laneTextColor,
-                    )
-                  : null,
-            ),
-          ),
         ),
       ),
     );
@@ -954,19 +823,38 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           TextFormField(
-            key: const ValueKey('editor-name'),
-            controller: _name,
-            autofocus: _isNew,
-            focusNode: _nameFocus,
-            decoration: const InputDecoration(
-              labelText: 'Name',
-              hintText: 'Rent, Salary, Groceries…',
+            key: const ValueKey('editor-amount'),
+            controller: _amount,
+            focusNode: _amountFocus,
+            autofocus: !widget.readOnly && widget.existing == null,
+            decoration: InputDecoration(
+              labelText: _recurrenceMode == RecurrenceMode.every
+                  ? 'Amount each time'
+                  : 'Amount',
+              prefixText: symbol.isEmpty ? null : '$symbol ',
+              hintText: '0.00',
             ),
-            // Enter / the keyboard's Next: on to Amount (never saves);
-            // the keyboard stays up and switches to Amount's number pad.
-            textInputAction: TextInputAction.next,
-            onFieldSubmitted: (_) => _focusAmount(),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            // Type and category always have a value: Enter / the
+            // keyboard's Done saves.
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _save(),
             onChanged: (_) => setState(() {}),
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            validator: (value) {
+              if (value == null || value.trim().isEmpty) {
+                return 'Enter an amount';
+              }
+              final amount = parseMoneyInput(value);
+              if (amount == null) {
+                return 'Enter a number, e.g. 1250 or 1,250.50';
+              }
+              if (amount == Decimal.zero) return 'Enter an amount above zero';
+              if (amount < Decimal.zero) {
+                return 'Use Money out instead of a negative amount';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 12),
           // Narrow (docked list, small phones): labels only, one line.
@@ -1060,37 +948,17 @@ class _EventEditorState extends ConsumerState<EventEditor> {
             const SizedBox(height: 12),
             _transferField(theme),
           ],
-          const SizedBox(height: 12),
-          TextFormField(
-            key: const ValueKey('editor-amount'),
-            controller: _amount,
-            focusNode: _amountFocus,
-            decoration: InputDecoration(
-              labelText: _recurrenceMode == RecurrenceMode.every
-                  ? 'Amount each time'
-                  : 'Amount',
-              prefixText: symbol.isEmpty ? null : '$symbol ',
-              hintText: '0.00',
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _save(),
-            onChanged: (_) => setState(() {}),
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Enter an amount';
-              }
-              final amount = parseMoneyInput(value);
-              if (amount == null) {
-                return 'Enter a number, e.g. 1250 or 1,250.50';
-              }
-              if (amount == Decimal.zero) return 'Enter an amount above zero';
-              if (amount < Decimal.zero) {
-                return 'Use Money out instead of a negative amount';
-              }
-              return null;
-            },
+          const SizedBox(height: 14),
+          CategoryPicker(
+            streamId: widget.streamId,
+            selectedId: _category?.id,
+            enabled: !widget.readOnly,
+            errorText: _categoryError,
+            onManage: _manageCategories,
+            onSelected: (c) => setState(() {
+              _categoryId = c.id;
+              _categoryError = null;
+            }),
           ),
         ],
       ),
@@ -1762,11 +1630,18 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       setState(() => _transferError = 'Pick the other stream');
       return null;
     }
+    final category = _category;
+    if (category == null) {
+      setState(() => _categoryError = 'Create a category first (Manage)');
+      return null;
+    }
 
     return _draft(amount: parseMoneyInput(_amount.text)!).copyWith(
       id: widget.existing?.id ?? const Uuid().v4(),
       streamId: widget.streamId,
-      name: _name.text.trim(),
+      name: category.name,
+      categoryId: category.id,
+      color: category.color,
       direction: _direction,
       startDate: _startDate,
       enabled: _enabled,
@@ -1797,6 +1672,10 @@ class _EventEditorState extends ConsumerState<EventEditor> {
           return;
         }
         saved = draft;
+      }
+      if (saved.categoryId != null) {
+        ref.read(lastCategoryProvider(widget.streamId).notifier).state =
+            saved.categoryId;
       }
       if (mounted) {
         _finish(
@@ -1841,10 +1720,6 @@ class _ViewOnlyNote extends StatelessWidget {
   }
 }
 
-/// Tests: the generator behind a new event's random colour.
-@visibleForTesting
-math.Random? eventColorRandom;
-
-/// When a new event's editor re-checks that Name has focus (after
+/// When a new event's editor re-checks that Amount has focus (after
 /// the panel's entrance animation).
 const Duration nameRefocusDelay = Duration(milliseconds: 400);
