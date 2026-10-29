@@ -82,6 +82,7 @@ class AuditRepo {
       'event' => params['t'],
       'skip' => params['t'],
       'scenario' => params['s'],
+      'category' => params['c'],
       'stream_share' =>
         params['u'] ?? (response?['member'] as Map?)?['userId']?.toString(),
       'invite' => params['i'],

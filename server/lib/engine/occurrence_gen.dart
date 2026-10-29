@@ -25,7 +25,7 @@ class OccurrenceGenerator {
 
     final out = <Occurrence>[];
     for (final event in events) {
-      if (!event.enabled) continue;
+      if (!event.active) continue;
       for (final date in datesForEvent(event, windowStart, windowEnd)) {
         final skipSet = skipped[event.id] ?? const <DateTime>{};
         final isSkipped =

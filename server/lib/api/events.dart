@@ -6,7 +6,9 @@ import 'package:shelf_router/shelf_router.dart';
 
 import '../domain/enums.dart';
 import '../domain/models.dart';
+import '../repo/category_repo.dart';
 import '../repo/event_repo.dart';
+import 'categories.dart';
 import 'json_helpers.dart';
 
 Router eventsRouter(Session conn) {
@@ -60,9 +62,11 @@ Router eventsRouter(Session conn) {
 
       final event = await txOf(conn).runTx((tx) async {
         final events = EventRepo(tx);
+        final name = await resolveEventCategory(tx, existing.streamId, body,
+            legacyName: optionalString(body, 'name'));
         var updated = (await events.update(
           id,
-          name: optionalString(body, 'name'),
+          name: name,
           direction: body.containsKey('direction')
               ? Direction.parse(requireString(body, 'direction'))
               : null,
@@ -105,9 +109,29 @@ Router eventsRouter(Session conn) {
         // longer sit on an occurrence.
         await events.pruneOverrides(id);
         await events.syncPeer(updated);
+        // Legacy `color`: an event's colour is its category's now, so it
+        // recolours the category (and the transfer side's).
+        final legacyColor = parseEventColor(body['color']);
+        if (legacyColor != null) {
+          await tx.execute(
+            Sql.named('''
+              UPDATE categories SET color = @c WHERE id IN (
+                SELECT category_id FROM events WHERE id = ANY (@ids::uuid[]))
+            '''),
+            parameters: {
+              'c': legacyColor,
+              'ids': [
+                id,
+                if (updated.transfer?.peerId != null) updated.transfer!.peerId!
+              ],
+            },
+          );
+        }
         return (await events.get(id))!;
       });
       return jsonOk(event.toJson());
+    } on CategoryNameException catch (e) {
+      return categoryNameError(e);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }
@@ -200,7 +224,8 @@ Router eventsRouter(Session conn) {
   // "From now on": split the series at an occurrence, atomically.
   router.post('/<id>/split', (Request request, String id) async {
     try {
-      if (await events.get(id) == null) {
+      final existing = await events.get(id);
+      if (existing == null) {
         return jsonError(404, 'event not found');
       }
       final body = await readJsonObject(request);
@@ -217,10 +242,12 @@ Router eventsRouter(Session conn) {
         interval = f.frequency!.legacyInterval;
         unit = RecurrenceUnit.parse(f.frequency!.legacyUnit!);
       }
-      final r = await txOf(conn).runTx((tx) => EventRepo(tx).splitAt(
+      final r = await txOf(conn).runTx((tx) async => EventRepo(tx).splitAt(
             id,
             date,
-            name: requireString(body, 'name'),
+            name: await resolveEventCategory(tx, existing.streamId, body,
+                    legacyName: optionalString(body, 'name')) ??
+                existing.name,
             direction: Direction.parse(requireString(body, 'direction')),
             amount: parseDecimal(body['amount']),
             interval: interval,
@@ -236,6 +263,8 @@ Router eventsRouter(Session conn) {
         'original': r.original.toJson(),
         'created': r.created?.toJson(),
       });
+    } on CategoryNameException catch (e) {
+      return categoryNameError(e);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }

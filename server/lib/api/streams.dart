@@ -11,9 +11,11 @@ import '../domain/models.dart';
 import '../domain/event_import.dart';
 import '../engine/calendar_math.dart';
 import '../repo/stream_repo.dart';
+import '../repo/category_repo.dart';
 import '../repo/event_repo.dart';
 import '../repo/trim_batch_repo.dart';
 import 'balance.dart';
+import 'categories.dart';
 import 'json_helpers.dart';
 import 'goal.dart';
 import 'stream_view.dart';
@@ -97,9 +99,11 @@ Router buildStreamsApi(Session conn) {
       // A transfer creates both sides atomically.
       final event = await txOf(conn).runTx((tx) async {
         final events = EventRepo(tx);
+        final name = await resolveEventCategory(tx, streamId, body,
+            legacyName: parsed.name);
         var created = await events.create(
           streamId: streamId,
-          name: parsed.name,
+          name: name ?? parsed.name,
           direction: parsed.direction,
           amount: parsed.amount,
           startDate: parsed.startDate,
@@ -122,6 +126,8 @@ Router buildStreamsApi(Session conn) {
         return created;
       });
       return jsonOk(event.toJson(), status: 201);
+    } on CategoryNameException catch (e) {
+      return categoryNameError(e);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     } on ArgumentError catch (e) {
@@ -294,6 +300,7 @@ Router buildStreamsApi(Session conn) {
   });
 
   attachBalanceRoutes(router, conn);
+  attachCategoryRoutes(router, conn);
   attachSolveRoutes(router, conn);
   attachGoalRoutes(router, conn);
   attachStreamViewRoutes(router, conn);

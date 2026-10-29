@@ -70,9 +70,22 @@ class BudgetEvent {
     this.overrides = const {},
     this.color,
     this.days = const [],
+    this.categoryId,
+    this.categoryHidden = false,
   });
 
   final int version;
+
+  /// The event's category (every stored event has one; previews have none).
+  /// [name] is the category's name and [color] its colour.
+  final String? categoryId;
+
+  /// The category is hidden: the event counts like a disabled one (no
+  /// occurrences, no balance effect) while its own [enabled] is kept.
+  final bool categoryHidden;
+
+  /// Counts on the timeline and in the balance.
+  bool get active => enabled && !categoryHidden;
 
   /// The rule's days (sorted, unique): weekdays 1 (Mon) – 7 (Sun) for the
   /// week rules, month days 1–31 for the month rules; empty = the plain
@@ -142,6 +155,8 @@ class BudgetEvent {
         'createdAt': createdAt.toUtc().toIso8601String(),
         'transfer': transfer?.toJson(),
         'color': color,
+        'categoryId': categoryId,
+        'categoryHidden': categoryHidden,
         'version': version,
         'overrides': [
           for (final e
@@ -196,6 +211,8 @@ class BudgetEvent {
       transfer: transfer,
       version: version,
       overrides: overrides,
+      categoryId: categoryId,
+      categoryHidden: categoryHidden,
     );
   }
 
@@ -220,7 +237,47 @@ class BudgetEvent {
         transfer: transfer,
         version: version,
         overrides: overrides,
+        categoryId: categoryId,
+        categoryHidden: categoryHidden,
       );
+}
+
+/// A stream's event category: unique name (case-insensitive) in its stream,
+/// the lane colour of its events, and a shared hidden flag.
+class Category {
+  Category({
+    required this.id,
+    required this.streamId,
+    required this.name,
+    required this.color,
+    required this.hidden,
+    required this.createdAt,
+    this.version = 1,
+    this.eventCount = 0,
+  });
+
+  final String id;
+  final String streamId;
+  final String name;
+  final String color;
+  final bool hidden;
+  final DateTime createdAt;
+  final int version;
+
+  /// Events in the category (the events a delete removes, before transfer
+  /// counterparts).
+  final int eventCount;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'streamId': streamId,
+        'name': name,
+        'color': color,
+        'hidden': hidden,
+        'eventCount': eventCount,
+        'createdAt': createdAt.toUtc().toIso8601String(),
+        'version': version,
+      };
 }
 
 /// A once-off override of one occurrence's amount and direction.

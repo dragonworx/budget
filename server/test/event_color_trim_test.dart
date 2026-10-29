@@ -124,7 +124,9 @@ void main() {
         'startDate': '2026-10-05',
       });
       expect(plain.status, 201);
-      expect(plain.json['color'], isNull, reason: 'null = positional colour');
+      expect(plain.json['name'], 'Untitled');
+      expect(plain.json['color'], '#3D6FD8',
+          reason: 'a new category takes the first free palette colour');
 
       final bad = await call(streams, 'POST', '/$a/events', {
         'direction': 'debit',
@@ -179,10 +181,10 @@ void main() {
       final colors = {for (final e in list) e['name']: e['color']};
       expect(colors.values, contains('#F4511E'));
 
-      // Clearing: back to the positional colour, mirrored.
+      // Clearing is a no-op now: a category always has a colour.
       final cleared = await call(events, 'PATCH', '/$id', {'color': null});
-      expect(cleared.json['color'], isNull);
-      expect((await call(events, 'GET', '/$peer')).json['color'], isNull);
+      expect(cleared.json['color'], '#43A047');
+      expect((await call(events, 'GET', '/$peer')).json['color'], '#43A047');
 
       // Import: `color` and the `colour` alias; bad values are a 400.
       final imp = await call(

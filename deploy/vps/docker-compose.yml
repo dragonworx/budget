@@ -46,7 +46,8 @@ x-db-snapshot: &db-snapshot |
       ('stream_shares', coalesce(to_regclass('public.stream_shares'), to_regclass('public.pool_shares'))),
       ('stream_views', coalesce(to_regclass('public.stream_views'), to_regclass('public.pool_views'))),
       ('skipped_occurrences', to_regclass('public.skipped_occurrences')),
-      ('occurrence_overrides', to_regclass('public.occurrence_overrides'))
+      ('occurrence_overrides', to_regclass('public.occurrence_overrides')),
+      ('categories', to_regclass('public.categories'))
     ) v(t, r) WHERE r IS NOT NULL
     UNION ALL SELECT 'admins', count(*)::text FROM users WHERE is_admin
     UNION ALL SELECT 'latest_migration', max(id) FROM schema_migrations" | tee "$$f.counts.txt"

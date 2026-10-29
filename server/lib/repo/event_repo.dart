@@ -12,10 +12,12 @@ const _enrichedCols = '''
   t.id, t.stream_id, t.name, t.direction, t.amount, t.start_date,
   t.recurrence_mode, t.interval, t.unit, t.end_mode, t.end_date,
   t.occurrence_count, t.enabled, t.created_at, t.transfer_id,
-  p.id, pa.id, pa.name, t.version AS t_version, t.color AS t_color,
+  p.id, pa.id, pa.name, t.version AS t_version, c.color AS t_color,
   t.freq_rule AS t_freq_rule, t.freq_interval AS t_freq_interval,
-  t.freq_days AS t_freq_days''';
+  t.freq_days AS t_freq_days, t.category_id::text AS t_category_id,
+  COALESCE(c.hidden, false) AS t_category_hidden''';
 const _peerJoin = '''
+  LEFT JOIN categories c ON c.id = t.category_id
   LEFT JOIN events p
     ON t.transfer_id IS NOT NULL AND p.transfer_id = t.transfer_id AND p.id <> t.id
   LEFT JOIN streams pa ON pa.id = p.stream_id''';
@@ -779,6 +781,8 @@ class EventRepo {
     return BudgetEvent(
       days: days,
       color: cols['t_color'] as String?,
+      categoryId: cols['t_category_id'] as String?,
+      categoryHidden: cols['t_category_hidden'] as bool? ?? false,
       version: version is int ? version : 1,
       id: row[0].toString(),
       streamId: row[1].toString(),
@@ -868,7 +872,7 @@ class EventRepo {
           freq_rule = s.freq_rule, freq_interval = s.freq_interval,
           freq_days = s.freq_days,
           occurrence_count = s.occurrence_count, enabled = s.enabled,
-          color = s.color
+          color = (SELECT color FROM categories WHERE id = s.category_id)
         FROM events s
         WHERE s.id = @s AND p.id = @p
       '''),

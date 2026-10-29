@@ -144,7 +144,9 @@ void main() {
         1);
     expect(
         await count("SELECT count(*) FROM pg_constraint WHERE contype = 'f' "
-            "AND conrelid::regclass::text <> 'event_trim_batches'"),
+            "AND conrelid::regclass::text <> 'event_trim_batches' "
+            "AND conrelid::regclass::text <> 'categories' "
+            "AND conname <> 'events_category_id_fkey'"),
         fksBefore);
     for (final old in ['pools', 'transactions', 'pool_shares', 'pool_views']) {
       expect((await c.execute("SELECT to_regclass('public.$old')")).first[0],

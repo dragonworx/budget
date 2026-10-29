@@ -16,6 +16,7 @@ const _mounts = {
   'stream_view.dart': {'attachStreamViewRoutes': 'streams'},
   'solve.dart': {'attachSolveRoutes': 'streams'},
   'scenarios.dart': {'attachScenarioRoutes': 'streams'},
+  'categories.dart': {'attachCategoryRoutes': 'streams'},
   'events.dart': {'eventsRouter': 'events'},
   'sharing.dart': {
     'attachStreamSharingRoutes': 'streams',
@@ -116,6 +117,8 @@ void main() {
         'i': inv.json['id'] as String,
         'd': '2026-01-01',
         'pattern': '@nowhere.example',
+        'c': (await h.call('GET', '/api/events/${s.t}', as: 'owner'))
+            .json['categoryId'] as String,
       };
       await h.login('outsider');
       for (final p in policies) {
@@ -187,6 +190,8 @@ void main() {
         'u': await h.userId('rviewer'),
         'i': inv.json['id'] as String,
         'd': '2026-01-01',
+        'c': (await h.call('GET', '/api/events/${s.t}', as: 'rowner'))
+            .json['categoryId'] as String,
       };
       final before =
           (await h.call('GET', '/api/streams/${s.a}/events', as: 'rowner'))

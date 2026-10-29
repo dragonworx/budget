@@ -24,7 +24,7 @@ DateTime _d(DateTime d) => DateTime.utc(d.year, d.month, d.day);
 /// [day] (or it is disabled), [EndOnDay.delete] when it first fires after
 /// [day], else [EndOnDay.end].
 EndOnDay? endOnDayPlan(BudgetEvent t, DateTime day) {
-  if (!t.enabled) return null;
+  if (!t.active) return null;
   final d = _d(day);
   final start = _d(t.startDate);
   // "Starts" = first fires: a weekly Mon/Tue series that begins on a
