@@ -8,11 +8,11 @@ import '../../data/api_client.dart';
 import '../../data/frequency.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
-import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/recurrence_interval_field.dart';
 import '../timeline/duration_format.dart';
 import 'goal_models.dart';
+import 'plan_schedule.dart';
 
 /// Variables shown in the solver, in order.
 const goalRows = [
@@ -27,7 +27,7 @@ const goalRows = [
   GoalVar.rate,
 ];
 
-/// "Plan a goal": every variable is known (🔒, typed or a default) except
+/// "Reach a balance" (the Plan view's balance mode): every variable is known (🔒, typed or a default) except
 /// the one solve slot (✦), which is derived live as you type. Tap ✦ on
 /// another row to move the slot there; the old answer is locked in so you
 /// can keep experimenting from it.
@@ -131,6 +131,55 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   }
 
   GoalRequest get request => _request();
+
+  /// What the user locked in the shared schedule fields (the solve slot and
+  /// the default "every 1" are left blank).
+  PlanSchedule get schedule {
+    final amount = _solveFor == GoalVar.amount
+        ? null
+        : double.tryParse(_money[GoalVar.amount]!.text.trim());
+    return PlanSchedule(
+      startDate: _solveFor == GoalVar.startDate ? null : _startDate,
+      endDate: _solveFor == GoalVar.endDate ? null : _endDate,
+      amount: amount,
+      interval: _solveFor == GoalVar.interval || _interval == 1
+          ? null
+          : _interval,
+      unit: _unit,
+      count: _solveFor == GoalVar.count
+          ? null
+          : int.tryParse(_count.text.trim()),
+    );
+  }
+
+  /// Takes the shared schedule from the other mode and solves.
+  set schedule(PlanSchedule v) {
+    _startDate = v.startDate;
+    _endDate = v.endDate;
+    _money[GoalVar.amount]!.text = v.amount == null
+        ? ''
+        : planAmountText(v.amount!);
+    _interval = v.interval ?? 1;
+    _intervalText.text = '$_interval';
+    _unit = v.unit;
+    _count.text = v.count?.toString() ?? '';
+    // A carried value is locked: move the solve slot off it (to the amount,
+    // else the end date, else the target balance).
+    final carried = {
+      if (v.startDate != null) GoalVar.startDate,
+      if (v.endDate != null) GoalVar.endDate,
+      if (v.amount != null) GoalVar.amount,
+      if (v.interval != null) GoalVar.interval,
+      if (v.count != null) GoalVar.count,
+    };
+    if (carried.contains(_solveFor)) {
+      _solveFor = [GoalVar.amount, GoalVar.endDate].firstWhere(
+        (g) => !carried.contains(g),
+        orElse: () => GoalVar.targetBalance,
+      );
+    }
+    if (mounted) _changed();
+  }
 
   static String _plain(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
@@ -281,8 +330,9 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Lock what you know and pick the one value to solve (✦). It '
-            'updates live, and the dashed line on the chart shows the plan.',
+            'Reach a balance: lock what you know and pick the one value to '
+            'solve (✦). It updates live, and the dashed line on the chart '
+            'shows the plan.',
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 10),
@@ -314,8 +364,13 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
           ],
           ...extraRows(context),
           const SizedBox(height: 6),
-          _status(context),
-          const SizedBox(height: 12),
+          // A complete plan shows no summary: the fields (and the dashed
+          // line on the chart) already say it.
+          if (_showsStatus) ...[
+            _status(context),
+            const SizedBox(height: 12),
+          ] else
+            const SizedBox(height: 6),
           FilledButton.icon(
             key: const ValueKey('goal-add-events'),
             onPressed:
@@ -354,6 +409,9 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
 
   /// Hook for widgets under the add button (scenarios).
   List<Widget> footer(BuildContext context) => const [];
+
+  bool get _showsStatus =>
+      _error != null || _result == null || !_result!.isComplete;
 
   bool _wanted(GoalVar v) =>
       _result != null &&
@@ -608,131 +666,8 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
         ),
       ], iconColor: scheme.tertiary);
     }
-    final x = r.values!;
-    final small = theme.textTheme.bodySmall;
-    return panel(scheme.secondaryContainer, Icons.check_circle_outline, [
-      Text(
-        headline(r, x),
-        key: const ValueKey('goal-headline'),
-        style: theme.textTheme.titleSmall,
-      ),
-      const SizedBox(height: 4),
-      if (r.endBalance != null)
-        Text(
-          'End balance ${_money2(r.endBalance!)} on ${_date(x.endDate)}'
-          '${r.baselineEndBalance == null ? '' : ' (without the plan ${_money2(r.baselineEndBalance!)})'}',
-          style: small,
-        ),
-      if (r.lowestBalance != null && r.lowestDate != null)
-        Text(
-          'Lowest ${_money2(r.lowestBalance!)} on ${_date(r.lowestDate!)}',
-          key: const ValueKey('goal-lowest'),
-          style: small,
-        ),
-      Text(
-        r.alertDate == null
-            ? 'Stays above the alert line'
-            : 'Hits the alert line on ${_date(r.alertDate!)}',
-        key: const ValueKey('goal-alert'),
-        style: small?.copyWith(
-          color: r.alertDate == null
-              ? AppTheme.creditColor
-              : AppTheme.debitColor,
-        ),
-      ),
-      if (r.affordability case final a?) ..._affordability(context, a),
-      if ((r.values?.rate ?? 0) != 0)
-        Text(
-          'Interest compounds daily on the whole balance; '
-          '"Add plan" adds the payments only, not the interest.',
-          key: const ValueKey('goal-rate-note'),
-          style: small,
-        ),
-      ...statusExtras(context, r),
-      if (r.note != null) Text(r.note!, style: small),
-    ]);
-  }
-
-  /// Purchase check (a negative one-off): yes/no, the worst point after it
-  /// and the last day the balance stays above the alert line.
-  List<Widget> _affordability(BuildContext context, Affordability a) {
-    final theme = Theme.of(context);
-    final color = a.affordable ? AppTheme.creditColor : AppTheme.debitColor;
-    return [
-      const SizedBox(height: 4),
-      Row(
-        key: const ValueKey('goal-affordability'),
-        children: [
-          Icon(
-            a.affordable ? Icons.check_circle_rounded : Icons.cancel_rounded,
-            size: 16,
-            color: color,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              a.affordable
-                  ? 'Affordable — stays at or above the alert line'
-                  : 'Not affordable — dips below the alert line',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-      if (a.worstDate != null && a.worstBalance != null)
-        Text(
-          'Worst point ${_money2(a.worstBalance!)} on ${_date(a.worstDate!)}',
-          key: const ValueKey('goal-afford-worst'),
-          style: theme.textTheme.bodySmall,
-        ),
-      Text(
-        a.safeUntil == null
-            ? 'Below the alert line straight away'
-            : 'Safe until ${_date(a.safeUntil!)}',
-        key: const ValueKey('goal-afford-safe'),
-        style: theme.textTheme.bodySmall,
-      ),
-    ];
-  }
-
-  /// Hook for extra status lines.
-  List<Widget> statusExtras(BuildContext context, GoalResult r) => const [];
-
-  /// One sentence answering the solved question.
-  String headline(GoalResult r, GoalValues x) {
-    final when = x.count == 1
-        ? 'once'
-        : '${_every(x.interval, x.unit)} '
-              '(${x.count} times)';
-    return switch (r.solveFor) {
-      GoalVar.amount =>
-        x.amount >= 0
-            ? 'Put in ${_money2(x.amount)} $when'
-            : 'You can take out ${_money2(-x.amount)} $when',
-      GoalVar.targetBalance =>
-        _mode == GoalMode.floor
-            ? 'Lowest balance: ${_money2(x.targetBalance)}'
-            : 'Balance on ${_date(x.endDate)}: ${_money2(x.targetBalance)}',
-      GoalVar.endDate =>
-        _mode == GoalMode.floor
-            ? 'Stays at or above ${_money2(x.targetBalance)} until ${_date(x.endDate)}'
-            : 'Reaches ${_money2(x.targetBalance)} on ${_date(x.endDate)} '
-                  '(${formatSpanDuration(x.startDate, x.endDate, precision: DurationPrecision.days)})',
-      GoalVar.count => '${x.count} payments of ${_money2(x.amount)} are enough',
-      GoalVar.interval => '${_every(x.interval, x.unit)} is often enough',
-      GoalVar.startDate => 'Start by ${_date(x.startDate)} at the latest',
-      GoalVar.startBalance =>
-        'Needs ${_money2(x.startBalance)} at the start of ${_date(x.startDate)}'
-            '${r.projectedStartBalance == null ? '' : ' (projected ${_money2(r.projectedStartBalance!)})'}',
-      GoalVar.oneOff =>
-        x.oneOff <= 0
-            ? 'You can spend up to ${_money2(-x.oneOff)} on ${_date(x.startDate)}'
-            : 'Needs a one-off of ${_money2(x.oneOff)} on ${_date(x.startDate)}',
-      GoalVar.rate => 'Needs ${x.rate.toStringAsFixed(2)}% a year',
-    };
+    // Complete: the build leaves the panel out ([_showsStatus] is false).
+    return const SizedBox.shrink();
   }
 
   Future<void> _addEvents() async {

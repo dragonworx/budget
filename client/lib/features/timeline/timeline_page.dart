@@ -1441,8 +1441,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               ),
               titleSpacing: 0,
               title: Text(switch (_planTab) {
-                PlanTab.goal => 'Plan a goal',
-                PlanTab.payment => 'Plan a payment',
+                PlanTab.goal || PlanTab.payment => 'Plan',
                 PlanTab.scenarios => 'Scenarios',
               }),
               actions: [
@@ -2267,7 +2266,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     onPlan: () {
       close?.call();
       _openPlan();
-      // "Plan a payment" (the planner's other tabs are one tap away).
+      // Opens in "Spread a total" ("Reach a balance" is one tap away).
       setState(() => _planTab = PlanTab.payment);
     },
   );

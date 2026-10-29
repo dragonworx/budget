@@ -132,7 +132,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(last, isNotNull);
     expect(find.byKey(const ValueKey('goal-solved-amount')), findsOneWidget);
-    expect(find.textContaining('Put in'), findsOneWidget);
+    // Complete: no summary panel (the fields say it).
+    expect(find.byKey(const ValueKey('goal-status')), findsNothing);
+    expect(find.textContaining('Put in'), findsNothing);
 
     // Solve for the count instead: the amount (280) is locked in.
     await tester.tap(find.byKey(const ValueKey('goal-toggle-count')));
@@ -144,7 +146,9 @@ void main() {
     expect(find.byKey(const ValueKey('goal-solved-count')), findsOneWidget);
   });
 
-  testWidgets('rate row solves and affordability is shown', (tester) async {
+  testWidgets('rate row solves; a complete plan shows no summary panel', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(500, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -182,10 +186,17 @@ void main() {
     key.currentState!.setTarget(DateTime(2026, 1, 29), 2000);
     await tester.pumpAndSettle();
     expect(repo.requests.last.solveFor, GoalVar.rate);
-    expect(find.textContaining('Needs 4.50% a year'), findsOneWidget);
-    expect(find.textContaining('Not affordable'), findsOneWidget);
-    expect(find.textContaining('Worst point'), findsOneWidget);
-    expect(find.textContaining('Safe until'), findsOneWidget);
-    expect(find.byKey(const ValueKey('goal-rate-note')), findsOneWidget);
+    expect(find.byKey(const ValueKey('goal-solved-rate')), findsOneWidget);
+    expect(find.textContaining('4.50% a year'), findsOneWidget);
+    for (final gone in [
+      'Needs',
+      'Not affordable',
+      'Worst point',
+      'Safe until',
+    ]) {
+      expect(find.textContaining(gone), findsNothing, reason: gone);
+    }
+    expect(find.byKey(const ValueKey('goal-status')), findsNothing);
+    expect(find.byKey(const ValueKey('goal-rate-note')), findsNothing);
   });
 }

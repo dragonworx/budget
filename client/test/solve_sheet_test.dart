@@ -98,14 +98,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Fill in one more: end date, increment amount or count.'),
+      find.text('Fill in one more: end date, amount each time or count.'),
       findsOneWidget,
     );
     final create = find.widgetWithText(FilledButton, 'Create event');
     expect(tester.widget<FilledButton>(create).onPressed, isNull);
 
     await tester.enterText(
-      find.widgetWithText(TextField, 'Increment amount'),
+      find.widgetWithText(TextField, 'Amount each time'),
       '75',
     );
     await tester.pump(const Duration(milliseconds: 350));

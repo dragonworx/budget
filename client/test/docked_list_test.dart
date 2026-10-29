@@ -469,7 +469,7 @@ void main() {
         expect(sr.center.dx, closeTo(tester.getRect(plan).left - 8, 0.5));
         final before = _view(tester);
 
-        for (final tab in ['Plan a payment', 'Plan a goal']) {
+        for (final tab in ['Spread a total', 'Reach a balance']) {
           await tester.tap(find.text(tab), kind: kind);
           await tester.pumpAndSettle();
           final from = planW();
@@ -497,7 +497,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(planW(), planPanelMinWidth);
         expect(tester.takeException(), isNull);
-        await tester.tap(find.text('Plan a payment'), kind: kind);
+        await tester.tap(find.text('Spread a total'), kind: kind);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         expect(double.parse(saved()!), planPanelMinWidth);

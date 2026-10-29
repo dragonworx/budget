@@ -8,10 +8,12 @@ import 'package:budget_client/features/events/event_editor.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/widgets/ui.dart' show SectionCard;
 import 'package:budget_client/data/repositories.dart';
+import 'package:budget_client/features/planning/goal_models.dart';
 import 'package:budget_client/features/planning/plan_panel.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/occurrence_dates.dart';
 import 'package:budget_client/features/timeline/occurrence_info.dart';
+import 'package:budget_client/features/timeline/selection_period.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
@@ -88,6 +90,8 @@ class _Store {
   final calls = <String>[];
   Role role = Role.owner;
   bool undoFails = false;
+  final goals = <GoalRequest>[];
+  final solves = <SolveRequest>[];
 }
 
 class _StreamRepo extends StreamRepository {
@@ -96,6 +100,29 @@ class _StreamRepo extends StreamRepository {
 
   @override
   Future<BudgetStream> get(String id) async => _stream(role: s.role);
+
+  // The planner: both modes keep their own server call.
+  @override
+  Future<GoalResult> goal(String streamId, GoalRequest request) async {
+    s.goals.add(request);
+    return GoalResult.fromJson({
+      'status': 'incomplete',
+      'solveFor': request.solveFor.name,
+      'needsOneOf': ['targetBalance'],
+    });
+  }
+
+  @override
+  Future<SolveResult> solve(String streamId, SolveRequest request) async {
+    s.solves.add(request);
+    return SolveResult.fromJson({
+      'status': 'incomplete',
+      'solved': <String>[],
+      'values': {'interval': 1},
+      'needsMore': 2,
+      'needsOneOf': ['total', 'amount'],
+    });
+  }
 
   @override
   Future<BalanceSeries> balance(
@@ -2048,9 +2075,86 @@ void main() {
         tester.widget<PlanPanel>(find.byType(PlanPanel)).tab,
         PlanTab.payment,
       );
+      // The one Plan view, in "Spread a total".
+      final modes = tester.widget<SegmentedButton<PlanTab>>(
+        find.byKey(const ValueKey('plan-tabs')),
+      );
+      expect(modes.selected, {PlanTab.payment});
+      expect(find.text('Reach a balance'), findsOneWidget);
+      expect(find.widgetWithText(TextField, 'Total amount'), findsOneWidget);
+      expect(find.text('Target balance (optional)'), findsNothing);
+      if (size.width < 600) {
+        // Full screen on a phone: one title for both modes.
+        expect(find.widgetWithText(AppBar, 'Plan'), findsOneWidget);
+      }
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('chart selection Plan… opens Reach a balance (the largest '
+      'one-off above the alert line); Set target sets its target; neither '
+      'is in Spread a total', (tester) async {
+    final store = await _pump(tester);
+    BalanceChart chart() =>
+        tester.widget<BalanceChart>(find.byType(BalanceChart));
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final start = today.add(const Duration(days: 5));
+    final end = today.add(const Duration(days: 20));
+    chart().onPlanPeriod!(
+      PeriodSummary(
+        start: start,
+        end: end,
+        startBalance: 1234,
+        endBalance: 1500,
+        gains: 300,
+        losses: 34,
+        occurrences: const [],
+      ),
+    );
+    await tester.pumpAndSettle();
+    final panel = tester.widget<PlanPanel>(find.byType(PlanPanel));
+    expect(panel.tab, PlanTab.goal);
+    expect(
+      tester
+          .widget<SegmentedButton<PlanTab>>(
+            find.byKey(const ValueKey('plan-tabs')),
+          )
+          .selected,
+      {PlanTab.goal},
+    );
+    final req = store.goals.last;
+    expect(req.solveFor, GoalVar.oneOff);
+    expect(req.mode, GoalMode.floor);
+    expect(req.startDate, start);
+    expect(req.endDate, end);
+    expect(req.startBalance, 1234);
+    expect(req.targetBalance, 0);
+
+    // Set target (only in Reach a balance): a chart tap sets the target.
+    expect(find.byKey(const ValueKey('target-tool')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('target-tool')));
+    await tester.pumpAndSettle();
+    expect(chart().targetMode, isTrue);
+    final day = today.add(const Duration(days: 40));
+    chart().onTargetChanged!(day, 2345);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(store.goals.last.endDate, day);
+    expect(store.goals.last.targetBalance, 2350);
+    expect(tester.widget<PlanPanel>(find.byType(PlanPanel)).tab, PlanTab.goal);
+
+    // Spread a total: the schedule follows; no target tool.
+    await tester.tap(find.text('Spread a total'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('target-tool')), findsNothing);
+    expect(store.solves.last.startDate, start);
+    expect(store.solves.last.endDate, day);
+    expect(store.solves.last.targetBalance, isNull);
+    expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   for (final kind in const [PointerDeviceKind.touch, PointerDeviceKind.mouse]) {
     testWidgets('double-tap (${kind.name}) zooms time 2x about the tap and '

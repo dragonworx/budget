@@ -27,7 +27,7 @@ enum SolveVar {
   String get label => switch (this) {
         SolveVar.startDate => 'start date',
         SolveVar.endDate => 'end date',
-        SolveVar.amount => 'increment amount',
+        SolveVar.amount => 'amount each time',
         SolveVar.total => 'total amount',
         SolveVar.interval => 'frequency',
         SolveVar.count => 'count',
@@ -270,7 +270,7 @@ class EventSolver {
 
   static void _validate(SolveRequest req) {
     if (req.amount != null && req.amount! <= Decimal.zero) {
-      throw SolverException('increment amount must be greater than 0');
+      throw SolverException('amount each time must be greater than 0');
     }
     if (req.targetTotal != null && req.targetTotal! <= Decimal.zero) {
       throw SolverException('total amount must be greater than 0');
@@ -297,12 +297,12 @@ class EventSolver {
         final n = _roundPositiveInt(_div(v.total!, v.amount!), req.rounding);
         if (n < 1) {
           throw SolverException(
-            'total ${v.total} is less than one increment of ${v.amount}',
+            'total ${v.total} is less than one payment of ${v.amount}',
           );
         }
         if (n > maxCount) {
           throw SolverException(
-            'total ÷ increment gives $n occurrences (max $maxCount)',
+            'total ÷ amount each time gives $n occurrences (max $maxCount)',
           );
         }
         v.count = n;
@@ -349,7 +349,7 @@ class EventSolver {
     final actual = v.amount! * Decimal.fromInt(v.count!);
     throw SolverException(
       'total ${v.total} does not match ${v.amount} × ${v.count} = $actual. '
-      'Clear one of total, increment amount, or count to have it calculated.',
+      'Clear one of total, amount each time, or count to have it calculated.',
     );
   }
 

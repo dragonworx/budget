@@ -9,6 +9,7 @@ import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/recurrence_interval_field.dart';
+import '../planning/plan_schedule.dart';
 
 /// Opens the event planner. Any values in [initial] are treated as known.
 ///
@@ -83,15 +84,14 @@ class SolveSheet extends ConsumerStatefulWidget {
   final bool creditOnly;
 
   @override
-  ConsumerState<SolveSheet> createState() => _SolveSheetState();
+  ConsumerState<SolveSheet> createState() => SolveSheetState();
 }
 
-class _SolveSheetState extends ConsumerState<SolveSheet> {
+/// Public so the Plan view can carry the shared schedule across modes.
+class SolveSheetState extends ConsumerState<SolveSheet> {
   late final TextEditingController _name;
   late final TextEditingController _amount;
   late final TextEditingController _total;
-  late final TextEditingController _targetBalance;
-  final TextEditingController _balanceTotal = TextEditingController();
   late final TextEditingController _interval;
   late final TextEditingController _count;
   late EventDirection _direction;
@@ -118,9 +118,6 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     _name = TextEditingController(text: i.name);
     _amount = TextEditingController(text: i.amount?.toString() ?? '');
     _total = TextEditingController(text: i.targetTotal?.toString() ?? '');
-    _targetBalance = TextEditingController(
-      text: i.targetBalance?.toString() ?? '',
-    );
     _interval = TextEditingController(text: i.interval?.toString() ?? '');
     _count = TextEditingController(text: i.occurrenceCount?.toString() ?? '');
     _direction = widget.creditOnly ? EventDirection.credit : i.direction;
@@ -137,8 +134,6 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     _name.dispose();
     _amount.dispose();
     _total.dispose();
-    _targetBalance.dispose();
-    _balanceTotal.dispose();
     _interval.dispose();
     _count.dispose();
     super.dispose();
@@ -160,15 +155,6 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     return null;
   }
 
-  /// A target balance may be any amount (even zero or negative).
-  String? _balanceError(TextEditingController c) {
-    final raw = c.text.trim();
-    if (raw.isEmpty) return null;
-    return Decimal.tryParse(raw) == null ? 'Invalid amount' : null;
-  }
-
-  bool get _balanceMode => _targetBalance.text.trim().isNotEmpty;
-
   String? _intError(TextEditingController c) {
     final raw = c.text.trim();
     if (raw.isEmpty) return null;
@@ -180,7 +166,6 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
   bool get _hasInputErrors =>
       _moneyError(_amount) != null ||
       _moneyError(_total) != null ||
-      _balanceError(_targetBalance) != null ||
       _intError(_interval) != null ||
       _intError(_count) != null;
 
@@ -191,12 +176,34 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
     startDate: _startDate,
     endDate: _endDate,
     amount: _parseMoney(_amount),
-    targetTotal: _balanceMode ? null : _parseMoney(_total),
-    targetBalance: _parseMoney(_targetBalance),
+    targetTotal: _parseMoney(_total),
     interval: _parseInt(_interval),
     occurrenceCount: _parseInt(_count),
     rounding: _rounding,
   );
+
+  /// What the user typed in the shared schedule fields.
+  PlanSchedule get schedule => PlanSchedule(
+    startDate: _startDate,
+    endDate: _endDate,
+    amount: _parseMoney(_amount)?.toDouble(),
+    interval: _parseInt(_interval),
+    unit: _unit,
+    count: _parseInt(_count),
+  );
+
+  /// Takes the shared schedule from the other mode and solves. Only income
+  /// is planned here, so a negative amount is left out.
+  set schedule(PlanSchedule v) {
+    _startDate = v.startDate;
+    _endDate = v.endDate;
+    final a = v.amount;
+    _amount.text = a == null || a <= 0 ? '' : planAmountText(a);
+    _interval.text = v.interval?.toString() ?? '';
+    _unit = v.unit;
+    _count.text = v.count?.toString() ?? '';
+    if (mounted) _changed();
+  }
 
   // --- Solving -------------------------------------------------------------
 
@@ -317,12 +324,12 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
             ],
             Text(
               widget.creditOnly
-                  ? 'Plan money coming in. Fill in what you know — blank '
-                        'fields are calculated (✦) and update as you type. '
-                        'Clear a field to have it calculated again.'
+                  ? 'Spread a total over payments coming in. Fill in what '
+                        'you know — blank fields are calculated (✦) and update '
+                        'as you type. Clear a field to have it calculated again.'
                   : 'Fill in what you know and leave the rest blank — blank '
                         'fields are calculated. Any four of start date, total, '
-                        'increment, frequency, count and end date determine '
+                        'amount each time, frequency, count and end date determine '
                         'the event.',
               style: theme.textTheme.bodySmall,
             ),
@@ -355,6 +362,18 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
               ),
             ],
             const SizedBox(height: 16),
+            _MoneyField(
+              key: const ValueKey('plan-total'),
+              controller: _total,
+              label: 'Total amount',
+              help: 'Sum of every payment',
+              calculated: _isSolved(SolveVar.total) ? values?.total : null,
+              wanted: _isWanted(SolveVar.total),
+              error: _moneyError(_total),
+              onChanged: _changed,
+            ),
+            const SizedBox(height: 12),
+            // The schedule, in the same order as "Reach a balance".
             _DateField(
               label: 'Start date',
               value: _startDate,
@@ -370,66 +389,6 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
               },
             ),
             const SizedBox(height: 12),
-            _MoneyField(
-              key: const ValueKey('plan-target-balance'),
-              controller: _targetBalance,
-              label: 'Target balance (optional)',
-              optional: true,
-              help:
-                  'Balance wanted on the end date; the total becomes the '
-                  'gap from what is already projected',
-              calculated: null,
-              wanted: false,
-              error: _balanceError(_targetBalance),
-              onChanged: _changed,
-            ),
-            const SizedBox(height: 12),
-            if (_balanceMode)
-              _MoneyField(
-                key: const ValueKey('plan-total-from-balance'),
-                controller: _balanceTotal,
-                label: 'Total amount',
-                help: 'From the target balance',
-                calculated: _result?.balanceTarget?.gap.abs(),
-                wanted: false,
-                error: null,
-                readOnly: true,
-                onChanged: () {},
-              )
-            else
-              _MoneyField(
-                controller: _total,
-                label: 'Total amount',
-                help: 'Sum of every occurrence',
-                calculated: _isSolved(SolveVar.total) ? values?.total : null,
-                wanted: _isWanted(SolveVar.total),
-                error: _moneyError(_total),
-                onChanged: _changed,
-              ),
-            const SizedBox(height: 12),
-            _MoneyField(
-              controller: _amount,
-              label: 'Increment amount',
-              help: 'Amount of each occurrence',
-              calculated: _isSolved(SolveVar.amount) ? values?.amount : null,
-              wanted: _isWanted(SolveVar.amount),
-              error: _moneyError(_amount),
-              onChanged: _changed,
-            ),
-            const SizedBox(height: 16),
-            _frequencyField(values?.interval),
-            const SizedBox(height: 12),
-            _IntField(
-              controller: _count,
-              label: 'Count',
-              suffix: 'times',
-              help: 'How many occurrences, including the first',
-              calculated: _isSolved(SolveVar.count) ? values?.count : null,
-              wanted: _isWanted(SolveVar.count),
-              error: _intError(_count),
-              onChanged: _changed,
-            ),
-            const SizedBox(height: 12),
             _DateField(
               label: 'End date',
               value: _endDate,
@@ -442,7 +401,31 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
                 _changed();
               },
             ),
-            if (_total.text.trim().isNotEmpty || _balanceMode) ...[
+            const SizedBox(height: 12),
+            _MoneyField(
+              key: const ValueKey('plan-amount'),
+              controller: _amount,
+              label: 'Amount each time',
+              help: 'Amount of each payment',
+              calculated: _isSolved(SolveVar.amount) ? values?.amount : null,
+              wanted: _isWanted(SolveVar.amount),
+              error: _moneyError(_amount),
+              onChanged: _changed,
+            ),
+            const SizedBox(height: 16),
+            _frequencyField(values?.interval),
+            const SizedBox(height: 12),
+            _IntField(
+              controller: _count,
+              label: 'Count',
+              suffix: 'times',
+              help: 'How many payments, including the first',
+              calculated: _isSolved(SolveVar.count) ? values?.count : null,
+              wanted: _isWanted(SolveVar.count),
+              error: _intError(_count),
+              onChanged: _changed,
+            ),
+            if (_total.text.trim().isNotEmpty) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<RoundingMode>(
                 initialValue: _rounding,
@@ -490,9 +473,13 @@ class _SolveSheetState extends ConsumerState<SolveSheet> {
                     ? 'View only: can’t create'
                     : _saving
                     ? 'Saving…'
-                    : (widget.saveOnCommit
-                          ? 'Create event'
-                          : 'Use these values'),
+                    : (!widget.saveOnCommit
+                          ? 'Use these values'
+                          // Docked in the Plan view: the same words as
+                          // "Reach a balance".
+                          : widget.onPreview != null
+                          ? 'Add plan to stream'
+                          : 'Create event'),
               ),
             ),
           ],
@@ -602,8 +589,6 @@ TextStyle? _helperStyle(
 class _MoneyField extends StatelessWidget {
   const _MoneyField({
     super.key,
-    this.readOnly = false,
-    this.optional = false,
     required this.controller,
     required this.label,
     required this.help,
@@ -620,17 +605,12 @@ class _MoneyField extends StatelessWidget {
   final bool wanted;
   final String? error;
   final VoidCallback onChanged;
-  final bool readOnly;
-
-  /// Not part of the solve: blank means "not used", not "calculate".
-  final bool optional;
 
   @override
   Widget build(BuildContext context) {
     final hasValue = controller.text.trim().isNotEmpty;
     return TextField(
       controller: controller,
-      readOnly: readOnly,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       onChanged: (_) => onChanged(),
       decoration: _decoration(
@@ -640,14 +620,12 @@ class _MoneyField extends StatelessWidget {
         wanted: wanted,
         error: error,
         hint: calculated?.toString(),
-        helper: optional && !hasValue
-            ? help
-            : _helperFor(
-                hasValue: hasValue,
-                wanted: wanted,
-                help: help,
-                calculated: calculated?.toString(),
-              ),
+        helper: _helperFor(
+          hasValue: hasValue,
+          wanted: wanted,
+          help: help,
+          calculated: calculated?.toString(),
+        ),
         onClear: () {
           controller.clear();
           onChanged();
@@ -867,22 +845,13 @@ class _StatusPanel extends StatelessWidget {
     }
 
     final r = result;
-    final bt = r?.balanceTarget;
-    final btLine = bt == null
-        ? null
-        : Text(
-            'Projected ${bt.projectedBalance} on the end date without this '
-            'plan; target ${bt.targetBalance}, gap ${bt.gap}.',
-            key: const ValueKey('plan-balance-target-info'),
-            style: theme.textTheme.bodySmall,
-          );
     if (r != null && r.onTrack) {
       return _panel(
         context,
         color: scheme.secondaryContainer,
         icon: Icons.verified_outlined,
         iconColor: AppTheme.creditColor,
-        children: [Text(r.message ?? 'Already on track.'), ?btLine],
+        children: [Text(r.message ?? 'Already on track.')],
       );
     }
     if (r == null) {

@@ -69,7 +69,7 @@ class ScenariosPanel extends ConsumerWidget {
         Text(
           'Saved what-ifs. Included ones are drawn on the chart in their '
           'colour and compared with the stream as it is now. Save one '
-          'from "Plan a goal".',
+          'from "Reach a balance".',
           style: theme.textTheme.bodySmall?.copyWith(color: AppTheme.textMuted),
         ),
         const SizedBox(height: 10),
@@ -129,7 +129,7 @@ class ScenariosPanel extends ConsumerWidget {
                       ),
                       IconButton(
                         key: ValueKey('scenario-load-${s.id}'),
-                        tooltip: 'Open in Plan a goal',
+                        tooltip: 'Open in Reach a balance',
                         visualDensity: VisualDensity.compact,
                         onPressed: () => onLoad(s),
                         icon: const Icon(Icons.edit_outlined, size: 18),

@@ -817,7 +817,7 @@ enum SolveVar {
   String get label => switch (this) {
     SolveVar.startDate => 'start date',
     SolveVar.endDate => 'end date',
-    SolveVar.amount => 'increment amount',
+    SolveVar.amount => 'amount each time',
     SolveVar.total => 'total amount',
     SolveVar.interval => 'frequency',
     SolveVar.count => 'count',
