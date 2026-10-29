@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_streams.dart';
 
+import 'support/fake_categories.dart';
+
 final _streams = [
   testStream('a', 'Everyday'),
   testStream('s', 'Savings'),
@@ -26,7 +28,11 @@ class _Txs extends EventRepository {
   @override
   Future<List<BudgetEvent>> listForStream(String streamId) async => [];
   @override
-  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
+  Future<BudgetEvent> create(
+    String streamId,
+    BudgetEvent draft, {
+    ({String name, String? color})? newCategory,
+  }) async {
     created.add(draft.toCreateJson());
     return draft;
   }
@@ -86,6 +92,12 @@ void main() {
       ProviderScope(
         overrides: [
           streamRepositoryProvider.overrideWithValue(_repo()),
+          categoryRepositoryProvider.overrideWith(
+            (ref) => FakeCategoryRepository(
+              ref.watch(eventRepositoryProvider),
+              ['Save'],
+            ),
+          ),
           eventRepositoryProvider.overrideWithValue(txs),
         ],
         child: MaterialApp(
@@ -100,7 +112,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('editor-name')), 'Save');
     await tester.enterText(find.byKey(const ValueKey('editor-amount')), '10');
     await tester.tap(find.byKey(const ValueKey('editor-kind-transfer')));
     await tester.pumpAndSettle();

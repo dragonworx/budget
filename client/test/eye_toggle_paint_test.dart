@@ -19,6 +19,8 @@ import 'package:budget_client/theme/app_theme.dart';
 import 'package:budget_client/widgets/eye_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fake_categories.dart';
+
 final _stream = BudgetStream(
   id: 'p',
   ownerId: 'u1',
@@ -88,6 +90,9 @@ Future<void> _pump(
     ProviderScope(
       overrides: [
         streamRepositoryProvider.overrideWithValue(_StreamRepo()),
+        categoryRepositoryProvider.overrideWith(
+          (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+        ),
         eventRepositoryProvider.overrideWithValue(_repo),
       ],
       child: MaterialApp(

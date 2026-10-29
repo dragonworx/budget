@@ -6,7 +6,6 @@ import 'dart:math' as math;
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
-import 'package:budget_client/features/events/event_editor.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/stack_lanes.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
@@ -15,9 +14,10 @@ import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/fake_categories.dart';
 
 final _now = DateTime.now();
 final _day = DateTime(_now.year, _now.month, _now.day);
@@ -101,7 +101,11 @@ class _EventRepo extends EventRepository {
       s.txs.values.toList();
 
   @override
-  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
+  Future<BudgetEvent> create(
+    String streamId,
+    BudgetEvent draft, {
+    ({String name, String? color})? newCategory,
+  }) async {
     s.created.add(draft);
     return s.txs[draft.id] = draft;
   }
@@ -171,6 +175,9 @@ Future<_Store> _pump(
     ProviderScope(
       overrides: [
         streamRepositoryProvider.overrideWithValue(_StreamRepo(store)),
+        categoryRepositoryProvider.overrideWith(
+          (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+        ),
         eventRepositoryProvider.overrideWithValue(_EventRepo(store)),
       ],
       child: const MaterialApp(home: TimelinePage(streamId: 'acc')),
@@ -202,10 +209,8 @@ Finder _field(String key) => find.descendant(
 );
 
 void main() {
-  tearDown(() => eventColorRandom = null);
-
   test('colour round trip: fromJson (and the colour alias), toJson, '
-      'create / patch body always carries it, copyWith clears', () {
+      'the create body leaves it to the category, copyWith clears', () {
     final t = BudgetEvent.fromJson({
       'id': 'x',
       'streamId': 'a',
@@ -218,7 +223,11 @@ void main() {
     });
     expect(t.color, '#3C8A6E');
     expect(t.toJson()['color'], '#3C8A6E');
-    expect(t.toCreateJson()['color'], '#3C8A6E');
+    expect(
+      t.toCreateJson().containsKey('color'),
+      isFalse,
+      reason: 'the category carries the colour',
+    );
     final alias = BudgetEvent.fromJson({...t.toJson(), 'color': null}).let(
       (_) => BudgetEvent.fromJson({
         'id': 'y',
@@ -231,14 +240,7 @@ void main() {
       }),
     );
     expect(alias.color, '#9250C8');
-    final cleared = t.copyWith(clearColor: true);
-    expect(cleared.color, isNull);
-    expect(
-      cleared.toCreateJson().containsKey('color'),
-      isTrue,
-      reason: 'null is sent: back to the positional colour',
-    );
-    expect(cleared.toCreateJson()['color'], isNull);
+    expect(t.copyWith(clearColor: true).color, isNull);
     expect(normalizeEventColor('red'), isNull);
   });
 
@@ -305,97 +307,49 @@ void main() {
     }
   });
 
-  testWidgets('New: the header wears a random palette colour no lane has; '
-      'the picker recolours it live and Save stores it', (tester) async {
-    eventColorRandom = math.Random(7);
+  testWidgets('New: the header wears the default category\'s colour (no '
+      'colour picker); picking a category recolours it and Save stores the '
+      'category, its name and colour', (tester) async {
     final store = await _pump(tester);
     await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('panel-new-event')));
     await tester.pumpAndSettle();
-    final first = _headerColor(tester);
-    expect(laneColors, contains(first));
-    expect(first, isNot(laneColor(0)), reason: 'Rent wears blue');
-    expect(first, isNot(const Color(0xFF3C8A6E)), reason: 'Gym wears pine');
-    // Open the picker: 12 swatches, the current one ticked.
-    await tester.tap(find.byKey(const ValueKey('editor-color')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('editor-color-grid')), findsOneWidget);
-    for (var i = 0; i < 12; i++) {
-      expect(find.byKey(ValueKey('color-swatch-$i')), findsOneWidget);
-    }
-    final sel = laneColorIndexOf(first)!;
-    expect(
-      find.descendant(
-        of: find.byKey(ValueKey('color-swatch-$sel')),
-        matching: find.byIcon(Icons.check_rounded),
-      ),
-      findsOneWidget,
+    expect(find.byKey(const ValueKey('editor-color')), findsNothing);
+    expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+    // Default: the first category (Rent, positional blue).
+    expect(_headerColor(tester), laneColor(0));
+    await tester.tap(
+      find.byKey(ValueKey('editor-category-${fakeCategoryId('Gym')}')),
     );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('editor-color-grid')),
-        matching: find.byIcon(Icons.check_rounded),
-      ),
-      findsOneWidget,
-    );
-    final pick = (sel + 5) % 12;
-    await tester.tap(find.byKey(ValueKey('color-swatch-$pick')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('editor-color-grid')), findsNothing);
-    expect(_headerColor(tester), laneColors[pick], reason: 'live');
-    await tester.enterText(_field('editor-name'), 'Cafe');
+    expect(_headerColor(tester), const Color(0xFF3C8A6E), reason: 'live');
     await tester.enterText(_field('editor-amount'), '12');
     await tester.tap(find.byKey(const ValueKey('editor-save')));
     await tester.pumpAndSettle();
-    expect(store.created.single.color, colorToHex(laneColors[pick]));
+    final c = store.created.single;
+    expect(c.name, 'Gym');
+    expect(c.categoryId, fakeCategoryId('Gym'));
+    expect(c.color, '#3C8A6E');
+    expect(c.toCreateJson()['categoryId'], fakeCategoryId('Gym'));
+    expect(c.toCreateJson().containsKey('color'), isFalse);
     await tester.pump(const Duration(seconds: 6));
   });
 
-  testWidgets('Edit: the header starts on the lane\'s colour (own or '
-      'positional); unchanged it saves what was stored, a pick saves the '
-      'pick; keyboard opens the picker', (tester) async {
+  testWidgets('Edit: the header and title come from the event\'s category; '
+      'saving keeps it', (tester) async {
     final store = await _pump(tester);
     await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
-    // Rent: no colour of its own, first lane → blue.
-    await tester.tap(find.text('Rent'));
-    await tester.pumpAndSettle();
-    expect(_headerColor(tester), laneColor(0));
-    await tester.enterText(_field('editor-amount'), '60');
-    await tester.tap(find.byKey(const ValueKey('editor-save')));
-    await tester.pumpAndSettle();
-    expect(
-      store.updated.last.color,
-      isNull,
-      reason: 'not picked: stays on the positional palette',
-    );
-    await tester.pump(const Duration(seconds: 6));
-
-    // Gym: its own pine.
     await tester.tap(find.text('Gym'));
     await tester.pumpAndSettle();
     expect(_headerColor(tester), const Color(0xFF3C8A6E));
-    // Keyboard: focus the swatch button, Enter opens, Enter picks.
-    final button = find.byKey(const ValueKey('editor-color'));
-    Focus.of(
-      tester.element(
-        find.descendant(of: button, matching: find.byType(Icon)).first,
-      ),
-    ).requestFocus();
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('editor-color-grid')), findsOneWidget);
-    // The selected swatch (pine, 8) has focus; Tab to the next (plum).
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(_headerColor(tester), laneColors[9]);
+    await tester.enterText(_field('editor-amount'), '60');
     await tester.tap(find.byKey(const ValueKey('editor-save')));
     await tester.pumpAndSettle();
     expect(store.updated.last.id, 'gym');
-    expect(store.updated.last.color, '#8E5A9E');
+    expect(store.updated.last.name, 'Gym');
+    expect(store.updated.last.categoryId, fakeCategoryId('Gym'));
     await tester.pump(const Duration(seconds: 6));
   });
 

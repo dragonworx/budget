@@ -21,6 +21,8 @@ import 'chip_taps.dart';
 
 import 'support/fake_auth.dart';
 
+import 'support/fake_categories.dart';
+
 final _now = DateTime.now();
 final _today = DateTime(_now.year, _now.month, _now.day);
 DateTime _d(int offset) =>
@@ -181,6 +183,9 @@ Future<(_World, ProviderContainer)> _pump(
         FakeAuthRepository(user: adminUser),
       ),
       streamRepositoryProvider.overrideWithValue(_StreamRepo(w)),
+      categoryRepositoryProvider.overrideWith(
+        (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+      ),
       eventRepositoryProvider.overrideWithValue(_TxRepo(w)),
     ],
   );

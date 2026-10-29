@@ -17,6 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/fake_streams.dart';
 import 'support/fake_auth.dart';
 
+import 'support/fake_categories.dart';
+
 const _owner = UserRef(
   id: 'u1',
   email: 'musicartscience@gmail.com',
@@ -506,7 +508,12 @@ void main() {
   testWidgets('viewer gets a read-only events panel', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [eventRepositoryProvider.overrideWithValue(_NoTx())],
+        overrides: [
+          categoryRepositoryProvider.overrideWith(
+            (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+          ),
+          eventRepositoryProvider.overrideWithValue(_NoTx()),
+        ],
         child: MaterialApp(
           home: Scaffold(
             body: EventsPanel(

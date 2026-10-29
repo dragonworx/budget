@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fake_categories.dart';
+
 /// Records calls; dry runs answer [preview] (or throw [error]).
 class _Repo extends EventRepository {
   _Repo() : super(ApiClient());
@@ -97,7 +99,12 @@ Future<(_Repo, List<ImportResult?>)> _open(
   final results = <ImportResult?>[];
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [eventRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        categoryRepositoryProvider.overrideWith(
+          (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+        ),
+        eventRepositoryProvider.overrideWithValue(repo),
+      ],
       child: MaterialApp(
         theme: AppTheme.dark(),
         home: Builder(

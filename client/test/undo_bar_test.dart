@@ -20,6 +20,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fake_categories.dart';
+
 final _now = DateTime.now();
 final _day = DateTime(_now.year, _now.month, _now.day);
 
@@ -117,7 +119,11 @@ class _EventRepo extends EventRepository {
       s.txs.values.toList();
 
   @override
-  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
+  Future<BudgetEvent> create(
+    String streamId,
+    BudgetEvent draft, {
+    ({String name, String? color})? newCategory,
+  }) async {
     s.created.add(draft);
     return s.txs[draft.id] = draft;
   }
@@ -193,6 +199,9 @@ Future<_Store> _pump(
     ProviderScope(
       overrides: [
         streamRepositoryProvider.overrideWithValue(_StreamRepo(store)),
+        categoryRepositoryProvider.overrideWith(
+          (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+        ),
         eventRepositoryProvider.overrideWithValue(_EventRepo(store)),
       ],
       child: MaterialApp(

@@ -18,6 +18,8 @@ import 'package:http/http.dart' as http;
 
 import 'support/fake_auth.dart';
 
+import 'support/fake_categories.dart';
+
 /// One SSE connection the test writes frames into.
 class FakeConn {
   FakeConn(this.request, {this.status = 200});
@@ -222,6 +224,9 @@ void main() {
             FakeAuthRepository(user: adminUser),
           ),
           streamRepositoryProvider.overrideWithValue(_Streams()),
+          categoryRepositoryProvider.overrideWith(
+            (ref) => FakeCategoryRepository(),
+          ),
           eventRepositoryProvider.overrideWithValue(tx),
         ],
       );
@@ -289,6 +294,9 @@ void main() {
       final c = ProviderContainer(
         overrides: [
           streamRepositoryProvider.overrideWithValue(_Streams()),
+          categoryRepositoryProvider.overrideWith(
+            (ref) => FakeCategoryRepository(),
+          ),
           eventRepositoryProvider.overrideWithValue(_Txs()),
         ],
       );
@@ -305,8 +313,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.byKey(const ValueKey('editor-name')),
-        'My edit',
+        find.byKey(const ValueKey('editor-amount')),
+        '123',
       );
       expect(find.byKey(const ValueKey('editor-remote-banner')), findsNothing);
       c.read(remoteChangesProvider.notifier).state = {
@@ -323,7 +331,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Updated by'), findsOneWidget);
-      expect(find.text('My edit'), findsOneWidget);
+      expect(find.text('123'), findsOneWidget);
     });
   });
 }

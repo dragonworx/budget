@@ -18,6 +18,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fake_categories.dart';
+
 final _stream = BudgetStream(
   id: 'p',
   ownerId: 'u1',
@@ -160,6 +162,9 @@ Future<void> _pump(
     ProviderScope(
       overrides: [
         streamRepositoryProvider.overrideWithValue(_StreamRepo()),
+        categoryRepositoryProvider.overrideWith(
+          (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+        ),
         eventRepositoryProvider.overrideWithValue(_EventRepo(items)),
       ],
       child: MaterialApp(

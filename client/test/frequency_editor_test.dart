@@ -19,13 +19,19 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_streams.dart';
 
+import 'support/fake_categories.dart';
+
 class _Txs extends EventRepository {
   _Txs() : super(ApiClient());
   final saved = <BudgetEvent>[];
   @override
   Future<List<BudgetEvent>> listForStream(String streamId) async => [];
   @override
-  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
+  Future<BudgetEvent> create(
+    String streamId,
+    BudgetEvent draft, {
+    ({String name, String? color})? newCategory,
+  }) async {
     saved.add(draft);
     return draft;
   }
@@ -69,6 +75,11 @@ Future<_Txs> _pump(
     ProviderScope(
       overrides: [
         streamRepositoryProvider.overrideWithValue(FakeStreamRepository()),
+        categoryRepositoryProvider.overrideWith(
+          (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider), [
+            'Pay',
+          ]),
+        ),
         eventRepositoryProvider.overrideWithValue(txs),
       ],
       child: MaterialApp(
@@ -279,7 +290,6 @@ void main() {
     // Remove across rows: 8 → 15 → 22 (all on: all off).
     await _drag(tester, 8, const [15, 22]);
     expect(_onDays(tester, 31), {1, 16, 23, 24, 25, 26, 27, 28});
-    await tester.enterText(_k('editor-name'), 'Pay');
     await tester.enterText(_k('editor-amount'), '20');
     await tester.pumpAndSettle();
     await _touch(tester, _k('editor-save'));
@@ -356,7 +366,6 @@ void main() {
     tester,
   ) async {
     final txs = await _pump(tester);
-    await tester.enterText(_k('editor-name'), 'Gym');
     await tester.enterText(_k('editor-amount'), '20');
     await tester.pumpAndSettle();
     await _pick(tester, 'every_n_weeks');

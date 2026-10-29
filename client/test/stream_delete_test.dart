@@ -24,6 +24,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/fake_auth.dart';
 import 'support/fake_streams.dart';
 
+import 'support/fake_categories.dart';
+
 BudgetEvent _tx(
   String id,
   String stream,
@@ -95,6 +97,9 @@ Future<ProviderContainer> _app(
         FakeAuthRepository(user: adminUser),
       ),
       streamRepositoryProvider.overrideWithValue(streams),
+      categoryRepositoryProvider.overrideWith(
+        (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+      ),
       eventRepositoryProvider.overrideWithValue(txs),
     ],
   );

@@ -17,6 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/fake_auth.dart';
 import 'support/fake_streams.dart';
 
+import 'support/fake_categories.dart';
+
 final _now = DateTime.now();
 final _seed = DateTime(_now.year, _now.month, _now.day - 20);
 
@@ -77,6 +79,9 @@ Future<void> _pumpTimeline(WidgetTester tester, Size size) async {
         FakeAuthRepository(user: adminUser),
       ),
       streamRepositoryProvider.overrideWithValue(_StreamRepo()),
+      categoryRepositoryProvider.overrideWith(
+        (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+      ),
       eventRepositoryProvider.overrideWithValue(_TxRepo()),
     ],
   );

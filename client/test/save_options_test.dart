@@ -16,6 +16,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:budget_client/widgets/ui.dart';
 
+import 'support/fake_categories.dart';
+
 final _start = DateTime(2026, 10, 5);
 final _focus = DateTime(2026, 10, 19);
 
@@ -57,7 +59,11 @@ class _Repo extends EventRepository {
   }
 
   @override
-  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
+  Future<BudgetEvent> create(
+    String streamId,
+    BudgetEvent draft, {
+    ({String name, String? color})? newCategory,
+  }) async {
     calls.add('create ${draft.name}');
     return draft;
   }
@@ -128,7 +134,14 @@ Future<(_Repo, List<EditorOutcome?>)> _pump(
   await tester.pumpWidget(const SizedBox());
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [eventRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        categoryRepositoryProvider.overrideWith(
+          (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider), [
+            'Groceries',
+          ]),
+        ),
+        eventRepositoryProvider.overrideWithValue(repo),
+      ],
       child: MaterialApp(
         home: Scaffold(
           body: EventEditor(
@@ -230,7 +243,13 @@ void main() {
   testWidgets('once-off is blocked when other fields changed', (tester) async {
     final (repo, _) = await _pump(tester, focus: _focus);
     await _amount(tester, '250');
-    await tester.enterText(find.byKey(const ValueKey('editor-name')), 'Other');
+    // Another field: the category (its name).
+    final other = find.byKey(
+      ValueKey('editor-category-${fakeCategoryId('Groceries')}'),
+    );
+    await tester.ensureVisible(other);
+    await tester.pumpAndSettle();
+    await tester.tap(other);
     await tester.pumpAndSettle();
     await _open(tester, kind: PointerDeviceKind.mouse);
     expect(_enabled(tester, _once), isFalse);

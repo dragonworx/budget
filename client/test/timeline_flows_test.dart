@@ -34,6 +34,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'chip_taps.dart';
 
+import 'support/fake_categories.dart';
+
 final _today = DateTime.now();
 final _day = DateTime(_today.year, _today.month, _today.day);
 
@@ -193,7 +195,11 @@ class _TxRepo extends EventRepository {
   }
 
   @override
-  Future<BudgetEvent> create(String streamId, BudgetEvent draft) async {
+  Future<BudgetEvent> create(
+    String streamId,
+    BudgetEvent draft, {
+    ({String name, String? color})? newCategory,
+  }) async {
     s.calls.add('create ${draft.name}');
     return s.txs[draft.id] = draft;
   }
@@ -283,6 +289,9 @@ Future<_Store> _pump(
     ProviderScope(
       overrides: [
         streamRepositoryProvider.overrideWithValue(_StreamRepo(store)),
+        categoryRepositoryProvider.overrideWith(
+          (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
+        ),
         eventRepositoryProvider.overrideWithValue(_TxRepo(store)),
       ],
       child: const MaterialApp(home: TimelinePage(streamId: 'acc')),
@@ -362,7 +371,7 @@ void main() {
       final footer = Offset(chart.center.dx, chart.bottom - 8);
       await tester.tapAt(footer, kind: kind);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(find.byKey(const ValueKey('editor-amount')), findsNothing);
       expect(find.byKey(const ValueKey('pick-bubble')), findsOneWidget);
       // Drag along the footer and release: still only the line.
       final g = await tester.startGesture(footer, kind: kind);
@@ -372,11 +381,11 @@ void main() {
       }
       await g.up();
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(find.byKey(const ValueKey('editor-amount')), findsNothing);
       expect(find.byKey(const ValueKey('pick-bubble')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('pick-add')), kind: kind);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(find.byKey(const ValueKey('editor-amount')), findsOneWidget);
       expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
       expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
     }
@@ -391,7 +400,7 @@ void main() {
     final end = _day.add(const Duration(days: 40));
     chart.onAddForPeriod!(start, end);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+    expect(find.byKey(const ValueKey('editor-amount')), findsOneWidget);
     expect(find.text('New event'), findsWidgets);
     String fmt(DateTime d) => DateFormat('EEE d MMM y').format(d);
     expect(find.text(fmt(start)), findsWidgets, reason: 'start pre-filled');
@@ -517,7 +526,7 @@ void main() {
       expect(find.text('Edit Series'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('dot-menu-new')), kind: kind);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(find.byKey(const ValueKey('editor-amount')), findsOneWidget);
       expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
       // The start is one of Rent's days (the dot's).
       final shown = [
@@ -525,13 +534,6 @@ void main() {
           if (find.text(formatOccurrenceDate(d)).evaluate().isNotEmpty) d,
       ];
       expect(shown, hasLength(1), reason: 'start pre-filled to the dot');
-      await tester.enterText(
-        find.descendant(
-          of: find.byKey(const ValueKey('editor-name')),
-          matching: find.byType(TextField),
-        ),
-        'Coffee',
-      );
       await tester.enterText(
         find.descendant(
           of: find.byKey(const ValueKey('editor-amount')),
@@ -542,8 +544,8 @@ void main() {
       await tester.ensureVisible(find.byKey(const ValueKey('editor-save')));
       await tester.tap(find.byKey(const ValueKey('editor-save')));
       await tester.pumpAndSettle();
-      expect(store.calls, contains('create Coffee'));
-      final made = store.txs.values.firstWhere((t) => t.name == 'Coffee');
+      expect(store.calls, contains('create Rent'));
+      final made = store.txs.values.last;
       expect(made.startDate, shown.single);
       await tester.pump(const Duration(seconds: 6));
     });
@@ -566,13 +568,10 @@ void main() {
   testWidgets('panel row opens the editor for that series', (tester) async {
     await _pump(tester);
     await _editFromPanel(tester, 'Salary');
-    final name = tester.widget<TextField>(
-      find.descendant(
-        of: find.byKey(const ValueKey('editor-name')),
-        matching: find.byType(TextField),
-      ),
+    expect(
+      tester.widget<EventEditor>(find.byType(EventEditor)).existing?.name,
+      'Salary',
     );
-    expect(name.controller!.text, 'Salary');
     await tester.pump(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 3));
   });
@@ -635,10 +634,10 @@ void main() {
     await _editFromPanel(tester, 'Rent');
     await tester.enterText(
       find.descendant(
-        of: find.byKey(const ValueKey('editor-name')),
+        of: find.byKey(const ValueKey('editor-amount')),
         matching: find.byType(TextField),
       ),
-      'Rent (new)',
+      '999',
     );
     await tester.tap(find.byKey(const ValueKey('editor-close')));
     await tester.pumpAndSettle();
@@ -676,13 +675,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
       find.descendant(
-        of: find.byKey(const ValueKey('editor-name')),
-        matching: find.byType(TextField),
-      ),
-      'Coffee',
-    );
-    await tester.enterText(
-      find.descendant(
         of: find.byKey(const ValueKey('editor-amount')),
         matching: find.byType(TextField),
       ),
@@ -690,8 +682,8 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('editor-save')));
     await tester.pumpAndSettle();
-    expect(store.calls, contains('create Coffee'));
-    expect(find.text('Created “Coffee”'), findsOneWidget);
+    expect(store.calls, contains('create Rent'));
+    expect(find.text('Created “Rent”'), findsOneWidget);
     expect(find.byTooltip('Events (3)'), findsOneWidget);
     await tester.pump(const Duration(seconds: 6));
   });
@@ -719,13 +711,6 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.enterText(
         find.descendant(
-          of: find.byKey(const ValueKey('editor-name')),
-          matching: find.byType(TextField),
-        ),
-        'Tea',
-      );
-      await tester.enterText(
-        find.descendant(
           of: find.byKey(const ValueKey('editor-amount')),
           matching: find.byType(TextField),
         ),
@@ -734,7 +719,7 @@ void main() {
       await tester.ensureVisible(find.byKey(const ValueKey('editor-save')));
       await tester.tap(find.byKey(const ValueKey('editor-save')));
       await tester.pumpAndSettle();
-      expect(store.calls, contains('create Tea'));
+      expect(store.calls, contains('create Rent'));
       expect(tester.takeException(), isNull);
       await tester.pump(const Duration(seconds: 6));
     });
@@ -1075,7 +1060,7 @@ void main() {
       // Opening the menu keeps the popup; nothing opens yet.
       await _openRowMenu(tester, id, kind);
       expect(tip, findsOneWidget, reason: 'popup stays behind its menu');
-      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(find.byKey(const ValueKey('editor-amount')), findsNothing);
       final items = [
         find.byKey(ValueKey('tip-menu-new-$id')),
         find.byKey(ValueKey('tip-menu-trim-$id')),
@@ -1105,13 +1090,10 @@ void main() {
       expect(find.textContaining('New event on '), findsNothing);
       await tester.tap(items[2], kind: kind);
       await tester.pumpAndSettle();
-      final field = tester.widget<TextField>(
-        find.descendant(
-          of: find.byKey(const ValueKey('editor-name')),
-          matching: find.byType(TextField),
-        ),
+      expect(
+        tester.widget<EventEditor>(find.byType(EventEditor)).existing?.name,
+        name,
       );
-      expect(field.controller?.text, name);
       expect(tip, findsNothing);
       expect(
         store.calls.where(
@@ -1144,7 +1126,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(ValueKey('tip-menu-edit-$id')), findsNothing);
       expect(tip, findsOneWidget, reason: 'dismissing the menu keeps it');
-      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(find.byKey(const ValueKey('editor-amount')), findsNothing);
       expect(store.calls.where((c) => !c.startsWith('balance')), isEmpty);
       await tester.pump(const Duration(seconds: 8));
     }
@@ -1188,7 +1170,7 @@ void main() {
       kind: PointerDeviceKind.mouse,
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+    expect(find.byKey(const ValueKey('editor-amount')), findsOneWidget);
     await mouse.removePointer();
   });
 
@@ -1240,13 +1222,10 @@ void main() {
         kind: kind,
       );
       await tester.pumpAndSettle();
-      final field = tester.widget<TextField>(
-        find.descendant(
-          of: find.byKey(const ValueKey('editor-name')),
-          matching: find.byType(TextField),
-        ),
+      expect(
+        tester.widget<EventEditor>(find.byType(EventEditor)).existing?.name,
+        'Salary',
       );
-      expect(field.controller?.text, 'Salary');
       expect(
         store.calls.where(
           (c) => c.startsWith('create') || c.startsWith('update'),
@@ -1290,7 +1269,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(page.primeSoftKeyboardCalls, primed + 1);
       final name = find.descendant(
-        of: find.byKey(const ValueKey('editor-name')),
+        of: find.byKey(const ValueKey('editor-amount')),
         matching: find.byType(TextField),
       );
       expect(name, findsOneWidget);
@@ -1430,7 +1409,7 @@ void main() {
   bool nameFocused(WidgetTester tester) => tester
       .widget<EditableText>(
         find.descendant(
-          of: find.byKey(const ValueKey('editor-name')),
+          of: find.byKey(const ValueKey('editor-amount')),
           matching: find.byType(EditableText),
         ),
       )
@@ -1500,13 +1479,6 @@ void main() {
       }
       await tester.enterText(
         find.descendant(
-          of: find.byKey(const ValueKey('editor-name')),
-          matching: find.byType(TextField),
-        ),
-        'Coffee',
-      );
-      await tester.enterText(
-        find.descendant(
           of: find.byKey(const ValueKey('editor-amount')),
           matching: find.byType(TextField),
         ),
@@ -1514,7 +1486,7 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('editor-save')));
       await tester.pumpAndSettle();
-      final created = store.txs.values.firstWhere((t) => t.name == 'Coffee');
+      final created = store.txs.values.last;
       expect(created.enabled, isTrue);
       if (viaMenu) {
         expect(created.recurrenceMode, RecurrenceMode.every);
@@ -1583,32 +1555,17 @@ void main() {
     ('phone', Size(390, 844)),
     ('desktop', Size(1440, 900)),
   ]) {
-    testWidgets('$label: Enter / Next and Tab in Name jump to Amount; '
-        'nothing saves or closes; Shift+Tab is unchanged', (tester) async {
+    testWidgets('$label: the editor is Amount (focused, number pad, Done), '
+        'then type, then the category picker, then the schedule; no name '
+        'field; Done saves', (tester) async {
       final store = await _pump(tester, size: size);
       final ctx = tester.element(find.byType(BalanceChart));
       unawaited(showEventEditor(ctx, streamId: 'p1'));
       await tester.pump();
       await tester.pump(nameRefocusDelay);
       await tester.pumpAndSettle();
-      expect(nameFocused(tester), isTrue);
-      final name = tester.widget<EditableText>(
-        find.descendant(
-          of: find.byKey(const ValueKey('editor-name')),
-          matching: find.byType(EditableText),
-        ),
-      );
-      // Name asks the keyboard for "Next", not "Done".
-      expect(name.textInputAction, TextInputAction.next);
-      tester.testTextInput.enterText('Coffee');
-      await tester.pump();
-      // Enter / iOS Next (the IME's next action).
-      await tester.testTextInput.receiveAction(TextInputAction.next);
-      await tester.pumpAndSettle();
       expect(amountFocused(tester), isTrue);
-      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
-      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
-      // Amount uses the number pad.
+      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
       final amount = tester.widget<EditableText>(
         find.descendant(
           of: find.byKey(const ValueKey('editor-amount')),
@@ -1616,49 +1573,26 @@ void main() {
         ),
       );
       expect(amount.keyboardType.decimal, isTrue);
-      // Back in Name, a hardware Tab skips Money in / out / Transfer.
-      await tester.tap(find.byKey(const ValueKey('editor-name')));
+      expect(amount.textInputAction, TextInputAction.done);
+      // Order: Amount, type, category, schedule.
+      final y = [
+        for (final k in [
+          'editor-amount',
+          'editor-kind',
+          'editor-category',
+          'editor-freq-once',
+        ])
+          tester.getTopLeft(find.byKey(ValueKey(k))).dy,
+      ];
+      expect([...y]..sort(), y, reason: '$y');
+      tester.testTextInput.enterText('4.5');
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
-      expect(nameFocused(tester), isTrue);
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pumpAndSettle();
-      expect(amountFocused(tester), isTrue);
-      // A plain Enter in Name doesn't save either.
-      await tester.tap(find.byKey(const ValueKey('editor-name')));
-      await tester.pumpAndSettle();
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
-      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
-      // Shift+Tab from Name keeps the normal (backwards) order.
-      await tester.tap(find.byKey(const ValueKey('editor-name')));
-      await tester.pumpAndSettle();
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.pumpAndSettle();
-      expect(amountFocused(tester), isFalse);
-      expect(nameFocused(tester), isFalse);
+      expect(store.calls.where((c) => c.startsWith('create')), hasLength(1));
+      await tester.pump(const Duration(seconds: 6));
     });
   }
-
-  testWidgets('editing: Next in Name jumps to Amount too, without saving', (
-    tester,
-  ) async {
-    final store = await _pump(tester, size: const Size(390, 844));
-    final ctx = tester.element(find.byType(BalanceChart));
-    unawaited(
-      showEventEditor(ctx, streamId: 'p1', existing: store.txs['rent']),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('editor-name')));
-    await tester.pumpAndSettle();
-    await tester.testTextInput.receiveAction(TextInputAction.next);
-    await tester.pumpAndSettle();
-    expect(amountFocused(tester), isTrue);
-    expect(store.calls.where((c) => c.startsWith('update')), isEmpty);
-    expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
-  });
 
   testWidgets('other create paths (showEventEditor) focus Name too', (
     tester,
@@ -1767,7 +1701,18 @@ void main() {
       // No "Keep alert line" option any more (fits never stretch to it).
       expect(find.byKey(const ValueKey('fit-threshold')), findsNothing);
       expect(find.textContaining('Keep alert line'), findsNothing);
-      expect(find.byType(CheckboxMenuButton), findsNothing); // 1 stream only
+      // 1 stream only: no stream toggles, just the Categories section
+      // (Rent, Salary) and its Manage entry.
+      expect(find.byType(CheckboxMenuButton), findsNWidgets(2));
+      expect(find.byKey(const ValueKey('categories-heading')), findsOneWidget);
+      expect(
+        find.byKey(ValueKey('view-category-${fakeCategoryId('Rent')}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('view-manage-categories')),
+        findsOneWidget,
+      );
       expect(find.text('Go to today'), compact ? findsOneWidget : findsNothing);
       expect(
         find.text('Go to seed date'),
@@ -2106,7 +2051,7 @@ void main() {
       final now = DateTime.now();
       expect(editor.initialDate, DateTime(now.year, now.month, now.day));
       expect(editor.existing, isNull);
-      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(find.byKey(const ValueKey('editor-amount')), findsOneWidget);
       expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
       expect(tester.takeException(), isNull);
     });
@@ -2182,7 +2127,7 @@ void main() {
       expect(painted.any((p) => p.$3), isFalse);
       expect(last('rent').single.$2.a, closeTo(1, 0.01));
       expect(last('salary').single.$2.a, closeTo(1, 0.01));
-      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(find.byKey(const ValueKey('editor-amount')), findsNothing);
     });
 
     testWidgets('a hidden event: no highlight; the eye paint-drag still '
@@ -2291,7 +2236,7 @@ void main() {
       // Main action: New opens the editor, as before.
       await tester.tap(find.byKey(const ValueKey('panel-new-event')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(find.byKey(const ValueKey('editor-amount')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('editor-back')));
       await tester.pumpAndSettle();
       // The menu: New and Plan.
@@ -2329,7 +2274,7 @@ void main() {
       expect(item.right, lessThanOrEqualTo(panel.right + 0.5));
       await tester.tap(find.byKey(const ValueKey('new-option-new')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(find.byKey(const ValueKey('editor-amount')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('editor-back')));
       await tester.pumpAndSettle();
       expect(find.byType(PlanPanel), findsNothing);
@@ -2469,7 +2414,7 @@ void main() {
         store.calls.where((c) => c != 'balance'),
         calls0.where((c) => c != 'balance'),
       );
-      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(find.byKey(const ValueKey('editor-amount')), findsNothing);
       expect(w, greaterThan(0));
 
       // Two taps further apart in time are just taps (no zoom).
@@ -3088,7 +3033,7 @@ void main() {
         await tester.pumpAndSettle();
       }
       await settle();
-      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+      expect(find.byKey(const ValueKey('editor-amount')), findsNothing);
       expect(
         store.calls.where(
           (c) => c.startsWith('create') || c.startsWith('update'),
