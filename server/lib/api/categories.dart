@@ -3,7 +3,9 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import '../domain/models.dart';
+import '../auth/middleware.dart';
 import '../repo/category_repo.dart';
+import 'streams.dart' show notifyPeers;
 import 'json_helpers.dart';
 
 // Stream categories (migration 024), mounted under `/api/streams`:
@@ -78,17 +80,26 @@ void attachCategoryRoutes(Router router, Session conn) {
     if (await inStream(conn, a, c) == null) {
       return jsonError(404, 'category not found');
     }
-    final deleted =
-        await txOf(conn).runTx((tx) => CategoryRepo(tx).deleteEvents(c));
-    return jsonOk({'id': c, 'deletedEvents': deleted});
+    final me = requireAuth(r).user.id;
+    final res = await txOf(conn)
+        .runTx((tx) => CategoryRepo(tx).deleteEvents(c, userId: me));
+    if (res == null) return jsonError(404, 'category not found');
+    await notifyPeers(conn, r, me, res.peerStreams, 'events.deleted');
+    // batchId: undo with POST /streams/:a/events/trim/undo.
+    return jsonOk(
+        {'id': c, 'deletedEvents': res.deleted, 'batchId': res.batchId});
   });
 
   router.delete('/<a>/categories/<c>', (Request r, String a, String c) async {
     if (await inStream(conn, a, c) == null) {
       return jsonError(404, 'category not found');
     }
-    final deleted = await txOf(conn).runTx((tx) => CategoryRepo(tx).delete(c));
-    return jsonOk({'id': c, 'deletedEvents': deleted});
+    final me = requireAuth(r).user.id;
+    final res =
+        await txOf(conn).runTx((tx) => CategoryRepo(tx).delete(c, userId: me));
+    if (res == null) return jsonError(404, 'category not found');
+    await notifyPeers(conn, r, me, res.peerStreams, 'events.deleted');
+    return jsonOk({'id': c, 'deletedEvents': res.deleted});
   });
 }
 

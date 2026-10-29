@@ -2,7 +2,7 @@ import 'package:postgres/postgres.dart';
 
 import '../auth/authz.dart' show uuidRe;
 import '../domain/models.dart';
-import 'event_repo.dart';
+import 'trim_batch_repo.dart';
 
 /// Longest category name.
 const maxCategoryNameLength = 60;
@@ -159,10 +159,11 @@ class CategoryRepo {
   }
 
   /// Deletes every event in [id] (and each transfer's other side, skips
-  /// and overrides), keeping the streams' event orders tidy; the category
-  /// stays. Call inside a DB transaction. Returns the deleted event ids
-  /// (null when the category does not exist).
-  Future<List<String>?> deleteEvents(String id) async {
+  /// and overrides) as one undoable batch (`POST .../events/trim/undo`
+  /// with the returned batch id); the category stays. Call inside a DB
+  /// transaction. Null when the category does not exist.
+  Future<({String? batchId, List<String> deleted, Set<String> peerStreams})?>
+      deleteEvents(String id, {required String userId}) async {
     final c = await get(id);
     if (c == null) return null;
     final rows = await _conn.execute(
@@ -170,29 +171,23 @@ class CategoryRepo {
           'ORDER BY created_at'),
       parameters: {'id': id},
     );
-    final events = EventRepo(_conn);
-    final deleted = <String>[];
-    for (final r in rows) {
-      final eid = r[0] as String;
-      final e = await events.get(eid);
-      if (e == null) continue; // already gone as a peer
-      final peer = e.transfer?.peerId;
-      if (await events.delete(eid)) deleted.add(eid);
-      if (peer != null) deleted.add(peer);
-    }
-    return deleted;
+    return TrimBatchRepo(_conn).deleteAsBatch(
+        c.streamId, [for (final r in rows) r[0] as String],
+        userId: userId);
   }
 
-  /// Deletes [id] with every event in it (see [deleteEvents]). Returns the
-  /// deleted event ids (null when the category does not exist).
-  Future<List<String>?> delete(String id) async {
-    final deleted = await deleteEvents(id);
-    if (deleted == null) return null;
+  /// Deletes [id] with every event in it (see [deleteEvents]; the events'
+  /// batch is not offered for undo since the category itself is gone).
+  /// Null when the category does not exist.
+  Future<({String? batchId, List<String> deleted, Set<String> peerStreams})?>
+      delete(String id, {required String userId}) async {
+    final r = await deleteEvents(id, userId: userId);
+    if (r == null) return null;
     await _conn.execute(
       Sql.named('DELETE FROM categories WHERE id = @id::uuid'),
       parameters: {'id': id},
     );
-    return deleted;
+    return r;
   }
 
   /// The name an event body means: its `categoryId`'s name (it must be a

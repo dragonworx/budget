@@ -155,6 +155,56 @@ class TrimBatchRepo {
         batchId: batchId, ended: ended, deleted: deleted, blocked: blocked);
   }
 
+  /// Deletes [ids] (events of [streamId]; each transfer's other side goes
+  /// with it) as one undoable batch, like [endAllOn]'s deletions: [undo]
+  /// brings them back with the same ids, skips, overrides and list
+  /// positions. Returns the batch id (null when nothing was deleted) and
+  /// the deleted ids, peers included. Call inside one DB transaction.
+  Future<({String? batchId, List<String> deleted, Set<String> peerStreams})>
+      deleteAsBatch(String streamId, List<String> ids,
+          {required String userId}) async {
+    final targets = <BudgetEvent>[];
+    final seen = <String>{};
+    for (final id in ids) {
+      if (seen.contains(id)) continue;
+      final t = await _events.get(id);
+      if (t == null || t.streamId != streamId) continue;
+      targets.add(t);
+      seen.add(t.id);
+      if (t.transfer?.peerId != null) seen.add(t.transfer!.peerId!);
+    }
+    if (targets.isEmpty) {
+      return (batchId: null, deleted: <String>[], peerStreams: <String>{});
+    }
+    final snapshot = await _snapshot(seen.toList());
+    final deleted = <String>[];
+    final peerStreams = <String>{};
+    for (final t in targets) {
+      if (await _events.delete(t.id)) deleted.add(t.id);
+      final peer = t.transfer?.peerId;
+      if (peer != null) {
+        deleted.add(peer);
+        final ps = t.transfer?.peerStreamId;
+        if (ps != null && ps != streamId) peerStreams.add(ps);
+      }
+    }
+    final batchId = const Uuid().v4();
+    await _conn.execute(
+      Sql.named('''
+        INSERT INTO event_trim_batches (id, stream_id, user_id, day, snapshot)
+        VALUES (@id::uuid, @a::uuid, @u::uuid, @d, @s::jsonb)
+      '''),
+      parameters: {
+        'id': batchId,
+        'a': streamId,
+        'u': userId,
+        'd': _d(DateTime.now()),
+        's': jsonEncode({...snapshot, 'ended': <String>[], 'deleted': deleted}),
+      },
+    );
+    return (batchId: batchId, deleted: deleted, peerStreams: peerStreams);
+  }
+
   /// The rows [ids] as stored (whole rows), their skips and overrides, and
   /// the event order of every stream they are in.
   Future<Map<String, Object?>> _snapshot(List<String> ids) async {

@@ -211,6 +211,17 @@ void main() {
       ['Keep', 1]
     ]);
     expect((await evs(s.a)).map((e) => e['name']), ['Keep']);
+
+    // Undo (the trim batch undo) brings them back, same ids, in the list.
+    final batch = r.json['batchId'] as String;
+    final u = await h.call('POST', '/api/streams/${s.a}/events/trim/undo',
+        as: 'own', body: {'batchId': batch});
+    expect(u.status, 200, reason: '${u.json}');
+    final back = await evs(s.a);
+    expect(back.map((e) => e['name']).toList()..sort(), ['Keep', 'Pay', 'Pay']);
+    expect(back.where((e) => e['name'] == 'Pay').map((e) => e['id']).toSet(),
+        (r.json['deletedEvents'] as List).toSet());
+    expect((await cats(s.a)).first['eventCount'], 2);
   });
 
   test('import maps the name column to categories', () async {

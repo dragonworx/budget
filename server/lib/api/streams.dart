@@ -271,7 +271,7 @@ Router buildStreamsApi(Session conn) {
             return ok;
           },
         ));
-    await _notifyPeers(conn, request, me, peerStreams, 'events.trimmed');
+    await notifyPeers(conn, request, me, peerStreams, 'events.trimmed');
     return jsonOk({'date': formatDate(day), ...r.toJson()});
   });
 
@@ -294,7 +294,7 @@ Router buildStreamsApi(Session conn) {
           'WHERE id = ANY (@ids::uuid[]) AND stream_id <> @a::uuid'),
       parameters: {'ids': r.restored, 'a': streamId},
     );
-    await _notifyPeers(conn, request, me,
+    await notifyPeers(conn, request, me,
         {for (final p in peers) p[0] as String}, 'events.trim_undone');
     return jsonOk({'restored': r.restored.length});
   });
@@ -452,7 +452,9 @@ Router buildStreamsApi(Session conn) {
 
 /// Audit rows (and so real-time updates) for the other streams a batch
 /// changed through transfers.
-Future<void> _notifyPeers(Session conn, Request request, String me,
+/// Audit [action] in each of [streamIds] (a transfer's other side changed
+/// there) so its live clients refresh.
+Future<void> notifyPeers(Session conn, Request request, String me,
     Set<String> streamIds, String action) async {
   final audit = AuditRepo(conn);
   for (final sid in streamIds) {
