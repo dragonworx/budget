@@ -17,6 +17,8 @@ import 'package:budget_client/features/timeline/selection_period.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/gestures.dart';
 import 'package:budget_client/state/realtime_providers.dart';
 import 'package:budget_client/widgets/list_glyph.dart';
@@ -1875,7 +1877,8 @@ void main() {
         final tx = tester.widget<IconButton>(
           find.byKey(const ValueKey('open-events')),
         );
-        expect(tx.style, isNull);
+        expect(tx.style?.backgroundColor, isNull);
+        expect(tx.style?.side, isNull);
         // Painted (ListGlyph), not an icon-font glyph a stale font lacks.
         expect(tx.icon, isA<ListGlyph>());
         expect(
@@ -2028,6 +2031,196 @@ void main() {
     });
   }
 
+  // "New event today" (three pluses): always in the header, immediately
+  // before Reminders, at every width; never in More.
+  for (final w in const [
+    320.0,
+    339.0,
+    360.0,
+    390.0,
+    402.0,
+    412.0,
+    600.0,
+    959.0,
+    960.0,
+    1240.0,
+    1440.0,
+  ]) {
+    testWidgets('${w.toInt()}px: New event today sits right before '
+        'Reminders; the stream name keeps room', (tester) async {
+      await _pump(tester, size: Size(w, w < 600 ? 800 : 900));
+      expect(tester.takeException(), isNull);
+      final btn = find.byKey(const ValueKey('new-event-today'));
+      expect(btn, findsOneWidget);
+      expect(find.byKey(const ValueKey('three-plus-glyph')), findsOneWidget);
+      expect(tester.widget<IconButton>(btn).tooltip, 'New event today');
+      Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
+      final n = tester.getRect(btn), rem = r('open-reminders');
+      expect(n.width, greaterThanOrEqualTo(36));
+      expect(n.right, lessThanOrEqualTo(rem.left + 0.5));
+      expect(rem.left - n.right, lessThan(12), reason: 'adjacent');
+      expect((n.center.dy - rem.center.dy).abs(), lessThan(2));
+      expect(n.left, greaterThan(r('header-stream-picker').right - 1));
+      expect(r('header-stream-picker').width, greaterThan(40));
+      expect(r('timeline-more').right, lessThanOrEqualTo(w));
+      // Nothing else sits between it and Reminders.
+      final between = find.byWidgetPredicate((wd) {
+        if (wd is! IconButton && wd is! ButtonStyleButton) return false;
+        final e = find.byWidget(wd);
+        if (e.evaluate().isEmpty) return false;
+        final b = tester.getRect(e.first);
+        return b.left >= n.right - 0.5 &&
+            b.right <= rem.left + 0.5 &&
+            (b.center.dy - n.center.dy).abs() < 20;
+      });
+      expect(between, findsNothing);
+      // Never duplicated in More.
+      await tester.tap(find.byKey(const ValueKey('timeline-more')));
+      await tester.pumpAndSettle();
+      expect(find.text('New event today'), findsNothing);
+    });
+  }
+
+  for (final w in const [402.0, 1440.0]) {
+    testWidgets('${w.toInt()}px: New event today opens the New event '
+        'editor on today; nothing is created until saved', (tester) async {
+      final store = await _pump(tester, size: Size(w, 874));
+      await tester.tap(find.byKey(const ValueKey('new-event-today')));
+      await tester.pumpAndSettle();
+      final editor = tester.widget<EventEditor>(find.byType(EventEditor));
+      final now = DateTime.now();
+      expect(editor.initialDate, DateTime(now.year, now.month, now.day));
+      expect(editor.existing, isNull);
+      expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);
+      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('view-only stream: New event today stays visible, disabled', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      size: const Size(402, 874),
+      setup: (s) => s.role = Role.viewer,
+    );
+    final btn = find.byKey(const ValueKey('new-event-today'));
+    expect(btn, findsOneWidget);
+    expect(tester.widget<IconButton>(btn).onPressed, isNull);
+  });
+
+  group('Events list hover highlights the event lane (desktop mouse)', () {
+    final painted = <(String, Color, bool)>[];
+    setUp(() {
+      painted.clear();
+      debugLanePaint = (id, c, e) => painted.add((id, c, e));
+    });
+    tearDown(() => debugLanePaint = null);
+
+    String? highlighted(WidgetTester tester) => tester
+        .widget<BalanceChart>(find.byType(BalanceChart))
+        .highlightEvent
+        ?.value;
+    // A point on the row, clear of its buttons (left of the eye).
+    Offset onRow(WidgetTester tester, String id) =>
+        tester.getCenter(find.byKey(ValueKey('row-eye-$id'))) -
+        const Offset(160, 0);
+    Iterable<(String, Color, bool)> last(String id) =>
+        painted.reversed.where((p) => p.$1 == id).take(1);
+
+    testWidgets('hover sets the id, the painter emphasises its lane and '
+        'dims the others; leaving clears it at once', (tester) async {
+      await _pump(tester);
+      await tester.tap(find.byKey(const ValueKey('open-events')));
+      await tester.pumpAndSettle();
+      expect(highlighted(tester), isNull);
+      expect(painted.any((p) => p.$3), isFalse);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(1430, 890));
+      addTearDown(mouse.removePointer);
+      await tester.pump();
+      final view0 = tester.widget<BalanceChart>(find.byType(BalanceChart));
+      painted.clear();
+      await mouse.moveTo(onRow(tester, 'rent'));
+      await tester.pump();
+      expect(highlighted(tester), 'rent');
+      expect(last('rent').single.$3, isTrue);
+      expect(last('rent').single.$2.a, closeTo(1, 0.01));
+      expect(last('salary').single.$3, isFalse);
+      expect(last('salary').single.$2.a, lessThan(0.5));
+      // Paint only: the view is untouched.
+      final view1 = tester.widget<BalanceChart>(find.byType(BalanceChart));
+      expect(view1.viewStart, view0.viewStart);
+      expect(view1.visibleDays, view0.visibleDays);
+      // Straight onto the next row: it takes over.
+      await mouse.moveTo(onRow(tester, 'salary'));
+      await tester.pump();
+      expect(highlighted(tester), 'salary');
+      expect(last('salary').single.$3, isTrue);
+      expect(last('rent').single.$3, isFalse);
+      // Off the list: cleared, every lane back to full colour.
+      painted.clear();
+      await mouse.moveTo(const Offset(1430, 890));
+      await tester.pump();
+      expect(highlighted(tester), isNull);
+      expect(painted.any((p) => p.$3), isFalse);
+      expect(last('rent').single.$2.a, closeTo(1, 0.01));
+      expect(last('salary').single.$2.a, closeTo(1, 0.01));
+      expect(find.byKey(const ValueKey('editor-name')), findsNothing);
+    });
+
+    testWidgets('a hidden event: no highlight; the eye paint-drag still '
+        'works and never highlights', (tester) async {
+      final store = await _pump(
+        tester,
+        setup: (s) => s.txs['rent'] = s.txs['rent']!.copyWith(enabled: false),
+      );
+      await tester.tap(find.byKey(const ValueKey('open-events')));
+      await tester.pumpAndSettle();
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(1430, 890));
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(onRow(tester, 'rent'));
+      await tester.pump();
+      expect(highlighted(tester), isNull);
+      expect(painted.any((p) => p.$3), isFalse);
+      // Press the Salary eye and drag onto Rent's: paints, no highlight.
+      await mouse.moveTo(const Offset(1430, 890));
+      await tester.pump();
+      store.calls.clear();
+      await mouse.down(
+        tester.getCenter(find.byKey(const ValueKey('row-eye-salary'))),
+      );
+      await tester.pump();
+      expect(highlighted(tester), isNull);
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('row-eye-rent'))),
+      );
+      await tester.pump();
+      expect(highlighted(tester), isNull);
+      await mouse.up();
+      await tester.pumpAndSettle();
+      expect(store.calls, contains('enabled salary=false'));
+      expect(highlighted(tester), isNull);
+    });
+
+    testWidgets('touch never highlights', (tester) async {
+      await _pump(tester);
+      await tester.tap(find.byKey(const ValueKey('open-events')));
+      await tester.pumpAndSettle();
+      final finger = await tester.startGesture(
+        onRow(tester, 'rent'),
+        kind: PointerDeviceKind.touch,
+      );
+      await tester.pump();
+      expect(highlighted(tester), isNull);
+      await finger.cancel();
+      await tester.pumpAndSettle();
+      expect(highlighted(tester), isNull);
+    });
+  });
+
   testWidgets('More menu has no "Plan a payment"', (tester) async {
     await _pump(tester, size: const Size(390, 844));
     await tester.tap(find.byKey(const ValueKey('timeline-more')));
@@ -2036,7 +2229,45 @@ void main() {
     expect(find.text('Plan a payment'), findsNothing);
   });
 
-  for (final size in const [Size(1440, 900), Size(390, 844)]) {
+  for (final size in const [Size(1440, 900), Size(320, 700)]) {
+    // Desktop platforms use compact visual density (it shrinks a button's
+    // minimum size): the menu still matches the split button.
+    testWidgets('${size.width.toInt()}px: Events New ▾ menu matches the '
+        'split button with desktop (compact) density', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      try {
+        await _pump(tester, size: size);
+        final menu = find.byKey(const ValueKey('panel-new-menu'));
+        await tester.tap(find.byKey(const ValueKey('open-events')));
+        await tester.pumpAndSettle();
+        final split = tester
+            .getRect(find.byKey(const ValueKey('panel-new-event')))
+            .expandToInclude(tester.getRect(menu));
+        await tester.tap(menu);
+        await tester.pumpAndSettle();
+        final panel = tester.getRect(
+          find
+              .descendant(
+                of: find
+                    .byWidgetPredicate(
+                      (w) => w.runtimeType.toString() == '_MenuPanel',
+                    )
+                    .last,
+                matching: find.byType(Material),
+              )
+              .first,
+        );
+        expect(panel.left, closeTo(split.left, 0.5));
+        expect(panel.width, closeTo(split.width, 0.5));
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
+
+  for (final size in const [Size(1440, 900), Size(390, 844), Size(320, 700)]) {
     testWidgets('${size.width.toInt()}px: Events New ▾ split button: '
         'New (default) and Plan', (tester) async {
       await _pump(tester, size: size);
@@ -2058,6 +2289,29 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('new-option-new')), findsOneWidget);
       expect(find.byKey(const ValueKey('new-option-plan')), findsOneWidget);
+      // The menu lines up under the whole split button: same left edge,
+      // same width, inside the screen.
+      // The visible surface (the panel's Material), not its constraints.
+      final panel = tester.getRect(
+        find
+            .descendant(
+              of: find
+                  .byWidgetPredicate(
+                    (w) => w.runtimeType.toString() == '_MenuPanel',
+                  )
+                  .last,
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      final split = main.expandToInclude(tester.getRect(menu));
+      expect(panel.left, closeTo(split.left, 0.5));
+      expect(panel.width, closeTo(split.width, 0.5));
+      expect(panel.top, greaterThanOrEqualTo(split.bottom));
+      expect(panel.right, lessThanOrEqualTo(size.width));
+      final item = tester.getRect(find.byKey(const ValueKey('new-option-new')));
+      expect(item.left, greaterThanOrEqualTo(panel.left - 0.5));
+      expect(item.right, lessThanOrEqualTo(panel.right + 0.5));
       await tester.tap(find.byKey(const ValueKey('new-option-new')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('editor-name')), findsOneWidget);

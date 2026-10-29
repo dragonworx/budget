@@ -86,6 +86,10 @@ debugLaneAmount;
 @visibleForTesting
 void Function(String name, Rect rect)? debugLaneName;
 
+/// Test hook: each event lane as painted (its id, fill colour, and whether
+/// it is the Events list's hovered event, drawn emphasised).
+void Function(String id, Color color, bool emphasised)? debugLanePaint;
+
 /// Most event names listed under a day's total before "+N more".
 const int maxLabelNames = 6;
 
@@ -128,6 +132,7 @@ class BalanceChart extends StatefulWidget {
     this.selectDayToken = 0,
     this.dataEditToken = 0,
     this.eventNames = const {},
+    this.highlightEvent,
     this.dataFrom,
     this.dataThrough,
     this.fitToken = 0,
@@ -313,6 +318,10 @@ class BalanceChart extends StatefulWidget {
 
   /// Occurrence event id to display name. Missing ids are left unlabeled.
   final Map<String, String> eventNames;
+
+  /// The event hovered in the Events list (desktop mouse): its lane is
+  /// emphasised and the others dimmed. Paint only: the view and data stay.
+  final ValueListenable<String?>? highlightEvent;
 
   @override
   State<BalanceChart> createState() => _BalanceChartState();
@@ -1751,7 +1760,12 @@ class _BalanceChartState extends State<BalanceChart>
                   // Own layer: moving the hover "+" button must not repaint the chart.
                   child: RepaintBoundary(
                     child: ListenableBuilder(
-                      listenable: _paintTips,
+                      listenable: widget.highlightEvent == null
+                          ? _paintTips
+                          : Listenable.merge([
+                              _paintTips,
+                              widget.highlightEvent,
+                            ]),
                       builder: (context, _) => CustomPaint(
                         key: _chartPaintKey,
                         painter: _BalanceChartPainter(
@@ -1789,6 +1803,7 @@ class _BalanceChartState extends State<BalanceChart>
                           highlightY: _paintHighlightY(),
                           stepDots: _stepDots(_layout),
                           activeStep: _stepTip.value?.day,
+                          highlightEventId: widget.highlightEvent?.value,
                         ),
                         child: const SizedBox.expand(),
                       ),
@@ -4935,6 +4950,7 @@ class _BalanceChartPainter extends CustomPainter {
     this.highlightY,
     this.stepDots = const [],
     this.activeStep,
+    this.highlightEventId,
   }) : lineStart = dateOnly(lineStart ?? seedDate);
 
   /// Balance range shown top to bottom. Null falls back to fitting the view.
@@ -4950,6 +4966,11 @@ class _BalanceChartPainter extends CustomPainter {
 
   /// The day of the hovered / tapped step dot (drawn larger, white ring).
   final DateTime? activeStep;
+
+  /// The Events list's hovered event: its lane drawn emphasised (glow and
+  /// outline in its colour), the other lanes dimmed. No lane (hidden /
+  /// excluded, or not in view): nothing changes.
+  final String? highlightEventId;
   final DateTime? dataFrom;
   final DateTime? dataThrough;
   final BalanceSeries series;
@@ -5933,9 +5954,43 @@ class _BalanceChartPainter extends CustomPainter {
     if (collapse) {
       canvas.drawPath(band, Paint()..color = const Color(0xFF4A6285));
     } else {
+      final hid = highlightEventId;
+      final hi = hid == null ? null : lanes.indexOf(hid);
+      final emphasise = hi != null && paths![hi] != null;
       for (final (li, path) in paths!.indexed) {
-        if (path == null) continue;
-        canvas.drawPath(path, Paint()..color = lanes.lanes[li].color);
+        if (path == null || (emphasise && li == hi)) continue;
+        final c = lanes.lanes[li].color;
+        final fill = emphasise ? c.withValues(alpha: c.a * 0.3) : c;
+        canvas.drawPath(path, Paint()..color = fill);
+        debugLanePaint?.call(lanes.lanes[li].id, fill, false);
+      }
+      if (emphasise) {
+        // Its day pieces merged, so the outline traces the lane's edge
+        // only (no seams at each day).
+        Path path = paths[hi]!;
+        try {
+          path = Path.combine(PathOperation.union, path, Path());
+        } catch (_) {}
+        final c = lanes.lanes[hi].color;
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = c.withValues(alpha: 0.7)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 6
+            ..strokeJoin = StrokeJoin.round
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        );
+        canvas.drawPath(path, Paint()..color = c.withValues(alpha: 1));
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = Color.lerp(c, const Color(0xFFFFFFFF), 0.55)!
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..strokeJoin = StrokeJoin.round,
+        );
+        debugLanePaint?.call(lanes.lanes[hi].id, c.withValues(alpha: 1), true);
       }
     }
     canvas.drawPath(loss, Paint()..color = AppTheme.debitColor);
@@ -7028,6 +7083,7 @@ class _BalanceChartPainter extends CustomPainter {
         oldDelegate.highlightY != highlightY ||
         !identical(oldDelegate.stepDots, stepDots) ||
         oldDelegate.activeStep != activeStep ||
+        oldDelegate.highlightEventId != highlightEventId ||
         oldDelegate.yRange?.max != yRange?.max ||
         oldDelegate.dataThrough != dataThrough ||
         !mapEquals(oldDelegate.eventNames, eventNames) ||

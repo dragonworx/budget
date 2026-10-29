@@ -23,6 +23,7 @@ import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/stream_dialog.dart';
 import '../../widgets/list_glyph.dart';
+import '../../widgets/three_plus_glyph.dart';
 import '../../widgets/stream_picker.dart';
 import '../../widgets/ui.dart';
 import '../events/editor_outcome.dart';
@@ -196,6 +197,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   @override
   void dispose() {
+    _hoverEvent.dispose();
     _dockAnim.dispose();
     _flushView(keepalive: true);
     final h = _hiddenHandle;
@@ -214,6 +216,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   late final StreamRepository _viewRepo;
   Object? _hiddenHandle;
+
+  /// The Events list row under the mouse: the chart emphasises its lane.
+  final _hoverEvent = ValueNotifier<String?>(null);
   Timer? _viewSaveTimer;
 
   /// The stream / user the view state below belongs to.
@@ -1176,9 +1181,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             Scaffold(
               appBar: AppBar(
                 toolbarHeight: compact ? 56 : 60,
-                // Below 360 the back button's slot tightens (56 → 48) so the
+                // Below 360 the back button's slot tightens (56 → 44) so the
                 // stream name keeps room next to the full action row.
-                leadingWidth: width < 360 ? 48 : null,
+                leadingWidth: width < 400 ? 44 : null,
                 leading: IconButton(
                   key: const ValueKey('timeline-back'),
                   tooltip: 'All streams',
@@ -1256,6 +1261,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           onShift: _shift,
                                           series: shown!,
                                           seedDate: stream.seedDate,
+                                          highlightEvent: _hoverEvent,
                                           // Combined: no opening diamond (the
                                           // line is a sum, not this seed).
                                           seedBalance: combo != null
@@ -1550,9 +1556,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   // ---------------------------------------------------------------- header
 
   /// Every timeline action lives in the header row, right of the stream
-  /// name. The right end is always Reminders (prominent) · Events
-  /// (plain list icon) · View · More (⋮, rightmost, takes what does not
-  /// fit); the rest sits left of Reminders:
+  /// name. The right end is always New event today (three pluses) ·
+  /// Reminders (prominent) · Events (plain list icon) · View · More (⋮,
+  /// rightmost, takes what does not fit); the rest sits left of New event
+  /// today, which never collapses:
   ///
   /// * ≥1240px: Today, Seed (labelled) · Share · Stream settings · Reminders
   ///   (labelled) · Events · View · More (Import, Gestures &
@@ -1572,6 +1579,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   ) {
     final desk = width >= 600, mid = width >= 960, wide = width >= 1240;
     final tiny = width < 360;
+    // Phones up to 420px: the always-there icons (New event today,
+    // Reminders, Events, View, More) drop the 48px tap padding to 40 so the
+    // stream name keeps room at 320.
+    final slim = width < 420
+        ? IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap)
+        : null;
     final canEdit = stream.role.canEdit, owner = stream.role.isOwner;
     Widget icon(String key, String tip, Widget glyph, VoidCallback f) =>
         IconButton(
@@ -1680,7 +1693,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           const Icon(Icons.tune_rounded),
           () => _editStream(context, stream),
         ),
-      SizedBox(width: mid ? 6 : 2),
+      SizedBox(width: mid ? 6 : (tiny ? 0 : 2)),
+      // New event today: always in the header, at every width, just before
+      // Reminders (the only header action that creates; chart taps never do).
+      _newTodayButton(context, stream, style: slim),
       // The prominent header action: the reminders calendar.
       if (mid)
         FilledButton.tonalIcon(
@@ -1696,18 +1712,26 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         IconButton.filledTonal(
           key: const ValueKey('open-reminders'),
           tooltip: 'Reminders calendar',
+          style: slim,
           onPressed: () => showReminders(context, stream),
           icon: const Icon(Icons.calendar_month_rounded),
         ),
       SizedBox(width: mid ? 4 : 0),
       // Always in the header, at every width (320 included): below 360 the
       // left side and View tighten instead so it fits.
-      _eventsButton(context, stream, count: events.length),
-      _fitMenu(stream, compact: !desk, iconOnly: !mid, tight: tiny),
+      _eventsButton(context, stream, count: events.length, style: slim),
+      _fitMenu(
+        stream,
+        compact: !desk,
+        iconOnly: !mid,
+        tight: tiny,
+        style: slim,
+      ),
       // Always the rightmost item.
       PopupMenuButton<String>(
         key: const ValueKey('timeline-more'),
         tooltip: 'More',
+        style: slim,
         icon: const Icon(Icons.more_vert_rounded),
         onSelected: (v) {
           switch (v) {
@@ -1723,7 +1747,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         },
         itemBuilder: (context) => more,
       ),
-      SizedBox(width: desk ? 8 : 2),
+      SizedBox(width: desk ? 8 : (tiny ? 0 : 2)),
     ];
   }
 
@@ -1735,6 +1759,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     required bool compact,
     bool? iconOnly,
     bool tight = false,
+    ButtonStyle? style,
   }) {
     final icon = iconOnly ?? compact;
     final others = _otherStreams(stream.id);
@@ -1755,6 +1780,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           ? IconButton(
               key: const ValueKey('fit-menu'),
               tooltip: tip,
+              style: style,
               constraints: BoxConstraints(
                 minWidth: tight ? 40 : 44,
                 minHeight: 44,
@@ -1817,15 +1843,42 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     BuildContext context,
     BudgetStream stream, {
     required int count,
+    ButtonStyle? style,
   }) {
     final docked = _dockable(context) && _dockOpen;
     return IconButton(
       key: const ValueKey('open-events'),
       tooltip: 'Events ($count)',
+      style: style,
       constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       color: docked ? AppTheme.accent : null,
       onPressed: () => _openEventsPanel(context, stream),
       icon: const ListGlyph(key: ValueKey('tx-list-glyph')),
+    );
+  }
+
+  /// "New event today" (three pluses): the New event editor with today as
+  /// the start date. Never collapses into More; view-only streams show it
+  /// disabled.
+  Widget _newTodayButton(
+    BuildContext context,
+    BudgetStream stream, {
+    ButtonStyle? style,
+  }) {
+    final canEdit = stream.role.canEdit;
+    return IconButton(
+      key: const ValueKey('new-event-today'),
+      tooltip: canEdit ? 'New event today' : 'New event today (view only)',
+      style: style,
+      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      onPressed: canEdit
+          ? () => _openEditor(
+              context,
+              stream,
+              initialDate: dateOnly(DateTime.now()),
+            )
+          : null,
+      icon: const ThreePlusGlyph(key: ValueKey('three-plus-glyph')),
     );
   }
 
@@ -2262,6 +2315,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       if (context.mounted) _report(context, outcome);
     },
     onChanged: _invalidateBalance,
+    // Desktop: hovering a row emphasises its lane on the chart (paint only).
+    onHoverEvent: (id) {
+      if (mounted) _hoverEvent.value = id;
+    },
     // New ▾ Plan: the only way into the planner.
     onPlan: () {
       close?.call();

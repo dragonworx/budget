@@ -121,6 +121,7 @@ class EventsPanel extends ConsumerStatefulWidget {
     required this.onChanged,
     this.onPlan,
     this.onClose,
+    this.onHoverEvent,
   });
 
   final BudgetStream stream;
@@ -140,6 +141,10 @@ class EventsPanel extends ConsumerStatefulWidget {
   /// "Plan" in the New split button: opens the payment / goal planner.
   final VoidCallback? onPlan;
 
+  /// Mouse hover over a row (desktop): the event whose lane the timeline
+  /// emphasises, null when the pointer leaves (or the event is hidden).
+  final ValueChanged<String?>? onHoverEvent;
+
   @override
   ConsumerState<EventsPanel> createState() => _EventsPanelState();
 }
@@ -147,58 +152,82 @@ class EventsPanel extends ConsumerStatefulWidget {
 class _EventsPanelState extends ConsumerState<EventsPanel> {
   bool get _readOnly => !widget.stream.role.canEdit;
 
+  /// The whole New ▾ split button: its menu matches its width.
+  final _newSplitKey = GlobalKey();
+  double? _newMenuWidth;
+
   /// New ▾ split button (like the editor's Save ▾): New is the main action;
-  /// the menu offers New and Plan (the planner).
+  /// the menu offers New and Plan (the planner). The menu opens under the
+  /// whole split button, left edges aligned and exactly as wide.
   Widget _newSplitButton() {
     const radius = Radius.circular(20);
+    final w = _newMenuWidth;
+    // The items themselves span the width: the panel's minimum size alone
+    // leaves its surface at the items' intrinsic width. A button's minimum
+    // size gets the visual density's adjustment added (compact on desktop:
+    // -8), so take it back off.
+    final dx = Theme.of(context).visualDensity.baseSizeAdjustment.dx;
     Widget item(String key, IconData icon, String title, VoidCallback? f) =>
         MenuItemButton(
           key: ValueKey(key),
+          style: w == null
+              ? null
+              : MenuItemButton.styleFrom(minimumSize: Size(w - dx, 40)),
           leadingIcon: Icon(icon, size: 20),
           onPressed: f,
           child: Text(title),
         );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FilledButton.tonalIcon(
-          key: const ValueKey('panel-new-event'),
-          style: FilledButton.styleFrom(
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.horizontal(left: radius),
+    return MenuAnchor(
+      alignmentOffset: const Offset(0, 4),
+      style: w == null
+          ? null
+          : MenuStyle(
+              minimumSize: WidgetStatePropertyAll(Size(w, 0)),
+              maximumSize: WidgetStatePropertyAll(Size(w, double.infinity)),
             ),
+      menuChildren: [
+        // MenuItemButton runs onPressed a frame later (after the menu
+        // closes), outside the tap: prime the keyboard on the release.
+        Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerUp: (_) => primeSoftKeyboard(),
+          child: item(
+            'new-option-new',
+            Icons.add_rounded,
+            'New',
+            () => _open(null, primed: true),
           ),
-          onPressed: () => _open(null),
-          icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('New'),
         ),
-        const SizedBox(width: 2),
-        MenuAnchor(
-          alignmentOffset: const Offset(-120, 4),
-          menuChildren: [
-            // MenuItemButton runs onPressed a frame later (after the menu
-            // closes), outside the tap: prime the keyboard on the release.
-            Listener(
-              behavior: HitTestBehavior.translucent,
-              onPointerUp: (_) => primeSoftKeyboard(),
-              child: item(
-                'new-option-new',
-                Icons.add_rounded,
-                'New',
-                () => _open(null, primed: true),
+        item(
+          'new-option-plan',
+          Icons.calculate_outlined,
+          'Plan',
+          widget.onPlan,
+        ),
+      ],
+      builder: (context, controller, _) => Row(
+        key: _newSplitKey,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FilledButton.tonalIcon(
+            key: const ValueKey('panel-new-event'),
+            style: FilledButton.styleFrom(
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.horizontal(left: radius),
               ),
             ),
-            item(
-              'new-option-plan',
-              Icons.calculate_outlined,
-              'Plan',
-              widget.onPlan,
-            ),
-          ],
-          builder: (context, controller, _) => Tooltip(
+            onPressed: () => _open(null),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('New'),
+          ),
+          const SizedBox(width: 2),
+          Tooltip(
             message: 'More new options',
             excludeFromSemantics: true,
+            // Its own node: otherwise the label lands on the anchor's node
+            // spanning the whole split button.
             child: Semantics(
+              container: true,
               label: 'More new options',
               button: true,
               expanded: controller.isOpen,
@@ -211,19 +240,56 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                     borderRadius: BorderRadius.horizontal(right: radius),
                   ),
                 ),
-                onPressed: () =>
-                    controller.isOpen ? controller.close() : controller.open(),
+                onPressed: () {
+                  if (controller.isOpen) return controller.close();
+                  final box =
+                      _newSplitKey.currentContext?.findRenderObject()
+                          as RenderBox?;
+                  if (box != null && box.hasSize) {
+                    setState(() => _newMenuWidth = box.size.width);
+                  }
+                  controller.open();
+                },
                 child: const Icon(Icons.arrow_drop_down_rounded, size: 22),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   final _search = TextEditingController();
   TxFilter _filter = TxFilter.all;
+
+  /// The row under the mouse (see [EventsPanel.onHoverEvent]).
+  String? _hovered;
+
+  void _hover(BudgetEvent t, bool inside) {
+    final report = widget.onHoverEvent;
+    if (report == null) return;
+    if (inside) {
+      _hovered = t.id;
+      // A hidden event has no lane: nothing to emphasise.
+      report(t.enabled ? t.id : null);
+    } else if (_hovered == t.id) {
+      _hovered = null;
+      report(null);
+    }
+  }
+
+  /// Rows going away (editor, closing) never see the pointer leave.
+  void _clearHover({bool later = false}) {
+    if (_hovered == null) return;
+    _hovered = null;
+    final report = widget.onHoverEvent;
+    if (report == null) return;
+    if (later) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => report(null));
+    } else {
+      report(null);
+    }
+  }
 
   /// Editor shown in place of the list (one panel, back to return).
   _Editing? _editing;
@@ -242,6 +308,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   Timer? _highlightTimer;
 
   void _open(BudgetEvent? t, {bool primed = false}) {
+    _clearHover();
     // New: still inside the tap, so phones raise the keyboard for Name.
     if (t == null && !primed) primeSoftKeyboard();
     // Keep the list's scroll position for when the editor returns.
@@ -331,6 +398,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
 
   @override
   void dispose() {
+    _clearHover(later: true);
     _search.dispose();
     _listScroll.dispose();
     _highlightTimer?.cancel();
@@ -769,6 +837,10 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
 
     Widget row(int index, BudgetEvent t) => _TxRow(
       key: ValueKey(t.id),
+      onHover: (inside) => _hover(
+        _included.containsKey(t.id) ? t.copyWith(enabled: _included[t.id]) : t,
+        inside,
+      ),
       color: colorOf(t),
       rowKey: _rowKeys[t.id] ??= GlobalKey(),
       highlightKey: t.id == _highlightId ? _highlightKey : null,
@@ -860,9 +932,14 @@ class _TxRow extends StatelessWidget {
     this.highlighted = false,
     this.highlightKey,
     this.readOnly = false,
+    this.onHover,
   });
 
   final bool readOnly;
+
+  /// The mouse entered (true) / left (false) the row. Not while a button
+  /// is down (an eye paint-drag sweeping across rows), and never for touch.
+  final ValueChanged<bool>? onHover;
 
   /// The event's graph line colour (the row's colour bar).
   final Color color;
@@ -918,117 +995,124 @@ class _TxRow extends StatelessWidget {
       onDismissed: (_) => onDelete(),
       child: KeyedSubtree(
         key: rowKey,
-        child: Padding(
-          key: highlightKey,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-          child: Material(
-            color: highlighted
-                ? Color.alphaBlend(
-                    AppTheme.accent.withValues(alpha: 0.12),
-                    AppTheme.raised,
-                  )
-                : AppTheme.raised,
-            animationDuration: const Duration(milliseconds: 400),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(
-                color: highlighted ? AppTheme.accent : AppTheme.border,
-                width: highlighted ? 1.5 : 1,
+        child: MouseRegion(
+          opaque: false,
+          onEnter: (e) {
+            if (e.buttons == 0) onHover?.call(true);
+          },
+          onExit: (_) => onHover?.call(false),
+          child: Padding(
+            key: highlightKey,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+            child: Material(
+              color: highlighted
+                  ? Color.alphaBlend(
+                      AppTheme.accent.withValues(alpha: 0.12),
+                      AppTheme.raised,
+                    )
+                  : AppTheme.raised,
+              animationDuration: const Duration(milliseconds: 400),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: highlighted ? AppTheme.accent : AppTheme.border,
+                  width: highlighted ? 1.5 : 1,
+                ),
               ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-                child: Row(
-                  children: [
-                    if (index != null)
-                      ReorderableDragStartListener(
-                        index: index!,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 2),
-                          child: Icon(
-                            Icons.drag_indicator_rounded,
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onTap,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                  child: Row(
+                    children: [
+                      if (index != null)
+                        ReorderableDragStartListener(
+                          index: index!,
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 2),
+                            child: Icon(
+                              Icons.drag_indicator_rounded,
+                              size: 18,
+                              color: AppTheme.textFaint,
+                            ),
+                          ),
+                        )
+                      else
+                        const SizedBox(width: 6),
+                      // The graph line's colour.
+                      Container(
+                        key: ValueKey('row-colour-${t.id}'),
+                        width: 4,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: t.enabled
+                              ? color
+                              : color.withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: t.isTransfer
+                            ? 'Transfer · ${transferPhrase(t)}'
+                            : credit
+                            ? 'Money in'
+                            : 'Money out',
+                        waitDuration: const Duration(milliseconds: 600),
+                        excludeFromSemantics: true,
+                        child: t.isTransfer
+                            ? _TransferBadge(muted: !t.enabled)
+                            : DirectionBadge(
+                                credit: credit,
+                                size: 28,
+                                muted: !t.enabled,
+                              ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(child: _lines(context, t, name, amount, credit)),
+                      // Delete (editors only): a ⋮ menu on touch, an icon with
+                      // a mouse. Tapping the row opens it in the editor.
+                      if (readOnly)
+                        const SizedBox(width: 4)
+                      else if (touch)
+                        SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: PopupMenuButton<String>(
+                            key: ValueKey('row-menu-${t.id}'),
+                            tooltip: 'More for $name',
+                            icon: const Icon(Icons.more_vert_rounded, size: 20),
+                            color: AppTheme.overlay,
+                            onSelected: (_) => onDelete(),
+                            itemBuilder: (_) => [
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: ListTile(
+                                  leading: Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: AppTheme.debitColor,
+                                  ),
+                                  title: const Text('Delete'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        IconButton(
+                          key: ValueKey('row-delete-${t.id}'),
+                          tooltip: 'Delete $name',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: onDelete,
+                          icon: const Icon(
+                            Icons.delete_outline_rounded,
                             size: 18,
-                            color: AppTheme.textFaint,
                           ),
                         ),
-                      )
-                    else
-                      const SizedBox(width: 6),
-                    // The graph line's colour.
-                    Container(
-                      key: ValueKey('row-colour-${t.id}'),
-                      width: 4,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: t.enabled
-                            ? color
-                            : color.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Tooltip(
-                      message: t.isTransfer
-                          ? 'Transfer · ${transferPhrase(t)}'
-                          : credit
-                          ? 'Money in'
-                          : 'Money out',
-                      waitDuration: const Duration(milliseconds: 600),
-                      excludeFromSemantics: true,
-                      child: t.isTransfer
-                          ? _TransferBadge(muted: !t.enabled)
-                          : DirectionBadge(
-                              credit: credit,
-                              size: 28,
-                              muted: !t.enabled,
-                            ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(child: _lines(context, t, name, amount, credit)),
-                    // Delete (editors only): a ⋮ menu on touch, an icon with
-                    // a mouse. Tapping the row opens it in the editor.
-                    if (readOnly)
-                      const SizedBox(width: 4)
-                    else if (touch)
-                      SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: PopupMenuButton<String>(
-                          key: ValueKey('row-menu-${t.id}'),
-                          tooltip: 'More for $name',
-                          icon: const Icon(Icons.more_vert_rounded, size: 20),
-                          color: AppTheme.overlay,
-                          onSelected: (_) => onDelete(),
-                          itemBuilder: (_) => [
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: ListTile(
-                                leading: Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: AppTheme.debitColor,
-                                ),
-                                title: const Text('Delete'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      IconButton(
-                        key: ValueKey('row-delete-${t.id}'),
-                        tooltip: 'Delete $name',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: onDelete,
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          size: 18,
-                        ),
-                      ),
-                    _eyeToggle(t, name, touch),
-                  ],
+                      _eyeToggle(t, name, touch),
+                    ],
+                  ),
                 ),
               ),
             ),
