@@ -1215,7 +1215,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                     // arrow sits at the far right and the empty space after
                     // the name opens it too.
                     Expanded(
-                      child: _StreamHeader(stream: stream, compact: compact),
+                      child: _StreamHeader(
+                        stream: stream,
+                        compact: compact,
+                        tight: width < 360,
+                      ),
                     ),
                   ],
                 ),
@@ -1574,27 +1578,22 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Every timeline action lives in the header row, right of the stream
   /// name. The right end is always New event today (the day popup's +) ·
-  /// a small gap · Reminders (prominent) · Events (plain list icon) · View ·
-  /// More (⋮, rightmost, takes what does not fit); the rest sits left of
-  /// New event today, which never collapses:
+  /// a small gap · Reminders (tonal icon) · Events (plain list icon) ·
+  /// View (Go to today / seed date / date…, Combine, Categories) · More
+  /// (⋮, rightmost, takes what does not fit); New event today never
+  /// collapses:
   ///
-  /// * ≥1240px: Today, Seed (labelled) · Share · Stream settings · Reminders
-  ///   (labelled) · Events · View · More (Import, Gestures &
-  ///   shortcuts).
-  /// * 960–1240px: the same with icon-only Today / Seed.
-  /// * 600–960px: Today, Seed (icons) · Reminders (tonal icon) ·
-  ///   Events · View (icon) · More (Stream settings, Share, Import,
-  ///   shortcuts).
-  /// * <600px: Reminders · Events · View (with Go to today / seed) ·
-  ///   More. Events stays in the header at every width; below 360px
-  ///   the back slot, logo gap and View button tighten so it fits.
+  /// * ≥960px: Share · Stream settings · then the above; View is labelled
+  ///   from 960px.
+  /// * <960px: the above only; Stream settings and Share move into More.
+  ///   Below 360px the back slot, logo gap and View button tighten.
   List<Widget> _headerActions(
     BuildContext context,
     BudgetStream stream,
     double width,
     List<BudgetEvent> events,
   ) {
-    final desk = width >= 600, mid = width >= 960, wide = width >= 1240;
+    final desk = width >= 600, mid = width >= 960;
     final tiny = width < 360;
     // Phones up to 420px: the always-there icons (New event today,
     // Reminders, Events, View, More) drop the 48px tap padding to 40 so the
@@ -1611,9 +1610,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           onPressed: f,
           icon: glyph,
         );
-    void today() => _goToAndSelect(DateTime.now());
-    void seed() => _goToAndSelect(stream.seedDate);
-    final seedIcon = const Icon(Icons.flag_rounded, color: AppTheme.violet);
 
     // More, in order: Stream settings first, then whatever overflowed.
     final more = <PopupMenuEntry<String>>[
@@ -1635,21 +1631,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             title: Text('Share stream'),
           ),
         ),
+      // Always enabled: without a selected day it explains how to pick one
+      // (a snack bar) instead of opening the import.
       if (canEdit)
-        PopupMenuItem(
-          key: const ValueKey('more-import'),
+        const PopupMenuItem(
+          key: ValueKey('more-import'),
           value: 'import',
-          enabled: _pinnedDay != null,
           child: ListTile(
-            enabled: _pinnedDay != null,
-            leading: const Icon(Icons.file_upload_outlined),
-            title: const Text('Import events'),
-            subtitle: _pinnedDay == null
-                ? const Text(
-                    importNeedsDayHint,
-                    key: ValueKey('more-import-hint'),
-                  )
-                : Text('Dates count from ${formatOccurrenceDate(_pinnedDay!)}'),
+            leading: Icon(Icons.file_upload_outlined),
+            title: Text('Import events'),
           ),
         ),
       // Everyone opens it (viewers read only); categories are shared by
@@ -1675,37 +1665,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     return [
       // Below 360 the sync dot sits on the logo's corner instead.
       if (!tiny) const RealtimeDot(),
-      if (wide) ...[
-        OutlinedButton.icon(
-          key: const ValueKey('go-today'),
-          onPressed: today,
-          icon: const Icon(Icons.today_rounded, size: 18),
-          label: const Text('Today'),
-        ),
-        const SizedBox(width: 6),
-        Tooltip(
-          message: 'Go to the seed date (start of the balance)',
-          child: OutlinedButton.icon(
-            key: const ValueKey('go-seed'),
-            onPressed: seed,
-            icon: const Icon(
-              Icons.flag_rounded,
-              size: 18,
-              color: AppTheme.violet,
-            ),
-            label: const Text('Seed'),
-          ),
-        ),
-        const SizedBox(width: 4),
-      ] else if (desk) ...[
-        icon('go-today', 'Go to today', const Icon(Icons.today_rounded), today),
-        icon(
-          'go-seed',
-          'Go to the seed date (start of the balance)',
-          seedIcon,
-          seed,
-        ),
-      ],
+      // Go to today / seed date live in the View (eye) menu.
       if (mid && owner)
         icon(
           'stream-share',
@@ -1730,25 +1690,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         key: const ValueKey('new-today-gap'),
         width: mid ? 8 : (desk ? 6 : 4),
       ),
-      // The prominent header action: the reminders calendar.
-      if (mid)
-        FilledButton.tonalIcon(
-          key: const ValueKey('open-reminders'),
-          onPressed: () => showReminders(context, stream),
-          icon: const Icon(Icons.calendar_month_rounded, size: 18),
-          label: const Text(
-            'Reminders',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-        )
-      else
-        IconButton.filledTonal(
-          key: const ValueKey('open-reminders'),
-          tooltip: 'Reminders calendar',
-          style: slim,
-          onPressed: () => showReminders(context, stream),
-          icon: const Icon(Icons.calendar_month_rounded),
-        ),
+      // The reminders calendar: a tonal icon at every width (the label is
+      // its tooltip / semantics).
+      IconButton.filledTonal(
+        key: const ValueKey('open-reminders'),
+        tooltip: 'Reminders calendar',
+        style: slim,
+        onPressed: () => showReminders(context, stream),
+        icon: const Icon(Icons.calendar_month_rounded),
+      ),
       SizedBox(width: mid ? 4 : 0),
       // Always in the header, at every width (320 included): below 360 the
       // left side and View tighten instead so it fits.
@@ -2382,18 +2332,25 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 }
 
 class _StreamHeader extends StatelessWidget {
-  const _StreamHeader({required this.stream, this.compact = false});
+  const _StreamHeader({
+    required this.stream,
+    this.compact = false,
+    this.tight = false,
+  });
 
   final BudgetStream stream;
   final bool compact;
+
+  /// Below 360px: a 2px gap before New event today (no sync dot there).
+  final bool tight;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     // Fills the free space between the brand and the actions (the toolbar
-    // lays the actions out first, so they always fit): the name stays left
-    // and ellipsises, the arrow sits at the right end, and the whole area,
-    // empty space included, is one tap target with its ink.
+    // lays the actions out first, so they always fit): a raised trigger
+    // (name, then the arrow) sits at its left and ellipsises; the whole
+    // area, empty space included, opens the menu.
     return SizedBox(
       key: const ValueKey('header-stream-area'),
       width: double.infinity,
@@ -2412,37 +2369,72 @@ class _StreamHeader extends StatelessWidget {
             context.go('/streams/${created.id}/timeline');
           }
         },
-        builder: (context, open) => InkWell(
-          key: const ValueKey('header-stream-picker'),
-          borderRadius: BorderRadius.circular(8),
+        // A raised surface (lighter than the header, hairline border, soft
+        // shadow) hugging the name and arrow, so it reads as a control; the
+        // free space after it still opens the menu.
+        builder: (context, open) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: open,
-          child: Tooltip(
-            message: 'Jump to another stream',
-            waitDuration: const Duration(milliseconds: 500),
-            // Opaque: a tap anywhere in the stretched area hits, not only
-            // on the glyphs.
-            child: ColoredBox(
-              color: Colors.transparent,
-              child: SizedBox(
-                height: 48,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        stream.name,
-                        style: compact
-                            ? theme.textTheme.titleMedium
-                            : theme.textTheme.titleLarge,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const Icon(
-                      Icons.arrow_drop_down_rounded,
-                      key: ValueKey('header-stream-arrow'),
-                      color: AppTheme.textMuted,
+          child: Container(
+            height: 48,
+            padding: EdgeInsets.only(right: tight ? 2 : 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: DecoratedBox(
+                key: const ValueKey('header-stream-surface'),
+                decoration: BoxDecoration(
+                  color: AppTheme.raised,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppTheme.borderStrong),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black45,
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
                     ),
                   ],
+                ),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: InkWell(
+                    key: const ValueKey('header-stream-picker'),
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: open,
+                    child: Tooltip(
+                      message: 'Jump to another stream',
+                      waitDuration: const Duration(milliseconds: 500),
+                      child: SizedBox(
+                        height: compact ? 36 : 38,
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            left: compact ? 6 : 12,
+                            right: compact ? 0 : 4,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  stream.name,
+                                  style: compact
+                                      ? theme.textTheme.titleMedium
+                                      : theme.textTheme.titleLarge,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_drop_down_rounded,
+                                key: const ValueKey('header-stream-arrow'),
+                                size: compact ? 20 : 24,
+                                color: AppTheme.textMuted,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -2579,7 +2571,7 @@ class _HeaderBrand extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: EdgeInsetsDirectional.only(end: tight ? 6 : (compact ? 10 : 12)),
+    padding: EdgeInsetsDirectional.only(end: tight ? 4 : (compact ? 6 : 12)),
     child: Semantics(
       label: 'Budgie',
       image: true,

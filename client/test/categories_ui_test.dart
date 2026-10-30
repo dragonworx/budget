@@ -1192,6 +1192,81 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    for (final size in const [
+      Size(1440, 900),
+      Size(412, 915),
+      Size(320, 640),
+    ]) {
+      testWidgets('${size.width.toInt()}px: the new-category row is pinned '
+          'below the rows; only the rows scroll; a created one is revealed', (
+        tester,
+      ) async {
+        final (_, cats) = await _pump(tester, size: size);
+        await addCats(tester, cats, [for (var i = 1; i <= 30; i++) 'Extra $i']);
+        await _openManager(tester);
+        final scroll = find
+            .descendant(
+              of: find.byKey(const ValueKey('categories-manager')),
+              matching: find.byType(Scrollable),
+            )
+            .first;
+        final newRow = find.byKey(const ValueKey('category-new-row'));
+        expect(newRow, findsOneWidget);
+        // Not inside the scrolling table, and below it.
+        expect(find.descendant(of: scroll, matching: newRow), findsNothing);
+        final view = tester.getRect(scroll);
+        final before = tester.getRect(newRow);
+        expect(before.top, greaterThanOrEqualTo(view.bottom - 0.5));
+        expect(before.bottom, lessThanOrEqualTo(size.height));
+        // Scrolling the rows leaves it where it is.
+        final first = tester.getRect(
+          find.byKey(ValueKey('category-row-${idOf('Extra 1')}')),
+        );
+        await tester.drag(scroll, const Offset(0, -2000));
+        await tester.pumpAndSettle();
+        expect(tester.getRect(newRow), before);
+        expect(
+          tester
+              .getRect(find.byKey(ValueKey('category-row-${idOf('Extra 1')}')))
+              .top,
+          lessThan(first.top),
+        );
+        // Create from the pinned row (scrolled to the end): the new one,
+        // sorted near the top, is scrolled into view.
+        await tester.enterText(_field('category-new-name'), 'Aardvark');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+        expect(cats.calls, contains('create Aardvark'));
+        final created = tester.getRect(
+          find.byKey(ValueKey('category-row-${idOf('Aardvark')}')),
+        );
+        expect(created.top, greaterThanOrEqualTo(view.top - 0.5));
+        expect(created.bottom, lessThanOrEqualTo(view.bottom + 0.5));
+        expect(tester.getRect(newRow).top, closeTo(before.top, 1));
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('a short list keeps the manager compact, the new row right '
+        'under the last row', (tester) async {
+      await _pump(tester);
+      await _openManager(tester);
+      final last = tester.getRect(
+        find.byKey(ValueKey('category-row-${idOf('Wages')}')),
+      );
+      final newRow = tester.getRect(
+        find.byKey(const ValueKey('category-new-row')),
+      );
+      expect(newRow.top - last.bottom, lessThan(20));
+      final scroll = find
+          .descendant(
+            of: find.byKey(const ValueKey('categories-manager')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      expect(tester.state<ScrollableState>(scroll).position.maxScrollExtent, 0);
+    });
+
     testWidgets('the editor picker, the list filter and the eye menu are '
         'sorted the same way', (tester) async {
       final (_, cats) = await _pump(tester);

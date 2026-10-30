@@ -87,8 +87,8 @@ Future<String?> showCategoriesManager(
 /// their streams). Columns: colour (tap to change), name (tap to rename in
 /// place), event count (all streams), and two icon buttons: delete the
 /// events (keeping the category; undoable) and delete the category with
-/// its events. The last row is a dashed "new category" row. Viewers see
-/// the table read-only; editors may only add.
+/// its events. A dashed "new category" row is pinned below the rows (only
+/// the rows scroll). Viewers see the table read-only; editors may only add.
 class CategoriesManager extends ConsumerStatefulWidget {
   const CategoriesManager({
     super.key,
@@ -282,6 +282,8 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
         _newError = null;
         _newColor = null; // a fresh random one for the next
       });
+      // The new row is pinned, so bring the created one into view.
+      _revealRow(c.id);
     } catch (e) {
       if (!mounted) return;
       setState(
@@ -503,13 +505,17 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                       _row(c, counts[c.id] ?? 0, manage),
                       const Divider(height: 1),
                     ],
-                    if (widget.canEdit) ...[
-                      const SizedBox(height: 10),
-                      _newRow(),
-                    ],
                   ],
                 ),
               ),
+            ),
+          // The dashed new-category row is pinned below the table: only the
+          // rows above it scroll, so Add is always in reach.
+          if (widget.canEdit && async.valueOrNull != null)
+            Padding(
+              key: const ValueKey('category-new-footer'),
+              padding: const EdgeInsets.only(top: 10, right: 6),
+              child: _newRow(),
             ),
           if (_error != null)
             Padding(

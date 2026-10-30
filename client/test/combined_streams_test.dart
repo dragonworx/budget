@@ -347,8 +347,14 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('fit-menu')));
     await tester.pumpAndSettle();
-    // Go to date… takes focus first; the stream rows follow it.
-    expect(focusedOn('view-go-to-date'), isTrue);
+    // Go to today takes focus first; seed, date… and the stream rows
+    // follow it.
+    expect(focusedOn('view-today'), isTrue);
+    for (final k in ['view-seed', 'view-go-to-date']) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(focusedOn(k), isTrue, reason: k);
+    }
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
     expect(focusedOn('combine-b'), isTrue);

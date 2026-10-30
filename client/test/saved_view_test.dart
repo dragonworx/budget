@@ -319,7 +319,9 @@ void main() {
       dayCoord(_chart(tester).viewStart),
       closeTo(dayCoord(_d(-400)), 1e-9),
     );
-    await tester.tap(find.byKey(const ValueKey('go-today')));
+    await tester.tap(find.byKey(const ValueKey('fit-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('view-today')));
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 1100));
     expect(_repo.saves, hasLength(1));

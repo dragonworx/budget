@@ -7,10 +7,9 @@ import '../boot/page_stub.dart'
 import '../data/models.dart';
 import '../state/providers.dart';
 import '../theme/app_theme.dart';
-import 'stream_icon.dart';
 
 /// Reusable stream picker: a dropdown anchored to the trigger, with a flat
-/// list of my streams (the current one checked), then a "Shared with me"
+/// list of my streams by name (the current one ticked, no stream icons), then a "Shared with me"
 /// section, then an optional New stream action. Streams
 /// are top level, so there are no submenus.
 ///
@@ -162,9 +161,15 @@ class _StreamPickerState extends ConsumerState<StreamPicker> {
     key: ValueKey('${widget.keyPrefix}-stream-${a.id}'),
     focusNode: focus,
     style: _style,
-    leadingIcon: a.id == widget.currentStreamId
-        ? const Icon(Icons.check_rounded, size: 18, color: AppTheme.accent)
-        : const StreamIcon(key: ValueKey('stream-icon'), size: 18),
+    // Names only: the current stream is ticked; the others keep an empty
+    // slot of the same width so every name lines up.
+    leadingIcon: SizedBox.square(
+      key: ValueKey('${widget.keyPrefix}-lead-${a.id}'),
+      dimension: 18,
+      child: a.id == widget.currentStreamId
+          ? const Icon(Icons.check_rounded, size: 18, color: AppTheme.accent)
+          : null,
+    ),
     onPressed: () => widget.onSelected(a),
     trailingIcon: sharedIndicator(a),
     child: _MenuLabel(a.name),

@@ -6,7 +6,7 @@ import '../../data/models.dart';
 import 'combined.dart';
 import 'stack_lanes.dart' show colorFromHex;
 
-/// The timeline's View (eye) menu: on phones Go to today / seed, and
+/// The timeline's View (eye) menu: Go to today / seed date / date…, and
 /// "Combine with" (other streams as checkboxes; the
 /// menu stays open so several can be ticked).
 ///
@@ -138,7 +138,8 @@ class _ViewMenuState extends State<ViewMenu> {
     final small = Theme.of(context).textTheme.labelSmall;
     final screen = MediaQuery.sizeOf(context);
     final children = <Widget>[
-      if (widget.compact) ...[
+      // Go to today / seed date: at every width (not header buttons).
+      ...[
         MenuItemButton(
           key: const ValueKey('view-today'),
           focusNode: _first,
@@ -161,7 +162,6 @@ class _ViewMenuState extends State<ViewMenu> {
       ],
       MenuItemButton(
         key: const ValueKey('view-go-to-date'),
-        focusNode: widget.compact ? null : _first,
         style: _style,
         leadingIcon: const Icon(Icons.event_rounded, size: 18),
         onPressed: widget.onGoToDate,

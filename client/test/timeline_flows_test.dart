@@ -348,6 +348,33 @@ Future<void> _editFromPanel(WidgetTester tester, String name) async {
   await tester.pumpAndSettle();
 }
 
+/// More › Import events without a selected day: no import, a hint.
+Future<void> _expectImportBlocked(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('timeline-more')));
+  await tester.pumpAndSettle();
+  final item = tester.widget<PopupMenuItem<String>>(
+    find.byKey(const ValueKey('more-import')),
+  );
+  expect(item.enabled, isTrue);
+  // No hint / info line under the item.
+  expect(find.byKey(const ValueKey('more-import-hint')), findsNothing);
+  expect(find.textContaining('Dates count from'), findsNothing);
+  await tester.tap(find.text('Import events'));
+  await tester.pumpAndSettle();
+  expect(find.byKey(const ValueKey('import-paste')), findsNothing);
+  expect(find.text(importNeedsDayHint), findsOneWidget);
+  ScaffoldMessenger.of(tester.element(find.text(importNeedsDayHint)))
+      .removeCurrentSnackBar();
+  await tester.pumpAndSettle();
+}
+
+/// Go to today / seed date: items in the View (eye) menu.
+Future<void> _viewGo(WidgetTester tester, String which) async {
+  await tester.tap(find.byKey(const ValueKey('fit-menu')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(ValueKey('view-$which')));
+}
+
 void main() {
   popupSizeProbe();
   testWidgets('the date drag has no Trim hook; the popup\'s ⋮ keeps it', (
@@ -1357,7 +1384,7 @@ void main() {
     tester,
   ) async {
     final store = await _pump(tester);
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Seed').first);
+    await _viewGo(tester, 'seed');
     await tester.pumpAndSettle();
     final plot = tester.getRect(find.byType(BalanceChart));
     final tip = find.byKey(const ValueKey('seed-tooltip'));
@@ -1694,8 +1721,8 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
   });
 
-  testWidgets('View menu has no fit modes and no alert option (+ go-tos on '
-      'phones) and starts without a divider', (tester) async {
+  testWidgets('View menu has no fit modes and no alert option (+ go-tos at '
+      'every width) and starts without a divider', (tester) async {
     for (final (size, compact) in [
       (const Size(390, 844), true),
       (const Size(1440, 900), false),
@@ -1721,11 +1748,10 @@ void main() {
         find.byKey(const ValueKey('view-manage-categories')),
         findsOneWidget,
       );
-      expect(find.text('Go to today'), compact ? findsOneWidget : findsNothing);
-      expect(
-        find.text('Go to seed date'),
-        compact ? findsOneWidget : findsNothing,
-      );
+      // Go to today / seed date: View menu items at every width (the
+      // header has no Today / Seed buttons).
+      expect(find.text('Go to today'), findsOneWidget);
+      expect(find.text('Go to seed date'), findsOneWidget);
       final entries = tester
           .widgetList(
             find.byWidgetPredicate(
@@ -1760,7 +1786,7 @@ void main() {
 
   // ── Header row: every action, More (⋮) last · the chart right under it ──
 
-  for (final (size, wide, mid, desk, tiny) in const [
+  for (final (size, _, mid, _, tiny) in const [
     (Size(320, 640), false, false, false, true),
     (Size(390, 844), false, false, false, false),
     (Size(800, 900), false, false, true, false),
@@ -1854,14 +1880,8 @@ void main() {
         );
         expect(find.byTooltip('Events (2)'), findsOneWidget);
       }
-      // Everything else (Today, Seed, Share, Stream settings) sits left of
-      // Reminders.
-      for (final k in [
-        'go-today',
-        'go-seed',
-        'stream-share',
-        'stream-settings',
-      ]) {
+      // Everything else (Share, Stream settings) sits left of Reminders.
+      for (final k in ['stream-share', 'stream-settings']) {
         if (inBar(k)) {
           expect(
             r(k).right,
@@ -1870,20 +1890,19 @@ void main() {
           );
         }
       }
-      // Reminders: the prominent (filled tonal) one; labelled when wide.
-      expect(find.text('Reminders'), mid ? findsOneWidget : findsNothing);
-      if (mid) {
-        expect(
-          tester.widget(find.byKey(const ValueKey('open-reminders'))),
-          isA<FilledButton>(),
-        );
-      }
-      expect(find.text('Today'), wide ? findsOneWidget : findsNothing);
-      expect(
-        find.byKey(const ValueKey('go-today')),
-        desk ? findsOneWidget : findsNothing,
+      // Reminders: a filled tonal icon at every width (no label), named
+      // by its tooltip.
+      expect(find.text('Reminders'), findsNothing);
+      final rem = tester.widget<IconButton>(
+        find.byKey(const ValueKey('open-reminders')),
       );
-      if (desk) expect(inBar('go-seed'), isTrue);
+      expect(rem.tooltip, 'Reminders calendar');
+      // Go to today / seed are View menu items, not header buttons.
+      for (final gone in ['go-today', 'go-seed']) {
+        expect(find.byKey(ValueKey(gone)), findsNothing, reason: gone);
+      }
+      expect(find.text('Today'), findsNothing);
+      expect(find.text('Seed'), findsNothing);
       expect(
         find.byKey(const ValueKey('stream-settings')),
         mid ? findsOneWidget : findsNothing,
@@ -1897,9 +1916,13 @@ void main() {
         expect(find.byKey(ValueKey(gone)), findsNothing);
       }
       expect(find.textContaining('Seed \$'), findsNothing);
-      // The stream picker stretches up to the actions (its arrow at the
-      // right end; the empty space after the name opens it too).
-      final name = r('header-stream-picker');
+      // The stream area stretches up to the actions (a raised trigger at
+      // its left; the empty space after it opens the menu too).
+      final name = r('header-stream-area');
+      expect(
+        r('header-stream-picker').right,
+        lessThanOrEqualTo(name.right + 0.5),
+      );
       expect(name.width, greaterThan(40));
       final firstAction = [
         for (final e
@@ -2494,10 +2517,10 @@ void main() {
   testWidgets('desktop: Today, Seed and View › Go to date… put the day at '
       'the left edge', (tester) async {
     await _pump(tester);
-    await tester.tap(find.byKey(const ValueKey('go-seed')));
+    await _viewGo(tester, 'seed');
     await tester.pumpAndSettle();
     expectAtLeft(tester, seedDay, 'seed');
-    await tester.tap(find.byKey(const ValueKey('go-today')));
+    await _viewGo(tester, 'today');
     await tester.pumpAndSettle();
     expectAtLeft(tester, _day, 'today');
     // Go to date…: opens on the first visible day (today, the first day
@@ -2565,36 +2588,27 @@ void main() {
       expect(b.right, lessThanOrEqualTo(chart.right), reason: why);
       expect(b.top, greaterThanOrEqualTo(chart.top), reason: why);
       expect(b.bottom, lessThanOrEqualTo(chart.bottom), reason: why);
-      await tester.tap(find.byKey(const ValueKey('timeline-more')));
-      await tester.pumpAndSettle();
+      // The bubble names the pinned day.
       expect(
-        tester
-            .widget<PopupMenuItem<String>>(
-              find.byKey(const ValueKey('more-import')),
-            )
-            .enabled,
-        isTrue,
-        reason: why,
-      );
-      expect(
-        find.text('Dates count from ${DateFormat('EEE d MMM y').format(day)}'),
+        find.descendant(
+          of: bubble,
+          matching: find.text(DateFormat('EEE d MMM y').format(day)),
+        ),
         findsOneWidget,
         reason: why,
       );
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
     }
 
     testWidgets('desktop header buttons: selected, then dismissed like a '
         'tap (Esc, a tap elsewhere, moving the view)', (tester) async {
       final store = await _pump(tester);
       expect(bubble, findsNothing);
-      await tester.tap(find.byKey(const ValueKey('go-seed')));
+      await _viewGo(tester, 'seed');
       await tester.pumpAndSettle();
       expectAtLeft(tester, seedDay, 'seed');
       await expectSelected(tester, seedDay, 'seed');
       // Today moves the selection to today.
-      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await _viewGo(tester, 'today');
       await tester.pumpAndSettle();
       expectAtLeft(tester, _day, 'today');
       await expectSelected(tester, _day, 'today');
@@ -2606,10 +2620,10 @@ void main() {
       await tester.tapAt(chart.center + const Offset(0, -150));
       await tester.pumpAndSettle();
       expect(bubble, findsNothing, reason: 'a tap elsewhere dismisses');
-      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await _viewGo(tester, 'today');
       await tester.pumpAndSettle();
       expect(bubble, findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('go-seed')));
+      await _viewGo(tester, 'seed');
       await tester.pumpAndSettle();
       expect(bubble, findsOneWidget);
       // … or the view moving (a pan).
@@ -2620,18 +2634,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(bubble, findsNothing, reason: 'moving the view dismisses');
-      await tester.tap(find.byKey(const ValueKey('timeline-more')));
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<PopupMenuItem<String>>(
-              find.byKey(const ValueKey('more-import')),
-            )
-            .enabled,
-        isFalse,
-      );
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
+      await _expectImportBlocked(tester);
       // Never creates, trims or edits anything.
       expect(
         store.calls.where(
@@ -2645,7 +2648,7 @@ void main() {
 
     testWidgets('desktop: Esc dismisses a Today selection', (tester) async {
       await _pump(tester);
-      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await _viewGo(tester, 'today');
       await tester.pumpAndSettle();
       expect(bubble, findsOneWidget);
       // Straight after the button (no press on the chart): the chart took
@@ -2680,11 +2683,11 @@ void main() {
 
     testWidgets('Today twice keeps the same selection', (tester) async {
       await _pump(tester);
-      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await _viewGo(tester, 'today');
       await tester.pumpAndSettle();
       final first = tester.widget<Text>(pickDate).data;
       // Today again on the same day: same selection, still visible.
-      await tester.tap(find.byKey(const ValueKey('go-today')));
+      await _viewGo(tester, 'today');
       await tester.pumpAndSettle();
       expect(tester.widget<Text>(pickDate).data, first);
     });
@@ -3099,21 +3102,9 @@ void main() {
       testWidgets('${size.width.toInt()}px: blocked with a hint, then the '
           'pinned day is the root', (tester) async {
         final store = await _pump(tester, size: size);
-        await tester.tap(find.byKey(const ValueKey('timeline-more')));
-        await tester.pumpAndSettle();
-        final item = tester.widget<PopupMenuItem<String>>(
-          find.byKey(const ValueKey('more-import')),
-        );
-        expect(item.enabled, isFalse);
-        expect(find.byKey(const ValueKey('more-import-hint')), findsOneWidget);
-        expect(find.text(importNeedsDayHint), findsOneWidget);
-        await tester.tap(find.text('Import events'), warnIfMissed: false);
-        await tester.pumpAndSettle();
+        await _expectImportBlocked(tester);
         expect(find.text('Paste a JSON array'), findsNothing);
-        expect(find.byKey(const ValueKey('import-paste')), findsNothing);
         expect(store.calls.where((c) => c.startsWith('import')), isEmpty);
-        await tester.tapAt(const Offset(5, 400));
-        await tester.pumpAndSettle();
 
         await pinDay(tester);
         final bubble = find.byKey(const ValueKey('pick-bubble'));
@@ -3135,7 +3126,8 @@ void main() {
               .enabled,
           isTrue,
         );
-        expect(find.text('Dates count from $dateText'), findsOneWidget);
+        // No info line under the item; the dialog names the root.
+        expect(find.textContaining('Dates count from'), findsNothing);
         await tester.tap(find.text('Import events'));
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('import-paste')), findsOneWidget);
@@ -3272,17 +3264,7 @@ void main() {
         await tester.pumpAndSettle();
       }
       expect(find.byKey(const ValueKey('pick-bubble')), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('timeline-more')));
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<PopupMenuItem<String>>(
-              find.byKey(const ValueKey('more-import')),
-            )
-            .enabled,
-        isFalse,
-      );
-      expect(find.text(importNeedsDayHint), findsOneWidget);
+      await _expectImportBlocked(tester);
     });
   });
 

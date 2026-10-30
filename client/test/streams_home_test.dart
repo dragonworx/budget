@@ -6,6 +6,7 @@ import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
+import 'package:budget_client/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -194,8 +195,9 @@ void main() {
         '${size.width.toInt()}x${size.height.toInt()}'
         '${docked ? ' docked' : ''}';
     for (final name in const ['Bills', 'Savings for a long holiday abroad']) {
-      testWidgets('$label, "$name": the header stream picker stretches; the '
-          'empty space and the arrow open the menu', (tester) async {
+      testWidgets('$label, "$name": a raised stream trigger at the left of '
+          'the stretched area; the trigger, the arrow and the empty space '
+          'after it open the menu', (tester) async {
         page.localSet('budget_events_docked', docked ? '1' : '0');
         addTearDown(page.clearLocal);
         final repo = FakeStreamRepository(
@@ -205,14 +207,34 @@ void main() {
         await _app(tester, repo, size: size);
         expect(tester.takeException(), isNull);
         final area = tester.getRect(
+          find.byKey(const ValueKey('header-stream-area')),
+        );
+        final chip = tester.getRect(
           find.byKey(const ValueKey('header-stream-picker')),
         );
         final arrow = tester.getRect(
           find.byKey(const ValueKey('header-stream-arrow')),
         );
-        // The arrow ends the stretched area, at the actions (the toolbar's
-        // 16px middle spacing plus the actions' own leading gap).
-        expect(arrow.right, closeTo(area.right, 0.5));
+        // Raised: a lighter surface than the header, a border and a shadow.
+        final deco =
+            tester
+                    .widget<DecoratedBox>(
+                      find.byKey(const ValueKey('header-stream-surface')),
+                    )
+                    .decoration
+                as BoxDecoration;
+        expect(deco.color, AppTheme.raised);
+        expect(deco.color, isNot(AppTheme.bg));
+        expect(deco.border, isNotNull);
+        expect(deco.boxShadow, isNotEmpty);
+        // The trigger sits at the area's left, inside it; the arrow ends it.
+        expect(chip.left, closeTo(area.left, 1.5));
+        expect(chip.right, lessThanOrEqualTo(area.right + 0.5));
+        expect(chip.height, greaterThanOrEqualTo(36));
+        expect(arrow.right, lessThanOrEqualTo(chip.right));
+        expect(chip.right - arrow.right, lessThan(8));
+        // The stretched area still reaches the actions (the toolbar's 16px
+        // middle spacing plus the actions' own leading gap).
         final actions = find.descendant(
           of: find.byType(AppBar),
           matching: find.byWidgetPredicate(
@@ -234,16 +256,19 @@ void main() {
         for (final r in rights) {
           expect(r.right, lessThanOrEqualTo(size.width));
         }
-        // The name stays left; a long one ellipsises.
+        // The name leads the trigger; a long one ellipsises.
         final text = tester.renderObject<RenderParagraph>(
           find.descendant(of: find.text(name), matching: find.byType(RichText)),
         );
-        final glyphs = text.getMaxIntrinsicWidth(double.infinity);
-        final ellipsised = text.didExceedMaxLines;
         final textBox = tester.getRect(
           find.descendant(of: find.text(name), matching: find.byType(RichText)),
         );
-        expect(textBox.left, closeTo(area.left, 0.5));
+        if (textBox.width > 0) {
+          expect(textBox.left, greaterThan(chip.left));
+          expect(textBox.left, lessThan(chip.left + 14));
+        }
+        final glyphs = text.getMaxIntrinsicWidth(double.infinity);
+        if (glyphs > area.width - 40) expect(text.didExceedMaxLines, isTrue);
         Future<void> opens(Offset at, String why) async {
           await tester.tapAt(at);
           await tester.pumpAndSettle();
@@ -258,14 +283,11 @@ void main() {
         }
 
         await opens(arrow.center, 'arrow');
-        await opens(Offset(arrow.left - 2, area.top + 4), 'just left of it');
-        if (glyphs < textBox.width - 8) {
-          // Short name: the empty space after its characters.
-          final x = (textBox.left + glyphs + arrow.left) / 2;
+        await opens(Offset(chip.left + 6, chip.center.dy), 'trigger');
+        if (area.right - chip.right > 12) {
+          final x = (chip.right + area.right) / 2;
           await opens(Offset(x, area.center.dy), 'empty space');
           await opens(Offset(x, area.bottom - 3), 'empty space, low');
-        } else {
-          expect(ellipsised, isTrue);
         }
       });
     }

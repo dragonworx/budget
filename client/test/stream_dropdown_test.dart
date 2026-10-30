@@ -142,22 +142,36 @@ void main() {
         findsOneWidget,
       );
       expect(find.byIcon(Icons.check_rounded), findsOneWidget);
-      // Every other stream row leads with the bucket stream icon at 18px.
+      // No stream (bucket) icons; the others get an empty 18px slot so
+      // every name lines up with the ticked one.
+      expect(find.byType(StreamIcon), findsNothing);
+      final nameX = tester
+          .getTopLeft(
+            find
+                .descendant(
+                  of: find.byKey(const ValueKey('nav-stream-a')),
+                  matching: find.byType(Text),
+                )
+                .first,
+          )
+          .dx;
       for (final k in ['nav-stream-s', 'nav-stream-b', 'nav-stream-v']) {
-        final icon = find.descendant(
-          of: find.byKey(ValueKey(k)),
-          matching: find.byType(StreamIcon),
+        expect(
+          find.descendant(
+            of: find.byKey(ValueKey(k)),
+            matching: find.byIcon(Icons.check_rounded),
+          ),
+          findsNothing,
+          reason: k,
         );
-        expect(icon, findsOneWidget, reason: k);
-        expect(tester.getSize(icon), const Size(18, 18), reason: k);
+        final lead = k.replaceFirst('nav-stream-', 'nav-lead-');
+        expect(tester.getSize(find.byKey(ValueKey(lead))), const Size(18, 18));
+        final label = find.descendant(
+          of: find.byKey(ValueKey(k)),
+          matching: find.byType(Text),
+        );
+        expect(tester.getTopLeft(label.first).dx, nameX, reason: k);
       }
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('nav-stream-a')),
-          matching: find.byType(StreamIcon),
-        ),
-        findsNothing,
-      );
       expect(find.byIcon(Icons.account_balance_wallet_outlined), findsNothing);
       // Shared rows carry the people icon (my role in the tooltip).
       expect(find.byKey(const ValueKey('shared-indicator-b')), findsOneWidget);
