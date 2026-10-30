@@ -252,7 +252,9 @@ void main() {
         final firstAction = rights
             .map((r) => r.left)
             .reduce((a, b) => a < b ? a : b);
-        expect(firstAction - area.right, lessThanOrEqualTo(26));
+        // Only the sync dot and the small lead gap sit before New event
+        // today (the first button).
+        expect(firstAction - area.right, lessThanOrEqualTo(30));
         for (final r in rights) {
           expect(r.right, lessThanOrEqualTo(size.width));
         }

@@ -1577,16 +1577,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   // ---------------------------------------------------------------- header
 
   /// Every timeline action lives in the header row, right of the stream
-  /// name. The right end is always New event today (the day popup's +) ·
-  /// a small gap · Reminders (tonal icon) · Events (plain list icon) ·
-  /// View (Go to today / seed date / date…, Combine, Categories) · More
-  /// (⋮, rightmost, takes what does not fit); New event today never
-  /// collapses:
+  /// name, all icon-only, left to right: New event today (the day popup's
+  /// +, never collapses) · a small gap · Reminders (tonal icon) · Events
+  /// (plain list icon) · Stream settings (≥960px) · View (eye: Go to
+  /// today / seed date / date…, Combine, Categories) · More (⋮, rightmost).
   ///
-  /// * ≥960px: Share · Stream settings · then the above; View is labelled
-  ///   from 960px.
-  /// * <960px: the above only; Stream settings and Share move into More.
-  ///   Below 360px the back slot, logo gap and View button tighten.
+  /// Share stream is always in More; below 960px Stream settings is too.
+  /// Below 360px the back slot, logo gap and View button tighten.
   List<Widget> _headerActions(
     BuildContext context,
     BudgetStream stream,
@@ -1622,7 +1619,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             title: Text('Stream settings'),
           ),
         ),
-      if (owner && !mid)
+      if (owner)
         const PopupMenuItem(
           key: ValueKey('more-share'),
           value: 'share',
@@ -1665,21 +1662,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     return [
       // Below 360 the sync dot sits on the logo's corner instead.
       if (!tiny) const RealtimeDot(),
-      // Go to today / seed date live in the View (eye) menu.
-      if (mid && owner)
-        icon(
-          'stream-share',
-          'Share stream',
-          const Icon(Icons.person_add_alt_1_outlined),
-          () => _share(context, stream),
-        ),
-      if (mid && canEdit)
-        icon(
-          'stream-settings',
-          'Stream settings: seed balance, date, threshold',
-          const Icon(Icons.tune_rounded),
-          () => _editStream(context, stream),
-        ),
+      // Go to today / seed date live in the View (eye) menu; Share stream
+      // in More.
       SizedBox(width: mid ? 6 : (tiny ? 0 : 2)),
       // New event today: always in the header, at every width, just before
       // Reminders (the only header action that creates; chart taps never do).
@@ -1703,13 +1687,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       // Always in the header, at every width (320 included): below 360 the
       // left side and View tighten instead so it fits.
       _eventsButton(context, stream, count: events.length, style: slim),
-      _fitMenu(
-        stream,
-        compact: !desk,
-        iconOnly: !mid,
-        tight: tiny,
-        style: slim,
-      ),
+      if (mid && canEdit)
+        icon(
+          'stream-settings',
+          'Stream settings: seed balance, date, threshold',
+          const Icon(Icons.tune_rounded),
+          () => _editStream(context, stream),
+        ),
+      // View (eye): icon-only at every width, named by its tooltip.
+      _fitMenu(stream, compact: !desk, tight: tiny, style: slim),
       // Always the rightmost item.
       PopupMenuButton<String>(
         key: const ValueKey('timeline-more'),
@@ -1740,23 +1726,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     ];
   }
 
-  /// View options: Combine with other streams and, on phones, Go to today /
-  /// seed date. The fit modes are keyboard-only (F / A / H, listed in the
+  /// The View (eye) button, icon-only at every width (tooltip "View"):
+  /// Go to today / seed date / date…, Combine with other streams, Categories. The fit modes are keyboard-only (F / A / H, listed in the
   /// shortcuts sheet) and never stretch to the alert line.
   Widget _fitMenu(
     BudgetStream stream, {
     required bool compact,
-    bool? iconOnly,
     bool tight = false,
     ButtonStyle? style,
   }) {
-    final icon = iconOnly ?? compact;
     final others = _otherStreams(stream.id);
     final combined = others.where((p) => _combine.contains(p.id)).length;
-    final small = Theme.of(context).textTheme.labelSmall;
     final tip = combined > 0
-        ? 'View options · combined with $combined other stream${combined == 1 ? '' : 's'}'
-        : 'View options';
+        ? 'View · combined with $combined other stream${combined == 1 ? '' : 's'}'
+        : 'View';
     return ViewMenu(
       compact: compact,
       streams: others,
@@ -1776,67 +1759,28 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         streamId: widget.streamId,
         canEdit: stream.role.canEdit,
       ),
-      builder: (context, open) => icon
-          ? IconButton(
-              key: const ValueKey('fit-menu'),
-              tooltip: tip,
-              style: style,
-              constraints: BoxConstraints(
-                minWidth: tight ? 40 : 44,
-                minHeight: 44,
-              ),
-              onPressed: open,
-              icon: Badge(
-                key: const ValueKey('combine-badge'),
-                isLabelVisible: combined > 0,
-                label: Text('${combined + 1}'),
-                backgroundColor: AppTheme.accent,
-                textColor: AppTheme.onAccent,
-                child: const Icon(Icons.visibility_outlined),
-              ),
-            )
-          : Tooltip(
-              message: tip,
-              child: OutlinedButton.icon(
-                key: const ValueKey('fit-menu'),
-                onPressed: open,
-                icon: const Icon(Icons.visibility_outlined, size: 18),
-                label: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('View'),
-                    if (combined > 0) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        key: const ValueKey('combine-badge'),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppTheme.accent,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '${combined + 1}',
-                          style: small?.copyWith(
-                            color: AppTheme.onAccent,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(width: 2),
-                    const Icon(Icons.expand_more_rounded, size: 18),
-                  ],
-                ),
-              ),
-            ),
+      builder: (context, open) => IconButton(
+        key: const ValueKey('fit-menu'),
+        tooltip: tip,
+        style: style,
+        // 40 wide like the other header icons (even spacing at every width).
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
+        onPressed: open,
+        icon: Badge(
+          key: const ValueKey('combine-badge'),
+          isLabelVisible: combined > 0,
+          label: Text('${combined + 1}'),
+          backgroundColor: AppTheme.accent,
+          textColor: AppTheme.onAccent,
+          child: const Icon(Icons.visibility_outlined),
+        ),
+      ),
     );
   }
 
   /// The events list: a plain bulleted-list icon (no box, border or
-  /// fill) between Reminders and the View menu; the count is in its
+  /// fill) right after Reminders (then Stream settings on wide screens and
+  /// the View menu); the count is in its
   /// tooltip. On wide screens it toggles the docked list, and the icon is
   /// tinted accent while that list is open.
   Widget _eventsButton(

@@ -1764,7 +1764,20 @@ void main() {
           .toList();
       expect(entries.first, isNot(isA<Divider>()));
       expect(entries.last, isNot(isA<Divider>()));
-      if (!compact) expect(find.text('View'), findsOneWidget);
+      // Icon-only at every width: "View" is its tooltip, not a label.
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('fit-menu')))
+            .tooltip,
+        startsWith('View'),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('fit-menu')),
+          matching: find.byType(Text),
+        ),
+        findsNothing,
+      );
       await tester.tap(find.byKey(const ValueKey('fit-menu'))); // closes
       await tester.pumpAndSettle();
       expect(find.text('No other streams'), findsNothing);
@@ -1783,6 +1796,66 @@ void main() {
       }
     }
   });
+
+  // ── Header keyboard order follows the visual order ──
+  for (final (size, mid) in const [
+    (Size(1440, 900), true),
+    (Size(390, 844), false),
+  ]) {
+    testWidgets(
+      '${size.width.toInt()}px header: Tab goes New event today → Reminders '
+      '→ Events${mid ? ' → Stream settings' : ''} → View → More',
+      (tester) async {
+        await _pump(tester, size: size);
+        final order = [
+          'new-event-today',
+          'open-reminders',
+          'open-events',
+          if (mid) 'stream-settings',
+          'fit-menu',
+          'timeline-more',
+        ];
+        String? focused() {
+          String? hit;
+          FocusManager.instance.primaryFocus?.context?.visitAncestorElements((
+            e,
+          ) {
+            final k = e.widget.key;
+            if (k is ValueKey<String> && order.contains(k.value)) {
+              hit = k.value;
+              return false;
+            }
+            return true;
+          });
+          return hit;
+        }
+
+        // Start on New event today, then Tab through the rest in order.
+        final start = find.descendant(
+          of: find.byKey(const ValueKey('new-event-today')),
+          matching: find.byType(Focus),
+        );
+        Focus.of(
+          tester.element(
+            find
+                .descendant(
+                  of: start.last,
+                  matching: find.byWidgetPredicate((_) => true),
+                )
+                .first,
+          ),
+          createDependency: false,
+        ).requestFocus();
+        await tester.pump();
+        expect(focused(), 'new-event-today');
+        for (final k in order.skip(1)) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pump();
+          expect(focused(), k);
+        }
+      },
+    );
+  }
 
   // ── Header row: every action, More (⋮) last · the chart right under it ──
 
@@ -1826,8 +1899,10 @@ void main() {
       }
       expect(more.right, lessThanOrEqualTo(w));
       expect(more.right, greaterThan(w - 16));
-      // Right end, in order: Reminders · Events · View · More, at
-      // every width (320 included: Events never hides in More).
+      // Right end, in order: New event today · Reminders · Events ·
+      // Stream settings (≥960) · View · More, at every width (320
+      // included: Events never hides in More); neighbours after
+      // Reminders touch (even spacing, no stray gaps).
       expect(inBar('fit-menu'), isTrue);
       expect(inBar('open-reminders'), isTrue);
       expect(r('timeline-more').left, greaterThan(r('fit-menu').right - 1));
@@ -1838,7 +1913,21 @@ void main() {
           r('open-events').left,
           greaterThan(r('open-reminders').right - 1),
         );
-        expect(r('fit-menu').left - r('open-events').right, lessThan(4));
+        final row = [
+          'open-events',
+          if (mid) 'stream-settings',
+          'fit-menu',
+          'timeline-more',
+        ];
+        for (var i = 1; i < row.length; i++) {
+          final gap = r(row[i]).left - r(row[i - 1]).right;
+          expect(gap, greaterThan(-1), reason: '${row[i - 1]} → ${row[i]}');
+          expect(gap, lessThan(4), reason: '${row[i - 1]} → ${row[i]}');
+        }
+        expect(
+          r('open-reminders').left,
+          greaterThan(r('new-today-gap').right - 1),
+        );
         expect(r('open-events').width, greaterThanOrEqualTo(40));
         expect(r('open-events').right, lessThanOrEqualTo(w));
         // The glyph is painted (not transparent) when the list is closed.
@@ -1880,13 +1969,23 @@ void main() {
         );
         expect(find.byTooltip('Events (2)'), findsOneWidget);
       }
-      // Everything else (Share, Stream settings) sits left of Reminders.
-      for (final k in ['stream-share', 'stream-settings']) {
-        if (inBar(k)) {
+      // New event today is the first button: nothing between the stream
+      // area and it (Share stream lives in More at every width).
+      for (final e
+          in find
+              .descendant(
+                of: find.byType(AppBar),
+                matching: find.byWidgetPredicate(
+                  (w) => w is ButtonStyleButton || w is IconButton,
+                ),
+              )
+              .evaluate()) {
+        final rect = tester.getRect(find.byWidget(e.widget));
+        if (rect.left > r('header-stream-area').right - 0.5) {
           expect(
-            r(k).right,
-            lessThanOrEqualTo(r('open-reminders').left + 0.5),
-            reason: k,
+            rect.left,
+            greaterThan(r('new-event-today').left - 0.5),
+            reason: '${e.widget.key}',
           );
         }
       }
@@ -1907,9 +2006,17 @@ void main() {
         find.byKey(const ValueKey('stream-settings')),
         mid ? findsOneWidget : findsNothing,
       );
+      expect(find.byKey(const ValueKey('stream-share')), findsNothing);
+      // View: icon-only at every width, named by its tooltip.
       expect(
-        find.byKey(const ValueKey('stream-share')),
-        mid ? findsOneWidget : findsNothing,
+        find.descendant(of: find.byType(AppBar), matching: find.text('View')),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const ValueKey('fit-menu')))
+            .tooltip,
+        'View',
       );
       // No balance / alert summary in the header; the name is compact.
       for (final gone in ['header-today', 'header-lowest', 'header-runway']) {
@@ -1936,7 +2043,8 @@ void main() {
                 .evaluate())
           tester.getRect(find.byWidget(e.widget)).left,
       ].where((l) => l >= name.right - 0.5).reduce(math.min);
-      expect(firstAction - name.right, lessThanOrEqualTo(26));
+      // Only the sync dot and the small lead gap before New event today.
+      expect(firstAction - name.right, lessThanOrEqualTo(30));
       expect(find.byKey(const ValueKey('open-plan')), findsNothing);
       // No date range / heat map row and no tips row: the chart takes the
       // whole body, from just under the header to just above the bottom.
@@ -1960,7 +2068,9 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('timeline-more')));
       await tester.pumpAndSettle();
       expect(find.text('Stream settings'), mid ? findsNothing : findsOneWidget);
-      expect(find.text('Share stream'), mid ? findsNothing : findsOneWidget);
+      // Share stream is always in More (the header has no Share button).
+      expect(find.text('Share stream'), findsOneWidget);
+      expect(find.byKey(const ValueKey('more-share')), findsOneWidget);
       expect(find.text('Import events'), findsOneWidget);
       expect(find.text('Gestures & shortcuts'), findsOneWidget);
       // Events is never duplicated in More.
