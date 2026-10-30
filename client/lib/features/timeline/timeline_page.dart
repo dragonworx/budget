@@ -1574,9 +1574,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Every timeline action lives in the header row, right of the stream
   /// name. The right end is always New event today (the day popup's +) ·
-  /// Reminders (prominent) · Events (plain list icon) · View · More (⋮,
-  /// rightmost, takes what does not fit); the rest sits left of New event
-  /// today, which never collapses:
+  /// a small gap · Reminders (prominent) · Events (plain list icon) · View ·
+  /// More (⋮, rightmost, takes what does not fit); the rest sits left of
+  /// New event today, which never collapses:
   ///
   /// * ≥1240px: Today, Seed (labelled) · Share · Stream settings · Reminders
   ///   (labelled) · Events · View · More (Import, Gestures &
@@ -1724,6 +1724,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       // New event today: always in the header, at every width, just before
       // Reminders (the only header action that creates; chart taps never do).
       _newTodayButton(context, stream, style: slim),
+      // Breathing room so the + doesn't touch Reminders (both are filled
+      // shapes): 8 on desktop, 6 on tablets, 4 on phones (320 included).
+      SizedBox(
+        key: const ValueKey('new-today-gap'),
+        width: mid ? 8 : (desk ? 6 : 4),
+      ),
       // The prominent header action: the reminders calendar.
       if (mid)
         FilledButton.tonalIcon(

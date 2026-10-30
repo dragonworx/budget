@@ -2027,6 +2027,10 @@ void main() {
       expect(n.width, greaterThanOrEqualTo(36));
       expect(n.right, lessThanOrEqualTo(rem.left + 0.5));
       expect(rem.left - n.right, lessThan(12), reason: 'adjacent');
+      // A clear gap so the + doesn't touch Reminders: 8 at >=960, 6 on
+      // tablets, 4 on phones.
+      final gap = w >= 960 ? 8.0 : (w >= 600 ? 6.0 : 4.0);
+      expect(rem.left - n.right, moreOrLessEquals(gap, epsilon: 0.5));
       expect((n.center.dy - rem.center.dy).abs(), lessThan(2));
       expect(n.left, greaterThan(r('header-stream-picker').right - 1));
       expect(r('header-stream-picker').width, greaterThan(40));
