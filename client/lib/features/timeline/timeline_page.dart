@@ -1578,7 +1578,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   /// Every timeline action lives in the header row, right of the stream
   /// name, all icon-only, left to right: New event today (the day popup's
-  /// +, never collapses) · a small gap · Reminders (tonal icon) · Events
+  /// +, never collapses) · a small gap · Reminders (plain icon) · Events
   /// (plain list icon) · Stream settings (≥960px) · View (eye: Go to
   /// today / seed date / date…, Combine, Categories) · More (⋮, rightmost).
   ///
@@ -1674,16 +1674,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         key: const ValueKey('new-today-gap'),
         width: mid ? 8 : (desk ? 6 : 4),
       ),
-      // The reminders calendar: a tonal icon at every width (the label is
-      // its tooltip / semantics).
-      IconButton.filledTonal(
+      // The reminders calendar: a plain icon like Events / View / More (no
+      // fill), at every width; the label is its tooltip / semantics.
+      IconButton(
         key: const ValueKey('open-reminders'),
         tooltip: 'Reminders calendar',
         style: slim,
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         onPressed: () => showReminders(context, stream),
         icon: const Icon(Icons.calendar_month_rounded),
       ),
-      SizedBox(width: mid ? 4 : 0),
       // Always in the header, at every width (320 included): below 360 the
       // left side and View tighten instead so it fits.
       _eventsButton(context, stream, count: events.length, style: slim),
@@ -2292,9 +2292,9 @@ class _StreamHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     // Fills the free space between the brand and the actions (the toolbar
-    // lays the actions out first, so they always fit): a raised trigger
-    // (name, then the arrow) sits at its left and ellipsises; the whole
-    // area, empty space included, opens the menu.
+    // lays the actions out first, so they always fit): the raised trigger
+    // stretches across all of it, the name at its left (ellipsised) and
+    // the arrow pinned at its right edge. Portrait and landscape alike.
     return SizedBox(
       key: const ValueKey('header-stream-area'),
       width: double.infinity,
@@ -2314,16 +2314,17 @@ class _StreamHeader extends StatelessWidget {
           }
         },
         // A raised surface (lighter than the header, hairline border, soft
-        // shadow) hugging the name and arrow, so it reads as a control; the
-        // free space after it still opens the menu.
+        // shadow) so it reads as a control; the strip above / below it in
+        // the toolbar opens the menu too.
         builder: (context, open) => GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: open,
           child: Container(
             height: 48,
             padding: EdgeInsets.only(right: tight ? 2 : 0),
-            child: Align(
-              alignment: Alignment.centerLeft,
+            alignment: Alignment.center,
+            child: SizedBox(
+              width: double.infinity,
               child: DecoratedBox(
                 key: const ValueKey('header-stream-surface'),
                 decoration: BoxDecoration(
@@ -2352,12 +2353,11 @@ class _StreamHeader extends StatelessWidget {
                         child: Padding(
                           padding: EdgeInsets.only(
                             left: compact ? 6 : 12,
-                            right: compact ? 0 : 4,
+                            right: compact ? 2 : 6,
                           ),
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Flexible(
+                              Expanded(
                                 child: Text(
                                   stream.name,
                                   style: compact

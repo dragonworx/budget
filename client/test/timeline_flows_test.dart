@@ -1801,9 +1801,12 @@ void main() {
   for (final (size, mid) in const [
     (Size(1440, 900), true),
     (Size(390, 844), false),
+    // Landscape phone / tablet: the same order.
+    (Size(844, 390), false),
+    (Size(1180, 820), true),
   ]) {
     testWidgets(
-      '${size.width.toInt()}px header: Tab goes New event today → Reminders '
+      '${size.width.toInt()}x${size.height.toInt()} header: Tab goes New event today → Reminders '
       '→ Events${mid ? ' → Stream settings' : ''} → View → More',
       (tester) async {
         await _pump(tester, size: size);
@@ -1865,8 +1868,15 @@ void main() {
     (Size(800, 900), false, false, true, false),
     (Size(1000, 900), false, true, true, false),
     (Size(1440, 900), true, true, true, false),
+    // Landscape phones / tablets: the same header, width rules only.
+    (Size(667, 375), false, false, true, false),
+    (Size(844, 390), false, false, true, false),
+    (Size(932, 430), false, false, true, false),
+    (Size(1024, 768), false, true, true, false),
+    (Size(1180, 820), true, true, true, false),
   ]) {
-    testWidgets('${size.width.toInt()}px header: every action in the top row, '
+    testWidgets('${size.width.toInt()}x${size.height.toInt()} header: every '
+        'action in the top row, '
         'Reminders · Events (plain list) · View · More at the right '
         'end; the chart fills the body under it (no date range or tips '
         'rows)', (tester) async {
@@ -1914,6 +1924,7 @@ void main() {
           greaterThan(r('open-reminders').right - 1),
         );
         final row = [
+          'open-reminders',
           'open-events',
           if (mid) 'stream-settings',
           'fit-menu',
@@ -1989,13 +2000,29 @@ void main() {
           );
         }
       }
-      // Reminders: a filled tonal icon at every width (no label), named
-      // by its tooltip.
+      // Reminders: a plain icon at every width (no label, no fill), named
+      // by its tooltip, styled like Events / View / More.
       expect(find.text('Reminders'), findsNothing);
       final rem = tester.widget<IconButton>(
         find.byKey(const ValueKey('open-reminders')),
       );
       expect(rem.tooltip, 'Reminders calendar');
+      expect(rem.style?.backgroundColor, isNull);
+      expect(rem.color, isNull);
+      Iterable<Color?> fills(String k) => tester
+          .widgetList<Material>(
+            find.descendant(
+              of: find.byKey(ValueKey(k)),
+              matching: find.byType(Material),
+            ),
+          )
+          .map((m) => m.color);
+      for (final c in fills('open-reminders')) {
+        expect(c == null || c.a == 0, isTrue, reason: 'reminders fill $c');
+      }
+      expect(fills('open-reminders').toList(), fills('fit-menu').toList());
+      expect(r('open-reminders').width, r('fit-menu').width);
+      expect(r('open-reminders').width, r('open-events').width);
       // Go to today / seed are View menu items, not header buttons.
       for (final gone in ['go-today', 'go-seed']) {
         expect(find.byKey(ValueKey(gone)), findsNothing, reason: gone);

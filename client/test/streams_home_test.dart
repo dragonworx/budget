@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 // Landing after sign-in: the last-used stream opens directly; with none, the
 // Streams home shows an empty state with New stream; creating one lands in
 // it. There are no projects.
@@ -182,12 +184,16 @@ void main() {
   }
 
   // The header stream picker fills the room between the brand and the
-  // actions: the arrow at its right end, the empty space after the name a
-  // tap target too; the actions stay on screen.
+  // actions, portrait and landscape: the raised trigger stretches across
+  // it, name at the left, arrow pinned at the right end; the actions stay
+  // on screen.
   for (final (size, docked) in const [
     (Size(320, 640), false),
     (Size(412, 915), false),
+    (Size(667, 375), false),
+    (Size(844, 390), false),
     (Size(932, 430), false),
+    (Size(1024, 768), false),
     (Size(1440, 900), false),
     (Size(1440, 900), true),
   ]) {
@@ -195,9 +201,9 @@ void main() {
         '${size.width.toInt()}x${size.height.toInt()}'
         '${docked ? ' docked' : ''}';
     for (final name in const ['Bills', 'Savings for a long holiday abroad']) {
-      testWidgets('$label, "$name": a raised stream trigger at the left of '
-          'the stretched area; the trigger, the arrow and the empty space '
-          'after it open the menu', (tester) async {
+      testWidgets('$label, "$name": the raised stream trigger stretches '
+          'across the free header space, arrow pinned right; the trigger, '
+          'the arrow and the strip around it open the menu', (tester) async {
         page.localSet('budget_events_docked', docked ? '1' : '0');
         addTearDown(page.clearLocal);
         final repo = FakeStreamRepository(
@@ -227,9 +233,11 @@ void main() {
         expect(deco.color, isNot(AppTheme.bg));
         expect(deco.border, isNotNull);
         expect(deco.boxShadow, isNotEmpty);
-        // The trigger sits at the area's left, inside it; the arrow ends it.
+        // The trigger spans the whole area (2px short of it below 360);
+        // the arrow is pinned at its right edge.
         expect(chip.left, closeTo(area.left, 1.5));
         expect(chip.right, lessThanOrEqualTo(area.right + 0.5));
+        expect(chip.right, greaterThan(area.right - 3));
         expect(chip.height, greaterThanOrEqualTo(36));
         expect(arrow.right, lessThanOrEqualTo(chip.right));
         expect(chip.right - arrow.right, lessThan(8));
@@ -268,6 +276,18 @@ void main() {
         if (textBox.width > 0) {
           expect(textBox.left, greaterThan(chip.left));
           expect(textBox.left, lessThan(chip.left + 14));
+          expect(textBox.right, lessThanOrEqualTo(arrow.left + 0.5));
+        }
+        // A short name on a wide header: the arrow stays at the far right,
+        // not next to the name.
+        if (name == 'Bills' && size.width >= 600) {
+          final textEnd =
+              textBox.left +
+              math.min(
+                text.getMaxIntrinsicWidth(double.infinity),
+                textBox.width,
+              );
+          expect(arrow.left - textEnd, greaterThan(100));
         }
         final glyphs = text.getMaxIntrinsicWidth(double.infinity);
         if (glyphs > area.width - 40) expect(text.didExceedMaxLines, isTrue);
@@ -286,10 +306,9 @@ void main() {
 
         await opens(arrow.center, 'arrow');
         await opens(Offset(chip.left + 6, chip.center.dy), 'trigger');
-        if (area.right - chip.right > 12) {
-          final x = (chip.right + area.right) / 2;
-          await opens(Offset(x, area.center.dy), 'empty space');
-          await opens(Offset(x, area.bottom - 3), 'empty space, low');
+        await opens(Offset(chip.center.dx, chip.center.dy), 'middle');
+        if (area.bottom - chip.bottom > 2) {
+          await opens(Offset(chip.center.dx, area.bottom - 1), 'strip below');
         }
       });
     }
