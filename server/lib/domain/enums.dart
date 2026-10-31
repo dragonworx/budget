@@ -71,3 +71,17 @@ enum RoundingMode {
     };
   }
 }
+
+/// An event's kind (migration 026): a standard event, or a stream's loan
+/// (a once-off debit drawdown whose `loan` terms accrue interest).
+enum EventKind {
+  standard,
+  loan;
+
+  static EventKind parse(String value) {
+    return EventKind.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => throw FormatException('kind must be standard or loan'),
+    );
+  }
+}

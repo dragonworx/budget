@@ -9,6 +9,7 @@ import '../domain/models.dart';
 import '../repo/category_repo.dart';
 import '../repo/event_repo.dart';
 import 'categories.dart';
+import 'loan_fields.dart';
 import 'json_helpers.dart';
 
 Router eventsRouter(Session conn) {
@@ -26,6 +27,7 @@ Router eventsRouter(Session conn) {
       final body = await readJsonObject(request);
       final existing = await events.get(id);
       if (existing == null) return jsonError(404, 'event not found');
+      final loanTerms = parsePatchLoan(body, existing);
 
       RecurrenceMode? recurrenceMode;
       if (body.containsKey('recurrenceMode')) {
@@ -92,6 +94,7 @@ Router eventsRouter(Session conn) {
           color: parseEventColor(body['color']),
           clearColor: body.containsKey('color') &&
               parseEventColor(body['color']) == null,
+          loan: loanTerms,
         ))!;
         // Transfers: retarget / link / unlink, then mirror onto the peer.
         if (body.containsKey('transferToStreamId')) {
@@ -148,6 +151,7 @@ Router eventsRouter(Session conn) {
     try {
       final event = await events.get(id);
       if (event == null) return jsonError(404, 'event not found');
+      if (event.isLoan) return jsonError(400, loanNotSupported);
       final body = await readJsonObject(request);
       final skipped = body['skipped'];
       if (skipped is! bool) {
@@ -174,9 +178,9 @@ Router eventsRouter(Session conn) {
   router.put('/<id>/overrides/<date>',
       (Request request, String id, String date) async {
     try {
-      if (await events.get(id) == null) {
-        return jsonError(404, 'event not found');
-      }
+      final target = await events.get(id);
+      if (target == null) return jsonError(404, 'event not found');
+      if (target.isLoan) return jsonError(400, loanNotSupported);
       final body = await readJsonObject(request);
       final amount = parseDecimal(body['amount']);
       final direction = Direction.parse(requireString(body, 'direction'));
@@ -193,9 +197,9 @@ Router eventsRouter(Session conn) {
   router.delete('/<id>/overrides/<date>',
       (Request request, String id, String date) async {
     try {
-      if (await events.get(id) == null) {
-        return jsonError(404, 'event not found');
-      }
+      final target = await events.get(id);
+      if (target == null) return jsonError(404, 'event not found');
+      if (target.isLoan) return jsonError(400, loanNotSupported);
       final d = parseDate(date);
       final t = await txOf(conn).runTx((tx) async {
         final repo = EventRepo(tx);
@@ -210,9 +214,9 @@ Router eventsRouter(Session conn) {
 
   // Clear every override of the series.
   router.delete('/<id>/overrides', (Request request, String id) async {
-    if (await events.get(id) == null) {
-      return jsonError(404, 'event not found');
-    }
+    final target = await events.get(id);
+    if (target == null) return jsonError(404, 'event not found');
+    if (target.isLoan) return jsonError(400, loanNotSupported);
     final (t, removed) = await txOf(conn).runTx((tx) async {
       final repo = EventRepo(tx);
       final n = await repo.clearOverrides(id);
@@ -228,6 +232,7 @@ Router eventsRouter(Session conn) {
       if (existing == null) {
         return jsonError(404, 'event not found');
       }
+      if (existing.isLoan) return jsonError(400, loanNotSupported);
       final body = await readJsonObject(request);
       final date = parseDate(requireString(body, 'date'));
       var unit = body['unit'] == null

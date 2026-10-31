@@ -327,7 +327,11 @@ class _StreamCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final today = ref.watch(todayBalanceProvider(stream.id));
     final value = today.valueOrNull;
-    final low = value != null && belowAlert(value, stream.lossThreshold);
+    // A loan stream runs far below zero by design: no red alert badge.
+    final low =
+        !stream.hasLoan &&
+        value != null &&
+        belowAlert(value, stream.lossThreshold);
     String money(num v) => formatMoneyAmount(v, decimalDigits: 2);
     return Material(
       color: AppTheme.surface,

@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:budget_loan/budget_loan.dart';
 import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
@@ -15,7 +18,8 @@ const _enrichedCols = '''
   p.id, pa.id, pa.name, t.version AS t_version, c.color AS t_color,
   t.freq_rule AS t_freq_rule, t.freq_interval AS t_freq_interval,
   t.freq_days AS t_freq_days, t.category_id::text AS t_category_id,
-  COALESCE(c.hidden, false) AS t_category_hidden''';
+  COALESCE(c.hidden, false) AS t_category_hidden,
+  t.kind AS t_kind, t.loan AS t_loan''';
 const _peerJoin = '''
   LEFT JOIN categories c ON c.id = t.category_id
   LEFT JOIN events p
@@ -319,6 +323,8 @@ class EventRepo {
     String? transferId,
     String? color,
     List<int> days = const [],
+    EventKind kind = EventKind.standard,
+    LoanTerms? loan,
   }) async {
     final f = _validateShape(
       recurrenceMode: recurrenceMode,
@@ -338,12 +344,13 @@ class EventRepo {
           id, stream_id, name, direction, amount, start_date,
           recurrence_mode, interval, unit, end_mode, end_date,
           occurrence_count, enabled, transfer_id, color,
-          freq_rule, freq_interval, freq_days
+          freq_rule, freq_interval, freq_days, kind, loan
         ) VALUES (
           @id, @streamId, @name, @direction, @amount, @startDate,
           @recurrenceMode, @interval, @unit, @endMode, @endDate,
           @occurrenceCount, @enabled, @transferId::uuid, @color,
-          @freqRule, @freqInterval, @freqDays::int[]::smallint[]
+          @freqRule, @freqInterval, @freqDays::int[]::smallint[],
+          @kind, @loan::jsonb
         )
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -365,6 +372,8 @@ class EventRepo {
         'enabled': enabled,
         'transferId': transferId,
         'color': color,
+        'kind': kind.name,
+        'loan': loan == null ? null : jsonEncode(loan.toJson()),
       },
     );
 
@@ -402,6 +411,7 @@ class EventRepo {
     String? color,
     bool clearColor = false,
     List<int>? days,
+    LoanTerms? loan,
   }) async {
     final existing = await get(id);
     if (existing == null) return null;
@@ -444,7 +454,8 @@ class EventRepo {
           end_date = @endDate,
           occurrence_count = @occurrenceCount,
           enabled = @enabled,
-          color = @color
+          color = @color,
+          loan = COALESCE(@loan::jsonb, loan)
         WHERE id = @id
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -464,6 +475,7 @@ class EventRepo {
         'occurrenceCount': nextCount,
         'enabled': enabled ?? existing.enabled,
         'color': clearColor ? null : (color ?? existing.color),
+        'loan': loan == null ? null : jsonEncode(loan.toJson()),
       },
     );
     return (await get(id))!;
@@ -778,7 +790,14 @@ class EventRepo {
       unitRaw = f.repeats ? f.legacyUnit : null;
       days = f.days;
     }
+    final kind = EventKind.parse(cols['t_kind'] as String? ?? 'standard');
+    final loanRaw = cols['t_loan'];
     return BudgetEvent(
+      kind: kind,
+      loan: loanRaw == null
+          ? null
+          : LoanTerms.fromJson(
+              loanRaw is String ? jsonDecode(loanRaw) : loanRaw),
       days: days,
       color: cols['t_color'] as String?,
       categoryId: cols['t_category_id'] as String?,

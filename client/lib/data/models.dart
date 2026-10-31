@@ -102,9 +102,14 @@ class BudgetStream {
     this.role = Role.owner,
     this.shared = false,
     this.owner,
+    this.hasLoan = false,
   });
 
   final int? version;
+
+  /// The stream holds a loan event (its balance can run far negative by
+  /// design, so it gets no red alert badge).
+  final bool hasLoan;
 
   /// Effective role: owner for my own streams, else the share's role.
   final Role role;
@@ -174,6 +179,7 @@ class BudgetStream {
       role: Role.parse(json['role']),
       shared: json['shared'] == true,
       owner: UserRef.maybe(json['owner']),
+      hasLoan: json['hasLoan'] == true,
     );
   }
 
@@ -226,6 +232,7 @@ class BudgetStream {
       role: role ?? this.role,
       shared: shared,
       owner: owner,
+      hasLoan: hasLoan,
       id: id ?? this.id,
       ownerId: ownerId ?? this.ownerId,
       name: name ?? this.name,
@@ -255,6 +262,7 @@ extension StreamSharing on BudgetStream {
     role: role,
     shared: from.shared,
     owner: from.owner,
+    hasLoan: hasLoan,
   );
 }
 
@@ -346,7 +354,17 @@ class BudgetEvent {
     this.days = const [],
     this.categoryId,
     this.categoryHidden = false,
+    this.kind = 'standard',
+    this.loan,
   });
+
+  /// "standard" or "loan" (spec 002). Loans are read-only in this client.
+  final String kind;
+
+  /// The loan terms as sent by the server (kept raw until loan editing).
+  final Map<String, dynamic>? loan;
+
+  bool get isLoan => kind == 'loan';
 
   /// The event's category (every saved event has one). [name] is the
   /// category's name and [color] its colour, kept in sync by the server.
@@ -521,6 +539,8 @@ class BudgetEvent {
       color: normalizeEventColor(json['color'] ?? json['colour']),
       categoryId: json['categoryId'] as String?,
       categoryHidden: (json['categoryHidden'] as bool?) ?? false,
+      kind: (json['kind'] as String?) ?? 'standard',
+      loan: (json['loan'] as Map?)?.cast<String, dynamic>(),
       overrides: {
         for (final o in (json['overrides'] as List?) ?? const [])
           parseDate((o as Map)['date']): OccurrenceOverride(
@@ -551,6 +571,8 @@ class BudgetEvent {
     'color': color,
     'categoryId': categoryId,
     'categoryHidden': categoryHidden,
+    if (isLoan) 'kind': kind,
+    if (isLoan) 'loan': loan,
   };
 
   Map<String, dynamic> toCreateJson() => {
@@ -626,6 +648,8 @@ class BudgetEvent {
           : (occurrenceCount ?? this.occurrenceCount),
       enabled: enabled ?? this.enabled,
       overrides: overrides,
+      kind: kind,
+      loan: loan,
     );
   }
 }
@@ -741,12 +765,29 @@ class Occurrence {
     this.skipped = false,
     this.streamId,
     this.netted = false,
+    this.component,
+    this.derived = false,
+    this.payout = false,
+    this.flat = false,
   });
 
   final String eventId;
   final DateTime date;
   final Decimal signedDelta;
   final bool skipped;
+
+  /// "interest" for a loan's interest charge.
+  final String? component;
+
+  /// Computed by the server's loan walk, not a stored occurrence: no skip,
+  /// override or trim actions.
+  final bool derived;
+
+  /// The interest charged on the day a loan was paid off.
+  final bool payout;
+
+  /// A flat-rate loan's interest instalment.
+  final bool flat;
 
   /// Combined view: the other stream this occurrence belongs to (null: the
   /// stream being viewed).
@@ -763,6 +804,10 @@ class Occurrence {
     skipped: skipped,
     streamId: streamId,
     netted: netted,
+    component: component,
+    derived: derived,
+    payout: payout,
+    flat: flat,
   );
 
   factory Occurrence.fromJson(Map<String, dynamic> json) {
@@ -773,6 +818,10 @@ class Occurrence {
         json['signedDelta'] ?? json['signed_delta'] ?? '0',
       ),
       skipped: (json['skipped'] as bool?) ?? false,
+      component: json['component'] as String?,
+      derived: json['derived'] == true,
+      payout: json['payout'] == true,
+      flat: json['flat'] == true,
     );
   }
 }

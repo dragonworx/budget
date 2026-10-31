@@ -1,3 +1,4 @@
+import 'package:budget_loan/budget_loan.dart';
 import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 
@@ -15,9 +16,13 @@ class BudgetStream {
     required this.eventOrder,
     this.currencyScale = defaultCurrencyScale,
     this.version = 1,
+    this.hasLoan = false,
   });
 
   final int version;
+
+  /// The stream holds a loan event (enabled or not; migration 026).
+  final bool hasLoan;
 
   /// Allowed y-axis units (currency units per grid step).
   static const currencyScales = [1, 10, 100, 1000, 10000, 100000, 1000000];
@@ -46,6 +51,7 @@ class BudgetStream {
         'displayOrder': displayOrder,
         'eventOrder': eventOrder,
         'version': version,
+        'hasLoan': hasLoan,
       };
 }
 
@@ -72,9 +78,19 @@ class BudgetEvent {
     this.days = const [],
     this.categoryId,
     this.categoryHidden = false,
+    this.kind = EventKind.standard,
+    this.loan,
   });
 
   final int version;
+
+  /// [EventKind.loan]: a once-off debit drawdown with [loan] terms.
+  final EventKind kind;
+
+  /// The loan terms (defaults filled) when [kind] is [EventKind.loan].
+  final LoanTerms? loan;
+
+  bool get isLoan => kind == EventKind.loan;
 
   /// The event's category (every stored event has one; previews have none).
   /// [name] is the category's name and [color] its colour.
@@ -158,6 +174,8 @@ class BudgetEvent {
         'categoryId': categoryId,
         'categoryHidden': categoryHidden,
         'version': version,
+        'kind': kind.name,
+        'loan': loan?.toJson(),
         'overrides': [
           for (final e
               in (overrides.entries.toList()
@@ -213,6 +231,8 @@ class BudgetEvent {
       overrides: overrides,
       categoryId: categoryId,
       categoryHidden: categoryHidden,
+      kind: kind,
+      loan: loan,
     );
   }
 
@@ -239,6 +259,8 @@ class BudgetEvent {
         overrides: overrides,
         categoryId: categoryId,
         categoryHidden: categoryHidden,
+        kind: kind,
+        loan: loan,
       );
 }
 
@@ -324,6 +346,10 @@ class Occurrence {
     required this.date,
     required this.signedDelta,
     required this.skipped,
+    this.component,
+    this.derived = false,
+    this.payout = false,
+    this.flat = false,
   });
 
   final String eventId;
@@ -331,11 +357,28 @@ class Occurrence {
   final Decimal signedDelta;
   final bool skipped;
 
+  /// `"interest"` for a loan's derived interest charge; null otherwise.
+  final String? component;
+
+  /// Computed by the loan walk (not a stored event occurrence).
+  final bool derived;
+
+  /// The interest charged on the day the loan was paid off.
+  final bool payout;
+
+  /// A flat-rate loan's interest instalment.
+  final bool flat;
+
+  /// The optional keys appear only when set, so non-loan JSON is unchanged.
   Map<String, Object?> toJson() => {
         'eventId': eventId,
         'date': formatDate(date),
         'signedDelta': signedDelta.toString(),
         'skipped': skipped,
+        if (component != null) 'component': component,
+        if (derived) 'derived': true,
+        if (payout) 'payout': true,
+        if (flat) 'flat': true,
       };
 }
 

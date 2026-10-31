@@ -250,7 +250,12 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
     const legacy = {'projectId', 'projectName', 'accountId', 'accountName'};
     for (final k in m.keys) {
       final use = absolute[k];
-      if (use != null) {
+      if ((k == 'kind' && m[k] != 'standard') || k == 'loan') {
+        // Loan events (spec 002) are not importable.
+        bad(k, 'loans cannot be imported; add the loan as its own event');
+      } else if (k == 'kind') {
+        // "standard" is the default kind.
+      } else if (use != null) {
         bad(
             k,
             'absolute dates are not accepted; use $use '

@@ -3817,8 +3817,12 @@ class _BalanceChartState extends State<BalanceChart>
     final VoidCallback? newHere = widget.onNewOnDay == null
         ? null
         : () => widget.onNewOnDay?.call(day);
+    // A loan's derived interest charges take no trim (spec 002).
+    final derived =
+        d.occurrences.isNotEmpty && d.occurrences.every((o) => o.derived);
     final VoidCallback? trim =
         own != null &&
+            !derived &&
             widget.onTrimOccurrence != null &&
             trimFromHere(own, day) != null
         ? () => widget.onTrimOccurrence?.call(own, day)
@@ -4058,6 +4062,7 @@ class _BalanceChartState extends State<BalanceChart>
     final own = widget.events[o.eventId];
     if (own != null) {
       if (widget.onTrimOccurrence != null &&
+          !o.derived &&
           trimFromHere(own, trimDay) != null) {
         actions.add(
           _RowAction(

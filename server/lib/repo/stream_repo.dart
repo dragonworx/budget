@@ -20,7 +20,9 @@ class StreamRepo {
                a.loss_threshold, a.display_order, a.event_order,
                a.currency_scale, a.version,
                CASE WHEN a.owner_id = @u::uuid THEN 'owner' ELSE s.role::text END,
-               u.email, u.name, u.picture_url
+               u.email, u.name, u.picture_url,
+               EXISTS (SELECT 1 FROM events e WHERE e.stream_id = a.id
+                       AND e.kind = 'loan') AS has_loan
         FROM streams a
         JOIN users u ON u.id = a.owner_id
         LEFT JOIN stream_shares s
@@ -69,7 +71,8 @@ class StreamRepo {
     final rows = await _conn.execute(
       Sql.named('''
         SELECT id, owner_id, name, seed_balance, seed_date,
-               loss_threshold, display_order, event_order, currency_scale, version
+               loss_threshold, display_order, event_order, currency_scale, version,
+               EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan
         FROM streams WHERE id = @id
       '''),
       parameters: {'id': id},
@@ -98,7 +101,8 @@ class StreamRepo {
           @lossThreshold, @displayOrder, @currencyScale, @ownerId::uuid
         )
         RETURNING id, owner_id, name, seed_balance, seed_date,
-                  loss_threshold, display_order, event_order, currency_scale, version
+                  loss_threshold, display_order, event_order, currency_scale, version,
+                  EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan
       '''),
       parameters: {
         'id': id,
@@ -137,7 +141,8 @@ class StreamRepo {
           currency_scale = @currencyScale
         WHERE id = @id
         RETURNING id, owner_id, name, seed_balance, seed_date,
-                  loss_threshold, display_order, event_order, currency_scale, version
+                  loss_threshold, display_order, event_order, currency_scale, version,
+                  EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan
       '''),
       parameters: {
         'id': id,
@@ -240,7 +245,8 @@ class StreamRepo {
             ORDER BY t.id, u.ord) x), '{}')
         WHERE id = @id
         RETURNING id, owner_id, name, seed_balance, seed_date,
-                  loss_threshold, display_order, event_order, currency_scale, version
+                  loss_threshold, display_order, event_order, currency_scale, version,
+                  EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan
       '''),
       parameters: {
         'id': id,
@@ -344,6 +350,7 @@ class StreamRepo {
       eventOrder: eventOrder,
       currencyScale: row[8] as int,
       version: row.length > 9 ? (row[9] as int? ?? 1) : 1,
+      hasLoan: row.toColumnMap()['has_loan'] == true,
     );
   }
 }

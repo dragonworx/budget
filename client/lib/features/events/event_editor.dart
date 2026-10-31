@@ -165,6 +165,13 @@ class EventEditor extends ConsumerStatefulWidget {
 }
 
 class _EventEditorState extends ConsumerState<EventEditor> {
+  /// A loan (spec 002): its fields show read-only, with no Save, until
+  /// loan editing ships.
+  bool get _isLoan => widget.existing?.isLoan ?? false;
+
+  /// Viewer access, or a loan: fields disabled and no Save.
+  bool get _readOnly => widget.readOnly || _isLoan;
+
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _amount;
   late final TextEditingController _interval;
@@ -260,7 +267,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     // Ctrl+Enter reach this editor's shortcuts.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!widget.readOnly && widget.existing == null) {
+      if (!_readOnly && widget.existing == null) {
         _focusAmount();
       } else if (!_scope.hasFocus) {
         _scope.requestFocus();
@@ -271,7 +278,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     // same frame (the New ▾ menu restoring its focus) or the opening route
     // can otherwise take it away.
     // (New events only: editing doesn't pop the keyboard over the form.)
-    if (!widget.readOnly && widget.existing == null) {
+    if (!_readOnly && widget.existing == null) {
       _refocus = Timer(nameRefocusDelay, () {
         if (!mounted || _amountFocus.hasFocus) return;
         final primary = FocusManager.instance.primaryFocus;
@@ -320,7 +327,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     final created = await showCategoriesManager(
       context,
       streamId: widget.streamId,
-      canEdit: !widget.readOnly,
+      canEdit: !_readOnly,
     );
     if (!mounted) return;
     setState(() {
@@ -336,7 +343,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   final _amountFocus = FocusNode(debugLabel: 'editor-amount');
 
   void _focusAmount() {
-    if (widget.readOnly) return;
+    if (_readOnly) return;
     _amountFocus.requestFocus();
   }
 
@@ -580,6 +587,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                       if (widget.readOnly) ...[
                         const _ViewOnlyNote(),
                         const SizedBox(height: 12),
+                      ] else if (_isLoan) ...[
+                        const _LoanReadOnlyNote(),
+                        const SizedBox(height: 12),
                       ],
                       _ro(_detailsSection(theme)),
                       const SizedBox(height: 12),
@@ -642,9 +652,8 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     );
   }
 
-  Widget _ro(Widget child) => widget.readOnly
-      ? IgnorePointer(child: ExcludeFocus(child: child))
-      : child;
+  Widget _ro(Widget child) =>
+      _readOnly ? IgnorePointer(child: ExcludeFocus(child: child)) : child;
 
   Widget _header(ThemeData theme, String title) {
     // The event's graph line colour, edge to edge; text and buttons in the
@@ -784,7 +793,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
               ),
             ],
           ),
-          if (!widget.readOnly)
+          if (!_readOnly)
             Wrap(
               alignment: WrapAlignment.end,
               spacing: 4,
@@ -826,7 +835,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
             key: const ValueKey('editor-amount'),
             controller: _amount,
             focusNode: _amountFocus,
-            autofocus: !widget.readOnly && widget.existing == null,
+            autofocus: !_readOnly && widget.existing == null,
             decoration: InputDecoration(
               labelText: _recurrenceMode == RecurrenceMode.every
                   ? 'Amount each time'
@@ -952,7 +961,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
           CategoryPicker(
             streamId: widget.streamId,
             selectedId: _category?.id,
-            enabled: !widget.readOnly,
+            enabled: !_readOnly,
             errorText: _categoryError,
             onManage: _manageCategories,
             onSelected: (c) => setState(() {
@@ -1038,7 +1047,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
           rule: _rule,
           interval: _interval,
           showDailyInterval: _dailyN,
-          enabled: !widget.readOnly,
+          enabled: !_readOnly,
           onRuleChanged: _pickRule,
           onIntervalChanged: () => setState(() {}),
         ),
@@ -1081,7 +1090,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                         DayChips(
                           monthDays: month,
                           selected: week ? _weekDays : _monthDays,
-                          enabled: !widget.readOnly,
+                          enabled: !_readOnly,
                           onChanged: (v) => setState(() {
                             if (week) {
                               _weekDays = v;
@@ -1199,7 +1208,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   /// on one occurrence of a saved repeating series.
   bool get _offerSaveOptions =>
       !_isNew &&
-      !widget.readOnly &&
+      !_readOnly &&
       widget.focusDate != null &&
       widget.existing!.recurrenceMode == RecurrenceMode.every;
 
@@ -1380,7 +1389,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   };
 
   Future<void> _saveOnceOff() async {
-    if (_saving || widget.readOnly || !_offerSaveOptions) return;
+    if (_saving || _readOnly || !_offerSaveOptions) return;
     if (!_formKey.currentState!.validate()) return;
     if (_onceOffBlock != null) return;
     final existing = widget.existing!;
@@ -1432,7 +1441,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   }
 
   Future<void> _saveFromNowOn() async {
-    if (_saving || widget.readOnly || !_offerSaveOptions) return;
+    if (_saving || _readOnly || !_offerSaveOptions) return;
     if (_forwardBlock != null) return;
     // The first occurrence onwards is the whole series.
     if (_focusIsFirst) return _save();
@@ -1536,7 +1545,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                         icon: const Icon(Icons.delete_outline_rounded),
                       ),
               const Spacer(),
-              if (roomy && !widget.readOnly) ...[
+              if (roomy && !_readOnly) ...[
                 Tooltip(
                   message: 'Ctrl+Enter (⌘+Enter on Mac) saves',
                   child: Text('Ctrl+Enter', style: theme.textTheme.labelSmall),
@@ -1551,9 +1560,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                       )
                     : null,
-                child: Text(widget.readOnly ? 'Close' : 'Cancel'),
+                child: Text(_readOnly ? 'Close' : 'Cancel'),
               ),
-              if (!widget.readOnly) ...[
+              if (!_readOnly) ...[
                 SizedBox(width: narrow ? 4 : 8),
                 _saveButton(),
               ],
@@ -1650,7 +1659,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   }
 
   Future<void> _save() async {
-    if (_saving || widget.readOnly) return;
+    if (_saving || _readOnly) return;
     final draft = _validatedDraft();
     if (draft == null) return;
 
@@ -1714,6 +1723,33 @@ class _ViewOnlyNote extends StatelessWidget {
           Expanded(
             child: Text('View only: you have viewer access to this stream.'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoanReadOnlyNote extends StatelessWidget {
+  const _LoanReadOnlyNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('editor-loan-read-only'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.overlay,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        children: [
+          Icon(
+            Icons.account_balance_outlined,
+            size: 18,
+            color: AppTheme.textMuted,
+          ),
+          SizedBox(width: 10),
+          Expanded(child: Text('Loan editing is coming in the next update')),
         ],
       ),
     );
