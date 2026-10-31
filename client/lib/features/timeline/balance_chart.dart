@@ -5204,7 +5204,11 @@ class _BalanceChartPainter extends CustomPainter {
       canvas,
       layout,
       layout.yearBand,
-      yearSegments(viewStart, viewEnd),
+      yearSegments(
+        viewStart,
+        viewEnd,
+        every: yearLabelEvery(layout.plot.width, visibleDays),
+      ),
       viewEnd,
       (segment, width) => yearLabel(segment.start.year, width),
       (segment) => _yearColor(segment.colorIndex),

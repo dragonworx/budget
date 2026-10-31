@@ -8,7 +8,7 @@ import 'zoom_level.dart';
 const double minVisibleDays = 1;
 
 /// Farthest zoom the wheel can reach, in days across the viewport.
-const double maxVisibleDays = 7300;
+const double maxVisibleDays = 12785;
 
 /// Day of month with an English ordinal suffix: 1st, 2nd, 3rd, 4th, 11th, 22nd.
 String ordinalDay(int day) {
@@ -301,24 +301,33 @@ List<AxisSegment> monthSegments(DateTime viewStart, DateTime viewEnd) {
 
 /// Whole calendar years overlapping the view. [AxisSegment.colorIndex]
 /// alternates 0/1 so neighbouring years are distinguishable.
-List<AxisSegment> yearSegments(DateTime viewStart, DateTime viewEnd) {
+List<AxisSegment> yearSegments(
+  DateTime viewStart,
+  DateTime viewEnd, {
+  int every = 1,
+}) {
   if (!viewStart.isBefore(viewEnd)) return const [];
-  var cursor = DateTime(viewStart.year);
+  var cursor = DateTime(viewStart.year - viewStart.year % every);
   final out = <AxisSegment>[];
   while (cursor.isBefore(viewEnd) && out.length < 400) {
-    final next = DateTime(cursor.year + 1);
+    final next = DateTime(cursor.year + every);
     out.add(
       AxisSegment(
         start: cursor,
         end: next,
         lane: AxisLane.year,
-        colorIndex: cursor.year.isEven ? 0 : 1,
+        colorIndex: (cursor.year ~/ every).isEven ? 0 : 1,
       ),
     );
     cursor = next;
   }
   return out;
 }
+
+/// Years per Year-row label: 1, or 5 (2030, 2035, …) when a year is too
+/// narrow for even "’26" (the 35-year zoom on a phone).
+int yearLabelEvery(double plotWidth, double visibleDays) =>
+    plotWidth / math.max(visibleDays, 0.001) * 365.25 >= 22 ? 1 : 5;
 
 /// Whether months are too narrow to label, so the top lane shows years.
 bool useYearLane(double plotWidth, double visibleDays) =>
@@ -974,7 +983,7 @@ int isoWeekNumber(DateTime date) {
 }
 
 /// Widest balance window the timeline keeps loaded (3x the widest view).
-const int maxDataWindowDays = 3 * 7300;
+const int maxDataWindowDays = 3 * 12785;
 
 /// The loaded balance window `[from, to]` after viewing [days] from
 /// [start]: grows by a buffer when the view nears an edge. The window only

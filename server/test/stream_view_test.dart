@@ -20,6 +20,9 @@ void main() {
       expect(v.days, maxViewDays);
       expect(v.yMin, -maxViewBalance);
       expect(v.yMax, 5);
+      // A 30-year view (spec 003 §15) is kept; 35 years is the limit.
+      expect(parseStreamView({'start': 20000, 'days': 10958}).days, 10958);
+      expect(maxViewDays, 12785);
       final w = parseStreamView({'start': -1e9, 'days': 0.01});
       expect(w.startDay, minViewStartDay);
       expect(w.days, minViewDays);

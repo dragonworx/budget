@@ -7,7 +7,7 @@ import 'json_helpers.dart';
 
 /// Span limits, matching the client's zoom limits (days).
 const double minViewDays = 1;
-const double maxViewDays = 7300;
+const double maxViewDays = 12785;
 
 /// Left edge limits as day coordinates: 1900-01-01 .. 2200-01-01.
 const double minViewStartDay = -25567;
