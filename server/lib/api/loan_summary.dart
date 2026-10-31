@@ -9,6 +9,9 @@ import '../domain/enums.dart';
 import '../domain/models.dart';
 import '../engine/loan_walk.dart';
 import '../engine/occurrence_gen.dart';
+import '../engine/stream_group.dart';
+import '../auth/authz.dart' show Authz;
+import '../auth/middleware.dart' show authOf;
 import '../repo/event_repo.dart';
 import '../repo/stream_repo.dart';
 import 'balance.dart' show maxBalanceRangeDays;
@@ -47,6 +50,7 @@ Map<String, Object?>? loanSummary({
   required List<BudgetEvent> events,
   required Map<String, Set<DateTime>> skipped,
   required DateTime from,
+  LoanGroup offsets = const LoanGroup.empty(),
 }) {
   final loan = events.where((e) => e.isLoan && e.loan != null).firstOrNull;
   if (loan == null) return null;
@@ -58,16 +62,19 @@ Map<String, Object?>? loanSummary({
   var end = addMonthsRolled(base, 120);
   final cap = seed.add(const Duration(days: maxBalanceRangeDays));
   if (end.isAfter(cap)) end = cap;
-  final walk = LoanWalk.compute(
-    seedBalance: stream.seedBalance,
-    seedDate: seed,
-    events: events,
-    eventOrder: stream.eventOrder,
-    from: seed,
-    to: end,
-    loan: loan,
-    skipped: skipped,
-  );
+  final usable = offsets.usableThrough(end);
+  LoanWalkResult run(OffsetUsable? u) => LoanWalk.compute(
+        seedBalance: stream.seedBalance,
+        seedDate: seed,
+        events: events,
+        eventOrder: stream.eventOrder,
+        from: seed,
+        to: end,
+        loan: loan,
+        skipped: skipped,
+        offsetUsable: u,
+      );
+  final walk = run(usable);
   final closes = {
     for (final p in walk.series.points) p.date: p.closingBalance,
   };
@@ -140,6 +147,29 @@ Map<String, Object?>? loanSummary({
   if (!matches) warnings.add('repaymentScheduleMismatch');
 
   final plan = walk.accrual.flat;
+  // Spec 004 §14: the same walk without the offset, for the benefit.
+  Map<String, Object?>? offset;
+  if (usable != null) {
+    final without = run(null);
+    final totalWithout =
+        without.charges.fold(Decimal.zero, (a, c) => a + c.amount);
+    final payoffWithout = without.payoffDate;
+    final src = offsets.offsets.first;
+    offset = {
+      'streamId': src.stream.id,
+      'streamName': src.stream.name,
+      'visible': true,
+      'usableToday': _money(usable(from)),
+      'thresholdUsed': _money(src.thresholdUsed),
+      'interestSaved': _money(totalWithout - total),
+      'totalInterestWithoutOffset': _money(totalWithout),
+      'payoffDateWithoutOffset':
+          payoffWithout == null ? null : formatDate(payoffWithout),
+      'monthsSaved': payoff == null || payoffWithout == null
+          ? null
+          : monthsBetween(payoff, payoffWithout),
+    };
+  }
   return {
     'eventId': loan.id,
     'principal': _money(loan.amount),
@@ -189,6 +219,34 @@ Map<String, Object?>? loanSummary({
         }
     ],
     'warnings': warnings,
+    'offset': offset,
+  };
+}
+
+/// Whole calendar months from [a] to [b] (negative when [b] is earlier):
+/// how much sooner the offset pays the loan off.
+int monthsBetween(DateTime a, DateTime b) {
+  if (b.isBefore(a)) return -monthsBetween(b, a);
+  var m = (b.year - a.year) * 12 + b.month - a.month;
+  if (addMonthsRolled(a, m).isAfter(b)) m--;
+  return m;
+}
+
+/// Spec 004 rule 5: a caller who cannot read the offset stream still gets
+/// the figures (the owner chose both) but not its id or name.
+Future<Map<String, Object?>?> redactOffset(
+    Session conn, Request request, Map<String, Object?>? summary) async {
+  final o = summary?['offset'];
+  if (o is! Map<String, Object?>) return summary;
+  final id = o['streamId'] as String?;
+  final auth = authOf(request);
+  if (id == null || auth == null) return summary;
+  final ok =
+      (await Authz(conn).readableStreams([id], auth.user.id)).contains(id);
+  if (ok) return summary;
+  return {
+    ...summary!,
+    'offset': {...o, 'streamId': null, 'streamName': null, 'visible': false},
   };
 }
 
@@ -204,11 +262,17 @@ void attachLoanSummaryRoute(Router router, Session conn) {
       final q = request.url.queryParameters['from'];
       final now = DateTime.now().toUtc();
       final from = q == null ? civil(now) : parseDate(q);
-      final out = loanSummary(
-        stream: stream,
-        events: await events.listByStream(id),
-        skipped: await events.skipsForStream(id),
-        from: from,
+      final list = await events.listByStream(id);
+      final out = await redactOffset(
+        conn,
+        request,
+        loanSummary(
+          stream: stream,
+          events: list,
+          skipped: await events.skipsForStream(id),
+          from: from,
+          offsets: await LoanGroup.load(conn, stream, list),
+        ),
       );
       if (out == null) return jsonError(404, 'stream has no loan');
       return jsonOk(out);

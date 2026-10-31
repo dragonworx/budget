@@ -34,6 +34,7 @@ SimResult simulate(
   Decimal principal,
   Map<DateTime, Decimal> payments, {
   required DateTime until,
+  Decimal? Function(DateTime day)? offsetUsable,
 }) {
   final acc = LoanAccrual(terms, start, principal);
   var bal = Decimal.zero;
@@ -53,7 +54,7 @@ SimResult simulate(
     if (day == start) bal -= principal;
     if (payments[day] case final p?) bal += p;
     final owed = bal < Decimal.zero ? -bal : Decimal.zero;
-    acc.accrue(day, owed);
+    acc.accrue(day, owed, offsetUsable: offsetUsable?.call(day));
     final c2 = acc.chargeAtEndOfDay(day);
     if (c2 != null) {
       bal -= c2;

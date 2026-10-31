@@ -24,6 +24,7 @@ import 'solve.dart';
 import 'events.dart' show parseEventBody;
 import 'loan_fields.dart';
 import 'loan_summary.dart';
+import 'offset_link.dart';
 import '../domain/enums.dart' show EventKind;
 
 /// All `/api/streams...` routes on one router (specific paths before `/<id>`).
@@ -99,6 +100,18 @@ Router buildStreamsApi(Session conn) {
       if (loanKind.kind == EventKind.loan && stream.hasLoan) {
         return jsonError(409, streamHasLoan);
       }
+      if (loanKind.kind == EventKind.loan) {
+        final of = await offsetLoanStreamName(conn, streamId);
+        if (of != null) return jsonError(409, offsetForMessage(of));
+      }
+      final offsetIds = await checkOffsetLink(
+        conn: conn,
+        request: request,
+        loanStream: stream,
+        body: body,
+        kindIsLoan: loanKind.kind == EventKind.loan,
+        terms: loanTerms,
+      );
       final transferTo = optionalString(body, 'transferToStreamId');
       final skips = (body['skippedDates'] as List?)
               ?.map((e) => parseDate(e.toString()))
@@ -126,6 +139,7 @@ Router buildStreamsApi(Session conn) {
           color: parsed.color,
           kind: loanKind.kind,
           loan: loanTerms,
+          offsetStreamIds: offsetIds ?? const [],
         );
         for (final d in skips) {
           await events.setSkip(created.id, d, true);
@@ -136,6 +150,8 @@ Router buildStreamsApi(Session conn) {
         return created;
       });
       return jsonOk(event.toJson(), status: 201);
+    } on OffsetLinkError catch (e) {
+      return jsonError(e.status, e.message);
     } on ServerException catch (e) {
       // A concurrent create raced past the hasLoan check.
       if (e.constraintName == 'events_one_loan_per_stream') {
@@ -453,6 +469,16 @@ Router buildStreamsApi(Session conn) {
         streamId: pid,
         clientId: request.headers['x-client-id'],
         detail: {'deletedStreamId': id, 'ids': ids},
+      );
+    }
+    // Loans that used it as their offset account were unlinked.
+    for (final u in r.unlinked) {
+      await audit.record(
+        userId: me,
+        action: 'event.updated',
+        streamId: u.streamId,
+        entityId: u.eventId,
+        detail: {'via': 'offset_deleted', 'deletedStreamId': id},
       );
     }
     return jsonOk({

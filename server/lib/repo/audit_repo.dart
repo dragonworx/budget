@@ -56,8 +56,38 @@ class AuditRepo {
         'payload': jsonEncode(event.toJson()),
       },
     );
+    await _offsetFanOut(userId, action, _uuidOrNull(streamId));
     return event;
   }
+
+  /// Spec 004 rule 6: a change in a loan's offset stream changes the loan's
+  /// interest, so its stream gets a `stream.offset_changed` row (and live
+  /// hint) too. No client id: the client that made the change refreshes
+  /// the loan as well.
+  Future<void> _offsetFanOut(
+      String? userId, String action, String? streamId) async {
+    if (streamId == null || action == offsetChanged) return;
+    final loans = await _db.execute(
+      Sql.named('''
+        SELECT DISTINCT stream_id::text FROM events
+        WHERE kind = 'loan' AND offset_stream_ids @> ARRAY[@a::uuid]
+      '''),
+      parameters: {'a': streamId},
+    );
+    for (final row in loans) {
+      final loanStream = row[0] as String;
+      if (loanStream == streamId) continue;
+      await record(
+        userId: userId,
+        action: offsetChanged,
+        streamId: loanStream,
+        // No offset stream id: the loan's viewers may not see it.
+        detail: {'via': action},
+      );
+    }
+  }
+
+  static const offsetChanged = 'stream.offset_changed';
 
   /// Audit row for a successful API mutation described by [policy]. Also
   /// stamps created_by/updated_by on the affected row.

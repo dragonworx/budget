@@ -108,8 +108,9 @@ void main() {
             .first;
     expect(row, ['standard', null]);
     expect(
-        (await c.execute("SELECT to_jsonb(e.*) - 'kind' - 'loan' FROM events "
-                "e WHERE id = '$before'"))
+        // (027's offset_stream_ids is checked by migration_027_test.)
+        (await c.execute("SELECT to_jsonb(e.*) - 'kind' - 'loan' "
+                "- 'offset_stream_ids' FROM events e WHERE id = '$before'"))
             .first[0],
         beforeRow);
 

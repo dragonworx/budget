@@ -299,6 +299,21 @@ class TrimBatchRepo {
         );
       }
     }
+    // Spec 004 rule 4: a restored loan keeps only offset streams that
+    // still exist, are still its owner's and hold no loan.
+    await _conn.execute(
+      Sql.named('''
+        UPDATE events e SET offset_stream_ids = ARRAY(
+          SELECT x FROM unnest(e.offset_stream_ids) AS x
+          WHERE EXISTS (
+            SELECT 1 FROM streams o JOIN streams l ON l.id = e.stream_id
+            WHERE o.id = x AND o.id <> l.id AND o.owner_id = l.owner_id
+              AND NOT EXISTS (SELECT 1 FROM events k
+                              WHERE k.stream_id = o.id AND k.kind = 'loan')))
+        WHERE e.id = ANY (@ids::uuid[]) AND cardinality(e.offset_stream_ids) > 0
+      '''),
+      parameters: {'ids': ids},
+    );
     await _conn.execute(
       Sql.named('DELETE FROM occurrence_overrides '
           'WHERE event_id = ANY (@ids::uuid[])'),

@@ -3,14 +3,16 @@ import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import '../domain/models.dart';
-import '../engine/balance_engine.dart';
+import '../auth/authz.dart' show Role;
 import '../engine/balance_insights.dart';
+import '../engine/stream_group.dart';
 import '../repo/stream_repo.dart';
 import '../repo/event_repo.dart';
 import 'json_helpers.dart';
 import 'events.dart' show parseEventBody;
 import 'loan_fields.dart';
-import 'loan_summary.dart' show loanSummary;
+import 'loan_summary.dart' show loanSummary, redactOffset;
+import 'offset_link.dart';
 import '../domain/enums.dart' show EventKind;
 
 /// Longest span (~200 years, seed included) a balance, projection, goal or
@@ -55,11 +57,12 @@ void attachBalanceRoutes(Router router, Session conn) {
       final eventList = await events.listByStream(id);
       final skipped = await events.skipsForStream(id);
 
-      final series = BalanceEngine.compute(
-        seedBalance: stream.seedBalance,
-        seedDate: stream.seedDate,
+      // A loan with an offset account reads that stream's balance (spec
+      // 004); every other stream computes exactly as before.
+      final group = await LoanGroup.load(conn, stream, eventList);
+      final series = group.compute(
+        stream: stream,
         events: eventList,
-        eventOrder: stream.eventOrder,
         from: from,
         to: to,
         skipped: skipped,
@@ -91,6 +94,10 @@ void attachBalanceRoutes(Router router, Session conn) {
         return jsonError(400, 'events must be an array');
       }
       final extra = <BudgetEvent>[];
+      final saved = await events.listByStream(id);
+      // Offset streams a previewed loan names (spec 004): checked like a
+      // write, so a non-owner can only preview the saved link.
+      List<String>? previewOffsets;
       // Saved events an item stands in for (`replacesEventId`, e.g. the
       // loan being edited in a live preview): left out of the walk.
       final replaced = <String>{};
@@ -107,7 +114,27 @@ void attachBalanceRoutes(Router router, Session conn) {
           replaced.add(rep);
         }
         final body = {...item}..remove('replacesEventId');
+        final ids = parseOffsetIds(body);
+        body.remove('offsetStreamIds');
         final kind = parseCreateKind(body);
+        if (kind.kind == EventKind.loan) {
+          final savedIds = [
+            for (final e in saved)
+              if (e.id == rep && e.isLoan) ...e.offsetStreamIds
+          ];
+          final next = ids ?? savedIds;
+          final same =
+              next.length == savedIds.length && next.every(savedIds.contains);
+          if (!same) {
+            if (await callerRole(conn, request, id) != Role.owner) {
+              throw const OffsetLinkError(403, offsetOwnerOnly);
+            }
+            await checkOffsetTargets(conn, stream, next);
+          }
+          previewOffsets = next;
+        } else if (ids != null && ids.isNotEmpty) {
+          throw const OffsetLinkError(400, offsetStandardOnly);
+        }
         final p = parseEventBody(body);
         final terms = kind.terms(p);
         extra.add(BudgetEvent(
@@ -131,7 +158,7 @@ void attachBalanceRoutes(Router router, Session conn) {
         ));
       }
       final existing = [
-        for (final e in await events.listByStream(id))
+        for (final e in saved)
           if (!replaced.contains(e.id)) e,
       ];
       final loans = [...existing, ...extra].where((e) => e.isLoan).length;
@@ -139,11 +166,13 @@ void attachBalanceRoutes(Router router, Session conn) {
         return jsonError(409, streamHasLoan);
       }
       final skipped = await events.skipsForStream(id);
-      final series = BalanceEngine.compute(
-        seedBalance: stream.seedBalance,
-        seedDate: stream.seedDate,
-        events: [...existing, ...extra],
-        eventOrder: stream.eventOrder,
+      final all = [...existing, ...extra];
+      final group = await LoanGroup.load(conn, stream, all,
+          offsetStreamIds: previewOffsets);
+      // (A flat loan ignores offsets: [LoanGroup.load] returns none.)
+      final series = group.compute(
+        stream: stream,
+        events: all,
         from: from,
         to: to,
         skipped: skipped,
@@ -154,13 +183,20 @@ void attachBalanceRoutes(Router router, Session conn) {
       return jsonOk({
         'points': series.points.map((p) => p.toJson()).toList(),
         if (summaryFrom != null)
-          'loanSummary': loanSummary(
-            stream: stream,
-            events: [...existing, ...extra],
-            skipped: skipped,
-            from: parseDate(summaryFrom.toString()),
+          'loanSummary': await redactOffset(
+            conn,
+            request,
+            loanSummary(
+              stream: stream,
+              events: all,
+              skipped: skipped,
+              from: parseDate(summaryFrom.toString()),
+              offsets: group,
+            ),
           ),
       });
+    } on OffsetLinkError catch (e) {
+      return jsonError(e.status, e.message);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     } on ArgumentError catch (e) {
@@ -186,15 +222,7 @@ void attachBalanceRoutes(Router router, Session conn) {
       final start = DateTime.utc(from.year, from.month, from.day);
       final end = start.add(Duration(days: horizon > days ? horizon : days));
       checkBalanceRange(start, end, seed: stream.seedDate);
-      final series = BalanceEngine.compute(
-        seedBalance: stream.seedBalance,
-        seedDate: stream.seedDate,
-        events: await events.listByStream(id),
-        eventOrder: stream.eventOrder,
-        from: start,
-        to: end,
-        skipped: await events.skipsForStream(id),
-      );
+      final series = await computeLoanGroup(conn, stream, from: start, to: end);
       final insights = BalanceInsights.of(
         series.points,
         threshold: stream.lossThreshold.toDouble(),

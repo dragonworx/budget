@@ -27,6 +27,7 @@ class BalanceEngine {
     required DateTime from,
     required DateTime to,
     Map<String, Set<DateTime>> skipped = const {},
+    OffsetUsable? offsetUsable,
   }) {
     // A stream with an active loan takes the loan walk (spec 002); every
     // other stream keeps the code below, unchanged.
@@ -41,6 +42,7 @@ class BalanceEngine {
         to: to,
         loan: loan,
         skipped: skipped,
+        offsetUsable: offsetUsable,
       ).series;
     }
     final seed = CalendarMath.dateOnly(seedDate);

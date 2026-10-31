@@ -140,7 +140,8 @@ Middleware authzMiddleware(ScopedDb db) {
             } catch (_) {}
             if (decoded is Map<String, dynamic>) resJson = decoded;
             if ((rest[0] == 'streams' || rest[0] == 'events') &&
-                text.contains('"peerStreamId"')) {
+                (text.contains('"peerStreamId"') ||
+                    text.contains('"offsetStreamIds":["'))) {
               out = res.change(
                   body: jsonEncode(await _redact(authz, uid, decoded)));
             } else {
@@ -233,6 +234,7 @@ Future<Object?> _redact(Authz authz, String uid, Object? json) async {
   }
 
   walk(json);
+  await _redactOffsets(authz, uid, json);
   if (links.isEmpty) return json;
   final ids = links.map((l) => l['peerStreamId']).whereType<String>();
   final readable = await authz.readableStreams(ids, uid);
@@ -245,4 +247,38 @@ Future<Object?> _redact(Authz authz, String uid, Object? json) async {
     }
   }
   return json;
+}
+
+/// Spec 004 rule 5: a loan's offset stream ids the user cannot read are
+/// dropped from `offsetStreamIds`, and `offsetHidden: true` says a link is
+/// there ("Linked offset account (not shared with you)").
+Future<void> _redactOffsets(Authz authz, String uid, Object? json) async {
+  final nodes = <Map<String, dynamic>>[];
+  void walk(Object? n) {
+    if (n is Map<String, dynamic>) {
+      final o = n['offsetStreamIds'];
+      if (o is List && o.isNotEmpty) nodes.add(n);
+      n.values.forEach(walk);
+    } else if (n is List) {
+      n.forEach(walk);
+    }
+  }
+
+  walk(json);
+  if (nodes.isEmpty) return;
+  final ids = {
+    for (final n in nodes) ...(n['offsetStreamIds'] as List).whereType<String>()
+  };
+  final readable = await authz.readableStreams(ids, uid);
+  for (final n in nodes) {
+    final list = (n['offsetStreamIds'] as List).whereType<String>().toList();
+    final kept = [
+      for (final id in list)
+        if (readable.contains(id)) id
+    ];
+    if (kept.length != list.length) {
+      n['offsetStreamIds'] = kept;
+      n['offsetHidden'] = true;
+    }
+  }
 }

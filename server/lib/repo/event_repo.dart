@@ -19,7 +19,8 @@ const _enrichedCols = '''
   t.freq_rule AS t_freq_rule, t.freq_interval AS t_freq_interval,
   t.freq_days AS t_freq_days, t.category_id::text AS t_category_id,
   COALESCE(c.hidden, false) AS t_category_hidden,
-  t.kind AS t_kind, t.loan AS t_loan''';
+  t.kind AS t_kind, t.loan AS t_loan,
+  t.offset_stream_ids::text[] AS t_offsets''';
 const _peerJoin = '''
   LEFT JOIN categories c ON c.id = t.category_id
   LEFT JOIN events p
@@ -325,6 +326,7 @@ class EventRepo {
     List<int> days = const [],
     EventKind kind = EventKind.standard,
     LoanTerms? loan,
+    List<String> offsetStreamIds = const [],
   }) async {
     final f = _validateShape(
       recurrenceMode: recurrenceMode,
@@ -344,13 +346,13 @@ class EventRepo {
           id, stream_id, name, direction, amount, start_date,
           recurrence_mode, interval, unit, end_mode, end_date,
           occurrence_count, enabled, transfer_id, color,
-          freq_rule, freq_interval, freq_days, kind, loan
+          freq_rule, freq_interval, freq_days, kind, loan, offset_stream_ids
         ) VALUES (
           @id, @streamId, @name, @direction, @amount, @startDate,
           @recurrenceMode, @interval, @unit, @endMode, @endDate,
           @occurrenceCount, @enabled, @transferId::uuid, @color,
           @freqRule, @freqInterval, @freqDays::int[]::smallint[],
-          @kind, @loan::jsonb
+          @kind, @loan::jsonb, @offsets::text[]::uuid[]
         )
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -374,6 +376,7 @@ class EventRepo {
         'color': color,
         'kind': kind.name,
         'loan': loan == null ? null : jsonEncode(loan.toJson()),
+        'offsets': offsetStreamIds,
       },
     );
 
@@ -412,6 +415,7 @@ class EventRepo {
     bool clearColor = false,
     List<int>? days,
     LoanTerms? loan,
+    List<String>? offsetStreamIds,
   }) async {
     final existing = await get(id);
     if (existing == null) return null;
@@ -455,7 +459,9 @@ class EventRepo {
           occurrence_count = @occurrenceCount,
           enabled = @enabled,
           color = @color,
-          loan = COALESCE(@loan::jsonb, loan)
+          loan = COALESCE(@loan::jsonb, loan),
+          offset_stream_ids =
+            COALESCE(@offsets::text[]::uuid[], offset_stream_ids)
         WHERE id = @id
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -476,6 +482,7 @@ class EventRepo {
         'enabled': enabled ?? existing.enabled,
         'color': clearColor ? null : (color ?? existing.color),
         'loan': loan == null ? null : jsonEncode(loan.toJson()),
+        'offsets': offsetStreamIds,
       },
     );
     return (await get(id))!;
@@ -792,7 +799,11 @@ class EventRepo {
     }
     final kind = EventKind.parse(cols['t_kind'] as String? ?? 'standard');
     final loanRaw = cols['t_loan'];
+    final offsetsRaw = cols['t_offsets'];
     return BudgetEvent(
+      offsetStreamIds: offsetsRaw is List
+          ? [for (final o in offsetsRaw) o.toString()]
+          : const [],
       kind: kind,
       loan: loanRaw == null
           ? null

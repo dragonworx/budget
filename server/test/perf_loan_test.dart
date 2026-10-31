@@ -1,6 +1,6 @@
 // DB-backed timing check (spec 002): p95 of 20 runs of /balance and
 // /loan-summary on a 35-year loan stream with 3 recurring events must be
-// <= 150 ms. Also prints a 7-event 20-year non-loan /balance p95 (the
+// <= 150 ms; with one offset linked (spec 004) <= 200 / 300 ms. Also prints a 7-event 20-year non-loan /balance p95 (the
 // before/after benchmark). Skipped when Postgres is unreachable.
 @Tags(['perf'])
 library;
@@ -8,6 +8,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:budget_server/api/events.dart';
 import 'package:budget_server/api/streams.dart';
 import 'package:budget_server/auth/middleware.dart';
 import 'package:budget_server/config.dart';
@@ -65,12 +66,15 @@ void main() {
               seedDate: DateTime.utc(2027, 1, 1),
               lossThreshold: Decimal.zero))
           .id;
-      Future<void> post(String s, Map<String, Object?> body) async {
+      Future<Map<String, dynamic>> post(
+          String s, Map<String, Object?> body) async {
         final r = await req('POST', '/$s/events', body);
-        expect(r.statusCode, 201, reason: await r.readAsString());
+        final text = await r.readAsString();
+        expect(r.statusCode, 201, reason: text);
+        return jsonDecode(text) as Map<String, dynamic>;
       }
 
-      await post(a, {
+      final loan = await post(a, {
         'name': 'Home loan',
         'kind': 'loan',
         'amount': '750000',
@@ -148,6 +152,42 @@ void main() {
           '/loan-summary ${summary}ms, non-loan 7-event 20y ${nonLoan}ms');
       expect(balance, lessThanOrEqualTo(150));
       expect(summary, lessThanOrEqualTo(150));
+
+      // Spec 004 §13: the same loan with Everyday (repayments out, salary
+      // in) linked as its offset: <= 200 ms /balance, <= 300 ms summary.
+      await post(b, {
+        'name': 'Salary',
+        'direction': 'credit',
+        'amount': '4200',
+        'startDate': '2027-01-14',
+        'recurrenceMode': 'every',
+        'interval': 2,
+        'unit': 'weeks',
+      });
+      final link = await eventsRouter(c)
+          .call(Request('PATCH', Uri.parse('http://x/${loan['id']}'),
+              context: {'auth': AuthContext(user, 't')},
+              body: jsonEncode({
+                'version': loan['version'],
+                'offsetStreamIds': [b]
+              })));
+      final linkText = await link.readAsString();
+      expect(link.statusCode, 200, reason: linkText);
+      final oBalance = await p95(20, () async {
+        final r = await req('GET', '/$a/balance?from=2027-01-01&to=2062-01-15');
+        expect(r.statusCode, 200);
+        await r.readAsString();
+      });
+      final oSummary = await p95(20, () async {
+        final r = await req('GET', '/$a/loan-summary?from=2030-06-01');
+        expect(r.statusCode, 200);
+        final j = jsonDecode(await r.readAsString());
+        expect(j['offset'], isNotNull);
+      });
+      print('perf p95 with one offset: /balance 35y loan ${oBalance}ms, '
+          '/loan-summary ${oSummary}ms');
+      expect(oBalance, lessThanOrEqualTo(200));
+      expect(oSummary, lessThanOrEqualTo(300));
     } finally {
       await deleteOwnedStreams(c, owner);
     }

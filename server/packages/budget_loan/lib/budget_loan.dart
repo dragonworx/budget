@@ -4,4 +4,5 @@ library;
 
 export 'src/accrual.dart';
 export 'src/maths.dart';
+export 'src/offset.dart';
 export 'src/terms.dart';

@@ -10,6 +10,8 @@ import '../repo/category_repo.dart';
 import '../repo/event_repo.dart';
 import 'categories.dart';
 import 'loan_fields.dart';
+import 'offset_link.dart';
+import '../repo/stream_repo.dart';
 import 'json_helpers.dart';
 
 Router eventsRouter(Session conn) {
@@ -28,6 +30,17 @@ Router eventsRouter(Session conn) {
       final existing = await events.get(id);
       if (existing == null) return jsonError(404, 'event not found');
       final loanTerms = parsePatchLoan(body, existing);
+      final loanStream = await StreamRepo(conn).get(existing.streamId);
+      if (loanStream == null) return jsonError(404, 'event not found');
+      final offsetIds = await checkOffsetLink(
+        conn: conn,
+        request: request,
+        loanStream: loanStream,
+        body: body,
+        kindIsLoan: existing.isLoan,
+        terms: loanTerms ?? existing.loan,
+        existing: existing,
+      );
 
       RecurrenceMode? recurrenceMode;
       if (body.containsKey('recurrenceMode')) {
@@ -95,6 +108,7 @@ Router eventsRouter(Session conn) {
           clearColor: body.containsKey('color') &&
               parseEventColor(body['color']) == null,
           loan: loanTerms,
+          offsetStreamIds: offsetIds,
         ))!;
         // Transfers: retarget / link / unlink, then mirror onto the peer.
         if (body.containsKey('transferToStreamId')) {
@@ -133,6 +147,8 @@ Router eventsRouter(Session conn) {
         return (await events.get(id))!;
       });
       return jsonOk(event.toJson());
+    } on OffsetLinkError catch (e) {
+      return jsonError(e.status, e.message);
     } on CategoryNameException catch (e) {
       return categoryNameError(e);
     } on FormatException catch (e) {

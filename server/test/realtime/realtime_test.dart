@@ -274,6 +274,61 @@ void main() {
     legacy.close();
   });
 
+  test('an offset stream change hints its loan stream (spec 004)', () async {
+    if (admin == null) return markTestSkipped('no test DB');
+    Future<String> mk(String name, String seed) async =>
+        (await call(a, 'POST', '/api/streams', 'own4', body: {
+          'name': name,
+          'seedDate': '2027-01-01',
+          'seedBalance': seed
+        }))
+            .json['id'] as String;
+    final loan = await mk('Loan', '0');
+    final off = await mk('Everyday', '40000');
+    final l = await call(a, 'POST', '/api/streams/$loan/events', 'own4', body: {
+      'name': 'Home loan',
+      'kind': 'loan',
+      'amount': '100000',
+      'startDate': '2027-01-01',
+      'loan': {
+        'v': 1,
+        'mode': 'simple',
+        'interestType': 'reducing',
+        'termMonths': 360,
+        'repaymentFrequency': 'monthly',
+        'ratePeriods': [
+          {'from': '2027-01-01', 'ratePct': '3.65'}
+        ],
+      },
+      'offsetStreamIds': [off],
+    });
+    expect(l.status, 201, reason: '${l.json}');
+    // A viewer of the loan stream only.
+    await login('lv');
+    await call(a, 'POST', '/api/streams/$loan/invites', 'own4',
+        body: {'email': 'lv@$domain', 'role': 'viewer'});
+    final viewer = await subscribe(b, 'lv');
+    final owner = await subscribe(b, 'own4');
+    final t = await call(a, 'POST', '/api/streams/$off/events', 'own4',
+        body: tx('groceries'), clientTag: 'tab-9');
+    expect(t.status, 201);
+    final hint = await viewer.waitFor((d, e) =>
+        d['action'] == 'stream.offset_changed' && d['streamId'] == loan);
+    expect(hint['clientId'], isNull);
+    expect(hint['detail'], {'via': 'event.created'});
+    expect(jsonEncode(hint), isNot(contains(off)));
+    // The owner gets both: the offset's own event and the loan hint.
+    await owner.waitAction('event.created', entityId: t.json['id']);
+    await owner.waitFor((d, e) =>
+        d['action'] == 'stream.offset_changed' && d['streamId'] == loan);
+    // The viewer never sees the offset stream's own event.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(viewer.events.where((e) => e.data['entityId'] == t.json['id']),
+        isEmpty);
+    viewer.close();
+    owner.close();
+  });
+
   test('stream share grant, role change and revocation stop delivery',
       () async {
     if (admin == null) return markTestSkipped('no test DB');

@@ -80,9 +80,15 @@ class BudgetEvent {
     this.categoryHidden = false,
     this.kind = EventKind.standard,
     this.loan,
+    this.offsetStreamIds = const [],
   });
 
   final int version;
+
+  /// A loan's offset streams (spec 004, migration 027; at most one now):
+  /// their balance above their alert threshold reduces the interest base.
+  /// Always empty for a standard event.
+  final List<String> offsetStreamIds;
 
   /// [EventKind.loan]: a once-off debit drawdown with [loan] terms.
   final EventKind kind;
@@ -176,6 +182,8 @@ class BudgetEvent {
         'version': version,
         'kind': kind.name,
         'loan': loan?.toJson(),
+        // Loans only, so a standard event's JSON is unchanged.
+        if (isLoan) 'offsetStreamIds': offsetStreamIds,
         'overrides': [
           for (final e
               in (overrides.entries.toList()
@@ -233,6 +241,7 @@ class BudgetEvent {
       categoryHidden: categoryHidden,
       kind: kind,
       loan: loan,
+      offsetStreamIds: offsetStreamIds,
     );
   }
 
@@ -261,6 +270,7 @@ class BudgetEvent {
         categoryHidden: categoryHidden,
         kind: kind,
         loan: loan,
+        offsetStreamIds: offsetStreamIds,
       );
 }
 

@@ -34,9 +34,9 @@ class StreamRepo {
       '''),
       parameters: {'u': userId},
     );
-    return rows.map((r) {
+    final out = rows.map((r) {
       final shared = r[1].toString() != userId;
-      return {
+      return <String, Object?>{
         ..._fromRow(r).toJson(),
         'role': r[10],
         'shared': shared,
@@ -48,6 +48,49 @@ class StreamRepo {
         },
       };
     }).toList();
+    await _attachOffsetLinks(out);
+    return out;
+  }
+
+  /// Spec 004 §17: the streams list's link indicator. A loan stream gets
+  /// `offset: {streamId, name, visible}` and its offset stream
+  /// `offsetFor: [{streamId, name, visible}]`; the other side's id and name
+  /// are null when this user cannot see it. Streams without a link are
+  /// unchanged.
+  Future<void> _attachOffsetLinks(List<Map<String, Object?>> list) async {
+    if (list.isEmpty) return;
+    final byId = {for (final s in list) s['id'] as String: s};
+    final rows = await _conn.execute(
+      Sql.named('''
+        SELECT e.stream_id::text, l.name, o.id::text, o.name
+        FROM events e
+        JOIN streams l ON l.id = e.stream_id
+        CROSS JOIN LATERAL unnest(e.offset_stream_ids) AS x(id)
+        JOIN streams o ON o.id = x.id
+        WHERE e.kind = 'loan'
+          AND (e.stream_id = ANY (@ids::uuid[]) OR x.id = ANY (@ids::uuid[]))
+        ORDER BY l.name, o.name
+      '''),
+      parameters: {'ids': byId.keys.toList()},
+    );
+    for (final r in rows) {
+      final loanId = r[0] as String, offId = r[2] as String;
+      final loan = byId[loanId], off = byId[offId];
+      if (loan != null) {
+        loan['offset'] = {
+          'streamId': off == null ? null : offId,
+          'name': off == null ? null : r[3],
+          'visible': off != null,
+        };
+      }
+      if (off != null) {
+        ((off['offsetFor'] ??= <Map<String, Object?>>[]) as List).add({
+          'streamId': loan == null ? null : loanId,
+          'name': loan == null ? null : r[1],
+          'visible': loan != null,
+        });
+      }
+    }
   }
 
   /// The stream [userId] opened last (may no longer be accessible).
@@ -282,9 +325,33 @@ class StreamRepo {
   /// into a plain event of its stream (same name, direction, amount,
   /// schedule, skips, overrides, enabled: that stream's balance is
   /// unchanged); delete removes them. Call inside a DB transaction.
-  Future<({bool deleted, List<String> converted, List<String> removed})> delete(
-      String id,
-      {TransferDeleteMode transfers = TransferDeleteMode.keep}) async {
+  ///
+  /// Loans using it as their offset account are unlinked (spec 004 rule 3;
+  /// they continue without an offset): [unlinked] lists their
+  /// (event id, stream id) so the caller can audit those streams.
+  Future<
+          ({
+            bool deleted,
+            List<String> converted,
+            List<String> removed,
+            List<({String eventId, String streamId})> unlinked,
+          })>
+      delete(String id,
+          {TransferDeleteMode transfers = TransferDeleteMode.keep}) async {
+    final unlinkedRows = await _conn.execute(
+      Sql.named('''
+        UPDATE events
+        SET offset_stream_ids = array_remove(offset_stream_ids, @id::uuid),
+            version = version + 1, updated_at = now()
+        WHERE offset_stream_ids @> ARRAY[@id::uuid]
+        RETURNING id::text, stream_id::text
+      '''),
+      parameters: {'id': id},
+    );
+    final unlinked = [
+      for (final r in unlinkedRows)
+        (eventId: r[0] as String, streamId: r[1] as String)
+    ];
     final peers = await transferPeers(id);
     final ids = [for (final p in peers) p.peerId];
     final converted = <String>[], removed = <String>[];
@@ -323,7 +390,12 @@ class StreamRepo {
       Sql.named('DELETE FROM streams WHERE id = @id RETURNING id'),
       parameters: {'id': id},
     );
-    return (deleted: rows.isNotEmpty, converted: converted, removed: removed);
+    return (
+      deleted: rows.isNotEmpty,
+      converted: converted,
+      removed: removed,
+      unlinked: unlinked,
+    );
   }
 
   BudgetStream _fromRow(ResultRow row) {

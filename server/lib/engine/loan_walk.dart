@@ -60,6 +60,11 @@ class LoanWalkResult {
   final LoanAccrual accrual;
 }
 
+/// The offset balance usable on a day (spec 004): Σ
+/// `OffsetMath.usable(close, threshold)` over the loan's offset streams;
+/// zero before an offset's seed. Built by `engine/stream_group.dart`.
+typedef OffsetUsable = Decimal Function(DateTime day);
+
 /// The daily walk for a stream holding an active loan event (spec 002
 /// "Daily walk"). Generation and ordering of the fixed occurrences are the
 /// same as [BalanceEngine.compute]; around them each day: (1) start-of-day
@@ -83,6 +88,7 @@ class LoanWalk {
     required DateTime to,
     required BudgetEvent loan,
     Map<String, Set<DateTime>> skipped = const {},
+    OffsetUsable? offsetUsable,
   }) {
     final seed = CalendarMath.dateOnly(seedDate);
     var rangeStart = CalendarMath.dateOnly(from);
@@ -163,9 +169,11 @@ class LoanWalk {
         if (!o.skipped) balance += o.signedDelta;
         if (inWindow) out.add(o);
       }
-      // 3. Accrue on what is owed after them.
+      // 3. Accrue on what is owed after them, less the offset streams'
+      // usable closing balance today (spec 004 §10: computed in full
+      // first, so same-day moves are already in it).
       final owed = balance < Decimal.zero ? -balance : Decimal.zero;
-      accrual.accrue(cursor, owed);
+      accrual.accrue(cursor, owed, offsetUsable: offsetUsable?.call(cursor));
       // 4. Month-end charge (accrual through today).
       final c2 = accrual.chargeAtEndOfDay(cursor);
       if (c2 != null) charge(c2);
