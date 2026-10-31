@@ -25,6 +25,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
+  budget_loan:
+    dependency: "direct main"
+    description:
+      path: "../server/packages/budget_loan"
+      relative: true
+    source: path
+    version: "1.0.0"
   budget_recurrence:
     dependency: "direct main"
     description:

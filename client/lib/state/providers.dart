@@ -6,6 +6,7 @@ import '../data/models.dart';
 import '../features/planning/goal_models.dart';
 import '../data/repositories.dart';
 import '../data/sharing.dart';
+import '../features/loans/loan_models.dart';
 import 'auth_providers.dart';
 import 'stream_cleanup.dart';
 
@@ -493,6 +494,17 @@ final insightsProvider = FutureProvider.family<BalanceInsights, String>((
   streamId,
 ) {
   return ref.read(streamRepositoryProvider).insights(streamId, DateTime.now());
+});
+
+/// A loan stream's summary (spec 003 §7) as of today; null without a
+/// loan. Refetched whenever the stream's events change (a transfer edit
+/// in another stream refreshes them too).
+final loanSummaryProvider = FutureProvider.family<LoanSummary?, String>((
+  ref,
+  streamId,
+) {
+  ref.watch(eventsProvider(streamId).select((v) => v.valueOrNull));
+  return ref.read(streamRepositoryProvider).loanSummary(streamId);
 });
 
 /// Saved what-if scenarios for a stream.

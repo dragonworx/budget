@@ -10,6 +10,7 @@ import '../repo/event_repo.dart';
 import 'json_helpers.dart';
 import 'events.dart' show parseEventBody;
 import 'loan_fields.dart';
+import 'loan_summary.dart' show loanSummary;
 import '../domain/enums.dart' show EventKind;
 
 /// Longest span (~200 years, seed included) a balance, projection, goal or
@@ -137,6 +138,7 @@ void attachBalanceRoutes(Router router, Session conn) {
       if (loans > 1 && extra.any((e) => e.kind == EventKind.loan)) {
         return jsonError(409, streamHasLoan);
       }
+      final skipped = await events.skipsForStream(id);
       final series = BalanceEngine.compute(
         seedBalance: stream.seedBalance,
         seedDate: stream.seedDate,
@@ -144,10 +146,20 @@ void attachBalanceRoutes(Router router, Session conn) {
         eventOrder: stream.eventOrder,
         from: from,
         to: to,
-        skipped: await events.skipsForStream(id),
+        skipped: skipped,
       );
+      // Spec 003: the loan editor's live summary of unsaved terms. Opt-in
+      // (`loanSummaryFrom`, the summary's "today"); null without a loan.
+      final summaryFrom = body['loanSummaryFrom'];
       return jsonOk({
         'points': series.points.map((p) => p.toJson()).toList(),
+        if (summaryFrom != null)
+          'loanSummary': loanSummary(
+            stream: stream,
+            events: [...existing, ...extra],
+            skipped: skipped,
+            from: parseDate(summaryFrom.toString()),
+          ),
       });
     } on FormatException catch (e) {
       return jsonError(400, e.message);

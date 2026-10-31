@@ -4,6 +4,7 @@ import 'api_client.dart';
 import '../features/planning/goal_models.dart';
 import '../features/timeline/saved_view.dart';
 import 'models.dart';
+import '../features/loans/loan_models.dart';
 
 /// `GET /api/streams`: accessible streams (mine first, then shared).
 class StreamList {
@@ -184,6 +185,46 @@ class StreamRepository {
       },
     );
     return BalanceSeries.fromJson(data);
+  }
+
+  /// The stream's loan summary (`GET /streams/:id/loan-summary`, spec
+  /// 002 §8) as of [from] (default today); null when it has no loan.
+  Future<LoanSummary?> loanSummary(String streamId, {DateTime? from}) async {
+    try {
+      final data = await _api.get(
+        '/api/streams/$streamId/loan-summary',
+        query: {'from': formatDate(from ?? DateTime.now())},
+      );
+      return LoanSummary.fromJson(data as Map<String, dynamic>);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// The summary of an unsaved loan [draft] (spec 003 §7: the editor's
+  /// live preview), standing in for the saved [replacesEventId]:
+  /// `POST /project` with `loanSummaryFrom` and a one-day window.
+  Future<LoanSummary?> previewLoan(
+    String streamId,
+    BudgetEvent draft, {
+    String? replacesEventId,
+    DateTime? today,
+  }) async {
+    final day = formatDate(today ?? DateTime.now());
+    final data = await _api.post(
+      '/api/streams/$streamId/project',
+      body: {
+        'from': day,
+        'to': day,
+        'loanSummaryFrom': day,
+        'events': [
+          {...draft.toCreateJson(), 'replacesEventId': ?replacesEventId},
+        ],
+      },
+    );
+    final s = (data as Map)['loanSummary'];
+    return s is Map<String, dynamic> ? LoanSummary.fromJson(s) : null;
   }
 
   Future<SolveResult> solve(String streamId, SolveRequest request) async {

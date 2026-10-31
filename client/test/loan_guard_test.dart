@@ -1,7 +1,7 @@
-// Loan events (spec 002, phase 1): this client reads loans but cannot edit
-// them yet. Parsing keeps the raw terms; the editor shows a loan read-only
-// with no Save; derived interest occurrences parse their flags; a loan
-// stream's below-zero balance is not shown as an alert.
+// Loan events (spec 002): parsing keeps the raw terms; the editor opens a
+// loan editable (spec 003) with no per-date skip; derived interest
+// occurrences parse their flags; a loan stream's below-zero balance is not
+// shown as an alert.
 import 'package:budget_client/app.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/events/event_editor.dart';
@@ -109,7 +109,7 @@ void main() {
     expect(s.withSharing(testStream('a', 'A')).hasLoan, isTrue);
   });
 
-  testWidgets('a loan opens read-only: note, disabled fields, no Save', (
+  testWidgets('a loan opens editable: loan form, Save, no skip', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1200, 1600);
@@ -138,16 +138,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('editor-loan-read-only')), findsOneWidget);
-    expect(
-      find.text('Loan editing is coming in the next update'),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('editor-loan-read-only')), findsNothing);
+    expect(find.byKey(const ValueKey('loan-form')), findsOneWidget);
     expect(find.byKey(const ValueKey('editor-view-only')), findsNothing);
-    expect(find.byKey(const ValueKey('editor-save')), findsNothing);
+    expect(find.byKey(const ValueKey('editor-save')), findsOneWidget);
     expect(find.byKey(const ValueKey('editor-save-menu')), findsNothing);
     expect(find.text('Skip this one'), findsNothing);
-    expect(find.text('Close'), findsOneWidget);
     // Deleting a loan stays possible.
     expect(find.byKey(const ValueKey('editor-delete')), findsOneWidget);
   });

@@ -232,6 +232,43 @@ void main() {
           pp.firstWhere((x) => x['date'] == '2027-02-15')['closingBalance']);
       expect(feb15, lessThan(Decimal.fromInt(-496000)));
       expect(feb15, greaterThan(Decimal.fromInt(-500000)));
+      expect(p.json.containsKey('loanSummary'), isFalse);
+
+      // Spec 003: `loanSummaryFrom` adds the unsaved loan's summary (the
+      // editor's live preview); its eventId is the preview's.
+      final ps = await call(h, 'POST', '/$a/project', {
+        'from': '2027-01-01',
+        'to': '2027-01-01',
+        'loanSummaryFrom': '2027-01-20',
+        'events': [
+          {...preview, 'replacesEventId': loanId}
+        ],
+      });
+      expect(ps.status, 200, reason: '${ps.json}');
+      final ls = ps.json['loanSummary'] as Map;
+      expect(ls['eventId'], 'preview-0');
+      expect(ls['principal'], '500000.00');
+      expect((ls['minimumRepayments'] as List), isNotEmpty);
+      expect(ls['nextChargeDate'], '2027-02-15');
+      expect((ps.json['points'] as List).length, 1);
+      // A new loan in a stream without one: summarised too.
+      final pb = await call(h, 'POST', '/$b/project', {
+        'from': '2027-01-01',
+        'to': '2027-01-01',
+        'loanSummaryFrom': '2027-01-01',
+        'events': [preview],
+      });
+      expect(pb.status, 200, reason: '${pb.json}');
+      expect((pb.json['loanSummary'] as Map)['eventId'], 'preview-0');
+      // No loan anywhere: null.
+      final pn = await call(h, 'POST', '/$b/project', {
+        'from': '2027-01-01',
+        'to': '2027-01-01',
+        'loanSummaryFrom': '2027-01-01',
+        'events': [],
+      });
+      expect(pn.json.containsKey('loanSummary'), isTrue);
+      expect(pn.json['loanSummary'], isNull);
 
       // Planner guard.
       for (final path in ['/$a/goal', '/$a/solve', '/$a/scenarios']) {

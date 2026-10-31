@@ -358,10 +358,10 @@ class BudgetEvent {
     this.loan,
   });
 
-  /// "standard" or "loan" (spec 002). Loans are read-only in this client.
+  /// "standard" or "loan" (spec 002).
   final String kind;
 
-  /// The loan terms as sent by the server (kept raw until loan editing).
+  /// The loan terms JSON as sent by the server (see `LoanDraft.fromEvent`).
   final Map<String, dynamic>? loan;
 
   bool get isLoan => kind == 'loan';
@@ -595,6 +595,9 @@ class BudgetEvent {
     // its legacy alias for older servers. No `color`: on the server that
     // would recolour the whole category.
     if (categoryId != null) 'categoryId': categoryId,
+    // Spec 002: a loan's kind and terms (kind cannot change on a patch).
+    if (isLoan) 'kind': kind,
+    if (isLoan) 'loan': loan,
   };
 
   BudgetEvent copyWith({
@@ -624,6 +627,8 @@ class BudgetEvent {
     List<int>? days,
     String? categoryId,
     bool? categoryHidden,
+    String? kind,
+    Map<String, dynamic>? loan,
   }) {
     return BudgetEvent(
       categoryId: categoryId ?? this.categoryId,
@@ -648,8 +653,8 @@ class BudgetEvent {
           : (occurrenceCount ?? this.occurrenceCount),
       enabled: enabled ?? this.enabled,
       overrides: overrides,
-      kind: kind,
-      loan: loan,
+      kind: kind ?? this.kind,
+      loan: loan ?? this.loan,
     );
   }
 }

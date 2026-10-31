@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
@@ -24,6 +25,9 @@ import '../../widgets/ui.dart';
 import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
 import '../categories/categories_manager.dart';
+import '../loans/loan_form.dart';
+import '../loans/loan_models.dart';
+import '../loans/loan_summary_panel.dart';
 import '../timeline/stack_lanes.dart';
 
 enum EditorAction {
@@ -165,12 +169,30 @@ class EventEditor extends ConsumerStatefulWidget {
 }
 
 class _EventEditorState extends ConsumerState<EventEditor> {
-  /// A loan (spec 002): its fields show read-only, with no Save, until
-  /// loan editing ships.
+  /// Editing a saved loan (spec 003): its kind is locked.
   bool get _isLoan => widget.existing?.isLoan ?? false;
 
-  /// Viewer access, or a loan: fields disabled and no Save.
-  bool get _readOnly => widget.readOnly || _isLoan;
+  /// Viewer access: fields disabled and no Save.
+  bool get _readOnly => widget.readOnly;
+
+  /// The Loan kind is picked: the loan form replaces the amount and
+  /// schedule (spec 003 §5).
+  late bool _loanMode;
+  LoanDraft? _loanDraft;
+
+  /// Save-time (and server 400) loan errors by field (see [LoanForm]).
+  Map<String, String> _loanErrors = const {};
+  final _principalFocus = FocusNode(debugLabel: 'loan-principal');
+
+  /// Loan is offered when creating in a stream without a loan, and is the
+  /// (locked) kind of a saved loan.
+  bool get _loanAllowed {
+    if (widget.existing != null) return _isLoan;
+    final events =
+        ref.watch(eventsProvider(widget.streamId)).valueOrNull ?? const [];
+    final stream = ref.watch(streamProvider(widget.streamId)).valueOrNull;
+    return !(stream?.hasLoan ?? false) && !events.any((e) => e.isLoan);
+  }
 
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _amount;
@@ -260,6 +282,12 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       _endDate = DateTime(presetEnd.year, presetEnd.month, presetEnd.day);
     }
     _enabled = existing?.enabled ?? true;
+    _loanMode = existing?.isLoan ?? false;
+    if (_loanMode) {
+      _loanDraft =
+          LoanDraft.fromEvent(existing!) ?? LoanDraft.initial(_startDate)
+            ..principal = existing.amount.toString();
+    }
     _skipped = {for (final d in widget.skippedDates) _day(d)};
     _skippedInitially = {..._skipped};
     _initialSignature = _signature();
@@ -344,7 +372,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
 
   void _focusAmount() {
     if (_readOnly) return;
-    _amountFocus.requestFocus();
+    (_loanMode ? _principalFocus : _amountFocus).requestFocus();
   }
 
   /// Everything the form would save, to detect unsaved edits.
@@ -362,6 +390,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       d.occurrenceCount,
       d.enabled,
       d.transfer?.peerStreamId,
+      if (_loanMode) jsonEncode(d.loan),
     ].join('|');
   }
 
@@ -400,6 +429,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     _scope.dispose();
     _refocus?.cancel();
     _amountFocus.dispose();
+    _principalFocus.dispose();
     super.dispose();
   }
 
@@ -433,6 +463,25 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   }
 
   BudgetEvent _draft({Decimal? amount, int? count, DateTime? endDate}) {
+    final loan = _loanDraft;
+    if (_loanMode && loan != null) {
+      // A loan: a once-off debit drawdown of the principal (spec 002).
+      return BudgetEvent(
+        id: widget.existing?.id ?? 'preview',
+        streamId: widget.streamId,
+        name: _category?.name ?? widget.existing?.name ?? 'Loan',
+        categoryId: _category?.id ?? widget.existing?.categoryId,
+        direction: EventDirection.debit,
+        amount: loan.principalValue ?? Decimal.zero,
+        startDate: loan.start,
+        recurrenceMode: RecurrenceMode.once,
+        endMode: EndMode.never,
+        enabled: _enabled,
+        color: _category?.color ?? widget.existing?.color,
+        kind: 'loan',
+        loan: loan.toJson(),
+      );
+    }
     final parsedAmount =
         amount ?? parseMoneyInput(_amount.text) ?? Decimal.zero;
     final repeating = _recurrenceMode == RecurrenceMode.every;
@@ -461,9 +510,73 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     );
   }
 
-  _Kind get _kind => _transferMode
+  _Kind get _kind => _loanMode
+      ? _Kind.loan
+      : _transferMode
       ? _Kind.transfer
       : (_direction == EventDirection.credit ? _Kind.credit : _Kind.debit);
+
+  /// The live preview's draft: null while the loan is invalid.
+  BudgetEvent? get _loanPreviewDraft {
+    final loan = _loanDraft;
+    if (loan == null || loan.principalValue == null) return null;
+    if (loan.termsOrNull == null) return null;
+    return _draft();
+  }
+
+  /// [message] (engine / server) placed on its loan field.
+  Map<String, String> _loanErrorMap(String message) {
+    final at = loanErrorField(message);
+    final text = friendlyLoanError(message);
+    final key = switch (at.field) {
+      LoanField.principal => 'principal',
+      LoanField.start => 'start',
+      LoanField.term => 'term',
+      LoanField.firstRepayment => 'first',
+      LoanField.chargeDay => 'chargeDay',
+      LoanField.rate => 'rate-${at.row ?? 0}',
+      LoanField.rateFrom => (at.row ?? 0) == 0 ? 'start' : 'from-${at.row}',
+      LoanField.other => 'other',
+    };
+    return {key: text};
+  }
+
+  Widget _loanSections(ThemeData theme) {
+    final loan = _loanDraft!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ro(
+          SectionCard(
+            title: 'Loan',
+            icon: Icons.account_balance_outlined,
+            child: LoanForm(
+              draft: loan,
+              readOnly: _readOnly,
+              errors: _loanErrors,
+              principalFocus: _principalFocus,
+              onSubmit: _save,
+              onChanged: () => setState(() => _loanErrors = const {}),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SectionCard(
+          title: 'Summary',
+          icon: Icons.insights_rounded,
+          child: LoanPreview(
+            streamId: widget.streamId,
+            draft: _loanPreviewDraft,
+            replacesEventId: _isLoan ? widget.existing!.id : null,
+            onServerError: (message) {
+              if (message == null || !mounted) return;
+              setState(() => _loanErrors = _loanErrorMap(message));
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
   bool get _receiving => _direction == EventDirection.credit;
 
@@ -580,20 +693,21 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
                     children: [
                       ?_remoteBanner(theme),
-                      if (widget.focusDate != null && !_isNew) ...[
+                      // A loan has no per-date skip / override (spec 003).
+                      if (widget.focusDate != null && !_isNew && !_isLoan) ...[
                         _focusBanner(theme),
                         const SizedBox(height: 12),
                       ],
                       if (widget.readOnly) ...[
                         const _ViewOnlyNote(),
                         const SizedBox(height: 12),
-                      ] else if (_isLoan) ...[
-                        const _LoanReadOnlyNote(),
-                        const SizedBox(height: 12),
                       ],
                       _ro(_detailsSection(theme)),
                       const SizedBox(height: 12),
-                      _ro(_scheduleSection(theme)),
+                      if (_loanMode)
+                        _loanSections(theme)
+                      else
+                        _ro(_scheduleSection(theme)),
                       // Just Details and Schedule, new or edited: Include in
                       // balance is the list row's switch, skips / once-offs
                       // are kept as they are (saving never resets them).
@@ -825,47 +939,52 @@ class _EventEditorState extends ConsumerState<EventEditor> {
 
   Widget _detailsSection(ThemeData theme) {
     const symbol = moneySymbol;
+    final loanAllowed = _loanAllowed;
     return SectionCard(
       title: 'Details',
       icon: Icons.edit_note_rounded,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextFormField(
-            key: const ValueKey('editor-amount'),
-            controller: _amount,
-            focusNode: _amountFocus,
-            autofocus: !_readOnly && widget.existing == null,
-            decoration: InputDecoration(
-              labelText: _recurrenceMode == RecurrenceMode.every
-                  ? 'Amount each time'
-                  : 'Amount',
-              prefixText: symbol.isEmpty ? null : '$symbol ',
-              hintText: '0.00',
+          if (!_loanMode) ...[
+            TextFormField(
+              key: const ValueKey('editor-amount'),
+              controller: _amount,
+              focusNode: _amountFocus,
+              autofocus: !_readOnly && widget.existing == null,
+              decoration: InputDecoration(
+                labelText: _recurrenceMode == RecurrenceMode.every
+                    ? 'Amount each time'
+                    : 'Amount',
+                prefixText: symbol.isEmpty ? null : '$symbol ',
+                hintText: '0.00',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              // Type and category always have a value: Enter / the
+              // keyboard's Done saves.
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _save(),
+              onChanged: (_) => setState(() {}),
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Enter an amount';
+                }
+                final amount = parseMoneyInput(value);
+                if (amount == null) {
+                  return 'Enter a number, e.g. 1250 or 1,250.50';
+                }
+                if (amount == Decimal.zero) return 'Enter an amount above zero';
+                if (amount < Decimal.zero) {
+                  return 'Use Money out instead of a negative amount';
+                }
+                return null;
+              },
             ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            // Type and category always have a value: Enter / the
-            // keyboard's Done saves.
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _save(),
-            onChanged: (_) => setState(() {}),
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Enter an amount';
-              }
-              final amount = parseMoneyInput(value);
-              if (amount == null) {
-                return 'Enter a number, e.g. 1250 or 1,250.50';
-              }
-              if (amount == Decimal.zero) return 'Enter an amount above zero';
-              if (amount < Decimal.zero) {
-                return 'Use Money out instead of a negative amount';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ],
           // Narrow (docked list, small phones): labels only, one line.
           LayoutBuilder(
             builder: (context, c) {
@@ -904,26 +1023,47 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                         ? const Icon(Icons.swap_horiz_rounded, size: 18)
                         : null,
                   ),
+                  if (loanAllowed)
+                    ButtonSegment(
+                      value: _Kind.loan,
+                      label: label(
+                        'Loan',
+                        key: const ValueKey('editor-kind-loan'),
+                      ),
+                      icon: icons
+                          ? const Icon(Icons.account_balance_outlined, size: 18)
+                          : null,
+                    ),
                 ],
                 selected: {_kind},
-                onSelectionChanged: (value) => setState(() {
-                  switch (value.first) {
-                    case _Kind.credit:
-                      _transferMode = false;
-                      _direction = EventDirection.credit;
-                    case _Kind.debit:
-                      _transferMode = false;
-                      _direction = EventDirection.debit;
-                    case _Kind.transfer:
-                      _transferMode = true;
-                      // A new transfer sends money out of this stream; an
-                      // existing receiving side keeps its direction.
-                      if (widget.existing?.transfer == null) {
-                        _direction = EventDirection.debit;
-                      }
-                  }
-                  _transferError = null;
-                }),
+                // A saved loan's kind is locked (spec 003 §5).
+                onSelectionChanged: _isLoan
+                    ? null
+                    : (value) => setState(() {
+                        _loanMode = value.first == _Kind.loan;
+                        switch (value.first) {
+                          case _Kind.loan:
+                            _transferMode = false;
+                            _direction = EventDirection.debit;
+                            _loanDraft ??= LoanDraft.initial(_startDate)
+                              ..principal = _amount.text.trim();
+                            _loanErrors = const {};
+                          case _Kind.credit:
+                            _transferMode = false;
+                            _direction = EventDirection.credit;
+                          case _Kind.debit:
+                            _transferMode = false;
+                            _direction = EventDirection.debit;
+                          case _Kind.transfer:
+                            _transferMode = true;
+                            // A new transfer sends money out of this stream; an
+                            // existing receiving side keeps its direction.
+                            if (widget.existing?.transfer == null) {
+                              _direction = EventDirection.debit;
+                            }
+                        }
+                        _transferError = null;
+                      }),
                 style: ButtonStyle(
                   visualDensity: VisualDensity.compact,
                   padding: const WidgetStatePropertyAll(
@@ -937,6 +1077,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                       _Kind.credit => AppTheme.creditColor,
                       _Kind.debit => AppTheme.debitColor,
                       _Kind.transfer => AppTheme.transferColor,
+                      _Kind.loan => AppTheme.debitColor,
                     };
                   }),
                   backgroundColor: WidgetStateProperty.resolveWith((states) {
@@ -947,13 +1088,14 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                       _Kind.credit => AppTheme.creditSoft,
                       _Kind.debit => AppTheme.debitSoft,
                       _Kind.transfer => AppTheme.transferSoft,
+                      _Kind.loan => AppTheme.debitSoft,
                     };
                   }),
                 ),
               );
             },
           ),
-          if (_transferMode) ...[
+          if (_transferMode && !_loanMode) ...[
             const SizedBox(height: 12),
             _transferField(theme),
           ],
@@ -1209,6 +1351,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   bool get _offerSaveOptions =>
       !_isNew &&
       !_readOnly &&
+      !_loanMode &&
       widget.focusDate != null &&
       widget.existing!.recurrenceMode == RecurrenceMode.every;
 
@@ -1625,6 +1768,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   BudgetEvent? _validatedDraft() {
     setState(() => _endDateError = null);
     if (!_formKey.currentState!.validate()) return null;
+    if (_loanMode) return _validatedLoan();
     if (_recurrenceMode == RecurrenceMode.every &&
         _endMode == EndMode.untilDate &&
         _endDate == null) {
@@ -1654,6 +1798,34 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       direction: _direction,
       startDate: _startDate,
       enabled: _enabled,
+      version: widget.existing?.version,
+    );
+  }
+
+  /// The loan's save body (no save options: spec 003 §5), or null with
+  /// its errors shown on their fields.
+  BudgetEvent? _validatedLoan() {
+    final loan = _loanDraft!;
+    if (loan.principalValue == null) {
+      setState(() => _loanErrors = {'principal': 'Enter the amount borrowed'});
+      return null;
+    }
+    try {
+      loan.terms();
+    } on FormatException catch (e) {
+      setState(() => _loanErrors = _loanErrorMap(e.message));
+      return null;
+    }
+    final category = _category;
+    if (category == null) {
+      setState(() => _categoryError = 'Create a category first (Manage)');
+      return null;
+    }
+    return _draft().copyWith(
+      id: widget.existing?.id ?? const Uuid().v4(),
+      name: category.name,
+      categoryId: category.id,
+      color: category.color,
       version: widget.existing?.version,
     );
   }
@@ -1695,6 +1867,13 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         );
       }
     } catch (error) {
+      if (_loanMode &&
+          error is ApiException &&
+          error.statusCode == 400 &&
+          mounted) {
+        // A server 400 on a loan names its field: show it there.
+        setState(() => _loanErrors = _loanErrorMap(error.message));
+      }
       _toast(error);
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -1702,7 +1881,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   }
 }
 
-enum _Kind { credit, debit, transfer }
+enum _Kind { credit, debit, transfer, loan }
 
 class _ViewOnlyNote extends StatelessWidget {
   const _ViewOnlyNote();
@@ -1723,33 +1902,6 @@ class _ViewOnlyNote extends StatelessWidget {
           Expanded(
             child: Text('View only: you have viewer access to this stream.'),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LoanReadOnlyNote extends StatelessWidget {
-  const _LoanReadOnlyNote();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const ValueKey('editor-loan-read-only'),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppTheme.overlay,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: const Row(
-        children: [
-          Icon(
-            Icons.account_balance_outlined,
-            size: 18,
-            color: AppTheme.textMuted,
-          ),
-          SizedBox(width: 10),
-          Expanded(child: Text('Loan editing is coming in the next update')),
         ],
       ),
     );
