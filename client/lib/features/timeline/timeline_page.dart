@@ -2031,9 +2031,13 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   Future<void> _editStream(BuildContext context, BudgetStream stream) async {
+    final listed = (ref.read(streamsProvider).valueOrNull ?? const [])
+        .where((s) => s.id == stream.id)
+        .firstOrNull;
     final edited = await showStreamDialog(
       context,
-      existing: stream,
+      // Spec 004: the threshold helper names the loans it offsets.
+      existing: stream.withOffsetLinks(listed),
       eventCount: ref.read(eventsProvider(widget.streamId)).valueOrNull?.length,
     );
     if (edited == null || !context.mounted) return;

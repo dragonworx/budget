@@ -377,5 +377,9 @@ void main() {
     expect(offsetIndicator(loan), 'Offset: Everyday');
     expect(offsetIndicator(hiddenLoan), 'Offset: a stream not shared with you');
     expect(offsetIndicator(_s('z', 'Z', {})), isNull);
+    // A single-stream fetch picks up the list's links.
+    final single = _s('pay', 'Everyday', {});
+    expect(single.withOffsetLinks(pay).offsetFor.single.name, 'Mortgage');
+    expect(single.withOffsetLinks(null).offsetFor, isEmpty);
   });
 }

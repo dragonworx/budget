@@ -283,6 +283,31 @@ extension StreamSharing on BudgetStream {
   );
 }
 
+extension StreamOffsetLinks on BudgetStream {
+  /// [this] with the offset links of [from] (the streams list reports
+  /// them; a single-stream fetch doesn't).
+  BudgetStream withOffsetLinks(BudgetStream? from) => from == null
+      ? this
+      : BudgetStream(
+          id: id,
+          ownerId: ownerId,
+          name: name,
+          seedBalance: seedBalance,
+          seedDate: seedDate,
+          lossThreshold: lossThreshold,
+          eventOrder: eventOrder,
+          displayOrder: displayOrder,
+          currencyScale: currencyScale,
+          version: version,
+          role: role,
+          shared: shared,
+          owner: owner,
+          hasLoan: hasLoan,
+          offset: from.offset,
+          offsetFor: from.offsetFor,
+        );
+}
+
 /// One side of a loan's offset link in the streams list (spec 004 §17):
 /// [streamId] and [name] are null when the user can't see that stream.
 class OffsetLinkRef {

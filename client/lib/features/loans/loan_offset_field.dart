@@ -62,35 +62,41 @@ class LoanOffsetField extends ConsumerWidget {
         draft.advanced &&
         !draft.periods.any((p) => p.offsetApplies);
 
-    Widget field(VoidCallback? open) => InkWell(
-      key: const ValueKey('loan-offset'),
+    final helper = hidden
+        ? null
+        : canEdit || id != null
+        ? offsetHelperText(offset)
+        : 'Only the stream owner can link an offset account.';
+    Widget field(VoidCallback? open) => Semantics(
+      label: 'Offset account: $label',
+      hint: helper,
+      button: open != null,
       onTap: open,
-      borderRadius: BorderRadius.circular(10),
-      child: InputDecorator(
-        isEmpty: false,
-        decoration: InputDecoration(
-          labelText: 'Offset account',
-          enabled: open != null,
-          prefixIcon: const Icon(Icons.savings_outlined),
-          suffixIcon: open == null
-              ? null
-              : const Icon(Icons.arrow_drop_down_rounded),
-          helperText: hidden
-              ? null
-              : canEdit
-              ? offsetHelperText(offset)
-              : (id == null
-                    ? 'Only the stream owner can link an offset account.'
-                    : offsetHelperText(offset)),
-          helperMaxLines: 3,
-        ),
-        child: Text(
-          label,
-          key: const ValueKey('loan-offset-value'),
-          style: id == null && !hidden
-              ? theme.textTheme.bodyLarge?.copyWith(color: AppTheme.textFaint)
-              : theme.textTheme.bodyLarge,
-          overflow: TextOverflow.ellipsis,
+      excludeSemantics: true,
+      child: InkWell(
+        key: const ValueKey('loan-offset'),
+        onTap: open,
+        borderRadius: BorderRadius.circular(10),
+        child: InputDecorator(
+          isEmpty: false,
+          decoration: InputDecoration(
+            labelText: 'Offset account',
+            enabled: open != null,
+            prefixIcon: const Icon(Icons.savings_outlined),
+            suffixIcon: open == null
+                ? null
+                : const Icon(Icons.arrow_drop_down_rounded),
+            helperText: helper,
+            helperMaxLines: 3,
+          ),
+          child: Text(
+            label,
+            key: const ValueKey('loan-offset-value'),
+            style: id == null && !hidden
+                ? theme.textTheme.bodyLarge?.copyWith(color: AppTheme.textFaint)
+                : theme.textTheme.bodyLarge,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     );
