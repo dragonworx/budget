@@ -479,12 +479,15 @@ class _StreamCard extends ConsumerWidget {
                         value: money(stream.seedBalance.toDouble()),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    _Fact(
-                      label: 'Alert at',
-                      value: '< ${money(stream.lossThreshold.toDouble())}',
-                      alignEnd: true,
-                    ),
+                    // Loan streams don't alert (spec 003 §11).
+                    if (!stream.hasLoan) ...[
+                      const SizedBox(width: 12),
+                      _Fact(
+                        label: 'Alert at',
+                        value: '< ${money(stream.lossThreshold.toDouble())}',
+                        alignEnd: true,
+                      ),
+                    ],
                   ],
                 ),
               ),

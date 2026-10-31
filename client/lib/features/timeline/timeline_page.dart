@@ -1,3 +1,6 @@
+import '../loans/loan_display.dart';
+import '../loans/loan_summary_sheet.dart';
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -441,15 +444,28 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     }
   }
 
-  void _openPlan() => setState(() {
-    _planOpen = true;
-    _planOnChart = false;
-  });
+  /// A loan stream: the planner is off (spec 003 §14).
+  bool get _planBlocked {
+    final stream = ref.read(streamProvider(widget.streamId)).valueOrNull;
+    return streamHasLoan(
+      stream,
+      ref.read(eventsProvider(widget.streamId)).valueOrNull ?? const [],
+    );
+  }
+
+  void _openPlan() {
+    if (_planBlocked) return;
+    setState(() {
+      _planOpen = true;
+      _planOnChart = false;
+    });
+  }
 
   /// Selection card "Plan…": open the goal tab over the selected range,
   /// starting from the balance on its first day, and solve the largest
   /// one-off that keeps the balance above the alert line (affordability).
   void _planPeriod(PeriodSummary p, double threshold) {
+    if (_planBlocked) return;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final start = p.start.isBefore(today) ? today : p.start;
@@ -1189,6 +1205,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final events =
             ref.watch(eventsProvider(widget.streamId)).valueOrNull ??
             const <BudgetEvent>[];
+        // Loan streams (spec 003 §9–§14): lanes to the payoff, a "Paid off"
+        // marker, no alerts, no planner.
+        final loanStream = streamHasLoan(stream, events);
+        final loanSummary = loanStream
+            ? ref.watch(loanSummaryProvider(widget.streamId)).valueOrNull
+            : null;
+        final loanPayoffs = <String, DateTime>{
+          if (loanSummary != null) loanSummary.eventId: ?loanSummary.payoffDate,
+        };
+        if (loanStream && _planOpen) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _planOpen) _closePlan();
+          });
+        }
 
         final width = MediaQuery.sizeOf(context).width;
         final compact = width < 600;
@@ -1302,6 +1332,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                               ),
                                           lossThreshold: stream.lossThreshold
                                               .toDouble(),
+                                          alerts: !loanStream,
+                                          loanPayoffs: loanPayoffs,
+                                          planDisabledReason: loanStream
+                                              ? loanPlanningMessage
+                                              : null,
                                           currencyScale: stream.currencyScale
                                               .toDouble(),
                                           viewStart: _viewStart,
@@ -1608,7 +1643,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           icon: glyph,
         );
 
-    // More, in order: Stream settings first, then whatever overflowed.
+    // More, in order: Stream settings first, then (loan streams) Loan
+    // summary, then whatever overflowed.
     final more = <PopupMenuEntry<String>>[
       if (canEdit && !mid)
         const PopupMenuItem(
@@ -1617,6 +1653,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           child: ListTile(
             leading: Icon(Icons.tune_rounded),
             title: Text('Stream settings'),
+          ),
+        ),
+      if (streamHasLoan(stream, events))
+        const PopupMenuItem(
+          key: ValueKey('timeline-loan-summary'),
+          value: 'loanSummary',
+          child: ListTile(
+            leading: Icon(Icons.account_balance_outlined),
+            title: Text('Loan summary'),
           ),
         ),
       if (owner)
@@ -1708,6 +1753,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               _openImport(context, stream);
             case 'settings':
               _editStream(context, stream);
+            case 'loanSummary':
+              showLoanSummary(context, stream);
             case 'shortcuts':
               _showShortcuts(context);
             case 'share':

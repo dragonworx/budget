@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import '../../data/models.dart';
+import '../loans/loan_display.dart';
 import 'chart_geometry.dart' show DayGroup, addCalendarDays;
 import 'occurrence_dates.dart';
 import 'zoom_level.dart';
@@ -25,6 +26,7 @@ class StackLane {
     required this.name,
     required this.credit,
     this.amount = 0,
+    this.amountText,
     required this.colorIndex,
     required this.start,
     required this.end,
@@ -41,6 +43,10 @@ class StackLane {
   /// The event's own amount, signed (money out is negative); shown
   /// after its name inside the lane.
   final double amount;
+
+  /// Replaces the signed [amount] after the name: a loan's
+  /// "Loan \$600,000 · 5.89%" (spec 003 §9).
+  final String? amountText;
   final int colorIndex;
 
   /// The event's own colour (`BudgetEvent.color`); null: positional.
@@ -135,6 +141,7 @@ LaneSet buildLaneSet({
   required Map<String, BudgetEvent> events,
   Map<String, BudgetEvent> others = const {},
   List<String> otherOrder = const [],
+  Map<String, DateTime> loanPayoffs = const {},
 }) {
   final seen = <String>{};
   final lanes = <StackLane>[];
@@ -145,7 +152,13 @@ LaneSet buildLaneSet({
     if (t == null || !seen.add(id)) return;
     final colorIndex = slot++;
     if (!t.active) return;
-    final span = _span(t);
+    // A loan's lane runs from its drawdown to its payoff (or term end).
+    final span = t.isLoan
+        ? (
+            dateOnly(t.startDate),
+            loanLaneEnd(t, payoff: loanPayoffs[id]) ?? dateOnly(t.startDate),
+          )
+        : _span(t);
     final name = t.name.trim();
     lanes.add(
       StackLane(
@@ -153,6 +166,7 @@ LaneSet buildLaneSet({
         name: name.isEmpty ? 'Event' : name,
         credit: t.direction == EventDirection.credit,
         amount: t.signedAmount.toDouble(),
+        amountText: loanLabel(t),
         colorIndex: colorIndex,
         start: span.$1,
         end: span.$2,

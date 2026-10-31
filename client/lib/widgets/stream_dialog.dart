@@ -1,3 +1,5 @@
+import '../features/loans/loan_display.dart';
+
 import 'dart:async';
 
 import 'package:decimal/decimal.dart';
@@ -173,7 +175,9 @@ class _StreamDialogState extends State<StreamDialog> {
               decoration: InputDecoration(
                 labelText: 'Alert threshold',
                 prefixText: '$moneySymbol ',
-                helperText: 'Balances below this show in red',
+                helperText: widget.existing?.hasLoan ?? false
+                    ? loanThresholdHelper
+                    : 'Balances below this show in red',
                 errorText: _lossError,
               ),
               keyboardType: const TextInputType.numberWithOptions(

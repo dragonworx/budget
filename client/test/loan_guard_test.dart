@@ -8,6 +8,7 @@ import 'package:budget_client/features/events/event_editor.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:budget_client/theme/app_theme.dart';
+import 'package:budget_client/widgets/stream_dialog.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -148,6 +149,30 @@ void main() {
     expect(find.byKey(const ValueKey('editor-delete')), findsOneWidget);
   });
 
+  testWidgets('stream settings: the alert threshold is "Not used" on a loan '
+      'stream', (tester) async {
+    for (final loan in [true, false]) {
+      final s = BudgetStream.fromJson({
+        ...testStream('l1', 'Mortgage').toJson(),
+        'hasLoan': loan,
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: StreamDialog(existing: s)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Not used for loan streams'),
+        loan ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.text('Balances below this show in red'),
+        loan ? findsNothing : findsOneWidget,
+      );
+    }
+  });
+
   testWidgets('a loan stream below zero is not coloured as an alert', (
     tester,
   ) async {
@@ -191,5 +216,12 @@ void main() {
 
     expect(colourIn('a1'), AppTheme.debitColor);
     expect(colourIn('l1'), AppTheme.text);
+    // No "Alert at" fact on the loan stream's card (spec 003 §11).
+    Finder alertIn(String id) => find.descendant(
+      of: find.byKey(ValueKey('stream-card-$id')),
+      matching: find.text('Alert at'),
+    );
+    expect(alertIn('a1'), findsOneWidget);
+    expect(alertIn('l1'), findsNothing);
   });
 }

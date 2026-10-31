@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../loans/loan_display.dart';
 import '../../widgets/eye_icons.dart';
 import '../../boot/page_stub.dart'
     if (dart.library.js_interop) '../../boot/page_web.dart';
@@ -151,6 +152,12 @@ class EventsPanel extends ConsumerStatefulWidget {
 class _EventsPanelState extends ConsumerState<EventsPanel> {
   bool get _readOnly => !widget.stream.role.canEdit;
 
+  /// A loan stream: the planner is off (spec 003 §14).
+  bool get _planBlocked => streamHasLoan(
+    widget.stream,
+    ref.read(eventsProvider(widget.stream.id)).valueOrNull ?? const [],
+  );
+
   /// The whole New ▾ split button: its menu matches its width.
   final _newSplitKey = GlobalKey();
   double? _newMenuWidth;
@@ -197,11 +204,14 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
             () => _open(null, primed: true),
           ),
         ),
-        item(
-          'new-option-plan',
-          Icons.calculate_outlined,
-          'Plan',
-          widget.onPlan,
+        Tooltip(
+          message: _planBlocked ? loanPlanningMessage : '',
+          child: item(
+            'new-option-plan',
+            Icons.calculate_outlined,
+            'Plan',
+            _planBlocked ? null : widget.onPlan,
+          ),
         ),
       ],
       builder: (context, controller, _) => Row(
@@ -676,11 +686,14 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                     ),
                     // Viewers can't add, but can still plan (no New ▾).
                     if (widget.onPlan != null)
-                      FilledButton.tonalIcon(
-                        key: const ValueKey('panel-plan'),
-                        onPressed: widget.onPlan,
-                        icon: const Icon(Icons.calculate_outlined, size: 18),
-                        label: const Text('Plan'),
+                      Tooltip(
+                        message: _planBlocked ? loanPlanningMessage : '',
+                        child: FilledButton.tonalIcon(
+                          key: const ValueKey('panel-plan'),
+                          onPressed: _planBlocked ? null : widget.onPlan,
+                          icon: const Icon(Icons.calculate_outlined, size: 18),
+                          label: const Text('Plan'),
+                        ),
                       ),
                   ],
                   if (!_readOnly) _newSplitButton(),
@@ -1155,7 +1168,8 @@ class _TxRow extends StatelessWidget {
       color: muted ? AppTheme.textFaint : AppTheme.textMuted,
       height: 1.25,
     );
-    final money = formatSignedAmount(amount);
+    // A loan shows its principal and today's rate (spec 003 §9).
+    final money = loanLabel(t) ?? formatSignedAmount(amount);
     final next = scheduleHint(t, DateTime.now());
     final label = [
       name,

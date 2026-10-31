@@ -28,6 +28,7 @@ import 'trim.dart';
 import 'alert_fill.dart';
 import 'zoom_level.dart';
 import '../../data/alert.dart';
+import '../loans/loan_display.dart';
 
 typedef ViewportChanged = void Function(DateTime viewStart, double visibleDays);
 typedef CreateOnDay = void Function(DateTime day);
@@ -110,6 +111,11 @@ typedef _LabelLine = ({String? name, String? more});
 @visibleForTesting
 void Function(String row, String text, Rect rect)? debugAxisLabel;
 
+/// Test hook: each vertical date marker painted ("Today", "Seed",
+/// "Paid off") and its x.
+@visibleForTesting
+void Function(String label, DateTime date, double x)? debugDateMarker;
+
 /// Test hook: where the $0 line was painted, and the plot it sits in.
 @visibleForTesting
 void Function(double y, Rect plot)? debugZeroLine;
@@ -121,6 +127,9 @@ class BalanceChart extends StatefulWidget {
     required this.seedDate,
     this.seedBalance,
     this.lossThreshold = 0,
+    this.alerts = true,
+    this.loanPayoffs = const {},
+    this.planDisabledReason,
     this.currencyScale,
     required this.viewStart,
     required this.visibleDays,
@@ -281,6 +290,18 @@ class BalanceChart extends StatefulWidget {
 
   /// Closing balances below this value are drawn as a loss (equal is not).
   final double lossThreshold;
+
+  /// False on loan streams (spec 003 §11): no alert colouring, no "Alert <"
+  /// line and no alert row in the selection card.
+  final bool alerts;
+
+  /// Loan event id → payoff date: its lane runs to it and a "Paid off"
+  /// marker is drawn there (spec 003 §9–§10).
+  final Map<String, DateTime> loanPayoffs;
+
+  /// Set on loan streams: the selection card's "Plan…" is disabled with
+  /// this tooltip (spec 003 §14).
+  final String? planDisabledReason;
 
   /// Stream currency scale (dollars per y grid step). The chart opens at
   /// [currencyScaleRange] (zero a third up the plot) and re-applies it
@@ -1780,7 +1801,8 @@ class _BalanceChartState extends State<BalanceChart>
                               p.id: p.color,
                           },
                           seedBalance: widget.seedBalance,
-                          lossThreshold: widget.lossThreshold,
+                          lossThreshold: _threshold,
+                          payoffDates: widget.loanPayoffs.values.toList(),
                           viewStart: widget.viewStart,
                           visibleDays: widget.visibleDays,
                           labelStyle:
@@ -2520,7 +2542,7 @@ class _BalanceChartState extends State<BalanceChart>
     String money(double v) =>
         formatMoneyAmount(v, decimalDigits: v == 0 ? 0 : null);
     final balance = stats.balance;
-    final low = balance != null && belowAlert(balance, widget.lossThreshold);
+    final low = balance != null && belowAlert(balance, _threshold);
     return Listener(
       onPointerSignal: _onPointerSignal,
       child: Material(
@@ -2665,7 +2687,7 @@ class _BalanceChartState extends State<BalanceChart>
       end: e,
       seedDate: _lineStart,
       seedBalance: widget.seedBalance,
-      threshold: widget.lossThreshold,
+      threshold: _threshold,
     );
 
     double centreX(DateTime d) =>
@@ -2955,42 +2977,48 @@ class _BalanceChartState extends State<BalanceChart>
             formatMoneyAmount(sum.lowestBalance!),
             key: const ValueKey('selection-lowest'),
             style: strong.copyWith(
-              color: belowAlert(sum.lowestBalance!, widget.lossThreshold)
+              color: belowAlert(sum.lowestBalance!, _threshold)
                   ? AppTheme.debitColor
                   : null,
             ),
           ),
           const ValueKey('sel-row-lowest'),
         ),
-      row(
-        'Alert',
-        '< ${formatMoneyAmount(widget.lossThreshold)}',
-        Text(
-          sum.alertDate == null ? 'Never' : dm.format(sum.alertDate!),
-          key: const ValueKey('selection-alert'),
-          style: strong.copyWith(
-            color: sum.alertDate == null
-                ? AppTheme.creditColor
-                : AppTheme.debitColor,
+      if (widget.alerts)
+        row(
+          'Alert',
+          '< ${formatMoneyAmount(widget.lossThreshold)}',
+          Text(
+            sum.alertDate == null ? 'Never' : dm.format(sum.alertDate!),
+            key: const ValueKey('selection-alert'),
+            style: strong.copyWith(
+              color: sum.alertDate == null
+                  ? AppTheme.creditColor
+                  : AppTheme.debitColor,
+            ),
           ),
+          const ValueKey('sel-row-alert'),
         ),
-        const ValueKey('sel-row-alert'),
-      ),
       if (widget.onPlanPeriod != null || widget.onAddForPeriod != null)
         Padding(
           padding: const EdgeInsets.only(top: 6, bottom: 2),
           child: Row(
             children: [
               if (widget.onPlanPeriod != null)
-                OutlinedButton.icon(
-                  key: const ValueKey('sel-plan'),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                Tooltip(
+                  message: widget.planDisabledReason ?? '',
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('sel-plan'),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    onPressed: widget.planDisabledReason != null
+                        ? null
+                        : () => widget.onPlanPeriod!(sum),
+                    icon: const Icon(Icons.flag_rounded, size: 16),
+                    label: const Text('Plan…'),
                   ),
-                  onPressed: () => widget.onPlanPeriod!(sum),
-                  icon: const Icon(Icons.flag_rounded, size: 16),
-                  label: const Text('Plan…'),
                 ),
               if (widget.onAddForPeriod != null) ...[
                 const SizedBox(width: 6),
@@ -3214,6 +3242,10 @@ class _BalanceChartState extends State<BalanceChart>
     return Rect.fromLTWH(left, top, size, size);
   }
 
+  /// The alert threshold in force: none on loan streams.
+  double get _threshold =>
+      widget.alerts ? widget.lossThreshold : double.negativeInfinity;
+
   LaneSet? _lanesMemo;
   Object? _lanesKey;
 
@@ -3225,14 +3257,16 @@ class _BalanceChartState extends State<BalanceChart>
       widget.otherEvents,
       widget.laneOrder,
       widget.otherLaneOrder,
+      widget.loanPayoffs,
     );
-    final last = _lanesKey as (Map, Map, List, List)?;
+    final last = _lanesKey as (Map, Map, List, List, Map)?;
     if (last != null &&
         _lanesMemo != null &&
         mapEquals(last.$1, key.$1) &&
         mapEquals(last.$2, key.$2) &&
         listEquals(last.$3, key.$3) &&
-        listEquals(last.$4, key.$4)) {
+        listEquals(last.$4, key.$4) &&
+        mapEquals(last.$5, key.$5)) {
       return _lanesMemo!;
     }
     _lanesKey = key;
@@ -3241,6 +3275,7 @@ class _BalanceChartState extends State<BalanceChart>
       events: widget.events,
       others: widget.otherEvents,
       otherOrder: widget.otherLaneOrder,
+      loanPayoffs: widget.loanPayoffs,
     );
   }
 
@@ -4295,7 +4330,10 @@ class _BalanceChartState extends State<BalanceChart>
         amountColor = AppTheme.accent;
       } else {
         final raw = widget.eventNames[o.eventId] ?? t?.name;
-        name = raw == null || raw.trim().isEmpty ? 'Event' : raw.trim();
+        // A loan's interest reads as what it is (spec 003 §9).
+        name =
+            derivedOccurrenceName(o) ??
+            (raw == null || raw.trim().isEmpty ? 'Event' : raw.trim());
         final amount = o.signedDelta.toDouble();
         amountText = formatSignedAmount(amount);
         amountColor = skipped
@@ -4335,6 +4373,13 @@ class _BalanceChartState extends State<BalanceChart>
               describeRecurrence(t),
               ?occurrenceOrdinal(t, o.date),
             ].join(' · '),
+          ),
+        // Loan rows: the drawdown's terms, the interest's loan.
+        if (!idle && o != null && t != null && t.isLoan)
+          TextSpan(
+            text: o.derived
+                ? (widget.eventNames[o.eventId] ?? t.name).trim()
+                : loanLabel(t, on: o.date),
           ),
         if (o != null)
           for (final s in [
@@ -4938,6 +4983,7 @@ class _BalanceChartPainter extends CustomPainter {
     this.streamColors = const {},
     this.seedBalance,
     required this.lossThreshold,
+    this.payoffDates = const [],
     required this.viewStart,
     required this.visibleDays,
     required this.labelStyle,
@@ -4988,6 +5034,9 @@ class _BalanceChartPainter extends CustomPainter {
   /// Opening balance on [seedDate]; drawn as the initial vertex. Null: none.
   final double? seedBalance;
   final double lossThreshold;
+
+  /// Loan payoff dates: a "Paid off" marker each.
+  final List<DateTime> payoffDates;
   final DateTime viewStart;
   final double visibleDays;
   final TextStyle labelStyle;
@@ -5501,6 +5550,20 @@ class _BalanceChartPainter extends CustomPainter {
       dashed: true,
       alignLeft: !todayFirst,
     );
+    // A loan's payoff (spec 003 §10): the seed marker's dashed style.
+    for (final p in payoffDates) {
+      _paintVertical(
+        canvas,
+        layout,
+        dateOnly(p),
+        viewEnd,
+        color: AppTheme.creditColor.withValues(alpha: 0.7),
+        label: 'Paid off',
+        labelColor: AppTheme.creditColor,
+        dashed: true,
+        offset: dateOnly(p) == today ? markerGap : 0,
+      );
+    }
   }
 
   void _paintVertical(
@@ -5519,6 +5582,7 @@ class _BalanceChartPainter extends CustomPainter {
     if (!next.isAfter(viewStart) || dateOnly(date).isAfter(viewEnd)) return;
     final x = layout.xOf(date, viewStart, visibleDays) + offset;
     if (x < layout.plot.left || x > layout.plot.right) return;
+    debugDateMarker?.call(label, dateOnly(date), x);
     final paint = Paint()
       ..color = color
       ..strokeWidth = 1.4;
@@ -5642,7 +5706,10 @@ class _BalanceChartPainter extends CustomPainter {
         colors: [c.withValues(alpha: 0.30), c.withValues(alpha: 0.03)],
       ).createShader(layout.plot);
     final areaFill = gradientFill(_lineColor);
-    final thresholdY = scale.yOf(lossThreshold);
+    // No alert (loan streams): the line sits far below the plot.
+    final thresholdY = lossThreshold.isFinite
+        ? scale.yOf(lossThreshold)
+        : layout.plot.bottom + 1e4;
     final split = alertFillOf(
       [
         for (final p in plateaus)
@@ -6059,7 +6126,7 @@ class _BalanceChartPainter extends CustomPainter {
       // the chart's right edge when the segment runs off it), so a stack's
       // amounts form a column; the name, left, gives way first.
       final amountPainter = _axisText.get(
-        formatSignedAmount(lane.amount),
+        lane.amountText ?? formatSignedAmount(lane.amount),
         amountStyle.copyWith(
           color: lane.amount < 0 ? AppTheme.debitColor : AppTheme.creditColor,
         ),
@@ -6995,6 +7062,9 @@ class _BalanceChartPainter extends CustomPainter {
     final todayFirst = today.isBefore(seedDay);
     add(today, 'Today', alignLeft: todayFirst);
     add(seedDay, 'Seed', alignLeft: !todayFirst);
+    for (final p in payoffDates) {
+      add(p, 'Paid off');
+    }
     return rects;
   }
 
@@ -7075,6 +7145,7 @@ class _BalanceChartPainter extends CustomPainter {
         !mapEquals(oldDelegate.streamColors, streamColors) ||
         oldDelegate.seedBalance != seedBalance ||
         oldDelegate.lossThreshold != lossThreshold ||
+        !listEquals(oldDelegate.payoffDates, payoffDates) ||
         oldDelegate.viewStart != viewStart ||
         oldDelegate.visibleDays != visibleDays ||
         oldDelegate.labelStyle != labelStyle ||
