@@ -104,10 +104,15 @@ class LoanAccrual {
     final yearDays =
         terms.dayCount == DayCount.actual && _isLeap(day.year) ? 366 : 365;
     // round_half_up(base × pct / 100 / yearDays, 10) in 10^-10 units.
-    final q = (base * p.ratePct).toRational() *
-        Decimal.fromBigInt(_scale10).toRational() /
-        Decimal.fromInt(100 * yearDays).toRational();
-    _accrued += q.round();
+    // Exact integer form: x = base × pct = m / 10^s, so the value is
+    // m·10^10 / (100·yearDays·10^s); half up on a positive quotient is
+    // floor((2N + D) / 2D). (Rational would be identical, but its gcd
+    // work dominated a 35-year walk.)
+    final x = base * p.ratePct;
+    final sc = x.scale;
+    final n = x.shift(sc).toBigInt() * _scale10;
+    final den = BigInt.from(100 * yearDays) * _pow10(sc);
+    _accrued += (n * _two + den) ~/ (den * _two);
   }
 
   /// Step 4: the month-end charge (accrual through [d]) for `monthEnd`.
@@ -133,6 +138,11 @@ class LoanAccrual {
     if (_accrued <= BigInt.zero) return null;
     return _chargeAccrued();
   }
+
+  static final _two = BigInt.two;
+  static final _pow10Cache = <int, BigInt>{};
+  static BigInt _pow10(int k) =>
+      _pow10Cache.putIfAbsent(k, () => BigInt.from(10).pow(k));
 
   static bool _isLeap(int y) => (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
 }

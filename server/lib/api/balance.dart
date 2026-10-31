@@ -9,6 +9,8 @@ import '../repo/stream_repo.dart';
 import '../repo/event_repo.dart';
 import 'json_helpers.dart';
 import 'events.dart' show parseEventBody;
+import 'loan_fields.dart';
+import '../domain/enums.dart' show EventKind;
 
 /// Longest span (~200 years, seed included) a balance, projection, goal or
 /// insights request may walk; pickers allow 1970..2100 and the widest view
@@ -88,13 +90,28 @@ void attachBalanceRoutes(Router router, Session conn) {
         return jsonError(400, 'events must be an array');
       }
       final extra = <BudgetEvent>[];
+      // Saved events an item stands in for (`replacesEventId`, e.g. the
+      // loan being edited in a live preview): left out of the walk.
+      final replaced = <String>{};
       for (var i = 0; i < raw.length; i++) {
         final item = raw[i];
         if (item is! Map<String, dynamic>) {
           return jsonError(400, 'events[$i] must be an object');
         }
-        final p = parseEventBody(item);
+        final rep = item['replacesEventId'];
+        if (rep != null) {
+          if (rep is! String) {
+            return jsonError(400, 'events[$i].replacesEventId must be an id');
+          }
+          replaced.add(rep);
+        }
+        final body = {...item}..remove('replacesEventId');
+        final kind = parseCreateKind(body);
+        final p = parseEventBody(body);
+        final terms = kind.terms(p);
         extra.add(BudgetEvent(
+          kind: kind.kind,
+          loan: terms,
           id: 'preview-$i',
           streamId: id,
           name: p.name,
@@ -112,7 +129,14 @@ void attachBalanceRoutes(Router router, Session conn) {
           createdAt: DateTime.now().toUtc(),
         ));
       }
-      final existing = await events.listByStream(id);
+      final existing = [
+        for (final e in await events.listByStream(id))
+          if (!replaced.contains(e.id)) e,
+      ];
+      final loans = [...existing, ...extra].where((e) => e.isLoan).length;
+      if (loans > 1 && extra.any((e) => e.kind == EventKind.loan)) {
+        return jsonError(409, streamHasLoan);
+      }
       final series = BalanceEngine.compute(
         seedBalance: stream.seedBalance,
         seedDate: stream.seedDate,
@@ -170,6 +194,12 @@ void attachBalanceRoutes(Router router, Session conn) {
         'horizonDays': horizon,
         'threshold': stream.lossThreshold.toString(),
         ...insights.toJson(),
+        // A loan stream runs below zero by design: no alert / zero dates.
+        if (stream.hasLoan) ...{
+          'alertDate': null,
+          'zeroDate': null,
+          'loan': true,
+        },
       });
     } on FormatException catch (e) {
       return jsonError(400, e.message);

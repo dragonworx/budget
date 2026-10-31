@@ -23,6 +23,7 @@ import 'scenarios.dart';
 import 'solve.dart';
 import 'events.dart' show parseEventBody;
 import 'loan_fields.dart';
+import 'loan_summary.dart';
 import '../domain/enums.dart' show EventKind;
 
 /// All `/api/streams...` routes on one router (specific paths before `/<id>`).
@@ -315,6 +316,7 @@ Router buildStreamsApi(Session conn) {
   });
 
   attachBalanceRoutes(router, conn);
+  attachLoanSummaryRoute(router, conn);
   attachCategoryRoutes(router, conn);
   attachSolveRoutes(router, conn);
   attachGoalRoutes(router, conn);

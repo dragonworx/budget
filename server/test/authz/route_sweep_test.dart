@@ -12,6 +12,7 @@ import 'harness.dart';
 const _mounts = {
   'streams.dart': {'buildStreamsApi': 'streams'},
   'balance.dart': {'attachBalanceRoutes': 'streams'},
+  'loan_summary.dart': {'attachLoanSummaryRoute': 'streams'},
   'goal.dart': {'attachGoalRoutes': 'streams'},
   'stream_view.dart': {'attachStreamViewRoutes': 'streams'},
   'solve.dart': {'attachSolveRoutes': 'streams'},

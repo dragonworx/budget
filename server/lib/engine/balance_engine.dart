@@ -2,6 +2,7 @@ import 'package:decimal/decimal.dart';
 
 import '../domain/models.dart';
 import 'calendar_math.dart';
+import 'loan_walk.dart';
 import 'occurrence_gen.dart';
 
 class BalanceSeries {
@@ -27,6 +28,21 @@ class BalanceEngine {
     required DateTime to,
     Map<String, Set<DateTime>> skipped = const {},
   }) {
+    // A stream with an active loan takes the loan walk (spec 002); every
+    // other stream keeps the code below, unchanged.
+    final loan = LoanWalk.activeLoan(events);
+    if (loan != null) {
+      return LoanWalk.compute(
+        seedBalance: seedBalance,
+        seedDate: seedDate,
+        events: events,
+        eventOrder: eventOrder,
+        from: from,
+        to: to,
+        loan: loan,
+        skipped: skipped,
+      ).series;
+    }
     final seed = CalendarMath.dateOnly(seedDate);
     var rangeStart = CalendarMath.dateOnly(from);
     final rangeEnd = CalendarMath.dateOnly(to);
@@ -106,5 +122,30 @@ class BalanceEngine {
           if (CalendarMath.compare(o.date, rangeStart) >= 0) o,
       ],
     );
+  }
+
+  /// Sorts [occurrences] as [compute] does: by date, then by [eventOrder],
+  /// then events missing from it in creation order. (The loan walk's copy
+  /// of [compute]'s ordering; [compute] keeps its own inline code.)
+  static void sortOccurrences(List<Occurrence> occurrences,
+      List<BudgetEvent> events, List<String> eventOrder) {
+    final orderIndex = <String, int>{};
+    for (var i = 0; i < eventOrder.length; i++) {
+      orderIndex[eventOrder[i]] = i;
+    }
+    final creationIndex = <String, int>{};
+    final sortedByCreation = [...events]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    for (var i = 0; i < sortedByCreation.length; i++) {
+      creationIndex[sortedByCreation[i].id] = i;
+    }
+    int rank(Occurrence o) =>
+        orderIndex[o.eventId] ??
+        eventOrder.length + (creationIndex[o.eventId] ?? 0);
+    occurrences.sort((a, b) {
+      final byDate = CalendarMath.compare(a.date, b.date);
+      if (byDate != 0) return byDate;
+      return rank(a).compareTo(rank(b));
+    });
   }
 }

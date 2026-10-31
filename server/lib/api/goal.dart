@@ -11,6 +11,7 @@ import '../engine/solver.dart' show SolverException;
 import '../repo/stream_repo.dart';
 import '../repo/event_repo.dart';
 import 'balance.dart' show checkBalanceRange;
+import 'loan_fields.dart' show planningNotSupported;
 import 'json_helpers.dart';
 
 double? _optDouble(Map<String, dynamic> body, String key) {
@@ -97,6 +98,7 @@ void attachGoalRoutes(Router router, Session conn) {
     try {
       final stream = await streams.get(streamId);
       if (stream == null) return jsonError(404, 'stream not found');
+      if (stream.hasLoan) return jsonError(409, planningNotSupported);
       final body = await readJsonObject(request);
       final goal = parseGoalRequest(body);
       final today = body['today'] == null

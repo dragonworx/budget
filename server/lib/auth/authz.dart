@@ -136,6 +136,7 @@ const policies = <Policy>[
   Policy('GET', 'streams/:a/balance', Scope.stream),
   Policy('POST', 'streams/:a/project', Scope.stream),
   Policy('GET', 'streams/:a/insights', Scope.stream),
+  Policy('GET', 'streams/:a/loan-summary', Scope.stream),
   Policy('POST', 'streams/:a/solve', Scope.stream),
   Policy('POST', 'streams/:a/goal', Scope.stream),
   Policy('GET', 'streams/:a/scenarios', Scope.stream),

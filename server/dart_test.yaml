@@ -1,0 +1,4 @@
+tags:
+  # Timing checks (spec 002): `dart test -t perf` runs only these,
+  # `dart test -x perf` skips them.
+  perf: {}

@@ -6,6 +6,7 @@ import '../engine/solver.dart' show SolverException;
 import '../repo/stream_repo.dart';
 import '../repo/scenario_repo.dart';
 import 'goal.dart';
+import 'loan_fields.dart' show planningNotSupported;
 import 'json_helpers.dart';
 
 const maxScenariosPerStream = 8;
@@ -68,9 +69,9 @@ void attachScenarioRoutes(Router router, Session conn) {
   router.post(
     '/<streamId>/scenarios',
     (Request r, String streamId) => guard(() async {
-      if (await streams.get(streamId) == null) {
-        return jsonError(404, 'stream not found');
-      }
+      final stream = await streams.get(streamId);
+      if (stream == null) return jsonError(404, 'stream not found');
+      if (stream.hasLoan) return jsonError(409, planningNotSupported);
       final b = parseScenarioBody(await readJsonObject(r), create: true);
       final existing = await repo.listByStream(streamId);
       if (existing.length >= maxScenariosPerStream) {
@@ -109,6 +110,9 @@ void attachScenarioRoutes(Router router, Session conn) {
     '/<streamId>/scenarios/<id>',
     (Request r, String streamId, String id) => guard(
       () => owned(streamId, id, () async {
+        if ((await streams.get(streamId))?.hasLoan ?? false) {
+          return jsonError(409, planningNotSupported);
+        }
         final b = parseScenarioBody(await readJsonObject(r), create: false);
         final s = await repo.update(
           id,

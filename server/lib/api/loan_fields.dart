@@ -115,3 +115,6 @@ LoanTerms? parsePatchLoan(Map<String, dynamic> body, BudgetEvent existing) {
   }
   return null;
 }
+
+/// Spec 002 §8: the planner does not model loans yet.
+const planningNotSupported = "Planning isn't available for loan streams yet";
