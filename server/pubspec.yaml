@@ -7,6 +7,8 @@ environment:
   sdk: ^3.3.0
 
 dependencies:
+  budget_loan:
+    path: packages/budget_loan
   budget_recurrence:
     path: packages/budget_recurrence
   crypto: ^3.0.7

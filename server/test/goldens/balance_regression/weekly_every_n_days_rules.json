@@ -1,0 +1,6096 @@
+{
+ "balance 2026-02-01..2028-03-01": {
+  "points": [
+   {
+    "date": "2026-02-01",
+    "closingBalance": "-111.1"
+   },
+   {
+    "date": "2026-02-02",
+    "closingBalance": "-115.6"
+   },
+   {
+    "date": "2026-02-03",
+    "closingBalance": "-115.6"
+   },
+   {
+    "date": "2026-02-04",
+    "closingBalance": "-121.2"
+   },
+   {
+    "date": "2026-02-05",
+    "closingBalance": "1709.05"
+   },
+   {
+    "date": "2026-02-06",
+    "closingBalance": "1704.55"
+   },
+   {
+    "date": "2026-02-07",
+    "closingBalance": "1703.45"
+   },
+   {
+    "date": "2026-02-08",
+    "closingBalance": "1703.45"
+   },
+   {
+    "date": "2026-02-09",
+    "closingBalance": "1698.95"
+   },
+   {
+    "date": "2026-02-10",
+    "closingBalance": "1697.85"
+   },
+   {
+    "date": "2026-02-11",
+    "closingBalance": "1693.35"
+   },
+   {
+    "date": "2026-02-12",
+    "closingBalance": "1693.35"
+   },
+   {
+    "date": "2026-02-13",
+    "closingBalance": "1687.75"
+   },
+   {
+    "date": "2026-02-14",
+    "closingBalance": "1687.75"
+   },
+   {
+    "date": "2026-02-15",
+    "closingBalance": "1627.75"
+   },
+   {
+    "date": "2026-02-16",
+    "closingBalance": "1622.15"
+   },
+   {
+    "date": "2026-02-17",
+    "closingBalance": "1622.15"
+   },
+   {
+    "date": "2026-02-18",
+    "closingBalance": "1617.65"
+   },
+   {
+    "date": "2026-02-19",
+    "closingBalance": "3446.8"
+   },
+   {
+    "date": "2026-02-20",
+    "closingBalance": "3442.3"
+   },
+   {
+    "date": "2026-02-21",
+    "closingBalance": "3442.3"
+   },
+   {
+    "date": "2026-02-22",
+    "closingBalance": "3441.2"
+   },
+   {
+    "date": "2026-02-23",
+    "closingBalance": "3436.7"
+   },
+   {
+    "date": "2026-02-24",
+    "closingBalance": "3436.7"
+   },
+   {
+    "date": "2026-02-25",
+    "closingBalance": "3431.1"
+   },
+   {
+    "date": "2026-02-26",
+    "closingBalance": "3431.1"
+   },
+   {
+    "date": "2026-02-27",
+    "closingBalance": "3426.6"
+   },
+   {
+    "date": "2026-02-28",
+    "closingBalance": "2465.5"
+   },
+   {
+    "date": "2026-03-01",
+    "closingBalance": "2405.5"
+   },
+   {
+    "date": "2026-03-02",
+    "closingBalance": "2401"
+   },
+   {
+    "date": "2026-03-03",
+    "closingBalance": "2399.9"
+   },
+   {
+    "date": "2026-03-04",
+    "closingBalance": "2395.4"
+   },
+   {
+    "date": "2026-03-05",
+    "closingBalance": "4225.65"
+   },
+   {
+    "date": "2026-03-06",
+    "closingBalance": "4220.05"
+   },
+   {
+    "date": "2026-03-07",
+    "closingBalance": "4220.05"
+   },
+   {
+    "date": "2026-03-08",
+    "closingBalance": "4220.05"
+   },
+   {
+    "date": "2026-03-09",
+    "closingBalance": "4214.45"
+   },
+   {
+    "date": "2026-03-10",
+    "closingBalance": "4214.45"
+   },
+   {
+    "date": "2026-03-11",
+    "closingBalance": "4209.95"
+   },
+   {
+    "date": "2026-03-12",
+    "closingBalance": "4208.85"
+   },
+   {
+    "date": "2026-03-13",
+    "closingBalance": "4204.35"
+   },
+   {
+    "date": "2026-03-14",
+    "closingBalance": "4204.35"
+   },
+   {
+    "date": "2026-03-15",
+    "closingBalance": "4143.25"
+   },
+   {
+    "date": "2026-03-16",
+    "closingBalance": "4138.75"
+   },
+   {
+    "date": "2026-03-17",
+    "closingBalance": "4138.75"
+   },
+   {
+    "date": "2026-03-18",
+    "closingBalance": "4133.15"
+   },
+   {
+    "date": "2026-03-19",
+    "closingBalance": "5963.4"
+   },
+   {
+    "date": "2026-03-20",
+    "closingBalance": "5958.9"
+   },
+   {
+    "date": "2026-03-21",
+    "closingBalance": "5957.8"
+   },
+   {
+    "date": "2026-03-22",
+    "closingBalance": "5957.8"
+   },
+   {
+    "date": "2026-03-23",
+    "closingBalance": "5953.3"
+   },
+   {
+    "date": "2026-03-24",
+    "closingBalance": "5952.2"
+   },
+   {
+    "date": "2026-03-25",
+    "closingBalance": "5947.7"
+   },
+   {
+    "date": "2026-03-26",
+    "closingBalance": "5947.7"
+   },
+   {
+    "date": "2026-03-27",
+    "closingBalance": "5942.1"
+   },
+   {
+    "date": "2026-03-28",
+    "closingBalance": "5942.1"
+   },
+   {
+    "date": "2026-03-29",
+    "closingBalance": "5942.1"
+   },
+   {
+    "date": "2026-03-30",
+    "closingBalance": "5936.5"
+   },
+   {
+    "date": "2026-03-31",
+    "closingBalance": "5876.5"
+   },
+   {
+    "date": "2026-04-01",
+    "closingBalance": "5812"
+   },
+   {
+    "date": "2026-04-02",
+    "closingBalance": "7641.15"
+   },
+   {
+    "date": "2026-04-03",
+    "closingBalance": "7636.65"
+   },
+   {
+    "date": "2026-04-04",
+    "closingBalance": "7636.65"
+   },
+   {
+    "date": "2026-04-05",
+    "closingBalance": "7635.55"
+   },
+   {
+    "date": "2026-04-06",
+    "closingBalance": "7631.05"
+   },
+   {
+    "date": "2026-04-07",
+    "closingBalance": "7631.05"
+   },
+   {
+    "date": "2026-04-08",
+    "closingBalance": "7625.45"
+   },
+   {
+    "date": "2026-04-09",
+    "closingBalance": "7625.45"
+   },
+   {
+    "date": "2026-04-10",
+    "closingBalance": "7620.95"
+   },
+   {
+    "date": "2026-04-11",
+    "closingBalance": "7619.85"
+   },
+   {
+    "date": "2026-04-12",
+    "closingBalance": "7619.85"
+   },
+   {
+    "date": "2026-04-13",
+    "closingBalance": "7615.35"
+   },
+   {
+    "date": "2026-04-14",
+    "closingBalance": "7614.25"
+   },
+   {
+    "date": "2026-04-15",
+    "closingBalance": "7549.75"
+   },
+   {
+    "date": "2026-04-16",
+    "closingBalance": "9380"
+   },
+   {
+    "date": "2026-04-17",
+    "closingBalance": "9374.4"
+   },
+   {
+    "date": "2026-04-18",
+    "closingBalance": "9374.4"
+   },
+   {
+    "date": "2026-04-19",
+    "closingBalance": "9374.4"
+   },
+   {
+    "date": "2026-04-20",
+    "closingBalance": "9368.8"
+   },
+   {
+    "date": "2026-04-21",
+    "closingBalance": "9368.8"
+   },
+   {
+    "date": "2026-04-22",
+    "closingBalance": "9364.3"
+   },
+   {
+    "date": "2026-04-23",
+    "closingBalance": "9363.2"
+   },
+   {
+    "date": "2026-04-24",
+    "closingBalance": "9358.7"
+   },
+   {
+    "date": "2026-04-25",
+    "closingBalance": "9358.7"
+   },
+   {
+    "date": "2026-04-26",
+    "closingBalance": "9357.6"
+   },
+   {
+    "date": "2026-04-27",
+    "closingBalance": "9353.1"
+   },
+   {
+    "date": "2026-04-28",
+    "closingBalance": "9353.1"
+   },
+   {
+    "date": "2026-04-29",
+    "closingBalance": "9347.5"
+   },
+   {
+    "date": "2026-04-30",
+    "closingBalance": "10807.75"
+   },
+   {
+    "date": "2026-05-01",
+    "closingBalance": "10743.25"
+   },
+   {
+    "date": "2026-05-02",
+    "closingBalance": "10742.15"
+   },
+   {
+    "date": "2026-05-03",
+    "closingBalance": "10742.15"
+   },
+   {
+    "date": "2026-05-04",
+    "closingBalance": "10737.65"
+   },
+   {
+    "date": "2026-05-05",
+    "closingBalance": "10736.55"
+   },
+   {
+    "date": "2026-05-06",
+    "closingBalance": "10732.05"
+   },
+   {
+    "date": "2026-05-07",
+    "closingBalance": "10732.05"
+   },
+   {
+    "date": "2026-05-08",
+    "closingBalance": "10726.45"
+   },
+   {
+    "date": "2026-05-09",
+    "closingBalance": "10726.45"
+   },
+   {
+    "date": "2026-05-10",
+    "closingBalance": "10726.45"
+   },
+   {
+    "date": "2026-05-11",
+    "closingBalance": "10720.85"
+   },
+   {
+    "date": "2026-05-12",
+    "closingBalance": "10720.85"
+   },
+   {
+    "date": "2026-05-13",
+    "closingBalance": "10716.35"
+   },
+   {
+    "date": "2026-05-14",
+    "closingBalance": "12545.5"
+   },
+   {
+    "date": "2026-05-15",
+    "closingBalance": "12481"
+   },
+   {
+    "date": "2026-05-16",
+    "closingBalance": "12481"
+   },
+   {
+    "date": "2026-05-17",
+    "closingBalance": "12479.9"
+   },
+   {
+    "date": "2026-05-18",
+    "closingBalance": "12475.4"
+   },
+   {
+    "date": "2026-05-19",
+    "closingBalance": "12475.4"
+   },
+   {
+    "date": "2026-05-20",
+    "closingBalance": "12469.8"
+   },
+   {
+    "date": "2026-05-21",
+    "closingBalance": "12469.8"
+   },
+   {
+    "date": "2026-05-22",
+    "closingBalance": "12465.3"
+   },
+   {
+    "date": "2026-05-23",
+    "closingBalance": "12464.2"
+   },
+   {
+    "date": "2026-05-24",
+    "closingBalance": "12464.2"
+   },
+   {
+    "date": "2026-05-25",
+    "closingBalance": "12459.7"
+   },
+   {
+    "date": "2026-05-26",
+    "closingBalance": "12458.6"
+   },
+   {
+    "date": "2026-05-27",
+    "closingBalance": "12454.1"
+   },
+   {
+    "date": "2026-05-28",
+    "closingBalance": "14284.35"
+   },
+   {
+    "date": "2026-05-29",
+    "closingBalance": "14278.75"
+   },
+   {
+    "date": "2026-05-30",
+    "closingBalance": "14278.75"
+   },
+   {
+    "date": "2026-05-31",
+    "closingBalance": "14218.75"
+   },
+   {
+    "date": "2026-06-01",
+    "closingBalance": "14154.25"
+   },
+   {
+    "date": "2026-06-02",
+    "closingBalance": "14154.25"
+   },
+   {
+    "date": "2026-06-03",
+    "closingBalance": "14149.75"
+   },
+   {
+    "date": "2026-06-04",
+    "closingBalance": "14149.75"
+   },
+   {
+    "date": "2026-06-05",
+    "closingBalance": "14145.25"
+   },
+   {
+    "date": "2026-06-06",
+    "closingBalance": "14145.25"
+   },
+   {
+    "date": "2026-06-07",
+    "closingBalance": "14145.25"
+   },
+   {
+    "date": "2026-06-08",
+    "closingBalance": "14140.75"
+   },
+   {
+    "date": "2026-06-09",
+    "closingBalance": "14140.75"
+   },
+   {
+    "date": "2026-06-10",
+    "closingBalance": "14136.25"
+   },
+   {
+    "date": "2026-06-11",
+    "closingBalance": "15966.5"
+   },
+   {
+    "date": "2026-06-12",
+    "closingBalance": "15962"
+   },
+   {
+    "date": "2026-06-13",
+    "closingBalance": "15962"
+   },
+   {
+    "date": "2026-06-14",
+    "closingBalance": "15962"
+   },
+   {
+    "date": "2026-06-15",
+    "closingBalance": "15897.5"
+   },
+   {
+    "date": "2026-06-16",
+    "closingBalance": "15897.5"
+   },
+   {
+    "date": "2026-06-17",
+    "closingBalance": "15893"
+   },
+   {
+    "date": "2026-06-18",
+    "closingBalance": "15893"
+   },
+   {
+    "date": "2026-06-19",
+    "closingBalance": "15888.5"
+   },
+   {
+    "date": "2026-06-20",
+    "closingBalance": "15888.5"
+   },
+   {
+    "date": "2026-06-21",
+    "closingBalance": "15888.5"
+   },
+   {
+    "date": "2026-06-22",
+    "closingBalance": "15884"
+   },
+   {
+    "date": "2026-06-23",
+    "closingBalance": "15884"
+   },
+   {
+    "date": "2026-06-24",
+    "closingBalance": "15879.5"
+   },
+   {
+    "date": "2026-06-25",
+    "closingBalance": "17709.75"
+   },
+   {
+    "date": "2026-06-26",
+    "closingBalance": "17705.25"
+   },
+   {
+    "date": "2026-06-27",
+    "closingBalance": "17705.25"
+   },
+   {
+    "date": "2026-06-28",
+    "closingBalance": "17705.25"
+   },
+   {
+    "date": "2026-06-29",
+    "closingBalance": "17700.75"
+   },
+   {
+    "date": "2026-06-30",
+    "closingBalance": "17640.75"
+   },
+   {
+    "date": "2026-07-01",
+    "closingBalance": "17576.25"
+   },
+   {
+    "date": "2026-07-02",
+    "closingBalance": "17576.25"
+   },
+   {
+    "date": "2026-07-03",
+    "closingBalance": "17571.75"
+   },
+   {
+    "date": "2026-07-04",
+    "closingBalance": "17571.75"
+   },
+   {
+    "date": "2026-07-05",
+    "closingBalance": "17571.75"
+   },
+   {
+    "date": "2026-07-06",
+    "closingBalance": "17567.25"
+   },
+   {
+    "date": "2026-07-07",
+    "closingBalance": "17567.25"
+   },
+   {
+    "date": "2026-07-08",
+    "closingBalance": "17562.75"
+   },
+   {
+    "date": "2026-07-09",
+    "closingBalance": "19393"
+   },
+   {
+    "date": "2026-07-10",
+    "closingBalance": "19388.5"
+   },
+   {
+    "date": "2026-07-11",
+    "closingBalance": "19388.5"
+   },
+   {
+    "date": "2026-07-12",
+    "closingBalance": "19388.5"
+   },
+   {
+    "date": "2026-07-13",
+    "closingBalance": "19384"
+   },
+   {
+    "date": "2026-07-14",
+    "closingBalance": "19384"
+   },
+   {
+    "date": "2026-07-15",
+    "closingBalance": "19319.5"
+   },
+   {
+    "date": "2026-07-16",
+    "closingBalance": "19319.5"
+   },
+   {
+    "date": "2026-07-17",
+    "closingBalance": "19315"
+   },
+   {
+    "date": "2026-07-18",
+    "closingBalance": "19315"
+   },
+   {
+    "date": "2026-07-19",
+    "closingBalance": "19315"
+   },
+   {
+    "date": "2026-07-20",
+    "closingBalance": "19310.5"
+   },
+   {
+    "date": "2026-07-21",
+    "closingBalance": "19310.5"
+   },
+   {
+    "date": "2026-07-22",
+    "closingBalance": "19306"
+   },
+   {
+    "date": "2026-07-23",
+    "closingBalance": "21136.25"
+   },
+   {
+    "date": "2026-07-24",
+    "closingBalance": "21131.75"
+   },
+   {
+    "date": "2026-07-25",
+    "closingBalance": "21131.75"
+   },
+   {
+    "date": "2026-07-26",
+    "closingBalance": "21131.75"
+   },
+   {
+    "date": "2026-07-27",
+    "closingBalance": "21127.25"
+   },
+   {
+    "date": "2026-07-28",
+    "closingBalance": "21127.25"
+   },
+   {
+    "date": "2026-07-29",
+    "closingBalance": "21122.75"
+   },
+   {
+    "date": "2026-07-30",
+    "closingBalance": "21122.75"
+   },
+   {
+    "date": "2026-07-31",
+    "closingBalance": "20748.25"
+   },
+   {
+    "date": "2026-08-01",
+    "closingBalance": "20688.25"
+   },
+   {
+    "date": "2026-08-02",
+    "closingBalance": "20688.25"
+   },
+   {
+    "date": "2026-08-03",
+    "closingBalance": "20683.75"
+   },
+   {
+    "date": "2026-08-04",
+    "closingBalance": "20683.75"
+   },
+   {
+    "date": "2026-08-05",
+    "closingBalance": "20679.25"
+   },
+   {
+    "date": "2026-08-06",
+    "closingBalance": "22509.5"
+   },
+   {
+    "date": "2026-08-07",
+    "closingBalance": "22505"
+   },
+   {
+    "date": "2026-08-08",
+    "closingBalance": "22505"
+   },
+   {
+    "date": "2026-08-09",
+    "closingBalance": "22505"
+   },
+   {
+    "date": "2026-08-10",
+    "closingBalance": "22500.5"
+   },
+   {
+    "date": "2026-08-11",
+    "closingBalance": "22500.5"
+   },
+   {
+    "date": "2026-08-12",
+    "closingBalance": "22496"
+   },
+   {
+    "date": "2026-08-13",
+    "closingBalance": "22496"
+   },
+   {
+    "date": "2026-08-14",
+    "closingBalance": "22491.5"
+   },
+   {
+    "date": "2026-08-15",
+    "closingBalance": "22431.5"
+   },
+   {
+    "date": "2026-08-16",
+    "closingBalance": "22431.5"
+   },
+   {
+    "date": "2026-08-17",
+    "closingBalance": "22427"
+   },
+   {
+    "date": "2026-08-18",
+    "closingBalance": "22427"
+   },
+   {
+    "date": "2026-08-19",
+    "closingBalance": "22422.5"
+   },
+   {
+    "date": "2026-08-20",
+    "closingBalance": "24252.75"
+   },
+   {
+    "date": "2026-08-21",
+    "closingBalance": "24248.25"
+   },
+   {
+    "date": "2026-08-22",
+    "closingBalance": "24248.25"
+   },
+   {
+    "date": "2026-08-23",
+    "closingBalance": "24248.25"
+   },
+   {
+    "date": "2026-08-24",
+    "closingBalance": "24243.75"
+   },
+   {
+    "date": "2026-08-25",
+    "closingBalance": "24243.75"
+   },
+   {
+    "date": "2026-08-26",
+    "closingBalance": "24239.25"
+   },
+   {
+    "date": "2026-08-27",
+    "closingBalance": "24239.25"
+   },
+   {
+    "date": "2026-08-28",
+    "closingBalance": "24234.75"
+   },
+   {
+    "date": "2026-08-29",
+    "closingBalance": "24234.75"
+   },
+   {
+    "date": "2026-08-30",
+    "closingBalance": "24234.75"
+   },
+   {
+    "date": "2026-08-31",
+    "closingBalance": "24170.25"
+   },
+   {
+    "date": "2026-09-01",
+    "closingBalance": "24110.25"
+   },
+   {
+    "date": "2026-09-02",
+    "closingBalance": "24105.75"
+   },
+   {
+    "date": "2026-09-03",
+    "closingBalance": "25936"
+   },
+   {
+    "date": "2026-09-04",
+    "closingBalance": "25931.5"
+   },
+   {
+    "date": "2026-09-05",
+    "closingBalance": "25931.5"
+   },
+   {
+    "date": "2026-09-06",
+    "closingBalance": "25931.5"
+   },
+   {
+    "date": "2026-09-07",
+    "closingBalance": "25927"
+   },
+   {
+    "date": "2026-09-08",
+    "closingBalance": "25927"
+   },
+   {
+    "date": "2026-09-09",
+    "closingBalance": "25922.5"
+   },
+   {
+    "date": "2026-09-10",
+    "closingBalance": "25922.5"
+   },
+   {
+    "date": "2026-09-11",
+    "closingBalance": "25918"
+   },
+   {
+    "date": "2026-09-12",
+    "closingBalance": "25918"
+   },
+   {
+    "date": "2026-09-13",
+    "closingBalance": "25918"
+   },
+   {
+    "date": "2026-09-14",
+    "closingBalance": "25913.5"
+   },
+   {
+    "date": "2026-09-15",
+    "closingBalance": "25853.5"
+   },
+   {
+    "date": "2026-09-16",
+    "closingBalance": "25849"
+   },
+   {
+    "date": "2026-09-17",
+    "closingBalance": "27679.25"
+   },
+   {
+    "date": "2026-09-18",
+    "closingBalance": "27674.75"
+   },
+   {
+    "date": "2026-09-19",
+    "closingBalance": "27674.75"
+   },
+   {
+    "date": "2026-09-20",
+    "closingBalance": "27674.75"
+   },
+   {
+    "date": "2026-09-21",
+    "closingBalance": "27670.25"
+   },
+   {
+    "date": "2026-09-22",
+    "closingBalance": "27670.25"
+   },
+   {
+    "date": "2026-09-23",
+    "closingBalance": "27665.75"
+   },
+   {
+    "date": "2026-09-24",
+    "closingBalance": "27665.75"
+   },
+   {
+    "date": "2026-09-25",
+    "closingBalance": "27661.25"
+   },
+   {
+    "date": "2026-09-26",
+    "closingBalance": "27661.25"
+   },
+   {
+    "date": "2026-09-27",
+    "closingBalance": "27661.25"
+   },
+   {
+    "date": "2026-09-28",
+    "closingBalance": "27656.75"
+   },
+   {
+    "date": "2026-09-29",
+    "closingBalance": "27656.75"
+   },
+   {
+    "date": "2026-09-30",
+    "closingBalance": "27592.25"
+   },
+   {
+    "date": "2026-10-01",
+    "closingBalance": "29362.5"
+   },
+   {
+    "date": "2026-10-02",
+    "closingBalance": "29358"
+   },
+   {
+    "date": "2026-10-03",
+    "closingBalance": "29358"
+   },
+   {
+    "date": "2026-10-04",
+    "closingBalance": "29358"
+   },
+   {
+    "date": "2026-10-05",
+    "closingBalance": "29353.5"
+   },
+   {
+    "date": "2026-10-06",
+    "closingBalance": "29353.5"
+   },
+   {
+    "date": "2026-10-07",
+    "closingBalance": "29349"
+   },
+   {
+    "date": "2026-10-08",
+    "closingBalance": "29349"
+   },
+   {
+    "date": "2026-10-09",
+    "closingBalance": "29344.5"
+   },
+   {
+    "date": "2026-10-10",
+    "closingBalance": "29344.5"
+   },
+   {
+    "date": "2026-10-11",
+    "closingBalance": "29344.5"
+   },
+   {
+    "date": "2026-10-12",
+    "closingBalance": "29340"
+   },
+   {
+    "date": "2026-10-13",
+    "closingBalance": "29340"
+   },
+   {
+    "date": "2026-10-14",
+    "closingBalance": "29335.5"
+   },
+   {
+    "date": "2026-10-15",
+    "closingBalance": "31105.75"
+   },
+   {
+    "date": "2026-10-16",
+    "closingBalance": "31101.25"
+   },
+   {
+    "date": "2026-10-17",
+    "closingBalance": "31101.25"
+   },
+   {
+    "date": "2026-10-18",
+    "closingBalance": "31101.25"
+   },
+   {
+    "date": "2026-10-19",
+    "closingBalance": "31096.75"
+   },
+   {
+    "date": "2026-10-20",
+    "closingBalance": "31096.75"
+   },
+   {
+    "date": "2026-10-21",
+    "closingBalance": "31092.25"
+   },
+   {
+    "date": "2026-10-22",
+    "closingBalance": "31092.25"
+   },
+   {
+    "date": "2026-10-23",
+    "closingBalance": "31087.75"
+   },
+   {
+    "date": "2026-10-24",
+    "closingBalance": "31087.75"
+   },
+   {
+    "date": "2026-10-25",
+    "closingBalance": "31087.75"
+   },
+   {
+    "date": "2026-10-26",
+    "closingBalance": "31083.25"
+   },
+   {
+    "date": "2026-10-27",
+    "closingBalance": "31083.25"
+   },
+   {
+    "date": "2026-10-28",
+    "closingBalance": "31078.75"
+   },
+   {
+    "date": "2026-10-29",
+    "closingBalance": "32909"
+   },
+   {
+    "date": "2026-10-30",
+    "closingBalance": "32904.5"
+   },
+   {
+    "date": "2026-10-31",
+    "closingBalance": "32534.5"
+   },
+   {
+    "date": "2026-11-01",
+    "closingBalance": "32474.5"
+   },
+   {
+    "date": "2026-11-02",
+    "closingBalance": "32470"
+   },
+   {
+    "date": "2026-11-03",
+    "closingBalance": "32470"
+   },
+   {
+    "date": "2026-11-04",
+    "closingBalance": "32465.5"
+   },
+   {
+    "date": "2026-11-05",
+    "closingBalance": "32465.5"
+   },
+   {
+    "date": "2026-11-06",
+    "closingBalance": "32461"
+   },
+   {
+    "date": "2026-11-07",
+    "closingBalance": "32461"
+   },
+   {
+    "date": "2026-11-08",
+    "closingBalance": "32461"
+   },
+   {
+    "date": "2026-11-09",
+    "closingBalance": "32456.5"
+   },
+   {
+    "date": "2026-11-10",
+    "closingBalance": "32456.5"
+   },
+   {
+    "date": "2026-11-11",
+    "closingBalance": "32452"
+   },
+   {
+    "date": "2026-11-12",
+    "closingBalance": "34282.25"
+   },
+   {
+    "date": "2026-11-13",
+    "closingBalance": "34277.75"
+   },
+   {
+    "date": "2026-11-14",
+    "closingBalance": "34277.75"
+   },
+   {
+    "date": "2026-11-15",
+    "closingBalance": "34217.75"
+   },
+   {
+    "date": "2026-11-16",
+    "closingBalance": "34213.25"
+   },
+   {
+    "date": "2026-11-17",
+    "closingBalance": "34213.25"
+   },
+   {
+    "date": "2026-11-18",
+    "closingBalance": "34208.75"
+   },
+   {
+    "date": "2026-11-19",
+    "closingBalance": "34208.75"
+   },
+   {
+    "date": "2026-11-20",
+    "closingBalance": "34204.25"
+   },
+   {
+    "date": "2026-11-21",
+    "closingBalance": "34204.25"
+   },
+   {
+    "date": "2026-11-22",
+    "closingBalance": "34204.25"
+   },
+   {
+    "date": "2026-11-23",
+    "closingBalance": "34199.75"
+   },
+   {
+    "date": "2026-11-24",
+    "closingBalance": "34199.75"
+   },
+   {
+    "date": "2026-11-25",
+    "closingBalance": "34195.25"
+   },
+   {
+    "date": "2026-11-26",
+    "closingBalance": "36025.5"
+   },
+   {
+    "date": "2026-11-27",
+    "closingBalance": "36021"
+   },
+   {
+    "date": "2026-11-28",
+    "closingBalance": "36021"
+   },
+   {
+    "date": "2026-11-29",
+    "closingBalance": "36021"
+   },
+   {
+    "date": "2026-11-30",
+    "closingBalance": "35956.5"
+   },
+   {
+    "date": "2026-12-01",
+    "closingBalance": "35896.5"
+   },
+   {
+    "date": "2026-12-02",
+    "closingBalance": "35892"
+   },
+   {
+    "date": "2026-12-03",
+    "closingBalance": "35892"
+   },
+   {
+    "date": "2026-12-04",
+    "closingBalance": "35887.5"
+   },
+   {
+    "date": "2026-12-05",
+    "closingBalance": "35887.5"
+   },
+   {
+    "date": "2026-12-06",
+    "closingBalance": "35887.5"
+   },
+   {
+    "date": "2026-12-07",
+    "closingBalance": "35883"
+   },
+   {
+    "date": "2026-12-08",
+    "closingBalance": "35883"
+   },
+   {
+    "date": "2026-12-09",
+    "closingBalance": "35878.5"
+   },
+   {
+    "date": "2026-12-10",
+    "closingBalance": "37708.75"
+   },
+   {
+    "date": "2026-12-11",
+    "closingBalance": "37704.25"
+   },
+   {
+    "date": "2026-12-12",
+    "closingBalance": "37704.25"
+   },
+   {
+    "date": "2026-12-13",
+    "closingBalance": "37704.25"
+   },
+   {
+    "date": "2026-12-14",
+    "closingBalance": "37699.75"
+   },
+   {
+    "date": "2026-12-15",
+    "closingBalance": "37639.75"
+   },
+   {
+    "date": "2026-12-16",
+    "closingBalance": "37635.25"
+   },
+   {
+    "date": "2026-12-17",
+    "closingBalance": "37635.25"
+   },
+   {
+    "date": "2026-12-18",
+    "closingBalance": "37630.75"
+   },
+   {
+    "date": "2026-12-19",
+    "closingBalance": "37630.75"
+   },
+   {
+    "date": "2026-12-20",
+    "closingBalance": "37630.75"
+   },
+   {
+    "date": "2026-12-21",
+    "closingBalance": "37626.25"
+   },
+   {
+    "date": "2026-12-22",
+    "closingBalance": "37626.25"
+   },
+   {
+    "date": "2026-12-23",
+    "closingBalance": "37621.75"
+   },
+   {
+    "date": "2026-12-24",
+    "closingBalance": "39452"
+   },
+   {
+    "date": "2026-12-25",
+    "closingBalance": "39447.5"
+   },
+   {
+    "date": "2026-12-26",
+    "closingBalance": "39447.5"
+   },
+   {
+    "date": "2026-12-27",
+    "closingBalance": "39447.5"
+   },
+   {
+    "date": "2026-12-28",
+    "closingBalance": "39443"
+   },
+   {
+    "date": "2026-12-29",
+    "closingBalance": "39443"
+   },
+   {
+    "date": "2026-12-30",
+    "closingBalance": "39438.5"
+   },
+   {
+    "date": "2026-12-31",
+    "closingBalance": "39378.5"
+   },
+   {
+    "date": "2027-01-01",
+    "closingBalance": "39314"
+   },
+   {
+    "date": "2027-01-02",
+    "closingBalance": "39314"
+   },
+   {
+    "date": "2027-01-03",
+    "closingBalance": "39314"
+   },
+   {
+    "date": "2027-01-04",
+    "closingBalance": "39309.5"
+   },
+   {
+    "date": "2027-01-05",
+    "closingBalance": "39309.5"
+   },
+   {
+    "date": "2027-01-06",
+    "closingBalance": "39305"
+   },
+   {
+    "date": "2027-01-07",
+    "closingBalance": "41135.25"
+   },
+   {
+    "date": "2027-01-08",
+    "closingBalance": "41130.75"
+   },
+   {
+    "date": "2027-01-09",
+    "closingBalance": "41130.75"
+   },
+   {
+    "date": "2027-01-10",
+    "closingBalance": "41130.75"
+   },
+   {
+    "date": "2027-01-11",
+    "closingBalance": "41126.25"
+   },
+   {
+    "date": "2027-01-12",
+    "closingBalance": "41126.25"
+   },
+   {
+    "date": "2027-01-13",
+    "closingBalance": "41121.75"
+   },
+   {
+    "date": "2027-01-14",
+    "closingBalance": "41121.75"
+   },
+   {
+    "date": "2027-01-15",
+    "closingBalance": "41057.25"
+   },
+   {
+    "date": "2027-01-16",
+    "closingBalance": "41057.25"
+   },
+   {
+    "date": "2027-01-17",
+    "closingBalance": "41057.25"
+   },
+   {
+    "date": "2027-01-18",
+    "closingBalance": "41052.75"
+   },
+   {
+    "date": "2027-01-19",
+    "closingBalance": "41052.75"
+   },
+   {
+    "date": "2027-01-20",
+    "closingBalance": "41048.25"
+   },
+   {
+    "date": "2027-01-21",
+    "closingBalance": "42878.5"
+   },
+   {
+    "date": "2027-01-22",
+    "closingBalance": "42874"
+   },
+   {
+    "date": "2027-01-23",
+    "closingBalance": "42874"
+   },
+   {
+    "date": "2027-01-24",
+    "closingBalance": "42874"
+   },
+   {
+    "date": "2027-01-25",
+    "closingBalance": "42869.5"
+   },
+   {
+    "date": "2027-01-26",
+    "closingBalance": "42869.5"
+   },
+   {
+    "date": "2027-01-27",
+    "closingBalance": "42865"
+   },
+   {
+    "date": "2027-01-28",
+    "closingBalance": "42865"
+   },
+   {
+    "date": "2027-01-29",
+    "closingBalance": "42860.5"
+   },
+   {
+    "date": "2027-01-30",
+    "closingBalance": "42860.5"
+   },
+   {
+    "date": "2027-01-31",
+    "closingBalance": "42490.5"
+   },
+   {
+    "date": "2027-02-01",
+    "closingBalance": "42426"
+   },
+   {
+    "date": "2027-02-02",
+    "closingBalance": "42426"
+   },
+   {
+    "date": "2027-02-03",
+    "closingBalance": "42421.5"
+   },
+   {
+    "date": "2027-02-04",
+    "closingBalance": "44251.75"
+   },
+   {
+    "date": "2027-02-05",
+    "closingBalance": "44247.25"
+   },
+   {
+    "date": "2027-02-06",
+    "closingBalance": "44247.25"
+   },
+   {
+    "date": "2027-02-07",
+    "closingBalance": "44247.25"
+   },
+   {
+    "date": "2027-02-08",
+    "closingBalance": "44242.75"
+   },
+   {
+    "date": "2027-02-09",
+    "closingBalance": "44242.75"
+   },
+   {
+    "date": "2027-02-10",
+    "closingBalance": "44238.25"
+   },
+   {
+    "date": "2027-02-11",
+    "closingBalance": "44238.25"
+   },
+   {
+    "date": "2027-02-12",
+    "closingBalance": "44233.75"
+   },
+   {
+    "date": "2027-02-13",
+    "closingBalance": "44233.75"
+   },
+   {
+    "date": "2027-02-14",
+    "closingBalance": "44233.75"
+   },
+   {
+    "date": "2027-02-15",
+    "closingBalance": "44169.25"
+   },
+   {
+    "date": "2027-02-16",
+    "closingBalance": "44169.25"
+   },
+   {
+    "date": "2027-02-17",
+    "closingBalance": "44164.75"
+   },
+   {
+    "date": "2027-02-18",
+    "closingBalance": "45995"
+   },
+   {
+    "date": "2027-02-19",
+    "closingBalance": "45990.5"
+   },
+   {
+    "date": "2027-02-20",
+    "closingBalance": "45990.5"
+   },
+   {
+    "date": "2027-02-21",
+    "closingBalance": "45990.5"
+   },
+   {
+    "date": "2027-02-22",
+    "closingBalance": "45986"
+   },
+   {
+    "date": "2027-02-23",
+    "closingBalance": "45986"
+   },
+   {
+    "date": "2027-02-24",
+    "closingBalance": "45981.5"
+   },
+   {
+    "date": "2027-02-25",
+    "closingBalance": "45981.5"
+   },
+   {
+    "date": "2027-02-26",
+    "closingBalance": "45977"
+   },
+   {
+    "date": "2027-02-27",
+    "closingBalance": "45977"
+   },
+   {
+    "date": "2027-02-28",
+    "closingBalance": "45017"
+   },
+   {
+    "date": "2027-03-01",
+    "closingBalance": "44952.5"
+   },
+   {
+    "date": "2027-03-02",
+    "closingBalance": "44952.5"
+   },
+   {
+    "date": "2027-03-03",
+    "closingBalance": "44948"
+   },
+   {
+    "date": "2027-03-04",
+    "closingBalance": "46778.25"
+   },
+   {
+    "date": "2027-03-05",
+    "closingBalance": "46773.75"
+   },
+   {
+    "date": "2027-03-06",
+    "closingBalance": "46773.75"
+   },
+   {
+    "date": "2027-03-07",
+    "closingBalance": "46773.75"
+   },
+   {
+    "date": "2027-03-08",
+    "closingBalance": "46769.25"
+   },
+   {
+    "date": "2027-03-09",
+    "closingBalance": "46769.25"
+   },
+   {
+    "date": "2027-03-10",
+    "closingBalance": "46764.75"
+   },
+   {
+    "date": "2027-03-11",
+    "closingBalance": "46764.75"
+   },
+   {
+    "date": "2027-03-12",
+    "closingBalance": "46760.25"
+   },
+   {
+    "date": "2027-03-13",
+    "closingBalance": "46760.25"
+   },
+   {
+    "date": "2027-03-14",
+    "closingBalance": "46760.25"
+   },
+   {
+    "date": "2027-03-15",
+    "closingBalance": "46695.75"
+   },
+   {
+    "date": "2027-03-16",
+    "closingBalance": "46695.75"
+   },
+   {
+    "date": "2027-03-17",
+    "closingBalance": "46691.25"
+   },
+   {
+    "date": "2027-03-18",
+    "closingBalance": "48521.5"
+   },
+   {
+    "date": "2027-03-19",
+    "closingBalance": "48517"
+   },
+   {
+    "date": "2027-03-20",
+    "closingBalance": "48517"
+   },
+   {
+    "date": "2027-03-21",
+    "closingBalance": "48517"
+   },
+   {
+    "date": "2027-03-22",
+    "closingBalance": "48512.5"
+   },
+   {
+    "date": "2027-03-23",
+    "closingBalance": "48512.5"
+   },
+   {
+    "date": "2027-03-24",
+    "closingBalance": "48508"
+   },
+   {
+    "date": "2027-03-25",
+    "closingBalance": "48508"
+   },
+   {
+    "date": "2027-03-26",
+    "closingBalance": "48503.5"
+   },
+   {
+    "date": "2027-03-27",
+    "closingBalance": "48503.5"
+   },
+   {
+    "date": "2027-03-28",
+    "closingBalance": "48503.5"
+   },
+   {
+    "date": "2027-03-29",
+    "closingBalance": "48499"
+   },
+   {
+    "date": "2027-03-30",
+    "closingBalance": "48499"
+   },
+   {
+    "date": "2027-03-31",
+    "closingBalance": "48434.5"
+   },
+   {
+    "date": "2027-04-01",
+    "closingBalance": "50204.75"
+   },
+   {
+    "date": "2027-04-02",
+    "closingBalance": "50200.25"
+   },
+   {
+    "date": "2027-04-03",
+    "closingBalance": "50200.25"
+   },
+   {
+    "date": "2027-04-04",
+    "closingBalance": "50200.25"
+   },
+   {
+    "date": "2027-04-05",
+    "closingBalance": "50195.75"
+   },
+   {
+    "date": "2027-04-06",
+    "closingBalance": "50195.75"
+   },
+   {
+    "date": "2027-04-07",
+    "closingBalance": "50191.25"
+   },
+   {
+    "date": "2027-04-08",
+    "closingBalance": "50191.25"
+   },
+   {
+    "date": "2027-04-09",
+    "closingBalance": "50186.75"
+   },
+   {
+    "date": "2027-04-10",
+    "closingBalance": "50186.75"
+   },
+   {
+    "date": "2027-04-11",
+    "closingBalance": "50186.75"
+   },
+   {
+    "date": "2027-04-12",
+    "closingBalance": "50182.25"
+   },
+   {
+    "date": "2027-04-13",
+    "closingBalance": "50182.25"
+   },
+   {
+    "date": "2027-04-14",
+    "closingBalance": "50177.75"
+   },
+   {
+    "date": "2027-04-15",
+    "closingBalance": "51948"
+   },
+   {
+    "date": "2027-04-16",
+    "closingBalance": "51943.5"
+   },
+   {
+    "date": "2027-04-17",
+    "closingBalance": "51943.5"
+   },
+   {
+    "date": "2027-04-18",
+    "closingBalance": "51943.5"
+   },
+   {
+    "date": "2027-04-19",
+    "closingBalance": "51939"
+   },
+   {
+    "date": "2027-04-20",
+    "closingBalance": "51939"
+   },
+   {
+    "date": "2027-04-21",
+    "closingBalance": "51934.5"
+   },
+   {
+    "date": "2027-04-22",
+    "closingBalance": "51934.5"
+   },
+   {
+    "date": "2027-04-23",
+    "closingBalance": "51930"
+   },
+   {
+    "date": "2027-04-24",
+    "closingBalance": "51930"
+   },
+   {
+    "date": "2027-04-25",
+    "closingBalance": "51930"
+   },
+   {
+    "date": "2027-04-26",
+    "closingBalance": "51925.5"
+   },
+   {
+    "date": "2027-04-27",
+    "closingBalance": "51925.5"
+   },
+   {
+    "date": "2027-04-28",
+    "closingBalance": "51921"
+   },
+   {
+    "date": "2027-04-29",
+    "closingBalance": "53751.25"
+   },
+   {
+    "date": "2027-04-30",
+    "closingBalance": "53376.75"
+   },
+   {
+    "date": "2027-05-01",
+    "closingBalance": "53316.75"
+   },
+   {
+    "date": "2027-05-02",
+    "closingBalance": "53316.75"
+   },
+   {
+    "date": "2027-05-03",
+    "closingBalance": "53312.25"
+   },
+   {
+    "date": "2027-05-04",
+    "closingBalance": "53312.25"
+   },
+   {
+    "date": "2027-05-05",
+    "closingBalance": "53307.75"
+   },
+   {
+    "date": "2027-05-06",
+    "closingBalance": "53307.75"
+   },
+   {
+    "date": "2027-05-07",
+    "closingBalance": "53303.25"
+   },
+   {
+    "date": "2027-05-08",
+    "closingBalance": "53303.25"
+   },
+   {
+    "date": "2027-05-09",
+    "closingBalance": "53303.25"
+   },
+   {
+    "date": "2027-05-10",
+    "closingBalance": "53298.75"
+   },
+   {
+    "date": "2027-05-11",
+    "closingBalance": "53298.75"
+   },
+   {
+    "date": "2027-05-12",
+    "closingBalance": "53294.25"
+   },
+   {
+    "date": "2027-05-13",
+    "closingBalance": "55124.5"
+   },
+   {
+    "date": "2027-05-14",
+    "closingBalance": "55120"
+   },
+   {
+    "date": "2027-05-15",
+    "closingBalance": "55060"
+   },
+   {
+    "date": "2027-05-16",
+    "closingBalance": "55060"
+   },
+   {
+    "date": "2027-05-17",
+    "closingBalance": "55055.5"
+   },
+   {
+    "date": "2027-05-18",
+    "closingBalance": "55055.5"
+   },
+   {
+    "date": "2027-05-19",
+    "closingBalance": "55051"
+   },
+   {
+    "date": "2027-05-20",
+    "closingBalance": "55051"
+   },
+   {
+    "date": "2027-05-21",
+    "closingBalance": "55046.5"
+   },
+   {
+    "date": "2027-05-22",
+    "closingBalance": "55046.5"
+   },
+   {
+    "date": "2027-05-23",
+    "closingBalance": "55046.5"
+   },
+   {
+    "date": "2027-05-24",
+    "closingBalance": "55042"
+   },
+   {
+    "date": "2027-05-25",
+    "closingBalance": "55042"
+   },
+   {
+    "date": "2027-05-26",
+    "closingBalance": "55037.5"
+   },
+   {
+    "date": "2027-05-27",
+    "closingBalance": "56867.75"
+   },
+   {
+    "date": "2027-05-28",
+    "closingBalance": "56863.25"
+   },
+   {
+    "date": "2027-05-29",
+    "closingBalance": "56863.25"
+   },
+   {
+    "date": "2027-05-30",
+    "closingBalance": "56863.25"
+   },
+   {
+    "date": "2027-05-31",
+    "closingBalance": "56798.75"
+   },
+   {
+    "date": "2027-06-01",
+    "closingBalance": "56738.75"
+   },
+   {
+    "date": "2027-06-02",
+    "closingBalance": "56734.25"
+   },
+   {
+    "date": "2027-06-03",
+    "closingBalance": "56734.25"
+   },
+   {
+    "date": "2027-06-04",
+    "closingBalance": "56729.75"
+   },
+   {
+    "date": "2027-06-05",
+    "closingBalance": "56729.75"
+   },
+   {
+    "date": "2027-06-06",
+    "closingBalance": "56729.75"
+   },
+   {
+    "date": "2027-06-07",
+    "closingBalance": "56725.25"
+   },
+   {
+    "date": "2027-06-08",
+    "closingBalance": "56725.25"
+   },
+   {
+    "date": "2027-06-09",
+    "closingBalance": "56720.75"
+   },
+   {
+    "date": "2027-06-10",
+    "closingBalance": "58551"
+   },
+   {
+    "date": "2027-06-11",
+    "closingBalance": "58546.5"
+   },
+   {
+    "date": "2027-06-12",
+    "closingBalance": "58546.5"
+   },
+   {
+    "date": "2027-06-13",
+    "closingBalance": "58546.5"
+   },
+   {
+    "date": "2027-06-14",
+    "closingBalance": "58542"
+   },
+   {
+    "date": "2027-06-15",
+    "closingBalance": "58482"
+   },
+   {
+    "date": "2027-06-16",
+    "closingBalance": "58477.5"
+   },
+   {
+    "date": "2027-06-17",
+    "closingBalance": "58477.5"
+   },
+   {
+    "date": "2027-06-18",
+    "closingBalance": "58473"
+   },
+   {
+    "date": "2027-06-19",
+    "closingBalance": "58473"
+   },
+   {
+    "date": "2027-06-20",
+    "closingBalance": "58473"
+   },
+   {
+    "date": "2027-06-21",
+    "closingBalance": "58468.5"
+   },
+   {
+    "date": "2027-06-22",
+    "closingBalance": "58468.5"
+   },
+   {
+    "date": "2027-06-23",
+    "closingBalance": "58464"
+   },
+   {
+    "date": "2027-06-24",
+    "closingBalance": "60294.25"
+   },
+   {
+    "date": "2027-06-25",
+    "closingBalance": "60289.75"
+   },
+   {
+    "date": "2027-06-26",
+    "closingBalance": "60289.75"
+   },
+   {
+    "date": "2027-06-27",
+    "closingBalance": "60289.75"
+   },
+   {
+    "date": "2027-06-28",
+    "closingBalance": "60285.25"
+   },
+   {
+    "date": "2027-06-29",
+    "closingBalance": "60285.25"
+   },
+   {
+    "date": "2027-06-30",
+    "closingBalance": "60220.75"
+   },
+   {
+    "date": "2027-07-01",
+    "closingBalance": "60160.75"
+   },
+   {
+    "date": "2027-07-02",
+    "closingBalance": "60156.25"
+   },
+   {
+    "date": "2027-07-03",
+    "closingBalance": "60156.25"
+   },
+   {
+    "date": "2027-07-04",
+    "closingBalance": "60156.25"
+   },
+   {
+    "date": "2027-07-05",
+    "closingBalance": "60151.75"
+   },
+   {
+    "date": "2027-07-06",
+    "closingBalance": "60151.75"
+   },
+   {
+    "date": "2027-07-07",
+    "closingBalance": "60147.25"
+   },
+   {
+    "date": "2027-07-08",
+    "closingBalance": "61977.5"
+   },
+   {
+    "date": "2027-07-09",
+    "closingBalance": "61973"
+   },
+   {
+    "date": "2027-07-10",
+    "closingBalance": "61973"
+   },
+   {
+    "date": "2027-07-11",
+    "closingBalance": "61973"
+   },
+   {
+    "date": "2027-07-12",
+    "closingBalance": "61968.5"
+   },
+   {
+    "date": "2027-07-13",
+    "closingBalance": "61968.5"
+   },
+   {
+    "date": "2027-07-14",
+    "closingBalance": "61964"
+   },
+   {
+    "date": "2027-07-15",
+    "closingBalance": "61904"
+   },
+   {
+    "date": "2027-07-16",
+    "closingBalance": "61899.5"
+   },
+   {
+    "date": "2027-07-17",
+    "closingBalance": "61899.5"
+   },
+   {
+    "date": "2027-07-18",
+    "closingBalance": "61899.5"
+   },
+   {
+    "date": "2027-07-19",
+    "closingBalance": "61895"
+   },
+   {
+    "date": "2027-07-20",
+    "closingBalance": "61895"
+   },
+   {
+    "date": "2027-07-21",
+    "closingBalance": "61890.5"
+   },
+   {
+    "date": "2027-07-22",
+    "closingBalance": "63720.75"
+   },
+   {
+    "date": "2027-07-23",
+    "closingBalance": "63716.25"
+   },
+   {
+    "date": "2027-07-24",
+    "closingBalance": "63716.25"
+   },
+   {
+    "date": "2027-07-25",
+    "closingBalance": "63716.25"
+   },
+   {
+    "date": "2027-07-26",
+    "closingBalance": "63711.75"
+   },
+   {
+    "date": "2027-07-27",
+    "closingBalance": "63711.75"
+   },
+   {
+    "date": "2027-07-28",
+    "closingBalance": "63707.25"
+   },
+   {
+    "date": "2027-07-29",
+    "closingBalance": "63707.25"
+   },
+   {
+    "date": "2027-07-30",
+    "closingBalance": "63702.75"
+   },
+   {
+    "date": "2027-07-31",
+    "closingBalance": "63332.75"
+   },
+   {
+    "date": "2027-08-01",
+    "closingBalance": "63272.75"
+   },
+   {
+    "date": "2027-08-02",
+    "closingBalance": "63268.25"
+   },
+   {
+    "date": "2027-08-03",
+    "closingBalance": "63268.25"
+   },
+   {
+    "date": "2027-08-04",
+    "closingBalance": "63263.75"
+   },
+   {
+    "date": "2027-08-05",
+    "closingBalance": "65094"
+   },
+   {
+    "date": "2027-08-06",
+    "closingBalance": "65089.5"
+   },
+   {
+    "date": "2027-08-07",
+    "closingBalance": "65089.5"
+   },
+   {
+    "date": "2027-08-08",
+    "closingBalance": "65089.5"
+   },
+   {
+    "date": "2027-08-09",
+    "closingBalance": "65085"
+   },
+   {
+    "date": "2027-08-10",
+    "closingBalance": "65085"
+   },
+   {
+    "date": "2027-08-11",
+    "closingBalance": "65080.5"
+   },
+   {
+    "date": "2027-08-12",
+    "closingBalance": "65080.5"
+   },
+   {
+    "date": "2027-08-13",
+    "closingBalance": "65076"
+   },
+   {
+    "date": "2027-08-14",
+    "closingBalance": "65076"
+   },
+   {
+    "date": "2027-08-15",
+    "closingBalance": "65016"
+   },
+   {
+    "date": "2027-08-16",
+    "closingBalance": "65011.5"
+   },
+   {
+    "date": "2027-08-17",
+    "closingBalance": "65011.5"
+   },
+   {
+    "date": "2027-08-18",
+    "closingBalance": "65007"
+   },
+   {
+    "date": "2027-08-19",
+    "closingBalance": "66837.25"
+   },
+   {
+    "date": "2027-08-20",
+    "closingBalance": "66832.75"
+   },
+   {
+    "date": "2027-08-21",
+    "closingBalance": "66832.75"
+   },
+   {
+    "date": "2027-08-22",
+    "closingBalance": "66832.75"
+   },
+   {
+    "date": "2027-08-23",
+    "closingBalance": "66828.25"
+   },
+   {
+    "date": "2027-08-24",
+    "closingBalance": "66828.25"
+   },
+   {
+    "date": "2027-08-25",
+    "closingBalance": "66823.75"
+   },
+   {
+    "date": "2027-08-26",
+    "closingBalance": "66823.75"
+   },
+   {
+    "date": "2027-08-27",
+    "closingBalance": "66819.25"
+   },
+   {
+    "date": "2027-08-28",
+    "closingBalance": "66819.25"
+   },
+   {
+    "date": "2027-08-29",
+    "closingBalance": "66819.25"
+   },
+   {
+    "date": "2027-08-30",
+    "closingBalance": "66814.75"
+   },
+   {
+    "date": "2027-08-31",
+    "closingBalance": "66754.75"
+   },
+   {
+    "date": "2027-09-01",
+    "closingBalance": "66690.25"
+   },
+   {
+    "date": "2027-09-02",
+    "closingBalance": "68520.5"
+   },
+   {
+    "date": "2027-09-03",
+    "closingBalance": "68516"
+   },
+   {
+    "date": "2027-09-04",
+    "closingBalance": "68516"
+   },
+   {
+    "date": "2027-09-05",
+    "closingBalance": "68516"
+   },
+   {
+    "date": "2027-09-06",
+    "closingBalance": "68511.5"
+   },
+   {
+    "date": "2027-09-07",
+    "closingBalance": "68511.5"
+   },
+   {
+    "date": "2027-09-08",
+    "closingBalance": "68507"
+   },
+   {
+    "date": "2027-09-09",
+    "closingBalance": "68507"
+   },
+   {
+    "date": "2027-09-10",
+    "closingBalance": "68502.5"
+   },
+   {
+    "date": "2027-09-11",
+    "closingBalance": "68502.5"
+   },
+   {
+    "date": "2027-09-12",
+    "closingBalance": "68502.5"
+   },
+   {
+    "date": "2027-09-13",
+    "closingBalance": "68498"
+   },
+   {
+    "date": "2027-09-14",
+    "closingBalance": "68498"
+   },
+   {
+    "date": "2027-09-15",
+    "closingBalance": "68433.5"
+   },
+   {
+    "date": "2027-09-16",
+    "closingBalance": "70263.75"
+   },
+   {
+    "date": "2027-09-17",
+    "closingBalance": "70259.25"
+   },
+   {
+    "date": "2027-09-18",
+    "closingBalance": "70259.25"
+   },
+   {
+    "date": "2027-09-19",
+    "closingBalance": "70259.25"
+   },
+   {
+    "date": "2027-09-20",
+    "closingBalance": "70254.75"
+   },
+   {
+    "date": "2027-09-21",
+    "closingBalance": "70254.75"
+   },
+   {
+    "date": "2027-09-22",
+    "closingBalance": "70250.25"
+   },
+   {
+    "date": "2027-09-23",
+    "closingBalance": "70250.25"
+   },
+   {
+    "date": "2027-09-24",
+    "closingBalance": "70245.75"
+   },
+   {
+    "date": "2027-09-25",
+    "closingBalance": "70245.75"
+   },
+   {
+    "date": "2027-09-26",
+    "closingBalance": "70245.75"
+   },
+   {
+    "date": "2027-09-27",
+    "closingBalance": "70241.25"
+   },
+   {
+    "date": "2027-09-28",
+    "closingBalance": "70241.25"
+   },
+   {
+    "date": "2027-09-29",
+    "closingBalance": "70236.75"
+   },
+   {
+    "date": "2027-09-30",
+    "closingBalance": "72007"
+   },
+   {
+    "date": "2027-10-01",
+    "closingBalance": "71942.5"
+   },
+   {
+    "date": "2027-10-02",
+    "closingBalance": "71942.5"
+   },
+   {
+    "date": "2027-10-03",
+    "closingBalance": "71942.5"
+   },
+   {
+    "date": "2027-10-04",
+    "closingBalance": "71938"
+   },
+   {
+    "date": "2027-10-05",
+    "closingBalance": "71938"
+   },
+   {
+    "date": "2027-10-06",
+    "closingBalance": "71933.5"
+   },
+   {
+    "date": "2027-10-07",
+    "closingBalance": "71933.5"
+   },
+   {
+    "date": "2027-10-08",
+    "closingBalance": "71929"
+   },
+   {
+    "date": "2027-10-09",
+    "closingBalance": "71929"
+   },
+   {
+    "date": "2027-10-10",
+    "closingBalance": "71929"
+   },
+   {
+    "date": "2027-10-11",
+    "closingBalance": "71924.5"
+   },
+   {
+    "date": "2027-10-12",
+    "closingBalance": "71924.5"
+   },
+   {
+    "date": "2027-10-13",
+    "closingBalance": "71920"
+   },
+   {
+    "date": "2027-10-14",
+    "closingBalance": "73750.25"
+   },
+   {
+    "date": "2027-10-15",
+    "closingBalance": "73685.75"
+   },
+   {
+    "date": "2027-10-16",
+    "closingBalance": "73685.75"
+   },
+   {
+    "date": "2027-10-17",
+    "closingBalance": "73685.75"
+   },
+   {
+    "date": "2027-10-18",
+    "closingBalance": "73681.25"
+   },
+   {
+    "date": "2027-10-19",
+    "closingBalance": "73681.25"
+   },
+   {
+    "date": "2027-10-20",
+    "closingBalance": "73676.75"
+   },
+   {
+    "date": "2027-10-21",
+    "closingBalance": "73676.75"
+   },
+   {
+    "date": "2027-10-22",
+    "closingBalance": "73672.25"
+   },
+   {
+    "date": "2027-10-23",
+    "closingBalance": "73672.25"
+   },
+   {
+    "date": "2027-10-24",
+    "closingBalance": "73672.25"
+   },
+   {
+    "date": "2027-10-25",
+    "closingBalance": "73667.75"
+   },
+   {
+    "date": "2027-10-26",
+    "closingBalance": "73667.75"
+   },
+   {
+    "date": "2027-10-27",
+    "closingBalance": "73663.25"
+   },
+   {
+    "date": "2027-10-28",
+    "closingBalance": "75493.5"
+   },
+   {
+    "date": "2027-10-29",
+    "closingBalance": "75489"
+   },
+   {
+    "date": "2027-10-30",
+    "closingBalance": "75489"
+   },
+   {
+    "date": "2027-10-31",
+    "closingBalance": "75119"
+   },
+   {
+    "date": "2027-11-01",
+    "closingBalance": "75054.5"
+   },
+   {
+    "date": "2027-11-02",
+    "closingBalance": "75054.5"
+   },
+   {
+    "date": "2027-11-03",
+    "closingBalance": "75050"
+   },
+   {
+    "date": "2027-11-04",
+    "closingBalance": "75050"
+   },
+   {
+    "date": "2027-11-05",
+    "closingBalance": "75045.5"
+   },
+   {
+    "date": "2027-11-06",
+    "closingBalance": "75045.5"
+   },
+   {
+    "date": "2027-11-07",
+    "closingBalance": "75045.5"
+   },
+   {
+    "date": "2027-11-08",
+    "closingBalance": "75041"
+   },
+   {
+    "date": "2027-11-09",
+    "closingBalance": "75041"
+   },
+   {
+    "date": "2027-11-10",
+    "closingBalance": "75036.5"
+   },
+   {
+    "date": "2027-11-11",
+    "closingBalance": "76866.75"
+   },
+   {
+    "date": "2027-11-12",
+    "closingBalance": "76862.25"
+   },
+   {
+    "date": "2027-11-13",
+    "closingBalance": "76862.25"
+   },
+   {
+    "date": "2027-11-14",
+    "closingBalance": "76862.25"
+   },
+   {
+    "date": "2027-11-15",
+    "closingBalance": "76797.75"
+   },
+   {
+    "date": "2027-11-16",
+    "closingBalance": "76797.75"
+   },
+   {
+    "date": "2027-11-17",
+    "closingBalance": "76793.25"
+   },
+   {
+    "date": "2027-11-18",
+    "closingBalance": "76793.25"
+   },
+   {
+    "date": "2027-11-19",
+    "closingBalance": "76788.75"
+   },
+   {
+    "date": "2027-11-20",
+    "closingBalance": "76788.75"
+   },
+   {
+    "date": "2027-11-21",
+    "closingBalance": "76788.75"
+   },
+   {
+    "date": "2027-11-22",
+    "closingBalance": "76784.25"
+   },
+   {
+    "date": "2027-11-23",
+    "closingBalance": "76784.25"
+   },
+   {
+    "date": "2027-11-24",
+    "closingBalance": "76779.75"
+   },
+   {
+    "date": "2027-11-25",
+    "closingBalance": "78610"
+   },
+   {
+    "date": "2027-11-26",
+    "closingBalance": "78605.5"
+   },
+   {
+    "date": "2027-11-27",
+    "closingBalance": "78605.5"
+   },
+   {
+    "date": "2027-11-28",
+    "closingBalance": "78605.5"
+   },
+   {
+    "date": "2027-11-29",
+    "closingBalance": "78601"
+   },
+   {
+    "date": "2027-11-30",
+    "closingBalance": "78541"
+   },
+   {
+    "date": "2027-12-01",
+    "closingBalance": "78476.5"
+   },
+   {
+    "date": "2027-12-02",
+    "closingBalance": "78476.5"
+   },
+   {
+    "date": "2027-12-03",
+    "closingBalance": "78472"
+   },
+   {
+    "date": "2027-12-04",
+    "closingBalance": "78472"
+   },
+   {
+    "date": "2027-12-05",
+    "closingBalance": "78472"
+   },
+   {
+    "date": "2027-12-06",
+    "closingBalance": "78467.5"
+   },
+   {
+    "date": "2027-12-07",
+    "closingBalance": "78467.5"
+   },
+   {
+    "date": "2027-12-08",
+    "closingBalance": "78463"
+   },
+   {
+    "date": "2027-12-09",
+    "closingBalance": "80293.25"
+   },
+   {
+    "date": "2027-12-10",
+    "closingBalance": "80288.75"
+   },
+   {
+    "date": "2027-12-11",
+    "closingBalance": "80288.75"
+   },
+   {
+    "date": "2027-12-12",
+    "closingBalance": "80288.75"
+   },
+   {
+    "date": "2027-12-13",
+    "closingBalance": "80284.25"
+   },
+   {
+    "date": "2027-12-14",
+    "closingBalance": "80284.25"
+   },
+   {
+    "date": "2027-12-15",
+    "closingBalance": "80219.75"
+   },
+   {
+    "date": "2027-12-16",
+    "closingBalance": "80219.75"
+   },
+   {
+    "date": "2027-12-17",
+    "closingBalance": "80215.25"
+   },
+   {
+    "date": "2027-12-18",
+    "closingBalance": "80215.25"
+   },
+   {
+    "date": "2027-12-19",
+    "closingBalance": "80215.25"
+   },
+   {
+    "date": "2027-12-20",
+    "closingBalance": "80210.75"
+   },
+   {
+    "date": "2027-12-21",
+    "closingBalance": "80210.75"
+   },
+   {
+    "date": "2027-12-22",
+    "closingBalance": "80206.25"
+   },
+   {
+    "date": "2027-12-23",
+    "closingBalance": "82036.5"
+   },
+   {
+    "date": "2027-12-24",
+    "closingBalance": "82032"
+   },
+   {
+    "date": "2027-12-25",
+    "closingBalance": "82032"
+   },
+   {
+    "date": "2027-12-26",
+    "closingBalance": "82032"
+   },
+   {
+    "date": "2027-12-27",
+    "closingBalance": "82027.5"
+   },
+   {
+    "date": "2027-12-28",
+    "closingBalance": "82027.5"
+   },
+   {
+    "date": "2027-12-29",
+    "closingBalance": "82023"
+   },
+   {
+    "date": "2027-12-30",
+    "closingBalance": "82023"
+   },
+   {
+    "date": "2027-12-31",
+    "closingBalance": "81958.5"
+   },
+   {
+    "date": "2028-01-01",
+    "closingBalance": "81898.5"
+   },
+   {
+    "date": "2028-01-02",
+    "closingBalance": "81898.5"
+   },
+   {
+    "date": "2028-01-03",
+    "closingBalance": "81894"
+   },
+   {
+    "date": "2028-01-04",
+    "closingBalance": "81894"
+   },
+   {
+    "date": "2028-01-05",
+    "closingBalance": "81889.5"
+   },
+   {
+    "date": "2028-01-06",
+    "closingBalance": "83719.75"
+   },
+   {
+    "date": "2028-01-07",
+    "closingBalance": "83715.25"
+   },
+   {
+    "date": "2028-01-08",
+    "closingBalance": "83715.25"
+   },
+   {
+    "date": "2028-01-09",
+    "closingBalance": "83715.25"
+   },
+   {
+    "date": "2028-01-10",
+    "closingBalance": "83710.75"
+   },
+   {
+    "date": "2028-01-11",
+    "closingBalance": "83710.75"
+   },
+   {
+    "date": "2028-01-12",
+    "closingBalance": "83706.25"
+   },
+   {
+    "date": "2028-01-13",
+    "closingBalance": "83706.25"
+   },
+   {
+    "date": "2028-01-14",
+    "closingBalance": "83701.75"
+   },
+   {
+    "date": "2028-01-15",
+    "closingBalance": "83641.75"
+   },
+   {
+    "date": "2028-01-16",
+    "closingBalance": "83641.75"
+   },
+   {
+    "date": "2028-01-17",
+    "closingBalance": "83637.25"
+   },
+   {
+    "date": "2028-01-18",
+    "closingBalance": "83637.25"
+   },
+   {
+    "date": "2028-01-19",
+    "closingBalance": "83632.75"
+   },
+   {
+    "date": "2028-01-20",
+    "closingBalance": "85463"
+   },
+   {
+    "date": "2028-01-21",
+    "closingBalance": "85458.5"
+   },
+   {
+    "date": "2028-01-22",
+    "closingBalance": "85458.5"
+   },
+   {
+    "date": "2028-01-23",
+    "closingBalance": "85458.5"
+   },
+   {
+    "date": "2028-01-24",
+    "closingBalance": "85454"
+   },
+   {
+    "date": "2028-01-25",
+    "closingBalance": "85454"
+   },
+   {
+    "date": "2028-01-26",
+    "closingBalance": "85449.5"
+   },
+   {
+    "date": "2028-01-27",
+    "closingBalance": "85449.5"
+   },
+   {
+    "date": "2028-01-28",
+    "closingBalance": "85445"
+   },
+   {
+    "date": "2028-01-29",
+    "closingBalance": "85445"
+   },
+   {
+    "date": "2028-01-30",
+    "closingBalance": "85445"
+   },
+   {
+    "date": "2028-01-31",
+    "closingBalance": "85380.5"
+   },
+   {
+    "date": "2028-02-01",
+    "closingBalance": "85320.5"
+   },
+   {
+    "date": "2028-02-02",
+    "closingBalance": "85316"
+   },
+   {
+    "date": "2028-02-03",
+    "closingBalance": "87146.25"
+   },
+   {
+    "date": "2028-02-04",
+    "closingBalance": "87141.75"
+   },
+   {
+    "date": "2028-02-05",
+    "closingBalance": "87141.75"
+   },
+   {
+    "date": "2028-02-06",
+    "closingBalance": "87141.75"
+   },
+   {
+    "date": "2028-02-07",
+    "closingBalance": "87137.25"
+   },
+   {
+    "date": "2028-02-08",
+    "closingBalance": "87137.25"
+   },
+   {
+    "date": "2028-02-09",
+    "closingBalance": "87132.75"
+   },
+   {
+    "date": "2028-02-10",
+    "closingBalance": "87132.75"
+   },
+   {
+    "date": "2028-02-11",
+    "closingBalance": "87128.25"
+   },
+   {
+    "date": "2028-02-12",
+    "closingBalance": "87128.25"
+   },
+   {
+    "date": "2028-02-13",
+    "closingBalance": "87128.25"
+   },
+   {
+    "date": "2028-02-14",
+    "closingBalance": "87123.75"
+   },
+   {
+    "date": "2028-02-15",
+    "closingBalance": "87063.75"
+   },
+   {
+    "date": "2028-02-16",
+    "closingBalance": "87059.25"
+   },
+   {
+    "date": "2028-02-17",
+    "closingBalance": "88889.5"
+   },
+   {
+    "date": "2028-02-18",
+    "closingBalance": "88885"
+   },
+   {
+    "date": "2028-02-19",
+    "closingBalance": "88885"
+   },
+   {
+    "date": "2028-02-20",
+    "closingBalance": "88885"
+   },
+   {
+    "date": "2028-02-21",
+    "closingBalance": "88880.5"
+   },
+   {
+    "date": "2028-02-22",
+    "closingBalance": "88880.5"
+   },
+   {
+    "date": "2028-02-23",
+    "closingBalance": "88876"
+   },
+   {
+    "date": "2028-02-24",
+    "closingBalance": "88876"
+   },
+   {
+    "date": "2028-02-25",
+    "closingBalance": "88871.5"
+   },
+   {
+    "date": "2028-02-26",
+    "closingBalance": "88871.5"
+   },
+   {
+    "date": "2028-02-27",
+    "closingBalance": "88871.5"
+   },
+   {
+    "date": "2028-02-28",
+    "closingBalance": "87967"
+   },
+   {
+    "date": "2028-02-29",
+    "closingBalance": "87907"
+   },
+   {
+    "date": "2028-03-01",
+    "closingBalance": "87842.5"
+   }
+  ],
+  "occurrences": [
+   {
+    "eventId": "daily",
+    "date": "2026-02-01",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-02-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-02-04",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-02-05",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-02-07",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-02-10",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-02-13",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-02-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-02-16",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-02-19",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-02-19",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-02-22",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-02-25",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-02-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-02-28",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-02-28",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "yearly",
+    "date": "2026-02-28",
+    "signedDelta": "-900",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-03-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-03",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-03-05",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-06",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-09",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-12",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-15",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-03-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-18",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-03-19",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-21",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-24",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-27",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-03-30",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-03-30",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-03-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-04-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-04-02",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-02",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-05",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-08",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-11",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-14",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-04-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-04-16",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-17",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-20",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-23",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-26",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-04-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-04-29",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-04-30",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "quarterly",
+    "date": "2026-04-30",
+    "signedDelta": "-310",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-04-30",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-05-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-02",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-05",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-08",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-11",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-05-14",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-14",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-05-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-17",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-20",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-23",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-26",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-05-28",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-05-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "daily",
+    "date": "2026-05-29",
+    "signedDelta": "-1.1",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-05-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-06-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-06-11",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-06-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-06-25",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-06-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-06-30",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-07-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-07-09",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-07-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-07-23",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-07-31",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "quarterly",
+    "date": "2026-07-31",
+    "signedDelta": "-310",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-07-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-08-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-08-06",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-08-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-08-20",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-08-31",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-08-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-09-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-09-03",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-09-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-09-17",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-09-30",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-09-30",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-10-01",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-10-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-10-15",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-10-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-10-29",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-10-30",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "quarterly",
+    "date": "2026-10-31",
+    "signedDelta": "-310",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-10-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-11-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-11-12",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-11-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-11-26",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-11-30",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-11-30",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-12-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-12-10",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-12-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2026-12-24",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2026-12-30",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2026-12-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-01-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-01-07",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-01-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-01-21",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-01-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "quarterly",
+    "date": "2027-01-31",
+    "signedDelta": "-310",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-01-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-02-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-02-04",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-02-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-02-18",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-02-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-02-28",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "yearly",
+    "date": "2027-02-28",
+    "signedDelta": "-900",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-03-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-03-04",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-03-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-03-18",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-03-31",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-03-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-04-01",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-04-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-04-15",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-04-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-04-29",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-04-30",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "quarterly",
+    "date": "2027-04-30",
+    "signedDelta": "-310",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-04-30",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-05-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-05-13",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-05-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-05-27",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-05-31",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-05-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-06-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-06-10",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-06-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-06-24",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-06-30",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-06-30",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-07-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-07-08",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-07-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-07-22",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-07-30",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "quarterly",
+    "date": "2027-07-31",
+    "signedDelta": "-310",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-07-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-08-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-08-05",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-08-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-08-19",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-08-30",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-08-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-09-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-09-02",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-09-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-09-16",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-09-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-09-30",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-09-30",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-10-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-10-14",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-10-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-10-28",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-10-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "quarterly",
+    "date": "2027-10-31",
+    "signedDelta": "-310",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-10-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-11-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-11-11",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-11-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-11-25",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-11-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-11-30",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-12-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-06",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-08",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-12-09",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-13",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-15",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-12-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-20",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-22",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2027-12-23",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-27",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-29",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2027-12-31",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2027-12-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2028-01-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-03",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-05",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2028-01-06",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-10",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-12",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2028-01-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-17",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-19",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2028-01-20",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-24",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-26",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-01-31",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2028-01-31",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2028-02-01",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-02",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2028-02-03",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-04",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-07",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-09",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-11",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-14",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2028-02-15",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-16",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "fortnight",
+    "date": "2028-02-17",
+    "signedDelta": "1830.25",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-18",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-21",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-23",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-25",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-02-28",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "yearly",
+    "date": "2028-02-28",
+    "signedDelta": "-900",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2028-02-29",
+    "signedDelta": "-60",
+    "skipped": false
+   },
+   {
+    "eventId": "coffee",
+    "date": "2028-03-01",
+    "signedDelta": "-4.5",
+    "skipped": false
+   },
+   {
+    "eventId": "monthdays",
+    "date": "2028-03-01",
+    "signedDelta": "-60",
+    "skipped": false
+   }
+  ]
+ },
+ "insights": {
+  "from": "2026-02-01",
+  "days": 365,
+  "horizonDays": 1825,
+  "threshold": "0",
+  "lowest": {
+   "date": "2026-02-04",
+   "balance": "-121.20"
+  },
+  "alertDate": "2026-02-01",
+  "zeroDate": "2026-02-01"
+ }
+}

@@ -1,0 +1,1694 @@
+{
+ "balance 2026-03-01..2026-12-31": {
+  "points": [
+   {
+    "date": "2026-03-01",
+    "closingBalance": "300"
+   },
+   {
+    "date": "2026-03-02",
+    "closingBalance": "275"
+   },
+   {
+    "date": "2026-03-03",
+    "closingBalance": "275"
+   },
+   {
+    "date": "2026-03-04",
+    "closingBalance": "275"
+   },
+   {
+    "date": "2026-03-05",
+    "closingBalance": "196"
+   },
+   {
+    "date": "2026-03-06",
+    "closingBalance": "196"
+   },
+   {
+    "date": "2026-03-07",
+    "closingBalance": "196"
+   },
+   {
+    "date": "2026-03-08",
+    "closingBalance": "196"
+   },
+   {
+    "date": "2026-03-09",
+    "closingBalance": "196"
+   },
+   {
+    "date": "2026-03-10",
+    "closingBalance": "196"
+   },
+   {
+    "date": "2026-03-11",
+    "closingBalance": "196"
+   },
+   {
+    "date": "2026-03-12",
+    "closingBalance": "196"
+   },
+   {
+    "date": "2026-03-13",
+    "closingBalance": "196"
+   },
+   {
+    "date": "2026-03-14",
+    "closingBalance": "596"
+   },
+   {
+    "date": "2026-03-15",
+    "closingBalance": "596"
+   },
+   {
+    "date": "2026-03-16",
+    "closingBalance": "571"
+   },
+   {
+    "date": "2026-03-17",
+    "closingBalance": "571"
+   },
+   {
+    "date": "2026-03-18",
+    "closingBalance": "571"
+   },
+   {
+    "date": "2026-03-19",
+    "closingBalance": "571"
+   },
+   {
+    "date": "2026-03-20",
+    "closingBalance": "571"
+   },
+   {
+    "date": "2026-03-21",
+    "closingBalance": "571"
+   },
+   {
+    "date": "2026-03-22",
+    "closingBalance": "571"
+   },
+   {
+    "date": "2026-03-23",
+    "closingBalance": "546"
+   },
+   {
+    "date": "2026-03-24",
+    "closingBalance": "546"
+   },
+   {
+    "date": "2026-03-25",
+    "closingBalance": "546"
+   },
+   {
+    "date": "2026-03-26",
+    "closingBalance": "546"
+   },
+   {
+    "date": "2026-03-27",
+    "closingBalance": "546"
+   },
+   {
+    "date": "2026-03-28",
+    "closingBalance": "946"
+   },
+   {
+    "date": "2026-03-29",
+    "closingBalance": "946"
+   },
+   {
+    "date": "2026-03-30",
+    "closingBalance": "921"
+   },
+   {
+    "date": "2026-03-31",
+    "closingBalance": "921"
+   },
+   {
+    "date": "2026-04-01",
+    "closingBalance": "921"
+   },
+   {
+    "date": "2026-04-02",
+    "closingBalance": "921"
+   },
+   {
+    "date": "2026-04-03",
+    "closingBalance": "921"
+   },
+   {
+    "date": "2026-04-04",
+    "closingBalance": "921"
+   },
+   {
+    "date": "2026-04-05",
+    "closingBalance": "842"
+   },
+   {
+    "date": "2026-04-06",
+    "closingBalance": "842"
+   },
+   {
+    "date": "2026-04-07",
+    "closingBalance": "842"
+   },
+   {
+    "date": "2026-04-08",
+    "closingBalance": "842"
+   },
+   {
+    "date": "2026-04-09",
+    "closingBalance": "842"
+   },
+   {
+    "date": "2026-04-10",
+    "closingBalance": "842"
+   },
+   {
+    "date": "2026-04-11",
+    "closingBalance": "1242"
+   },
+   {
+    "date": "2026-04-12",
+    "closingBalance": "1242"
+   },
+   {
+    "date": "2026-04-13",
+    "closingBalance": "1217"
+   },
+   {
+    "date": "2026-04-14",
+    "closingBalance": "1217"
+   },
+   {
+    "date": "2026-04-15",
+    "closingBalance": "1217"
+   },
+   {
+    "date": "2026-04-16",
+    "closingBalance": "1217"
+   },
+   {
+    "date": "2026-04-17",
+    "closingBalance": "1217"
+   },
+   {
+    "date": "2026-04-18",
+    "closingBalance": "1217"
+   },
+   {
+    "date": "2026-04-19",
+    "closingBalance": "1217"
+   },
+   {
+    "date": "2026-04-20",
+    "closingBalance": "1192"
+   },
+   {
+    "date": "2026-04-21",
+    "closingBalance": "1192"
+   },
+   {
+    "date": "2026-04-22",
+    "closingBalance": "1192"
+   },
+   {
+    "date": "2026-04-23",
+    "closingBalance": "1192"
+   },
+   {
+    "date": "2026-04-24",
+    "closingBalance": "1192"
+   },
+   {
+    "date": "2026-04-25",
+    "closingBalance": "1592"
+   },
+   {
+    "date": "2026-04-26",
+    "closingBalance": "1592"
+   },
+   {
+    "date": "2026-04-27",
+    "closingBalance": "1567"
+   },
+   {
+    "date": "2026-04-28",
+    "closingBalance": "1567"
+   },
+   {
+    "date": "2026-04-29",
+    "closingBalance": "1567"
+   },
+   {
+    "date": "2026-04-30",
+    "closingBalance": "1567"
+   },
+   {
+    "date": "2026-05-01",
+    "closingBalance": "1567"
+   },
+   {
+    "date": "2026-05-02",
+    "closingBalance": "1567"
+   },
+   {
+    "date": "2026-05-03",
+    "closingBalance": "1567"
+   },
+   {
+    "date": "2026-05-04",
+    "closingBalance": "1542"
+   },
+   {
+    "date": "2026-05-05",
+    "closingBalance": "1422"
+   },
+   {
+    "date": "2026-05-06",
+    "closingBalance": "1422"
+   },
+   {
+    "date": "2026-05-07",
+    "closingBalance": "1422"
+   },
+   {
+    "date": "2026-05-08",
+    "closingBalance": "1422"
+   },
+   {
+    "date": "2026-05-09",
+    "closingBalance": "1822"
+   },
+   {
+    "date": "2026-05-10",
+    "closingBalance": "1822"
+   },
+   {
+    "date": "2026-05-11",
+    "closingBalance": "1797"
+   },
+   {
+    "date": "2026-05-12",
+    "closingBalance": "1797"
+   },
+   {
+    "date": "2026-05-13",
+    "closingBalance": "1797"
+   },
+   {
+    "date": "2026-05-14",
+    "closingBalance": "1797"
+   },
+   {
+    "date": "2026-05-15",
+    "closingBalance": "1797"
+   },
+   {
+    "date": "2026-05-16",
+    "closingBalance": "1797"
+   },
+   {
+    "date": "2026-05-17",
+    "closingBalance": "1797"
+   },
+   {
+    "date": "2026-05-18",
+    "closingBalance": "1772"
+   },
+   {
+    "date": "2026-05-19",
+    "closingBalance": "1772"
+   },
+   {
+    "date": "2026-05-20",
+    "closingBalance": "1772"
+   },
+   {
+    "date": "2026-05-21",
+    "closingBalance": "1772"
+   },
+   {
+    "date": "2026-05-22",
+    "closingBalance": "1772"
+   },
+   {
+    "date": "2026-05-23",
+    "closingBalance": "2172"
+   },
+   {
+    "date": "2026-05-24",
+    "closingBalance": "2172"
+   },
+   {
+    "date": "2026-05-25",
+    "closingBalance": "2147"
+   },
+   {
+    "date": "2026-05-26",
+    "closingBalance": "2147"
+   },
+   {
+    "date": "2026-05-27",
+    "closingBalance": "2147"
+   },
+   {
+    "date": "2026-05-28",
+    "closingBalance": "2147"
+   },
+   {
+    "date": "2026-05-29",
+    "closingBalance": "2147"
+   },
+   {
+    "date": "2026-05-30",
+    "closingBalance": "2147"
+   },
+   {
+    "date": "2026-05-31",
+    "closingBalance": "2147"
+   },
+   {
+    "date": "2026-06-01",
+    "closingBalance": "2122"
+   },
+   {
+    "date": "2026-06-02",
+    "closingBalance": "2122"
+   },
+   {
+    "date": "2026-06-03",
+    "closingBalance": "2122"
+   },
+   {
+    "date": "2026-06-04",
+    "closingBalance": "2122"
+   },
+   {
+    "date": "2026-06-05",
+    "closingBalance": "2122"
+   },
+   {
+    "date": "2026-06-06",
+    "closingBalance": "2522"
+   },
+   {
+    "date": "2026-06-07",
+    "closingBalance": "2522"
+   },
+   {
+    "date": "2026-06-08",
+    "closingBalance": "2497"
+   },
+   {
+    "date": "2026-06-09",
+    "closingBalance": "2497"
+   },
+   {
+    "date": "2026-06-10",
+    "closingBalance": "2497"
+   },
+   {
+    "date": "2026-06-11",
+    "closingBalance": "2497"
+   },
+   {
+    "date": "2026-06-12",
+    "closingBalance": "2497"
+   },
+   {
+    "date": "2026-06-13",
+    "closingBalance": "2497"
+   },
+   {
+    "date": "2026-06-14",
+    "closingBalance": "2497"
+   },
+   {
+    "date": "2026-06-15",
+    "closingBalance": "2472"
+   },
+   {
+    "date": "2026-06-16",
+    "closingBalance": "2472"
+   },
+   {
+    "date": "2026-06-17",
+    "closingBalance": "2472"
+   },
+   {
+    "date": "2026-06-18",
+    "closingBalance": "2472"
+   },
+   {
+    "date": "2026-06-19",
+    "closingBalance": "2472"
+   },
+   {
+    "date": "2026-06-20",
+    "closingBalance": "2872"
+   },
+   {
+    "date": "2026-06-21",
+    "closingBalance": "2872"
+   },
+   {
+    "date": "2026-06-22",
+    "closingBalance": "2847"
+   },
+   {
+    "date": "2026-06-23",
+    "closingBalance": "2847"
+   },
+   {
+    "date": "2026-06-24",
+    "closingBalance": "2847"
+   },
+   {
+    "date": "2026-06-25",
+    "closingBalance": "2847"
+   },
+   {
+    "date": "2026-06-26",
+    "closingBalance": "2847"
+   },
+   {
+    "date": "2026-06-27",
+    "closingBalance": "2847"
+   },
+   {
+    "date": "2026-06-28",
+    "closingBalance": "2847"
+   },
+   {
+    "date": "2026-06-29",
+    "closingBalance": "2822"
+   },
+   {
+    "date": "2026-06-30",
+    "closingBalance": "2822"
+   },
+   {
+    "date": "2026-07-01",
+    "closingBalance": "2822"
+   },
+   {
+    "date": "2026-07-02",
+    "closingBalance": "2822"
+   },
+   {
+    "date": "2026-07-03",
+    "closingBalance": "2822"
+   },
+   {
+    "date": "2026-07-04",
+    "closingBalance": "3222"
+   },
+   {
+    "date": "2026-07-05",
+    "closingBalance": "3237"
+   },
+   {
+    "date": "2026-07-06",
+    "closingBalance": "3212"
+   },
+   {
+    "date": "2026-07-07",
+    "closingBalance": "3212"
+   },
+   {
+    "date": "2026-07-08",
+    "closingBalance": "3212"
+   },
+   {
+    "date": "2026-07-09",
+    "closingBalance": "3212"
+   },
+   {
+    "date": "2026-07-10",
+    "closingBalance": "3212"
+   },
+   {
+    "date": "2026-07-11",
+    "closingBalance": "3212"
+   },
+   {
+    "date": "2026-07-12",
+    "closingBalance": "3212"
+   },
+   {
+    "date": "2026-07-13",
+    "closingBalance": "3187"
+   },
+   {
+    "date": "2026-07-14",
+    "closingBalance": "3187"
+   },
+   {
+    "date": "2026-07-15",
+    "closingBalance": "3187"
+   },
+   {
+    "date": "2026-07-16",
+    "closingBalance": "3187"
+   },
+   {
+    "date": "2026-07-17",
+    "closingBalance": "3187"
+   },
+   {
+    "date": "2026-07-18",
+    "closingBalance": "3587"
+   },
+   {
+    "date": "2026-07-19",
+    "closingBalance": "3587"
+   },
+   {
+    "date": "2026-07-20",
+    "closingBalance": "3562"
+   },
+   {
+    "date": "2026-07-21",
+    "closingBalance": "3562"
+   },
+   {
+    "date": "2026-07-22",
+    "closingBalance": "3562"
+   },
+   {
+    "date": "2026-07-23",
+    "closingBalance": "3562"
+   },
+   {
+    "date": "2026-07-24",
+    "closingBalance": "3562"
+   },
+   {
+    "date": "2026-07-25",
+    "closingBalance": "3562"
+   },
+   {
+    "date": "2026-07-26",
+    "closingBalance": "3562"
+   },
+   {
+    "date": "2026-07-27",
+    "closingBalance": "3537"
+   },
+   {
+    "date": "2026-07-28",
+    "closingBalance": "3537"
+   },
+   {
+    "date": "2026-07-29",
+    "closingBalance": "3537"
+   },
+   {
+    "date": "2026-07-30",
+    "closingBalance": "3537"
+   },
+   {
+    "date": "2026-07-31",
+    "closingBalance": "3537"
+   },
+   {
+    "date": "2026-08-01",
+    "closingBalance": "3937"
+   },
+   {
+    "date": "2026-08-02",
+    "closingBalance": "3937"
+   },
+   {
+    "date": "2026-08-03",
+    "closingBalance": "3912"
+   },
+   {
+    "date": "2026-08-04",
+    "closingBalance": "3912"
+   },
+   {
+    "date": "2026-08-05",
+    "closingBalance": "3833"
+   },
+   {
+    "date": "2026-08-06",
+    "closingBalance": "3833"
+   },
+   {
+    "date": "2026-08-07",
+    "closingBalance": "3833"
+   },
+   {
+    "date": "2026-08-08",
+    "closingBalance": "3833"
+   },
+   {
+    "date": "2026-08-09",
+    "closingBalance": "3833"
+   },
+   {
+    "date": "2026-08-10",
+    "closingBalance": "3808"
+   },
+   {
+    "date": "2026-08-11",
+    "closingBalance": "3808"
+   },
+   {
+    "date": "2026-08-12",
+    "closingBalance": "3808"
+   },
+   {
+    "date": "2026-08-13",
+    "closingBalance": "3808"
+   },
+   {
+    "date": "2026-08-14",
+    "closingBalance": "3808"
+   },
+   {
+    "date": "2026-08-15",
+    "closingBalance": "4208"
+   },
+   {
+    "date": "2026-08-16",
+    "closingBalance": "4208"
+   },
+   {
+    "date": "2026-08-17",
+    "closingBalance": "4183"
+   },
+   {
+    "date": "2026-08-18",
+    "closingBalance": "4183"
+   },
+   {
+    "date": "2026-08-19",
+    "closingBalance": "4183"
+   },
+   {
+    "date": "2026-08-20",
+    "closingBalance": "4183"
+   },
+   {
+    "date": "2026-08-21",
+    "closingBalance": "4183"
+   },
+   {
+    "date": "2026-08-22",
+    "closingBalance": "4183"
+   },
+   {
+    "date": "2026-08-23",
+    "closingBalance": "4183"
+   },
+   {
+    "date": "2026-08-24",
+    "closingBalance": "4158"
+   },
+   {
+    "date": "2026-08-25",
+    "closingBalance": "4158"
+   },
+   {
+    "date": "2026-08-26",
+    "closingBalance": "4158"
+   },
+   {
+    "date": "2026-08-27",
+    "closingBalance": "4158"
+   },
+   {
+    "date": "2026-08-28",
+    "closingBalance": "4158"
+   },
+   {
+    "date": "2026-08-29",
+    "closingBalance": "4558"
+   },
+   {
+    "date": "2026-08-30",
+    "closingBalance": "4558"
+   },
+   {
+    "date": "2026-08-31",
+    "closingBalance": "4533"
+   },
+   {
+    "date": "2026-09-01",
+    "closingBalance": "4533"
+   },
+   {
+    "date": "2026-09-02",
+    "closingBalance": "4533"
+   },
+   {
+    "date": "2026-09-03",
+    "closingBalance": "4533"
+   },
+   {
+    "date": "2026-09-04",
+    "closingBalance": "4533"
+   },
+   {
+    "date": "2026-09-05",
+    "closingBalance": "4454"
+   },
+   {
+    "date": "2026-09-06",
+    "closingBalance": "4454"
+   },
+   {
+    "date": "2026-09-07",
+    "closingBalance": "4429"
+   },
+   {
+    "date": "2026-09-08",
+    "closingBalance": "4429"
+   },
+   {
+    "date": "2026-09-09",
+    "closingBalance": "4429"
+   },
+   {
+    "date": "2026-09-10",
+    "closingBalance": "4429"
+   },
+   {
+    "date": "2026-09-11",
+    "closingBalance": "4429"
+   },
+   {
+    "date": "2026-09-12",
+    "closingBalance": "4829"
+   },
+   {
+    "date": "2026-09-13",
+    "closingBalance": "4829"
+   },
+   {
+    "date": "2026-09-14",
+    "closingBalance": "4804"
+   },
+   {
+    "date": "2026-09-15",
+    "closingBalance": "4804"
+   },
+   {
+    "date": "2026-09-16",
+    "closingBalance": "4804"
+   },
+   {
+    "date": "2026-09-17",
+    "closingBalance": "4804"
+   },
+   {
+    "date": "2026-09-18",
+    "closingBalance": "4804"
+   },
+   {
+    "date": "2026-09-19",
+    "closingBalance": "4804"
+   },
+   {
+    "date": "2026-09-20",
+    "closingBalance": "4804"
+   },
+   {
+    "date": "2026-09-21",
+    "closingBalance": "4779"
+   },
+   {
+    "date": "2026-09-22",
+    "closingBalance": "4779"
+   },
+   {
+    "date": "2026-09-23",
+    "closingBalance": "4779"
+   },
+   {
+    "date": "2026-09-24",
+    "closingBalance": "4779"
+   },
+   {
+    "date": "2026-09-25",
+    "closingBalance": "4779"
+   },
+   {
+    "date": "2026-09-26",
+    "closingBalance": "5179"
+   },
+   {
+    "date": "2026-09-27",
+    "closingBalance": "5179"
+   },
+   {
+    "date": "2026-09-28",
+    "closingBalance": "5154"
+   },
+   {
+    "date": "2026-09-29",
+    "closingBalance": "5154"
+   },
+   {
+    "date": "2026-09-30",
+    "closingBalance": "5154"
+   },
+   {
+    "date": "2026-10-01",
+    "closingBalance": "5154"
+   },
+   {
+    "date": "2026-10-02",
+    "closingBalance": "5154"
+   },
+   {
+    "date": "2026-10-03",
+    "closingBalance": "5154"
+   },
+   {
+    "date": "2026-10-04",
+    "closingBalance": "5154"
+   },
+   {
+    "date": "2026-10-05",
+    "closingBalance": "5050"
+   },
+   {
+    "date": "2026-10-06",
+    "closingBalance": "5050"
+   },
+   {
+    "date": "2026-10-07",
+    "closingBalance": "5050"
+   },
+   {
+    "date": "2026-10-08",
+    "closingBalance": "5050"
+   },
+   {
+    "date": "2026-10-09",
+    "closingBalance": "5050"
+   },
+   {
+    "date": "2026-10-10",
+    "closingBalance": "5450"
+   },
+   {
+    "date": "2026-10-11",
+    "closingBalance": "5450"
+   },
+   {
+    "date": "2026-10-12",
+    "closingBalance": "5425"
+   },
+   {
+    "date": "2026-10-13",
+    "closingBalance": "5425"
+   },
+   {
+    "date": "2026-10-14",
+    "closingBalance": "5425"
+   },
+   {
+    "date": "2026-10-15",
+    "closingBalance": "5425"
+   },
+   {
+    "date": "2026-10-16",
+    "closingBalance": "5425"
+   },
+   {
+    "date": "2026-10-17",
+    "closingBalance": "5425"
+   },
+   {
+    "date": "2026-10-18",
+    "closingBalance": "5425"
+   },
+   {
+    "date": "2026-10-19",
+    "closingBalance": "5400"
+   },
+   {
+    "date": "2026-10-20",
+    "closingBalance": "5400"
+   },
+   {
+    "date": "2026-10-21",
+    "closingBalance": "5400"
+   },
+   {
+    "date": "2026-10-22",
+    "closingBalance": "5400"
+   },
+   {
+    "date": "2026-10-23",
+    "closingBalance": "5400"
+   },
+   {
+    "date": "2026-10-24",
+    "closingBalance": "5800"
+   },
+   {
+    "date": "2026-10-25",
+    "closingBalance": "5800"
+   },
+   {
+    "date": "2026-10-26",
+    "closingBalance": "5775"
+   },
+   {
+    "date": "2026-10-27",
+    "closingBalance": "5775"
+   },
+   {
+    "date": "2026-10-28",
+    "closingBalance": "5775"
+   },
+   {
+    "date": "2026-10-29",
+    "closingBalance": "5775"
+   },
+   {
+    "date": "2026-10-30",
+    "closingBalance": "5775"
+   },
+   {
+    "date": "2026-10-31",
+    "closingBalance": "5775"
+   },
+   {
+    "date": "2026-11-01",
+    "closingBalance": "5775"
+   },
+   {
+    "date": "2026-11-02",
+    "closingBalance": "5750"
+   },
+   {
+    "date": "2026-11-03",
+    "closingBalance": "5750"
+   },
+   {
+    "date": "2026-11-04",
+    "closingBalance": "5750"
+   },
+   {
+    "date": "2026-11-05",
+    "closingBalance": "5671"
+   },
+   {
+    "date": "2026-11-06",
+    "closingBalance": "5671"
+   },
+   {
+    "date": "2026-11-07",
+    "closingBalance": "6071"
+   },
+   {
+    "date": "2026-11-08",
+    "closingBalance": "6071"
+   },
+   {
+    "date": "2026-11-09",
+    "closingBalance": "6046"
+   },
+   {
+    "date": "2026-11-10",
+    "closingBalance": "6046"
+   },
+   {
+    "date": "2026-11-11",
+    "closingBalance": "6046"
+   },
+   {
+    "date": "2026-11-12",
+    "closingBalance": "6046"
+   },
+   {
+    "date": "2026-11-13",
+    "closingBalance": "6046"
+   },
+   {
+    "date": "2026-11-14",
+    "closingBalance": "6046"
+   },
+   {
+    "date": "2026-11-15",
+    "closingBalance": "6046"
+   },
+   {
+    "date": "2026-11-16",
+    "closingBalance": "6021"
+   },
+   {
+    "date": "2026-11-17",
+    "closingBalance": "6021"
+   },
+   {
+    "date": "2026-11-18",
+    "closingBalance": "6021"
+   },
+   {
+    "date": "2026-11-19",
+    "closingBalance": "6021"
+   },
+   {
+    "date": "2026-11-20",
+    "closingBalance": "6021"
+   },
+   {
+    "date": "2026-11-21",
+    "closingBalance": "6421"
+   },
+   {
+    "date": "2026-11-22",
+    "closingBalance": "6421"
+   },
+   {
+    "date": "2026-11-23",
+    "closingBalance": "6396"
+   },
+   {
+    "date": "2026-11-24",
+    "closingBalance": "6396"
+   },
+   {
+    "date": "2026-11-25",
+    "closingBalance": "6396"
+   },
+   {
+    "date": "2026-11-26",
+    "closingBalance": "6396"
+   },
+   {
+    "date": "2026-11-27",
+    "closingBalance": "6396"
+   },
+   {
+    "date": "2026-11-28",
+    "closingBalance": "6396"
+   },
+   {
+    "date": "2026-11-29",
+    "closingBalance": "6396"
+   },
+   {
+    "date": "2026-11-30",
+    "closingBalance": "6371"
+   },
+   {
+    "date": "2026-12-01",
+    "closingBalance": "6371"
+   },
+   {
+    "date": "2026-12-02",
+    "closingBalance": "6371"
+   },
+   {
+    "date": "2026-12-03",
+    "closingBalance": "6371"
+   },
+   {
+    "date": "2026-12-04",
+    "closingBalance": "6371"
+   },
+   {
+    "date": "2026-12-05",
+    "closingBalance": "6692"
+   },
+   {
+    "date": "2026-12-06",
+    "closingBalance": "6692"
+   },
+   {
+    "date": "2026-12-07",
+    "closingBalance": "6667"
+   },
+   {
+    "date": "2026-12-08",
+    "closingBalance": "6667"
+   },
+   {
+    "date": "2026-12-09",
+    "closingBalance": "6667"
+   },
+   {
+    "date": "2026-12-10",
+    "closingBalance": "6667"
+   },
+   {
+    "date": "2026-12-11",
+    "closingBalance": "6667"
+   },
+   {
+    "date": "2026-12-12",
+    "closingBalance": "6667"
+   },
+   {
+    "date": "2026-12-13",
+    "closingBalance": "6667"
+   },
+   {
+    "date": "2026-12-14",
+    "closingBalance": "6642"
+   },
+   {
+    "date": "2026-12-15",
+    "closingBalance": "6642"
+   },
+   {
+    "date": "2026-12-16",
+    "closingBalance": "6642"
+   },
+   {
+    "date": "2026-12-17",
+    "closingBalance": "6642"
+   },
+   {
+    "date": "2026-12-18",
+    "closingBalance": "6642"
+   },
+   {
+    "date": "2026-12-19",
+    "closingBalance": "7042"
+   },
+   {
+    "date": "2026-12-20",
+    "closingBalance": "7042"
+   },
+   {
+    "date": "2026-12-21",
+    "closingBalance": "7017"
+   },
+   {
+    "date": "2026-12-22",
+    "closingBalance": "7017"
+   },
+   {
+    "date": "2026-12-23",
+    "closingBalance": "7017"
+   },
+   {
+    "date": "2026-12-24",
+    "closingBalance": "7017"
+   },
+   {
+    "date": "2026-12-25",
+    "closingBalance": "7017"
+   },
+   {
+    "date": "2026-12-26",
+    "closingBalance": "7017"
+   },
+   {
+    "date": "2026-12-27",
+    "closingBalance": "7017"
+   },
+   {
+    "date": "2026-12-28",
+    "closingBalance": "6992"
+   },
+   {
+    "date": "2026-12-29",
+    "closingBalance": "6992"
+   },
+   {
+    "date": "2026-12-30",
+    "closingBalance": "6992"
+   },
+   {
+    "date": "2026-12-31",
+    "closingBalance": "6992"
+   }
+  ],
+  "occurrences": [
+   {
+    "eventId": "gym",
+    "date": "2026-03-02",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-03-05",
+    "signedDelta": "-79",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-03-09",
+    "signedDelta": "-25",
+    "skipped": true
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-03-14",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-03-16",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-03-23",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-03-28",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-03-30",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-04-05",
+    "signedDelta": "-79",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-04-06",
+    "signedDelta": "-25",
+    "skipped": true
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-04-11",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-04-13",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-04-20",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-04-25",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-04-27",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-05-04",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-05-05",
+    "signedDelta": "-120",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-05-09",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-05-11",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-05-18",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-05-23",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-05-25",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-06-01",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-06-05",
+    "signedDelta": "-79",
+    "skipped": true
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-06-06",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-06-08",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-06-15",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-06-20",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-06-22",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-06-29",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-07-04",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-07-05",
+    "signedDelta": "15",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-07-06",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-07-13",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-07-18",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-07-20",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-07-27",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-08-01",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-08-03",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-08-05",
+    "signedDelta": "-79",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-08-10",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-08-15",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-08-17",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-08-24",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-08-29",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-08-31",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-09-05",
+    "signedDelta": "-79",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-09-07",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-09-12",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-09-14",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-09-21",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-09-26",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-09-28",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-10-05",
+    "signedDelta": "-79",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-10-05",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-10-10",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-10-12",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-10-19",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-10-24",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-10-26",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-11-02",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-11-05",
+    "signedDelta": "-79",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-11-07",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-11-09",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-11-16",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-11-21",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-11-23",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-11-30",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-12-05",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "phone",
+    "date": "2026-12-05",
+    "signedDelta": "-79",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-12-07",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-12-14",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "pay",
+    "date": "2026-12-19",
+    "signedDelta": "400",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-12-21",
+    "signedDelta": "-25",
+    "skipped": false
+   },
+   {
+    "eventId": "gym",
+    "date": "2026-12-28",
+    "signedDelta": "-25",
+    "skipped": false
+   }
+  ]
+ },
+ "insights": {
+  "from": "2026-03-01",
+  "days": 365,
+  "horizonDays": 1825,
+  "threshold": "-100",
+  "lowest": {
+   "date": "2026-03-05",
+   "balance": "196.00"
+  },
+  "alertDate": null,
+  "zeroDate": null
+ }
+}

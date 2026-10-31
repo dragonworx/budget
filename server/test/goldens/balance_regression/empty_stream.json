@@ -1,0 +1,83 @@
+{
+ "balance 2026-05-01..2026-05-20": {
+  "points": [
+   {
+    "date": "2026-05-05",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-06",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-07",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-08",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-09",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-10",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-11",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-12",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-13",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-14",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-15",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-16",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-17",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-18",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-19",
+    "closingBalance": "77.7"
+   },
+   {
+    "date": "2026-05-20",
+    "closingBalance": "77.7"
+   }
+  ],
+  "occurrences": []
+ },
+ "insights": {
+  "from": "2026-05-01",
+  "days": 365,
+  "horizonDays": 1825,
+  "threshold": "100",
+  "lowest": {
+   "date": "2026-05-05",
+   "balance": "77.70"
+  },
+  "alertDate": "2026-05-05",
+  "zeroDate": null
+ }
+}

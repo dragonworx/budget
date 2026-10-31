@@ -1,0 +1,1576 @@
+{
+ "balance 2026-02-01..2026-08-01": {
+  "points": [
+   {
+    "date": "2026-02-01",
+    "closingBalance": "26034.98"
+   },
+   {
+    "date": "2026-02-02",
+    "closingBalance": "26034.98"
+   },
+   {
+    "date": "2026-02-03",
+    "closingBalance": "26034.98"
+   },
+   {
+    "date": "2026-02-04",
+    "closingBalance": "27092.56"
+   },
+   {
+    "date": "2026-02-05",
+    "closingBalance": "26842.56"
+   },
+   {
+    "date": "2026-02-06",
+    "closingBalance": "26842.56"
+   },
+   {
+    "date": "2026-02-07",
+    "closingBalance": "26842.56"
+   },
+   {
+    "date": "2026-02-08",
+    "closingBalance": "26842.56"
+   },
+   {
+    "date": "2026-02-09",
+    "closingBalance": "26842.56"
+   },
+   {
+    "date": "2026-02-10",
+    "closingBalance": "26842.56"
+   },
+   {
+    "date": "2026-02-11",
+    "closingBalance": "27900.14"
+   },
+   {
+    "date": "2026-02-12",
+    "closingBalance": "27650.14"
+   },
+   {
+    "date": "2026-02-13",
+    "closingBalance": "27650.14"
+   },
+   {
+    "date": "2026-02-14",
+    "closingBalance": "27650.14"
+   },
+   {
+    "date": "2026-02-15",
+    "closingBalance": "27650.14"
+   },
+   {
+    "date": "2026-02-16",
+    "closingBalance": "27650.14"
+   },
+   {
+    "date": "2026-02-17",
+    "closingBalance": "27650.14"
+   },
+   {
+    "date": "2026-02-18",
+    "closingBalance": "28707.72"
+   },
+   {
+    "date": "2026-02-19",
+    "closingBalance": "28457.72"
+   },
+   {
+    "date": "2026-02-20",
+    "closingBalance": "28457.72"
+   },
+   {
+    "date": "2026-02-21",
+    "closingBalance": "28457.72"
+   },
+   {
+    "date": "2026-02-22",
+    "closingBalance": "28457.72"
+   },
+   {
+    "date": "2026-02-23",
+    "closingBalance": "28457.72"
+   },
+   {
+    "date": "2026-02-24",
+    "closingBalance": "28457.72"
+   },
+   {
+    "date": "2026-02-25",
+    "closingBalance": "29515.3"
+   },
+   {
+    "date": "2026-02-26",
+    "closingBalance": "29265.3"
+   },
+   {
+    "date": "2026-02-27",
+    "closingBalance": "29265.3"
+   },
+   {
+    "date": "2026-02-28",
+    "closingBalance": "29265.3"
+   },
+   {
+    "date": "2026-03-01",
+    "closingBalance": "29265.3"
+   },
+   {
+    "date": "2026-03-02",
+    "closingBalance": "29265.3"
+   },
+   {
+    "date": "2026-03-03",
+    "closingBalance": "29265.3"
+   },
+   {
+    "date": "2026-03-04",
+    "closingBalance": "30322.88"
+   },
+   {
+    "date": "2026-03-05",
+    "closingBalance": "30072.88"
+   },
+   {
+    "date": "2026-03-06",
+    "closingBalance": "30072.88"
+   },
+   {
+    "date": "2026-03-07",
+    "closingBalance": "30072.88"
+   },
+   {
+    "date": "2026-03-08",
+    "closingBalance": "30072.88"
+   },
+   {
+    "date": "2026-03-09",
+    "closingBalance": "30072.88"
+   },
+   {
+    "date": "2026-03-10",
+    "closingBalance": "30072.88"
+   },
+   {
+    "date": "2026-03-11",
+    "closingBalance": "31130.46"
+   },
+   {
+    "date": "2026-03-12",
+    "closingBalance": "30880.46"
+   },
+   {
+    "date": "2026-03-13",
+    "closingBalance": "30880.46"
+   },
+   {
+    "date": "2026-03-14",
+    "closingBalance": "30880.46"
+   },
+   {
+    "date": "2026-03-15",
+    "closingBalance": "30880.46"
+   },
+   {
+    "date": "2026-03-16",
+    "closingBalance": "30880.46"
+   },
+   {
+    "date": "2026-03-17",
+    "closingBalance": "30880.46"
+   },
+   {
+    "date": "2026-03-18",
+    "closingBalance": "31938.04"
+   },
+   {
+    "date": "2026-03-19",
+    "closingBalance": "31688.04"
+   },
+   {
+    "date": "2026-03-20",
+    "closingBalance": "31688.04"
+   },
+   {
+    "date": "2026-03-21",
+    "closingBalance": "31688.04"
+   },
+   {
+    "date": "2026-03-22",
+    "closingBalance": "31688.04"
+   },
+   {
+    "date": "2026-03-23",
+    "closingBalance": "31688.04"
+   },
+   {
+    "date": "2026-03-24",
+    "closingBalance": "31688.04"
+   },
+   {
+    "date": "2026-03-25",
+    "closingBalance": "32745.62"
+   },
+   {
+    "date": "2026-03-26",
+    "closingBalance": "32495.62"
+   },
+   {
+    "date": "2026-03-27",
+    "closingBalance": "32495.62"
+   },
+   {
+    "date": "2026-03-28",
+    "closingBalance": "32495.62"
+   },
+   {
+    "date": "2026-03-29",
+    "closingBalance": "32495.62"
+   },
+   {
+    "date": "2026-03-30",
+    "closingBalance": "32495.62"
+   },
+   {
+    "date": "2026-03-31",
+    "closingBalance": "32495.62"
+   },
+   {
+    "date": "2026-04-01",
+    "closingBalance": "33553.2"
+   },
+   {
+    "date": "2026-04-02",
+    "closingBalance": "33303.2"
+   },
+   {
+    "date": "2026-04-03",
+    "closingBalance": "33303.2"
+   },
+   {
+    "date": "2026-04-04",
+    "closingBalance": "33303.2"
+   },
+   {
+    "date": "2026-04-05",
+    "closingBalance": "33303.2"
+   },
+   {
+    "date": "2026-04-06",
+    "closingBalance": "33303.2"
+   },
+   {
+    "date": "2026-04-07",
+    "closingBalance": "33303.2"
+   },
+   {
+    "date": "2026-04-08",
+    "closingBalance": "34360.78"
+   },
+   {
+    "date": "2026-04-09",
+    "closingBalance": "34110.78"
+   },
+   {
+    "date": "2026-04-10",
+    "closingBalance": "34110.78"
+   },
+   {
+    "date": "2026-04-11",
+    "closingBalance": "34110.78"
+   },
+   {
+    "date": "2026-04-12",
+    "closingBalance": "34110.78"
+   },
+   {
+    "date": "2026-04-13",
+    "closingBalance": "34110.78"
+   },
+   {
+    "date": "2026-04-14",
+    "closingBalance": "34110.78"
+   },
+   {
+    "date": "2026-04-15",
+    "closingBalance": "35168.36"
+   },
+   {
+    "date": "2026-04-16",
+    "closingBalance": "34918.36"
+   },
+   {
+    "date": "2026-04-17",
+    "closingBalance": "34918.36"
+   },
+   {
+    "date": "2026-04-18",
+    "closingBalance": "34918.36"
+   },
+   {
+    "date": "2026-04-19",
+    "closingBalance": "34918.36"
+   },
+   {
+    "date": "2026-04-20",
+    "closingBalance": "34918.36"
+   },
+   {
+    "date": "2026-04-21",
+    "closingBalance": "34918.36"
+   },
+   {
+    "date": "2026-04-22",
+    "closingBalance": "35975.94"
+   },
+   {
+    "date": "2026-04-23",
+    "closingBalance": "35725.94"
+   },
+   {
+    "date": "2026-04-24",
+    "closingBalance": "35725.94"
+   },
+   {
+    "date": "2026-04-25",
+    "closingBalance": "35725.94"
+   },
+   {
+    "date": "2026-04-26",
+    "closingBalance": "35725.94"
+   },
+   {
+    "date": "2026-04-27",
+    "closingBalance": "35725.94"
+   },
+   {
+    "date": "2026-04-28",
+    "closingBalance": "35725.94"
+   },
+   {
+    "date": "2026-04-29",
+    "closingBalance": "36783.52"
+   },
+   {
+    "date": "2026-04-30",
+    "closingBalance": "36533.52"
+   },
+   {
+    "date": "2026-05-01",
+    "closingBalance": "36533.52"
+   },
+   {
+    "date": "2026-05-02",
+    "closingBalance": "36533.52"
+   },
+   {
+    "date": "2026-05-03",
+    "closingBalance": "36533.52"
+   },
+   {
+    "date": "2026-05-04",
+    "closingBalance": "36533.52"
+   },
+   {
+    "date": "2026-05-05",
+    "closingBalance": "36533.52"
+   },
+   {
+    "date": "2026-05-06",
+    "closingBalance": "37591.1"
+   },
+   {
+    "date": "2026-05-07",
+    "closingBalance": "37341.1"
+   },
+   {
+    "date": "2026-05-08",
+    "closingBalance": "37341.1"
+   },
+   {
+    "date": "2026-05-09",
+    "closingBalance": "37341.1"
+   },
+   {
+    "date": "2026-05-10",
+    "closingBalance": "37341.1"
+   },
+   {
+    "date": "2026-05-11",
+    "closingBalance": "37341.1"
+   },
+   {
+    "date": "2026-05-12",
+    "closingBalance": "37341.1"
+   },
+   {
+    "date": "2026-05-13",
+    "closingBalance": "38398.68"
+   },
+   {
+    "date": "2026-05-14",
+    "closingBalance": "38148.68"
+   },
+   {
+    "date": "2026-05-15",
+    "closingBalance": "38148.68"
+   },
+   {
+    "date": "2026-05-16",
+    "closingBalance": "38148.68"
+   },
+   {
+    "date": "2026-05-17",
+    "closingBalance": "38148.68"
+   },
+   {
+    "date": "2026-05-18",
+    "closingBalance": "38148.68"
+   },
+   {
+    "date": "2026-05-19",
+    "closingBalance": "38148.68"
+   },
+   {
+    "date": "2026-05-20",
+    "closingBalance": "39206.26"
+   },
+   {
+    "date": "2026-05-21",
+    "closingBalance": "38956.26"
+   },
+   {
+    "date": "2026-05-22",
+    "closingBalance": "38956.26"
+   },
+   {
+    "date": "2026-05-23",
+    "closingBalance": "38956.26"
+   },
+   {
+    "date": "2026-05-24",
+    "closingBalance": "38956.26"
+   },
+   {
+    "date": "2026-05-25",
+    "closingBalance": "38956.26"
+   },
+   {
+    "date": "2026-05-26",
+    "closingBalance": "38956.26"
+   },
+   {
+    "date": "2026-05-27",
+    "closingBalance": "40013.84"
+   },
+   {
+    "date": "2026-05-28",
+    "closingBalance": "39763.84"
+   },
+   {
+    "date": "2026-05-29",
+    "closingBalance": "39763.84"
+   },
+   {
+    "date": "2026-05-30",
+    "closingBalance": "39763.84"
+   },
+   {
+    "date": "2026-05-31",
+    "closingBalance": "39763.84"
+   },
+   {
+    "date": "2026-06-01",
+    "closingBalance": "39763.84"
+   },
+   {
+    "date": "2026-06-02",
+    "closingBalance": "39763.84"
+   },
+   {
+    "date": "2026-06-03",
+    "closingBalance": "40821.42"
+   },
+   {
+    "date": "2026-06-04",
+    "closingBalance": "40571.42"
+   },
+   {
+    "date": "2026-06-05",
+    "closingBalance": "40571.42"
+   },
+   {
+    "date": "2026-06-06",
+    "closingBalance": "40571.42"
+   },
+   {
+    "date": "2026-06-07",
+    "closingBalance": "40571.42"
+   },
+   {
+    "date": "2026-06-08",
+    "closingBalance": "40571.42"
+   },
+   {
+    "date": "2026-06-09",
+    "closingBalance": "40571.42"
+   },
+   {
+    "date": "2026-06-10",
+    "closingBalance": "41629"
+   },
+   {
+    "date": "2026-06-11",
+    "closingBalance": "41379"
+   },
+   {
+    "date": "2026-06-12",
+    "closingBalance": "41379"
+   },
+   {
+    "date": "2026-06-13",
+    "closingBalance": "41379"
+   },
+   {
+    "date": "2026-06-14",
+    "closingBalance": "41379"
+   },
+   {
+    "date": "2026-06-15",
+    "closingBalance": "41379"
+   },
+   {
+    "date": "2026-06-16",
+    "closingBalance": "41379"
+   },
+   {
+    "date": "2026-06-17",
+    "closingBalance": "42436.58"
+   },
+   {
+    "date": "2026-06-18",
+    "closingBalance": "42186.58"
+   },
+   {
+    "date": "2026-06-19",
+    "closingBalance": "42186.58"
+   },
+   {
+    "date": "2026-06-20",
+    "closingBalance": "42186.58"
+   },
+   {
+    "date": "2026-06-21",
+    "closingBalance": "42186.58"
+   },
+   {
+    "date": "2026-06-22",
+    "closingBalance": "42186.58"
+   },
+   {
+    "date": "2026-06-23",
+    "closingBalance": "42186.58"
+   },
+   {
+    "date": "2026-06-24",
+    "closingBalance": "43244.16"
+   },
+   {
+    "date": "2026-06-25",
+    "closingBalance": "42994.16"
+   },
+   {
+    "date": "2026-06-26",
+    "closingBalance": "42994.16"
+   },
+   {
+    "date": "2026-06-27",
+    "closingBalance": "42994.16"
+   },
+   {
+    "date": "2026-06-28",
+    "closingBalance": "42994.16"
+   },
+   {
+    "date": "2026-06-29",
+    "closingBalance": "42994.16"
+   },
+   {
+    "date": "2026-06-30",
+    "closingBalance": "42994.16"
+   },
+   {
+    "date": "2026-07-01",
+    "closingBalance": "44051.74"
+   },
+   {
+    "date": "2026-07-02",
+    "closingBalance": "43801.74"
+   },
+   {
+    "date": "2026-07-03",
+    "closingBalance": "43801.74"
+   },
+   {
+    "date": "2026-07-04",
+    "closingBalance": "43801.74"
+   },
+   {
+    "date": "2026-07-05",
+    "closingBalance": "43801.74"
+   },
+   {
+    "date": "2026-07-06",
+    "closingBalance": "43801.74"
+   },
+   {
+    "date": "2026-07-07",
+    "closingBalance": "43801.74"
+   },
+   {
+    "date": "2026-07-08",
+    "closingBalance": "44859.32"
+   },
+   {
+    "date": "2026-07-09",
+    "closingBalance": "44609.32"
+   },
+   {
+    "date": "2026-07-10",
+    "closingBalance": "44609.32"
+   },
+   {
+    "date": "2026-07-11",
+    "closingBalance": "44609.32"
+   },
+   {
+    "date": "2026-07-12",
+    "closingBalance": "44609.32"
+   },
+   {
+    "date": "2026-07-13",
+    "closingBalance": "44609.32"
+   },
+   {
+    "date": "2026-07-14",
+    "closingBalance": "44609.32"
+   },
+   {
+    "date": "2026-07-15",
+    "closingBalance": "45666.9"
+   },
+   {
+    "date": "2026-07-16",
+    "closingBalance": "45416.9"
+   },
+   {
+    "date": "2026-07-17",
+    "closingBalance": "45416.9"
+   },
+   {
+    "date": "2026-07-18",
+    "closingBalance": "45416.9"
+   },
+   {
+    "date": "2026-07-19",
+    "closingBalance": "45416.9"
+   },
+   {
+    "date": "2026-07-20",
+    "closingBalance": "45416.9"
+   },
+   {
+    "date": "2026-07-21",
+    "closingBalance": "45416.9"
+   },
+   {
+    "date": "2026-07-22",
+    "closingBalance": "46474.48"
+   },
+   {
+    "date": "2026-07-23",
+    "closingBalance": "46224.48"
+   },
+   {
+    "date": "2026-07-24",
+    "closingBalance": "46224.48"
+   },
+   {
+    "date": "2026-07-25",
+    "closingBalance": "46224.48"
+   },
+   {
+    "date": "2026-07-26",
+    "closingBalance": "46224.48"
+   },
+   {
+    "date": "2026-07-27",
+    "closingBalance": "46224.48"
+   },
+   {
+    "date": "2026-07-28",
+    "closingBalance": "46224.48"
+   },
+   {
+    "date": "2026-07-29",
+    "closingBalance": "47282.06"
+   },
+   {
+    "date": "2026-07-30",
+    "closingBalance": "47032.06"
+   },
+   {
+    "date": "2026-07-31",
+    "closingBalance": "47032.06"
+   },
+   {
+    "date": "2026-08-01",
+    "closingBalance": "47032.06"
+   }
+  ],
+  "occurrences": [
+   {
+    "eventId": "later",
+    "date": "2026-02-04",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-02-04",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-02-05",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-02-11",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-02-11",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-02-12",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-02-18",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-02-18",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-02-19",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-02-25",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-02-25",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-02-26",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-03-04",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-03-04",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-03-05",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-03-11",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-03-11",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-03-12",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-03-18",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-03-18",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-03-19",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-03-25",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-03-25",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-03-26",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-04-01",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-04-01",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-04-02",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-04-08",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-04-08",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-04-09",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-04-15",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-04-15",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-04-16",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-04-22",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-04-22",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-04-23",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-04-29",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-04-29",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-04-30",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-05-06",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-05-06",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-05-07",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-05-13",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-05-13",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-05-14",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-05-20",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-05-20",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-05-21",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-05-27",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-05-27",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-05-28",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-06-03",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-06-03",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-06-04",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-06-10",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-06-10",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-06-11",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-06-17",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-06-17",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-06-18",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-06-24",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-06-24",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-06-25",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-07-01",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-07-01",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-07-02",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-07-08",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-07-08",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-07-09",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-07-15",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-07-15",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-07-16",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-07-22",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-07-22",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-07-23",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2026-07-29",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2026-07-29",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2026-07-30",
+    "signedDelta": "-250",
+    "skipped": false
+   }
+  ]
+ },
+ "balance 2025-01-01..2025-07-20": {
+  "points": [
+   {
+    "date": "2025-07-01",
+    "closingBalance": "0"
+   },
+   {
+    "date": "2025-07-02",
+    "closingBalance": "1057.58"
+   },
+   {
+    "date": "2025-07-03",
+    "closingBalance": "807.58"
+   },
+   {
+    "date": "2025-07-04",
+    "closingBalance": "807.58"
+   },
+   {
+    "date": "2025-07-05",
+    "closingBalance": "807.58"
+   },
+   {
+    "date": "2025-07-06",
+    "closingBalance": "807.58"
+   },
+   {
+    "date": "2025-07-07",
+    "closingBalance": "807.58"
+   },
+   {
+    "date": "2025-07-08",
+    "closingBalance": "807.58"
+   },
+   {
+    "date": "2025-07-09",
+    "closingBalance": "1865.16"
+   },
+   {
+    "date": "2025-07-10",
+    "closingBalance": "1615.16"
+   },
+   {
+    "date": "2025-07-11",
+    "closingBalance": "1615.16"
+   },
+   {
+    "date": "2025-07-12",
+    "closingBalance": "1615.16"
+   },
+   {
+    "date": "2025-07-13",
+    "closingBalance": "1615.16"
+   },
+   {
+    "date": "2025-07-14",
+    "closingBalance": "1615.16"
+   },
+   {
+    "date": "2025-07-15",
+    "closingBalance": "1615.16"
+   },
+   {
+    "date": "2025-07-16",
+    "closingBalance": "2672.74"
+   },
+   {
+    "date": "2025-07-17",
+    "closingBalance": "2422.74"
+   },
+   {
+    "date": "2025-07-18",
+    "closingBalance": "2422.74"
+   },
+   {
+    "date": "2025-07-19",
+    "closingBalance": "2422.74"
+   },
+   {
+    "date": "2025-07-20",
+    "closingBalance": "2422.74"
+   }
+  ],
+  "occurrences": [
+   {
+    "eventId": "later",
+    "date": "2025-07-02",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2025-07-02",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2025-07-03",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2025-07-09",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2025-07-09",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2025-07-10",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2025-07-16",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2025-07-16",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2025-07-17",
+    "signedDelta": "-250",
+    "skipped": false
+   }
+  ]
+ },
+ "balance 2030-01-01..2030-01-31": {
+  "points": [
+   {
+    "date": "2030-01-01",
+    "closingBalance": "190781.3"
+   },
+   {
+    "date": "2030-01-02",
+    "closingBalance": "191838.88"
+   },
+   {
+    "date": "2030-01-03",
+    "closingBalance": "191588.88"
+   },
+   {
+    "date": "2030-01-04",
+    "closingBalance": "191588.88"
+   },
+   {
+    "date": "2030-01-05",
+    "closingBalance": "191588.88"
+   },
+   {
+    "date": "2030-01-06",
+    "closingBalance": "191588.88"
+   },
+   {
+    "date": "2030-01-07",
+    "closingBalance": "191588.88"
+   },
+   {
+    "date": "2030-01-08",
+    "closingBalance": "191588.88"
+   },
+   {
+    "date": "2030-01-09",
+    "closingBalance": "192646.46"
+   },
+   {
+    "date": "2030-01-10",
+    "closingBalance": "192396.46"
+   },
+   {
+    "date": "2030-01-11",
+    "closingBalance": "192396.46"
+   },
+   {
+    "date": "2030-01-12",
+    "closingBalance": "192396.46"
+   },
+   {
+    "date": "2030-01-13",
+    "closingBalance": "192396.46"
+   },
+   {
+    "date": "2030-01-14",
+    "closingBalance": "192396.46"
+   },
+   {
+    "date": "2030-01-15",
+    "closingBalance": "192396.46"
+   },
+   {
+    "date": "2030-01-16",
+    "closingBalance": "193454.04"
+   },
+   {
+    "date": "2030-01-17",
+    "closingBalance": "193204.04"
+   },
+   {
+    "date": "2030-01-18",
+    "closingBalance": "193204.04"
+   },
+   {
+    "date": "2030-01-19",
+    "closingBalance": "193204.04"
+   },
+   {
+    "date": "2030-01-20",
+    "closingBalance": "193204.04"
+   },
+   {
+    "date": "2030-01-21",
+    "closingBalance": "193204.04"
+   },
+   {
+    "date": "2030-01-22",
+    "closingBalance": "193204.04"
+   },
+   {
+    "date": "2030-01-23",
+    "closingBalance": "194261.62"
+   },
+   {
+    "date": "2030-01-24",
+    "closingBalance": "194011.62"
+   },
+   {
+    "date": "2030-01-25",
+    "closingBalance": "194011.62"
+   },
+   {
+    "date": "2030-01-26",
+    "closingBalance": "194011.62"
+   },
+   {
+    "date": "2030-01-27",
+    "closingBalance": "194011.62"
+   },
+   {
+    "date": "2030-01-28",
+    "closingBalance": "194011.62"
+   },
+   {
+    "date": "2030-01-29",
+    "closingBalance": "194011.62"
+   },
+   {
+    "date": "2030-01-30",
+    "closingBalance": "195069.2"
+   },
+   {
+    "date": "2030-01-31",
+    "closingBalance": "194819.2"
+   }
+  ],
+  "occurrences": [
+   {
+    "eventId": "later",
+    "date": "2030-01-02",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2030-01-02",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2030-01-03",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2030-01-09",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2030-01-09",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2030-01-10",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2030-01-16",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2030-01-16",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2030-01-17",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2030-01-23",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2030-01-23",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2030-01-24",
+    "signedDelta": "-250",
+    "skipped": false
+   },
+   {
+    "eventId": "later",
+    "date": "2030-01-30",
+    "signedDelta": "-42.42",
+    "skipped": false
+   },
+   {
+    "eventId": "wage",
+    "date": "2030-01-30",
+    "signedDelta": "1100",
+    "skipped": false
+   },
+   {
+    "eventId": "toSavings",
+    "date": "2030-01-31",
+    "signedDelta": "-250",
+    "skipped": false
+   }
+  ]
+ },
+ "insights": {
+  "from": "2026-02-01",
+  "days": 365,
+  "horizonDays": 1825,
+  "threshold": "1000",
+  "lowest": {
+   "date": "2026-02-01",
+   "balance": "26034.98"
+  },
+  "alertDate": null,
+  "zeroDate": null
+ }
+}
