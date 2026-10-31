@@ -130,6 +130,7 @@ class RealtimeController {
     ref.invalidate(streamProvider);
     ref.invalidate(eventsProvider);
     _balances();
+    ref.invalidate(loanSummaryProvider);
     ref.invalidate(scenariosProvider);
     ref.invalidate(myInvitesProvider);
     ref.invalidate(streamPeopleProvider);
@@ -168,6 +169,12 @@ class RealtimeController {
         if (aid != null) {
           ref.invalidate(streamProvider(aid));
           if (e.action == 'stream.updated') _stream(aid);
+          // Spec 004: the loan's offset account changed (its events,
+          // threshold or the link): the loan's interest moves.
+          if (e.action == 'stream.offset_changed') {
+            _stream(aid);
+            ref.invalidate(loanSummaryProvider(aid));
+          }
           if (e.action == 'stream.deleted') {
             _leaveIfOn(streamId: aid, message: 'This stream was deleted');
             // Its transfers' far sides changed in other streams; its saved

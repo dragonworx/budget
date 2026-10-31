@@ -93,7 +93,8 @@ class _RatePeriodsEditorState extends State<RatePeriodsEditor> {
         from: from,
         rate: last.rate,
         type: last.type,
-        offsetApplies: last.offsetApplies,
+        // Spec 004 §15: fixed periods default unchecked, variable checked.
+        offsetApplies: last.type == RateType.variable,
       ),
     );
     d.sortPeriods();
@@ -202,6 +203,7 @@ class _RatePeriodsEditorState extends State<RatePeriodsEditor> {
           ? null
           : (v) {
               if (v == null) return;
+              if (v != p.type) p.offsetApplies = v == RateType.variable;
               p.type = v;
               _changed();
             },
@@ -217,13 +219,22 @@ class _RatePeriodsEditorState extends State<RatePeriodsEditor> {
               _changed();
             },
     );
+    // Spec 004: active once an offset account is linked.
+    final linked = d.hasOffset;
     final offset = Tooltip(
-      message: 'Available with offset accounts',
+      message: linked
+          ? 'The offset account reduces the interest in this period'
+          : 'Link an offset account to use this',
       child: _check(
         key: 'loan-rate-offset-$i',
         label: 'Offset applies',
         value: p.offsetApplies,
-        onChanged: null,
+        onChanged: widget.readOnly || !linked
+            ? null
+            : (v) {
+                p.offsetApplies = v;
+                _changed();
+              },
       ),
     );
     final delete = i == 0 || widget.readOnly

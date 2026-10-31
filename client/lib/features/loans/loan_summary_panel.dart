@@ -331,6 +331,21 @@ class _LoanSummaryPanelState extends ConsumerState<LoanSummaryPanel> {
         key: const ValueKey('loan-summary-term-end'),
       );
     }
+    final offset = s.offset;
+    if (offset != null) {
+      row(
+        'Offset account',
+        offset.visible
+            ? (offset.streamName ?? _streamName(offset.streamId ?? ''))
+            : 'Linked offset account (not shared with you)',
+        key: const ValueKey('loan-summary-offset'),
+      );
+      row(
+        'Usable offset today',
+        loanMoney(offset.usableToday),
+        key: const ValueKey('loan-summary-offset-usable'),
+      );
+    }
     if (s.isFlat && s.flat != null) {
       row(
         'On a reducing balance',
@@ -364,6 +379,14 @@ class _LoanSummaryPanelState extends ConsumerState<LoanSummaryPanel> {
         ),
         const SizedBox(height: 8),
         ...rows,
+        if (offset != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            offsetBenefitText(offset, s.payoffDate),
+            key: const ValueKey('loan-summary-offset-benefit'),
+            style: theme.textTheme.bodyMedium?.copyWith(color: AppTheme.accent),
+          ),
+        ],
         ..._warnings(theme, muted),
         if (s.charges.isNotEmpty)
           Theme(

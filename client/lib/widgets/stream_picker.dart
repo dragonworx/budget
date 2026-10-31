@@ -30,7 +30,18 @@ class StreamPicker extends ConsumerStatefulWidget {
     this.title = 'Choose a stream',
     this.keyPrefix = 'picker',
     this.mineHeader = true,
+    this.include,
+    this.onNone,
+    this.noneLabel = 'None',
   });
+
+  /// Extra filter on the streams listed (e.g. the offset picker's own,
+  /// loan-free streams).
+  final bool Function(BudgetStream stream)? include;
+
+  /// A "None" row first (ticked when [currentStreamId] is null).
+  final VoidCallback? onNone;
+  final String noneLabel;
 
   /// Head my streams with a "My streams" label (the header menu lists them
   /// directly; "Shared with me" still heads shared streams).
@@ -195,7 +206,8 @@ class _StreamPickerState extends ConsumerState<StreamPicker> {
     final choices = [
       for (final a in all)
         if (a.id != widget.excludeStreamId &&
-            (!widget.editableOnly || a.role.canEdit))
+            (!widget.editableOnly || a.role.canEdit) &&
+            (widget.include?.call(a) ?? true))
           a,
     ];
     final mine = [
@@ -215,6 +227,24 @@ class _StreamPickerState extends ConsumerState<StreamPicker> {
 
     final hasActions = widget.onNewStream != null;
     return [
+      if (widget.onNone != null)
+        MenuItemButton(
+          key: ValueKey('$p-none-option'),
+          focusNode: first(),
+          style: _style,
+          leadingIcon: SizedBox.square(
+            dimension: 18,
+            child: widget.currentStreamId == null
+                ? const Icon(
+                    Icons.check_rounded,
+                    size: 18,
+                    color: AppTheme.accent,
+                  )
+                : null,
+          ),
+          onPressed: widget.onNone,
+          child: _MenuLabel(widget.noneLabel),
+        ),
       if (choices.isEmpty)
         MenuItemButton(
           key: ValueKey('$p-none'),
@@ -223,6 +253,8 @@ class _StreamPickerState extends ConsumerState<StreamPicker> {
           child: Text(
             all.isEmpty
                 ? 'No streams yet'
+                : widget.include != null
+                ? 'No other eligible streams'
                 : widget.editableOnly
                 ? 'No other streams you can edit'
                 : 'No other streams',

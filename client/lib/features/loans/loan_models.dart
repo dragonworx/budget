@@ -47,7 +47,9 @@ class RatePeriodDraft {
   RateType type;
   bool interestOnly;
 
-  /// Kept as loaded; not editable until offset accounts exist (spec 004).
+  /// The linked offset account reduces this period's interest (spec 004
+  /// §15: editable once an offset is linked; fixed periods default off,
+  /// variable on).
   bool offsetApplies;
 
   RatePeriodDraft copy() => RatePeriodDraft(
@@ -82,7 +84,30 @@ class LoanDraft {
     this.chargeDay = const AnniversaryChargeDay(),
     this.dayCount = DayCount.d365,
     List<RatePeriodDraft>? periods,
+    this.offsetStreamId,
+    this.savedOffsetStreamId,
+    this.offsetHidden = false,
   }) : periods = periods ?? [RatePeriodDraft(from: start, rate: '')];
+
+  /// Spec 004: the offset account picked (null: none). Not part of the
+  /// `loan` JSON: it is the event's `offsetStreamIds`.
+  String? offsetStreamId;
+
+  /// The saved link (null: none), to send only a change.
+  final String? savedOffsetStreamId;
+
+  /// Linked to an offset account this user can't see.
+  final bool offsetHidden;
+
+  /// Linked to an offset (visible or hidden).
+  bool get hasOffset => offsetStreamId != null || offsetHidden;
+
+  /// The picked offset differs from the saved one.
+  bool get offsetChanged =>
+      !offsetHidden && offsetStreamId != savedOffsetStreamId;
+
+  /// `offsetStreamIds` for the picked offset.
+  List<String> get offsetIds => [?offsetStreamId];
 
   /// A new loan starting on [start].
   factory LoanDraft.initial(DateTime start) => LoanDraft(start: start);
@@ -99,7 +124,11 @@ class LoanDraft {
       return null;
     }
     final start = dateOnly(e.startDate);
+    final offset = e.offsetStreamIds.firstOrNull;
     return LoanDraft(
+      offsetStreamId: offset,
+      savedOffsetStreamId: offset,
+      offsetHidden: e.offsetHidden && offset == null,
       start: start,
       principal: e.amount.toString(),
       mode: t.mode,
@@ -154,6 +183,9 @@ class LoanDraft {
     chargeDay: chargeDay,
     dayCount: dayCount,
     periods: [for (final p in periods) p.copy()],
+    offsetStreamId: offsetStreamId,
+    savedOffsetStreamId: savedOffsetStreamId,
+    offsetHidden: offsetHidden,
   );
 
   /// One period's length after [d].
@@ -184,6 +216,10 @@ class LoanDraft {
     if (periods.first.interestOnly) {
       return 'Simple mode has no interest-only period. Turn interest only off '
           'first.';
+    }
+    if (hasOffset && !periods.first.offsetApplies) {
+      return 'Simple mode applies the offset to the whole loan. Tick Offset '
+          'applies first.';
     }
     if (!defaultSchedule) {
       return 'Simple mode charges interest monthly on the loan anniversary '
@@ -229,7 +265,10 @@ class LoanDraft {
       'ratePeriods': [
         for (final (i, p) in (simple ? periods.take(1) : periods).indexed)
           (i == 0 ? (p.copy()..from = start) : p).toJson(flat: flat)
-            ..update('interestOnly', (v) => simple ? false : v),
+            ..update('interestOnly', (v) => simple ? false : v)
+            // Simple mode has no checkbox: the offset applies to the whole
+            // (reducing) loan, the server's default.
+            ..update('offsetApplies', (v) => simple ? !flat : v),
       ],
     };
   }
@@ -402,6 +441,59 @@ class LoanRepaymentTransfer {
 
 /// `GET /streams/:id/loan-summary` (spec 002 §8), also returned by
 /// `POST /project` with `loanSummaryFrom` for an unsaved loan.
+/// `loan-summary.offset` (spec 004 §14). [streamId] / [streamName] are
+/// null when the offset stream isn't shared with me ([visible] false).
+class LoanOffsetSummary {
+  const LoanOffsetSummary({
+    required this.streamId,
+    required this.streamName,
+    required this.visible,
+    required this.usableToday,
+    required this.thresholdUsed,
+    required this.interestSaved,
+    required this.totalInterestWithoutOffset,
+    required this.payoffDateWithoutOffset,
+    required this.monthsSaved,
+  });
+
+  factory LoanOffsetSummary.fromJson(Map<String, dynamic> j) =>
+      LoanOffsetSummary(
+        streamId: j['streamId'] as String?,
+        streamName: j['streamName'] as String?,
+        visible: j['visible'] == true,
+        usableToday: _dec(j['usableToday']) ?? Decimal.zero,
+        thresholdUsed: _dec(j['thresholdUsed']) ?? Decimal.zero,
+        interestSaved: _dec(j['interestSaved']) ?? Decimal.zero,
+        totalInterestWithoutOffset:
+            _dec(j['totalInterestWithoutOffset']) ?? Decimal.zero,
+        payoffDateWithoutOffset: _parse(j['payoffDateWithoutOffset']),
+        monthsSaved: (j['monthsSaved'] as num?)?.toInt(),
+      );
+
+  final String? streamId;
+  final String? streamName;
+  final bool visible;
+  final Decimal usableToday;
+  final Decimal thresholdUsed;
+  final Decimal interestSaved;
+  final Decimal totalInterestWithoutOffset;
+  final DateTime? payoffDateWithoutOffset;
+
+  /// Whole calendar months sooner (null: either payoff date unknown).
+  final int? monthsSaved;
+}
+
+/// "Offset saves \$X interest and pays the loan off N months sooner (by
+/// `<date>`)" (spec 004 §16); just the saving when the payoff doesn't move
+/// or isn't known.
+String offsetBenefitText(LoanOffsetSummary o, DateTime? payoff) {
+  final saves = 'Offset saves ${loanMoney(o.interestSaved)} interest';
+  final n = o.monthsSaved;
+  if (n == null || n <= 0 || payoff == null) return saves;
+  return '$saves and pays the loan off $n '
+      '${n == 1 ? 'month' : 'months'} sooner (by ${loanDate(payoff)})';
+}
+
 class LoanSummary {
   const LoanSummary({
     required this.eventId,
@@ -425,7 +517,11 @@ class LoanSummary {
     required this.flat,
     required this.transfers,
     required this.warnings,
+    this.offset,
   });
+
+  /// Spec 004: the offset account's effect (null: none linked).
+  final LoanOffsetSummary? offset;
 
   factory LoanSummary.fromJson(Map<String, dynamic> j) {
     final at = (j['balanceAt'] as Map?)?.cast<String, dynamic>() ?? const {};
@@ -501,6 +597,10 @@ class LoanSummary {
           ),
       ],
       warnings: [for (final w in (j['warnings'] as List? ?? const [])) '$w'],
+      offset: switch (j['offset']) {
+        final Map o => LoanOffsetSummary.fromJson(o.cast<String, dynamic>()),
+        _ => null,
+      },
     );
   }
 

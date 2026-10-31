@@ -177,7 +177,8 @@ class _StreamDialogState extends State<StreamDialog> {
                 prefixText: '$moneySymbol ',
                 helperText: widget.existing?.hasLoan ?? false
                     ? loanThresholdHelper
-                    : 'Balances below this show in red',
+                    : thresholdHelper(widget.existing),
+                helperMaxLines: 3,
                 errorText: _lossError,
               ),
               keyboardType: const TextInputType.numberWithOptions(
@@ -355,3 +356,16 @@ int seedShiftDays(DateTime from, DateTime to) => DateTime.utc(
   to.month,
   to.day,
 ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+
+/// The alert threshold's helper; on an offset account (spec 004) it is
+/// also the zero the loan's offset counts from.
+String thresholdHelper(BudgetStream? stream) {
+  const base = 'Balances below this show in red';
+  final loans = stream?.offsetFor ?? const <OffsetLinkRef>[];
+  if (loans.isEmpty) return base;
+  final names = [
+    for (final l in loans)
+      l.visible && l.name != null ? l.name! : 'a loan not shared with you',
+  ];
+  return '$base. Also the zero for the offset on ${names.join(', ')}';
+}

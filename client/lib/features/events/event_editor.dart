@@ -462,6 +462,11 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     };
   }
 
+  /// I own this stream (spec 004: only the owner links an offset).
+  bool get _ownsStream =>
+      ref.read(streamProvider(widget.streamId)).valueOrNull?.role.isOwner ??
+      false;
+
   BudgetEvent _draft({Decimal? amount, int? count, DateTime? endDate}) {
     final loan = _loanDraft;
     if (_loanMode && loan != null) {
@@ -480,6 +485,10 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         color: _category?.color ?? widget.existing?.color,
         kind: 'loan',
         loan: loan.toJson(),
+        offsetStreamIds: loan.offsetIds,
+        offsetHidden: loan.offsetHidden,
+        // Spec 004: only the owner sends a link, and only a change.
+        offsetChange: _ownsStream && loan.offsetChanged ? loan.offsetIds : null,
       );
     }
     final parsedAmount =
@@ -557,6 +566,8 @@ class _EventEditorState extends ConsumerState<EventEditor> {
               principalFocus: _principalFocus,
               onSubmit: _save,
               onChanged: () => setState(() => _loanErrors = const {}),
+              streamId: widget.streamId,
+              canEditOffset: _ownsStream,
             ),
           ),
         ),

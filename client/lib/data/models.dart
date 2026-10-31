@@ -103,9 +103,17 @@ class BudgetStream {
     this.shared = false,
     this.owner,
     this.hasLoan = false,
+    this.offset,
+    this.offsetFor = const [],
   });
 
   final int? version;
+
+  /// Spec 004: this loan stream's offset account (null: none linked).
+  final OffsetLinkRef? offset;
+
+  /// Spec 004: the loan streams this stream is the offset account for.
+  final List<OffsetLinkRef> offsetFor;
 
   /// The stream holds a loan event (its balance can run far negative by
   /// design, so it gets no red alert badge).
@@ -180,6 +188,11 @@ class BudgetStream {
       shared: json['shared'] == true,
       owner: UserRef.maybe(json['owner']),
       hasLoan: json['hasLoan'] == true,
+      offset: OffsetLinkRef.maybe(json['offset']),
+      offsetFor: [
+        for (final o in (json['offsetFor'] as List?) ?? const [])
+          ?OffsetLinkRef.maybe(o),
+      ],
     );
   }
 
@@ -233,6 +246,8 @@ class BudgetStream {
       shared: shared,
       owner: owner,
       hasLoan: hasLoan,
+      offset: offset,
+      offsetFor: offsetFor,
       id: id ?? this.id,
       ownerId: ownerId ?? this.ownerId,
       name: name ?? this.name,
@@ -263,7 +278,27 @@ extension StreamSharing on BudgetStream {
     shared: from.shared,
     owner: from.owner,
     hasLoan: hasLoan,
+    offset: from.offset,
+    offsetFor: from.offsetFor,
   );
+}
+
+/// One side of a loan's offset link in the streams list (spec 004 §17):
+/// [streamId] and [name] are null when the user can't see that stream.
+class OffsetLinkRef {
+  const OffsetLinkRef({this.streamId, this.name, this.visible = true});
+
+  final String? streamId;
+  final String? name;
+  final bool visible;
+
+  static OffsetLinkRef? maybe(Object? j) => j is Map
+      ? OffsetLinkRef(
+          streamId: j['streamId'] as String?,
+          name: j['name'] as String?,
+          visible: j['visible'] != false,
+        )
+      : null;
 }
 
 enum EventDirection {
@@ -356,7 +391,25 @@ class BudgetEvent {
     this.categoryHidden = false,
     this.kind = 'standard',
     this.loan,
+    this.offsetStreamIds = const [],
+    this.offsetHidden = false,
+    this.offsetChange,
   });
+
+  /// The offset link to send on save (create, PATCH or preview); null:
+  /// leave it out (unchanged). Only the owner sends it, and only when it
+  /// changed (spec 004 rule 2: an editor's PATCH must not touch it).
+  final List<String>? offsetChange;
+
+  /// Spec 004: a loan's offset account stream ids (at most one). Ids the
+  /// user can't read are left out by the server and [offsetHidden] set.
+  final List<String> offsetStreamIds;
+
+  /// A linked offset account the user can't see ("not shared with you").
+  final bool offsetHidden;
+
+  /// Linked to an offset account (visible or not).
+  bool get hasOffset => offsetStreamIds.isNotEmpty || offsetHidden;
 
   /// "standard" or "loan" (spec 002).
   final String kind;
@@ -541,6 +594,10 @@ class BudgetEvent {
       categoryHidden: (json['categoryHidden'] as bool?) ?? false,
       kind: (json['kind'] as String?) ?? 'standard',
       loan: (json['loan'] as Map?)?.cast<String, dynamic>(),
+      offsetStreamIds: [
+        for (final id in (json['offsetStreamIds'] as List?) ?? const []) '$id',
+      ],
+      offsetHidden: json['offsetHidden'] == true,
       overrides: {
         for (final o in (json['overrides'] as List?) ?? const [])
           parseDate((o as Map)['date']): OccurrenceOverride(
@@ -573,6 +630,8 @@ class BudgetEvent {
     'categoryHidden': categoryHidden,
     if (isLoan) 'kind': kind,
     if (isLoan) 'loan': loan,
+    if (isLoan) 'offsetStreamIds': offsetStreamIds,
+    if (offsetHidden) 'offsetHidden': true,
   };
 
   Map<String, dynamic> toCreateJson() => {
@@ -598,6 +657,7 @@ class BudgetEvent {
     // Spec 002: a loan's kind and terms (kind cannot change on a patch).
     if (isLoan) 'kind': kind,
     if (isLoan) 'loan': loan,
+    if (isLoan && offsetChange != null) 'offsetStreamIds': offsetChange,
   };
 
   BudgetEvent copyWith({
@@ -629,8 +689,16 @@ class BudgetEvent {
     bool? categoryHidden,
     String? kind,
     Map<String, dynamic>? loan,
+    List<String>? offsetStreamIds,
+    List<String>? offsetChange,
+    bool clearOffsetChange = false,
   }) {
     return BudgetEvent(
+      offsetStreamIds: offsetStreamIds ?? this.offsetStreamIds,
+      offsetHidden: offsetHidden,
+      offsetChange: clearOffsetChange
+          ? null
+          : (offsetChange ?? this.offsetChange),
       categoryId: categoryId ?? this.categoryId,
       categoryHidden: categoryHidden ?? this.categoryHidden,
       days: days ?? this.days,

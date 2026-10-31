@@ -6,6 +6,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../timeline/occurrence_info.dart' show formatOccurrenceDate, ordinal;
 import 'loan_models.dart';
+import 'loan_offset_field.dart';
 import 'rate_periods_editor.dart';
 
 /// The loan editor's fields (spec 003 §5): interest type, Simple /
@@ -21,7 +22,16 @@ class LoanForm extends StatefulWidget {
     this.errors = const {},
     this.principalFocus,
     this.onSubmit,
+    this.streamId,
+    this.canEditOffset = false,
   });
+
+  /// The loan's stream (spec 004: the offset picker excludes it). Null
+  /// hides the offset field.
+  final String? streamId;
+
+  /// Only the stream owner links or unlinks the offset account.
+  final bool canEditOffset;
 
   final LoanDraft draft;
   final VoidCallback onChanged;
@@ -134,6 +144,32 @@ class _LoanFormState extends State<LoanForm> {
   Future<void> _setType(InterestType t) async {
     if (t == d.interestType) return;
     if (t == InterestType.flat) {
+      if (d.hasOffset) {
+        // Spec 004: a flat-rate loan has no offset; unlink first.
+        if (!widget.canEditOffset) {
+          await showConfirmDialog(
+            context,
+            title: "Can't switch to a flat rate",
+            message:
+                'This loan has an offset account, and flat-rate loans '
+                "can't. Only the stream owner can unlink it.",
+            confirmLabel: 'OK',
+            isDestructive: false,
+          );
+          return;
+        }
+        final ok = await showConfirmDialog(
+          context,
+          title: 'Unlink the offset account?',
+          message:
+              "Flat-rate loans can't have an offset account. Switching "
+              'unlinks it.',
+          confirmLabel: 'Unlink and switch',
+          isDestructive: false,
+        );
+        if (!ok || !mounted) return;
+        d.offsetStreamId = null;
+      }
       final extra = d.periods.length - 1;
       if (extra > 0) {
         final ok = await showConfirmDialog(
@@ -162,6 +198,7 @@ class _LoanFormState extends State<LoanForm> {
       d.chargeSchedule = ChargeSchedule.monthly;
       d.chargeDay = const AnniversaryChargeDay();
       d.dayCount = DayCount.d365;
+      d.periods.first.offsetApplies = true;
     }
     _rate.text = d.periods.first.rate;
     _simpleBlocked = null;
@@ -177,6 +214,9 @@ class _LoanFormState extends State<LoanForm> {
         return;
       }
       _rate.text = d.periods.first.rate;
+    } else if (d.interestType != InterestType.flat) {
+      // Simple mode applies the offset to the whole loan; keep that.
+      d.periods.first.offsetApplies = true;
     }
     _simpleBlocked = null;
     d.mode = m;
@@ -428,6 +468,15 @@ class _LoanFormState extends State<LoanForm> {
                 ),
               ],
             ),
+          ),
+        ],
+        if (!flat && widget.streamId != null) ...[
+          const SizedBox(height: 16),
+          LoanOffsetField(
+            draft: d,
+            loanStreamId: widget.streamId!,
+            canEdit: !ro && widget.canEditOffset,
+            onChanged: _changed,
           ),
         ],
         if (_err('other') case final e?) ...[

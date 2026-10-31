@@ -434,6 +434,28 @@ class _StreamCard extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
+              if (offsetIndicator(stream) case final line?) ...[
+                const SizedBox(height: 6),
+                Row(
+                  key: const ValueKey('stream-offset-indicator'),
+                  children: [
+                    const Icon(
+                      Icons.savings_outlined,
+                      size: 14,
+                      color: AppTheme.textFaint,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        line,
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               Text(
                 'BALANCE TODAY',
@@ -569,4 +591,16 @@ class _PendingInviteTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Spec 004: "Offset: Everyday" on a loan stream, "Offset for Home loan"
+/// on its offset account (null: neither).
+String? offsetIndicator(BudgetStream s) {
+  String name(OffsetLinkRef r) =>
+      r.visible && r.name != null ? r.name! : 'a stream not shared with you';
+  if (s.offset case final o?) return 'Offset: ${name(o)}';
+  if (s.offsetFor.isNotEmpty) {
+    return 'Offset for ${s.offsetFor.map(name).join(', ')}';
+  }
+  return null;
 }
