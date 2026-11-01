@@ -105,7 +105,18 @@ class BudgetStream {
     this.hasLoan = false,
     this.offset,
     this.offsetFor = const [],
+    this.seedBalanceExpr,
+    this.lossThresholdExpr,
+    this.exprErrors,
   });
+
+  /// Formula texts (spec 010); null when plain. Like the event's, not
+  /// carried by [copyWith] and sent only when set and supported.
+  final String? seedBalanceExpr;
+  final String? lossThresholdExpr;
+
+  /// Field key -> `{code, message}` for formulas that no longer resolve.
+  final Map<String, dynamic>? exprErrors;
 
   final int? version;
 
@@ -193,8 +204,19 @@ class BudgetStream {
         for (final o in (json['offsetFor'] as List?) ?? const [])
           ?OffsetLinkRef.maybe(o),
       ],
+      seedBalanceExpr: json['seedBalanceExpr'] as String?,
+      lossThresholdExpr: json['lossThresholdExpr'] as String?,
+      exprErrors: _jsonMap(json['exprErrors']),
     );
   }
+
+  /// The formula keys for a create or patch body (spec 010).
+  Map<String, dynamic> get _exprJson => {
+    if (ServerFeatures.variables && seedBalanceExpr != null)
+      'seedBalanceExpr': seedBalanceExpr,
+    if (ServerFeatures.variables && lossThresholdExpr != null)
+      'lossThresholdExpr': lossThresholdExpr,
+  };
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -206,6 +228,9 @@ class BudgetStream {
     'currencyScale': currencyScale,
     'eventOrder': eventOrder,
     'displayOrder': displayOrder,
+    if (seedBalanceExpr != null) 'seedBalanceExpr': seedBalanceExpr,
+    if (lossThresholdExpr != null) 'lossThresholdExpr': lossThresholdExpr,
+    if (exprErrors != null) 'exprErrors': exprErrors,
   };
 
   Map<String, dynamic> toCreateJson() => {
@@ -214,6 +239,7 @@ class BudgetStream {
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
     'currencyScale': currencyScale,
+    ..._exprJson,
   };
 
   Map<String, dynamic> toPatchJson() => {
@@ -224,6 +250,7 @@ class BudgetStream {
     'currencyScale': currencyScale,
     'eventOrder': eventOrder,
     if (version != null) 'version': version,
+    ..._exprJson,
   };
 
   BudgetStream copyWith({
@@ -239,8 +266,12 @@ class BudgetStream {
     int? version,
     bool clearVersion = false,
     Role? role,
+    String? seedBalanceExpr,
+    String? lossThresholdExpr,
   }) {
     return BudgetStream(
+      seedBalanceExpr: seedBalanceExpr,
+      lossThresholdExpr: lossThresholdExpr,
       version: clearVersion ? null : (version ?? this.version),
       role: role ?? this.role,
       shared: shared,
@@ -419,7 +450,23 @@ class BudgetEvent {
     this.offsetStreamIds = const [],
     this.offsetHidden = false,
     this.offsetChange,
+    this.amountExpr,
+    this.intervalExpr,
+    this.occurrenceCountExpr,
+    this.exprErrors,
   });
+
+  /// Formula texts (spec 010), as stored by the server; null when plain.
+  /// Sent back only when set on purpose (not carried by [copyWith], so a
+  /// plain edit sends the plain number, which clears the formula) and the
+  /// server has [ServerFeatures.variables] on.
+  final String? amountExpr;
+  final String? intervalExpr;
+  final String? occurrenceCountExpr;
+
+  /// Field key -> `{code, message}` for formulas that no longer resolve
+  /// (the stored numbers are kept).
+  final Map<String, dynamic>? exprErrors;
 
   /// The offset link to send on save (create, PATCH or preview); null:
   /// leave it out (unchanged). Only the owner sends it, and only when it
@@ -623,11 +670,17 @@ class BudgetEvent {
         for (final id in (json['offsetStreamIds'] as List?) ?? const []) '$id',
       ],
       offsetHidden: json['offsetHidden'] == true,
+      amountExpr: json['amountExpr'] as String?,
+      intervalExpr: json['intervalExpr'] as String?,
+      occurrenceCountExpr: json['occurrenceCountExpr'] as String?,
+      exprErrors: _jsonMap(json['exprErrors']),
       overrides: {
         for (final o in (json['overrides'] as List?) ?? const [])
           parseDate((o as Map)['date']): OccurrenceOverride(
             direction: EventDirection.fromJson(o['direction'] as String),
             amount: parseMoney(o['amount']),
+            amountExpr: o['amountExpr'] as String?,
+            exprError: _jsonMap(o['exprError']),
           ),
       },
     );
@@ -657,6 +710,10 @@ class BudgetEvent {
     if (isLoan) 'loan': loan,
     if (isLoan) 'offsetStreamIds': offsetStreamIds,
     if (offsetHidden) 'offsetHidden': true,
+    if (amountExpr != null) 'amountExpr': amountExpr,
+    if (intervalExpr != null) 'intervalExpr': intervalExpr,
+    if (occurrenceCountExpr != null) 'occurrenceCountExpr': occurrenceCountExpr,
+    if (exprErrors != null) 'exprErrors': exprErrors,
   };
 
   Map<String, dynamic> toCreateJson() => {
@@ -668,7 +725,11 @@ class BudgetEvent {
     if (interval != null) 'interval': interval,
     if (unit != null) 'unit': unit!.toJson(),
     // The structured rule (rule, interval, days); the server prefers it.
-    'frequency': frequency.toJson(),
+    'frequency': {
+      ...frequency.toJson(),
+      if (ServerFeatures.variables && intervalExpr != null)
+        'intervalExpr': intervalExpr,
+    },
     'endMode': endMode.toJson(),
     if (endDate != null) 'endDate': formatDate(endDate!),
     if (occurrenceCount != null) 'occurrenceCount': occurrenceCount,
@@ -683,6 +744,11 @@ class BudgetEvent {
     if (isLoan) 'kind': kind,
     if (isLoan) 'loan': loan,
     if (isLoan && offsetChange != null) 'offsetStreamIds': offsetChange,
+    // Spec 010: formula texts, only when set and the server supports them.
+    if (ServerFeatures.variables && amountExpr != null)
+      'amountExpr': amountExpr,
+    if (ServerFeatures.variables && occurrenceCountExpr != null)
+      'occurrenceCountExpr': occurrenceCountExpr,
   };
 
   BudgetEvent copyWith({
@@ -717,8 +783,17 @@ class BudgetEvent {
     List<String>? offsetStreamIds,
     List<String>? offsetChange,
     bool clearOffsetChange = false,
+    String? amountExpr,
+    String? intervalExpr,
+    String? occurrenceCountExpr,
   }) {
+    // Formula texts are not carried over: a copy is an edit draft, and a
+    // plain edit must clear the formula (spec 010 rule 2). Pass them to
+    // keep or set one.
     return BudgetEvent(
+      amountExpr: amountExpr,
+      intervalExpr: intervalExpr,
+      occurrenceCountExpr: occurrenceCountExpr,
       offsetStreamIds: offsetStreamIds ?? this.offsetStreamIds,
       offsetHidden: offsetHidden,
       offsetChange: clearOffsetChange
@@ -762,10 +837,22 @@ String? normalizeEventColor(Object? raw) {
 
 /// A once-off override of one occurrence's amount and direction.
 class OccurrenceOverride {
-  const OccurrenceOverride({required this.direction, required this.amount});
+  const OccurrenceOverride({
+    required this.direction,
+    required this.amount,
+    this.amountExpr,
+    this.exprError,
+  });
 
   final EventDirection direction;
   final Decimal amount;
+
+  /// The amount's formula text (spec 010); null when plain. Not part of
+  /// equality (the amount is what counts).
+  final String? amountExpr;
+
+  /// `{code, message}` when [amountExpr] no longer resolves.
+  final Map<String, dynamic>? exprError;
 
   Decimal get signed => direction == EventDirection.credit ? amount : -amount;
 
@@ -1342,4 +1429,69 @@ String? categoryNameProblem(
     }
   }
   return null;
+}
+
+/// What the server advertises in `GET /api/auth/config` `features`
+/// (spec 010). Set at sign-in; formula keys are only sent when on.
+class ServerFeatures {
+  ServerFeatures._();
+
+  /// Variables and formula fields (`FEATURE_VARIABLES`). Off until the
+  /// config says otherwise.
+  static bool variables = false;
+}
+
+Map<String, dynamic>? _jsonMap(Object? v) =>
+    v is Map ? v.cast<String, dynamic>() : null;
+
+/// An owner-level variable (spec 010): `$name` in formula fields.
+class Variable {
+  const Variable({
+    required this.id,
+    required this.name,
+    required this.unit,
+    required this.expr,
+    required this.value,
+    this.description,
+    this.displayDecimals,
+    this.problem,
+    this.version,
+    this.usageCount = 0,
+  });
+
+  final String id;
+
+  /// Canonical case, without `$`.
+  final String name;
+
+  /// `money`, `percent` or `number`.
+  final String unit;
+
+  /// The value as written: a number or a formula over other variables.
+  final String expr;
+
+  /// The resolved value (the last good one while [problem] is set).
+  final Decimal value;
+  final String? description;
+  final int? displayDecimals;
+
+  /// `{code, message}` when [expr] no longer resolves.
+  final Map<String, dynamic>? problem;
+  final int? version;
+
+  /// Fields and variables referencing this one.
+  final int usageCount;
+
+  factory Variable.fromJson(Map<String, dynamic> json) => Variable(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    unit: (json['unit'] as String?) ?? 'number',
+    expr: '${json['expr'] ?? json['value'] ?? ''}',
+    value: Decimal.parse('${json['value'] ?? '0'}'),
+    description: json['description'] as String?,
+    displayDecimals: (json['displayDecimals'] as num?)?.toInt(),
+    problem: _jsonMap(json['problem']),
+    version: (json['version'] as num?)?.toInt(),
+    usageCount: (json['usageCount'] as num?)?.toInt() ?? 0,
+  );
 }

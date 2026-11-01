@@ -24,6 +24,20 @@ final eventRepositoryProvider = Provider<EventRepository>((ref) {
   return EventRepository(ref.watch(apiClientProvider));
 });
 
+final variableRepositoryProvider = Provider<VariableRepository>((ref) {
+  return VariableRepository(ref.watch(apiClientProvider));
+});
+
+/// The stream owner's variables (spec 010).
+final variablesProvider = FutureProvider.family<List<Variable>, String>(
+  (ref, streamId) => ref.read(variableRepositoryProvider).list(streamId),
+);
+
+/// My own variables (spec 010).
+final myVariablesProvider = FutureProvider<List<Variable>>(
+  (ref) => ref.read(variableRepositoryProvider).listMine(),
+);
+
 final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
   return CategoryRepository(ref.watch(apiClientProvider));
 });

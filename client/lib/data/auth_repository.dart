@@ -58,7 +58,11 @@ class AuthConfig {
     this.googleUxMode = 'auto',
     this.devBypass = false,
     this.user,
+    this.variables = false,
   });
+
+  /// `features.variables` (spec 010): the server stores formulas.
+  final bool variables;
 
   final String? googleClientId;
 
@@ -81,6 +85,7 @@ class AuthConfig {
       },
       devBypass: dev == true,
       user: AuthUser.fromResponse(json),
+      variables: (json['features'] as Map?)?['variables'] == true,
     );
   }
 }

@@ -242,6 +242,106 @@ class StreamRepository {
   }
 }
 
+/// Variables (spec 010): a stream's owner's set
+/// (`/api/streams/:id/variables`) and my own (`/api/variables`).
+class VariableRepository {
+  VariableRepository(this._api);
+
+  final ApiClient _api;
+
+  static List<Variable> _list(Object? data) {
+    final raw = data is Map ? data['variables'] : data;
+    return [
+      for (final j in (raw as List?) ?? const [])
+        Variable.fromJson(Map<String, dynamic>.from(j as Map)),
+    ];
+  }
+
+  String _base(String? streamId) =>
+      streamId == null ? '/api/variables' : '/api/streams/$streamId/variables';
+
+  /// The stream owner's variables (every role can read them).
+  Future<List<Variable>> list(String streamId) async =>
+      _list(await _api.get(_base(streamId)));
+
+  /// My own variables.
+  Future<List<Variable>> listMine() async =>
+      _list(await _api.get('/api/variables'));
+
+  /// Mine, or the stream owner's with [streamId] (owner or editor).
+  /// Throws [ApiException] 409 when the name is taken, 400 on a bad value.
+  Future<Variable> create({
+    String? streamId,
+    required String name,
+    required String expr,
+    String unit = 'number',
+    String? description,
+    int? displayDecimals,
+  }) async {
+    final data = await _api.post(
+      _base(streamId),
+      body: {
+        'name': name,
+        'value': expr,
+        'unit': unit,
+        'description': ?description,
+        'displayDecimals': ?displayDecimals,
+      },
+    );
+    return Variable.fromJson(data as Map<String, dynamic>);
+  }
+
+  /// Only the given fields change; a [name] change renames every reference.
+  Future<Variable> update(
+    String id, {
+    String? streamId,
+    String? name,
+    String? expr,
+    String? unit,
+    String? description,
+    int? displayDecimals,
+    int? version,
+  }) async {
+    final data = await _api.patch(
+      '${_base(streamId)}/$id',
+      body: {
+        'name': ?name,
+        'value': ?expr,
+        'unit': ?unit,
+        'description': ?description,
+        'displayDecimals': ?displayDecimals,
+        'version': ?version,
+      },
+    );
+    return Variable.fromJson(data as Map<String, dynamic>);
+  }
+
+  /// Throws [ApiException] 409 while it is in use.
+  Future<void> delete(String id, {String? streamId}) =>
+      _api.delete('${_base(streamId)}/$id');
+
+  /// `{usages: [...], hidden: n}`: where it is referenced.
+  Future<Map<String, dynamic>> usages(String id, {String? streamId}) async =>
+      Map<String, dynamic>.from(
+        await _api.get('${_base(streamId)}/$id/usages') as Map,
+      );
+
+  /// What a change would do, without saving it.
+  Future<Map<String, dynamic>> preview(
+    String id,
+    String expr, {
+    String? streamId,
+  }) async => Map<String, dynamic>.from(
+    await _api.post('${_base(streamId)}/$id/preview', body: {'value': expr})
+        as Map,
+  );
+
+  /// My fields and variables whose formulas no longer resolve.
+  Future<Map<String, dynamic>> attention() async => Map<String, dynamic>.from(
+    await _api.get('/api/variables/attention') as Map,
+  );
+}
+
 /// A stream's categories (`/api/streams/:id/categories`).
 class CategoryRepository {
   CategoryRepository(this._api);

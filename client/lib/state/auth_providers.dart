@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config.dart';
 import '../data/api_client.dart';
 import '../data/auth_repository.dart';
+import '../data/models.dart';
 import '../features/auth/google_button.dart';
 import 'providers.dart';
 
@@ -50,6 +51,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     });
     final repo = ref.read(authRepositoryProvider);
     final config = await repo.config();
+    ServerFeatures.variables = config.variables;
     final clientId = AppConfig.googleClientId.isNotEmpty
         ? AppConfig.googleClientId
         : config.googleClientId;

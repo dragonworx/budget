@@ -204,6 +204,20 @@ class RealtimeController {
         }
         final peer = e.peerStreamId;
         if (peer != null) _stream(peer);
+      // Spec 010: one row per affected stream.
+      case 'variable':
+        if (aid != null) ref.invalidate(variablesProvider(aid));
+        if (e.subjectUserId != null && e.subjectUserId == _me) {
+          ref.invalidate(myVariablesProvider);
+        }
+        // New values (or texts) landed in this stream's rows.
+        if (aid != null &&
+            (e.action == 'variable.values_changed' ||
+                e.action == 'variable.renamed')) {
+          ref.invalidate(streamProvider(aid));
+          ref.invalidate(streamsProvider);
+          _stream(aid);
+        }
       case 'scenario':
         if (aid != null) {
           ref.invalidate(scenariosProvider(aid));
