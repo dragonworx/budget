@@ -201,6 +201,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   @override
   void dispose() {
+    _dataWindowTimer?.cancel();
     _hoverEvent.dispose();
     _dockAnim.dispose();
     _flushView(keepalive: true);
@@ -818,6 +819,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _viewAnim.stop();
     _seriesCache = null;
     _seriesCacheQuery = null;
+    _dataWindowTimer?.cancel();
+    _dataWindowTimer = null;
     // Leaving another stream: save where it was left first.
     _flushView();
     _viewStreamId = stream.id;
@@ -1141,17 +1144,61 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   (DateTime, DateTime) _dataWindowFor(DateTime start, double days) =>
       nextDataWindow(_dataFrom, _dataTo, start, days);
 
+  /// Pending data-window change ([_applyViewport] debounces it).
+  Timer? _dataWindowTimer;
+
+  /// Quiet time after the last view change before a new data window (and
+  /// its /balance fetch) is applied while panning or zooming.
+  static const dataWindowDebounce = Duration(milliseconds: 120);
+
   void _applyViewport(DateTime start, double visibleDays) {
     final days = visibleDays.clamp(minVisibleDays, maxVisibleDays).toDouble();
     final (from, to) = _dataWindowFor(start, days);
+    final changed = from != _dataFrom || to != _dataTo;
+    // The chart keeps panning on the loaded series ([_seriesCache]); the
+    // query follows once the view rests, or at once when the view is more
+    // than a view width outside the loaded data.
+    final now = changed && _farOutsideLoaded(start, days);
     setState(() {
       _viewStart = start;
       _visibleDays = days;
+      if (now) {
+        _dataFrom = from;
+        _dataTo = to;
+      }
+    });
+    if (now) {
+      _dataWindowTimer?.cancel();
+      _dataWindowTimer = null;
+    } else if (changed) {
+      _dataWindowTimer?.cancel();
+      _dataWindowTimer = Timer(dataWindowDebounce, _flushDataWindow);
+    }
+    _viewTouched = true;
+    _viewChanged();
+  }
+
+  /// Applies the data window for the current view (the debounced step of
+  /// [_applyViewport]).
+  void _flushDataWindow() {
+    _dataWindowTimer = null;
+    if (!mounted) return;
+    final (from, to) = _dataWindowFor(_viewStart, _visibleDays);
+    if (from == _dataFrom && to == _dataTo) return;
+    setState(() {
       _dataFrom = from;
       _dataTo = to;
     });
-    _viewTouched = true;
-    _viewChanged();
+  }
+
+  /// Whether the view [start] + [days] reaches more than one view width
+  /// past the loaded series (or nothing is loaded yet).
+  bool _farOutsideLoaded(DateTime start, double days) {
+    final q = _seriesCacheQuery;
+    if (q == null) return true;
+    final end = addDays(start, days);
+    return start.isBefore(addDays(q.from, -days)) ||
+        end.isAfter(addDays(q.to, days));
   }
 
   @override

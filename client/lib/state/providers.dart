@@ -464,14 +464,31 @@ class BalanceQuery {
   int get hashCode => Object.hash(streamId, from, to);
 }
 
-final balanceProvider = FutureProvider.family<BalanceSeries, BalanceQuery>((
-  ref,
-  query,
-) {
-  return ref
-      .read(streamRepositoryProvider)
-      .balance(query.streamId, from: query.from, to: query.to);
-});
+/// Queries kept alive per stream once nothing watches them (most recently
+/// fetched last), so panning back over a recent window is instant.
+const balanceKeepAlivePerStream = 4;
+
+final _balanceKeepAlive =
+    Provider<Map<String, List<(BalanceQuery, KeepAliveLink)>>>((ref) => {});
+
+/// A stream's balance series for a window. Auto-disposed, except the last
+/// [balanceKeepAlivePerStream] windows fetched per stream.
+final balanceProvider = FutureProvider.autoDispose
+    .family<BalanceSeries, BalanceQuery>((ref, query) {
+      final link = ref.keepAlive();
+      final kept = ref
+          .read(_balanceKeepAlive)
+          .putIfAbsent(query.streamId, () => []);
+      kept.removeWhere((e) => e.$1 == query);
+      kept.add((query, link));
+      while (kept.length > balanceKeepAlivePerStream) {
+        kept.removeAt(0).$2.close();
+      }
+      ref.onDispose(() => kept.removeWhere((e) => identical(e.$2, link)));
+      return ref
+          .read(streamRepositoryProvider)
+          .balance(query.streamId, from: query.from, to: query.to);
+    });
 
 /// Closing balance today for a stream (null when there are no points).
 final todayBalanceProvider = FutureProvider.family<Decimal?, String>((
