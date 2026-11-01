@@ -1,0 +1,15 @@
+text: ((($rent)))
+Group [0,11)
+  Group [1,10)
+    Group [2,9)
+      Var $rent [3,8)
+pretty: ((($rent)))
+value: 1200
+highlight:
+  paren           [0,1) (
+  paren           [1,2) (
+  paren           [2,3) (
+  variableKnown   [3,8) $rent
+  paren           [8,9) )
+  paren           [9,10) )
+  paren           [10,11) )

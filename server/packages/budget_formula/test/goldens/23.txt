@@ -1,0 +1,5 @@
+text: 1e3
+error: FormulaError(bad_number [0,3) "Exponents like 1e3 aren't supported; write the number out")
+highlight:
+  invalid         [0,1) 1
+  invalid         [1,3) e3

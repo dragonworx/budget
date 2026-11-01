@@ -1,0 +1,1967 @@
+[
+ {
+  "text": "$some_var_name",
+  "field": "event.amount",
+  "expect": {
+   "value": "5"
+  }
+ },
+ {
+  "text": "$some_var_name * $another_var_name",
+  "field": "event.amount",
+  "expect": {
+   "value": "15"
+  }
+ },
+ {
+  "text": "$some_var_name * 3",
+  "field": "event.amount",
+  "expect": {
+   "value": "15"
+  }
+ },
+ {
+  "text": "$rent * 12 / $weeks",
+  "field": "event.amount",
+  "expect": {
+   "value": "276.92"
+  }
+ },
+ {
+  "text": "($rent + 50) * 2",
+  "field": "event.amount",
+  "expect": {
+   "value": "2500"
+  }
+ },
+ {
+  "text": "-$rent + 2000",
+  "field": "stream.seed",
+  "expect": {
+   "value": "800"
+  }
+ },
+ {
+  "text": "2 * -3",
+  "field": "stream.seed",
+  "expect": {
+   "value": "-6"
+  }
+ },
+ {
+  "text": "2 * -3",
+  "field": "event.amount",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 6,
+   "message": "Use Money out instead of a negative amount"
+  }
+ },
+ {
+  "text": "10 / 3 * 3",
+  "field": "event.amount",
+  "expect": {
+   "value": "10"
+  }
+ },
+ {
+  "text": "0.1 + 0.2",
+  "field": "event.amount",
+  "expect": {
+   "value": "0.3"
+  }
+ },
+ {
+  "text": "2.675 * 1",
+  "field": "event.amount",
+  "expect": {
+   "value": "2.68"
+  }
+ },
+ {
+  "text": "-2.345",
+  "field": "stream.seed",
+  "expect": {
+   "plain": "-2.345"
+  }
+ },
+ {
+  "text": "$Rent / 4",
+  "field": "event.amount",
+  "expect": {
+   "value": "300",
+   "canonical": "$rent / 4"
+  }
+ },
+ {
+  "text": "5 × 3 − 1",
+  "field": "event.amount",
+  "expect": {
+   "value": "14",
+   "canonical": "5 * 3 - 1"
+  }
+ },
+ {
+  "text": "$100 + $rent",
+  "field": "event.amount",
+  "expect": {
+   "value": "1300"
+  }
+ },
+ {
+  "text": "$rate + 0.25",
+  "field": "loan.ratePct",
+  "expect": {
+   "value": "5.75"
+  }
+ },
+ {
+  "text": "$rate * 20",
+  "field": "loan.ratePct",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 10
+  }
+ },
+ {
+  "text": "$rate / 3",
+  "field": "loan.ratePct",
+  "expect": {
+   "value": "1.8333"
+  }
+ },
+ {
+  "text": "$weeks / 4",
+  "field": "event.count",
+  "expect": {
+   "value": "13"
+  }
+ },
+ {
+  "text": "$weeks / 5",
+  "field": "event.count",
+  "expect": {
+   "error": "not_whole",
+   "start": 0,
+   "end": 10,
+   "message": "Must be a whole number; this works out to 10.4"
+  }
+ },
+ {
+  "text": "$rent / $zero",
+  "field": "event.amount",
+  "expect": {
+   "error": "division_by_zero",
+   "start": 6,
+   "end": 7,
+   "message": "Division by zero: $zero is 0"
+  }
+ },
+ {
+  "text": "$rnt * 2",
+  "field": "event.amount",
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 4,
+   "hint": "Did you mean $rent?"
+  }
+ },
+ {
+  "text": "5 +",
+  "field": "event.amount",
+  "expect": {
+   "error": "expected_operand",
+   "start": 3,
+   "end": 3
+  }
+ },
+ {
+  "text": "(5 + 3",
+  "field": "event.amount",
+  "expect": {
+   "error": "unclosed_paren",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "5 + 3)",
+  "field": "event.amount",
+  "expect": {
+   "error": "unmatched_paren",
+   "start": 5,
+   "end": 6
+  }
+ },
+ {
+  "text": "5 5",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 2,
+   "end": 3
+  }
+ },
+ {
+  "text": "5 5",
+  "field": "event.amount",
+  "expect": {
+   "plain": "55"
+  }
+ },
+ {
+  "text": "1,250 + 5",
+  "field": "event.amount",
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 1,
+   "end": 2,
+   "message": "Commas can't be used inside a formula; write 1250 or 1_250"
+  }
+ },
+ {
+  "text": "1,250",
+  "field": "event.amount",
+  "expect": {
+   "plain": "1250"
+  }
+ },
+ {
+  "text": "5%",
+  "field": "loan.ratePct",
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 1,
+   "end": 2,
+   "message": "Percent signs aren't supported yet. Write 5 / 100 for 5%."
+  }
+ },
+ {
+  "text": "round($rent / 7)",
+  "field": "event.amount",
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 0,
+   "end": 5,
+   "message": "Functions like round() aren't supported yet"
+  }
+ },
+ {
+  "text": "10-2-3",
+  "field": null,
+  "expect": {
+   "value": "5"
+  }
+ },
+ {
+  "text": "12/2/3",
+  "field": null,
+  "expect": {
+   "value": "2"
+  }
+ },
+ {
+  "text": "-3*2",
+  "field": null,
+  "expect": {
+   "value": "-6"
+  }
+ },
+ {
+  "text": "2*-3",
+  "field": null,
+  "expect": {
+   "value": "-6"
+  }
+ },
+ {
+  "text": "--5",
+  "field": null,
+  "expect": {
+   "value": "5"
+  }
+ },
+ {
+  "text": "+5",
+  "field": null,
+  "expect": {
+   "value": "5"
+  }
+ },
+ {
+  "text": "-(2+3)",
+  "field": null,
+  "expect": {
+   "value": "-5"
+  }
+ },
+ {
+  "text": "2+3*4",
+  "field": null,
+  "expect": {
+   "value": "14"
+  }
+ },
+ {
+  "text": "(2+3)*4",
+  "field": null,
+  "expect": {
+   "value": "20"
+  }
+ },
+ {
+  "text": "2*3+4",
+  "field": null,
+  "expect": {
+   "value": "10"
+  }
+ },
+ {
+  "text": "8/4*2",
+  "field": null,
+  "expect": {
+   "value": "4"
+  }
+ },
+ {
+  "text": "8/(4*2)",
+  "field": null,
+  "expect": {
+   "value": "1"
+  }
+ },
+ {
+  "text": "1-2+3",
+  "field": null,
+  "expect": {
+   "value": "2"
+  }
+ },
+ {
+  "text": "-2*-2",
+  "field": null,
+  "expect": {
+   "value": "4"
+  }
+ },
+ {
+  "text": "-+-5",
+  "field": null,
+  "expect": {
+   "value": "5"
+  }
+ },
+ {
+  "text": "2--3",
+  "field": null,
+  "expect": {
+   "value": "5"
+  }
+ },
+ {
+  "text": "2+-3",
+  "field": null,
+  "expect": {
+   "value": "-1"
+  }
+ },
+ {
+  "text": "2*+3",
+  "field": null,
+  "expect": {
+   "value": "6"
+  }
+ },
+ {
+  "text": "((((1))))",
+  "field": null,
+  "expect": {
+   "value": "1"
+  }
+ },
+ {
+  "text": "-(-(1))",
+  "field": null,
+  "expect": {
+   "value": "1"
+  }
+ },
+ {
+  "text": "10/4",
+  "field": null,
+  "expect": {
+   "value": "5/2"
+  }
+ },
+ {
+  "text": "1/3",
+  "field": null,
+  "expect": {
+   "value": "1/3"
+  }
+ },
+ {
+  "text": "1/3+1/3+1/3",
+  "field": null,
+  "expect": {
+   "value": "1"
+  }
+ },
+ {
+  "text": "2*(3+4)*5",
+  "field": null,
+  "expect": {
+   "value": "70"
+  }
+ },
+ {
+  "text": "100-50/2",
+  "field": null,
+  "expect": {
+   "value": "75"
+  }
+ },
+ {
+  "text": "7/7/7",
+  "field": null,
+  "expect": {
+   "value": "1/7"
+  }
+ },
+ {
+  "text": "-2-2",
+  "field": null,
+  "expect": {
+   "value": "-4"
+  }
+ },
+ {
+  "text": "2*3/4",
+  "field": null,
+  "expect": {
+   "value": "3/2"
+  }
+ },
+ {
+  "text": "2/3*3",
+  "field": null,
+  "expect": {
+   "value": "2"
+  }
+ },
+ {
+  "text": "6-(2-1)",
+  "field": null,
+  "expect": {
+   "value": "5"
+  }
+ },
+ {
+  "text": "6-2-1",
+  "field": null,
+  "expect": {
+   "value": "3"
+  }
+ },
+ {
+  "text": "-(1)*-(1)",
+  "field": null,
+  "expect": {
+   "value": "1"
+  }
+ },
+ {
+  "text": "1+2+3+4+5",
+  "field": null,
+  "expect": {
+   "value": "15"
+  }
+ },
+ {
+  "text": "\t5\t+\t3\t",
+  "field": null,
+  "expect": {
+   "value": "8"
+  }
+ },
+ {
+  "text": "5 + 3",
+  "field": null,
+  "expect": {
+   "value": "8"
+  }
+ },
+ {
+  "text": "5 * 2",
+  "field": null,
+  "expect": {
+   "value": "10"
+  }
+ },
+ {
+  "text": "  5  ",
+  "field": null,
+  "expect": {
+   "value": "5"
+  }
+ },
+ {
+  "text": " 5 + 3 ",
+  "field": null,
+  "expect": {
+   "value": "8"
+  }
+ },
+ {
+  "text": "5+3",
+  "field": null,
+  "expect": {
+   "value": "8"
+  }
+ },
+ {
+  "text": "5\n+3",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 1,
+   "end": 2
+  }
+ },
+ {
+  "text": "5 − 2",
+  "field": null,
+  "expect": {
+   "value": "3"
+  }
+ },
+ {
+  "text": "5 – 2",
+  "field": null,
+  "expect": {
+   "value": "3"
+  }
+ },
+ {
+  "text": "5 — 2",
+  "field": null,
+  "expect": {
+   "value": "3"
+  }
+ },
+ {
+  "text": "3 × 4",
+  "field": null,
+  "expect": {
+   "value": "12"
+  }
+ },
+ {
+  "text": "3 · 4",
+  "field": null,
+  "expect": {
+   "value": "12"
+  }
+ },
+ {
+  "text": "8 ÷ 2",
+  "field": null,
+  "expect": {
+   "value": "4"
+  }
+ },
+ {
+  "text": "−5",
+  "field": null,
+  "expect": {
+   "value": "-5"
+  }
+ },
+ {
+  "text": "6÷3×2",
+  "field": null,
+  "expect": {
+   "value": "4"
+  }
+ },
+ {
+  "text": "—(2)",
+  "field": null,
+  "expect": {
+   "value": "-2"
+  }
+ },
+ {
+  "text": "5 x 3",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 2,
+   "end": 3,
+   "message": "Use * to multiply"
+  }
+ },
+ {
+  "text": "5 X 3",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 2,
+   "end": 3
+  }
+ },
+ {
+  "text": "1_250",
+  "field": null,
+  "expect": {
+   "value": "1250"
+  }
+ },
+ {
+  "text": "1_250.5",
+  "field": null,
+  "expect": {
+   "value": "1250.5"
+  }
+ },
+ {
+  "text": "1_2_3",
+  "field": null,
+  "expect": {
+   "value": "123"
+  }
+ },
+ {
+  "text": "1.2_5",
+  "field": null,
+  "expect": {
+   "value": "1.25"
+  }
+ },
+ {
+  "text": "0_0",
+  "field": null,
+  "expect": {
+   "value": "0"
+  }
+ },
+ {
+  "text": "1__250",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 6
+  }
+ },
+ {
+  "text": "1_",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 2
+  }
+ },
+ {
+  "text": "1_.5",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 4
+  }
+ },
+ {
+  "text": "1._5",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 4
+  }
+ },
+ {
+  "text": "1_ + 2",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 2
+  }
+ },
+ {
+  "text": "_1",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 0,
+   "end": 2
+  }
+ },
+ {
+  "text": ".5",
+  "field": null,
+  "expect": {
+   "value": "0.5"
+  }
+ },
+ {
+  "text": "0.5",
+  "field": null,
+  "expect": {
+   "value": "0.5"
+  }
+ },
+ {
+  "text": "1.1234567890",
+  "field": null,
+  "expect": {
+   "value": "1.123456789"
+  }
+ },
+ {
+  "text": "123456789012345",
+  "field": null,
+  "expect": {
+   "value": "123456789012345"
+  }
+ },
+ {
+  "text": "0001",
+  "field": null,
+  "expect": {
+   "value": "1"
+  }
+ },
+ {
+  "text": "00.50",
+  "field": null,
+  "expect": {
+   "value": "0.5"
+  }
+ },
+ {
+  "text": ".5+.5",
+  "field": null,
+  "expect": {
+   "value": "1"
+  }
+ },
+ {
+  "text": "5.",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 2,
+   "message": "Add digits after the decimal point"
+  }
+ },
+ {
+  "text": "5.5.5",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 5
+  }
+ },
+ {
+  "text": "5. + 1",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 2
+  }
+ },
+ {
+  "text": "1.12345678901",
+  "field": null,
+  "expect": {
+   "error": "number_too_long",
+   "start": 0,
+   "end": 13
+  }
+ },
+ {
+  "text": "1234567890123456",
+  "field": null,
+  "expect": {
+   "error": "number_too_long",
+   "start": 0,
+   "end": 16
+  }
+ },
+ {
+  "text": "1234567890123456.5",
+  "field": null,
+  "expect": {
+   "error": "number_too_long",
+   "start": 0,
+   "end": 18
+  }
+ },
+ {
+  "text": ".",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "5 + .",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 4,
+   "end": 5
+  }
+ },
+ {
+  "text": "1e3",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 3
+  }
+ },
+ {
+  "text": "2E10",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 4
+  }
+ },
+ {
+  "text": "1e+3",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 2
+  }
+ },
+ {
+  "text": "",
+  "field": null,
+  "expect": {
+   "error": "empty",
+   "start": 0,
+   "end": 0
+  }
+ },
+ {
+  "text": "   ",
+  "field": null,
+  "expect": {
+   "error": "empty",
+   "start": 0,
+   "end": 0
+  }
+ },
+ {
+  "text": "\t",
+  "field": null,
+  "expect": {
+   "error": "empty",
+   "start": 0,
+   "end": 0
+  }
+ },
+ {
+  "text": "5 & 3",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 2,
+   "end": 3
+  }
+ },
+ {
+  "text": "@",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "5 + #",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 4,
+   "end": 5
+  }
+ },
+ {
+  "text": "5 = 3",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 2,
+   "end": 3
+  }
+ },
+ {
+  "text": "5 + \"",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 4,
+   "end": 5
+  }
+ },
+ {
+  "text": "[1]",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "5 +\r3",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 3,
+   "end": 4
+  }
+ },
+ {
+  "text": "* 5",
+  "field": null,
+  "expect": {
+   "error": "unexpected_token",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "/5",
+  "field": null,
+  "expect": {
+   "error": "unexpected_token",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "5 + * 3",
+  "field": null,
+  "expect": {
+   "error": "unexpected_token",
+   "start": 4,
+   "end": 5
+  }
+ },
+ {
+  "text": "5 * / 3",
+  "field": null,
+  "expect": {
+   "error": "unexpected_token",
+   "start": 4,
+   "end": 5
+  }
+ },
+ {
+  "text": "(* 2)",
+  "field": null,
+  "expect": {
+   "error": "unexpected_token",
+   "start": 1,
+   "end": 2
+  }
+ },
+ {
+  "text": "5 *",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 3,
+   "end": 3
+  }
+ },
+ {
+  "text": "()",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 1,
+   "end": 2
+  }
+ },
+ {
+  "text": "(5 + )",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 5,
+   "end": 6
+  }
+ },
+ {
+  "text": "-",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 1,
+   "end": 1
+  }
+ },
+ {
+  "text": "5 + (",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 5,
+   "end": 5
+  }
+ },
+ {
+  "text": "$",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "$ + 1",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": ")",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "5 - -",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 5,
+   "end": 5
+  }
+ },
+ {
+  "text": "(",
+  "field": null,
+  "expect": {
+   "error": "expected_operand",
+   "start": 1,
+   "end": 1
+  }
+ },
+ {
+  "text": "2(3)",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 1,
+   "end": 4
+  }
+ },
+ {
+  "text": "2 $rent",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 2,
+   "end": 7
+  }
+ },
+ {
+  "text": "(1)(2)",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 3,
+   "end": 6
+  }
+ },
+ {
+  "text": "$rent $rent",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 6,
+   "end": 11
+  }
+ },
+ {
+  "text": "5 5 5",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 2,
+   "end": 3
+  }
+ },
+ {
+  "text": "1 (2 + 3)",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 2,
+   "end": 9
+  }
+ },
+ {
+  "text": "2(3)",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 1,
+   "end": 4,
+   "message": "Add an operator between 2 and ("
+  }
+ },
+ {
+  "text": "((1)",
+  "field": null,
+  "expect": {
+   "error": "unclosed_paren",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "(1 + (2)",
+  "field": null,
+  "expect": {
+   "error": "unclosed_paren",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "5 * (3 + (4 - 1)",
+  "field": null,
+  "expect": {
+   "error": "unclosed_paren",
+   "start": 4,
+   "end": 5
+  }
+ },
+ {
+  "text": "((1",
+  "field": null,
+  "expect": {
+   "error": "unclosed_paren",
+   "start": 1,
+   "end": 2
+  }
+ },
+ {
+  "text": "1)",
+  "field": null,
+  "expect": {
+   "error": "unmatched_paren",
+   "start": 1,
+   "end": 2
+  }
+ },
+ {
+  "text": "(1))",
+  "field": null,
+  "expect": {
+   "error": "unmatched_paren",
+   "start": 3,
+   "end": 4
+  }
+ },
+ {
+  "text": "1 + 2) * 3",
+  "field": null,
+  "expect": {
+   "error": "unmatched_paren",
+   "start": 5,
+   "end": 6
+  }
+ },
+ {
+  "text": "$nope",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 5,
+   "message": "There is no variable $nope"
+  }
+ },
+ {
+  "text": "$Rnt",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 4,
+   "hint": "Did you mean $rent?"
+  }
+ },
+ {
+  "text": "$rents",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 6,
+   "hint": "Did you mean $rent?"
+  }
+ },
+ {
+  "text": "$xyz + $rent",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 4
+  }
+ },
+ {
+  "text": "$rent + $nope",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 8,
+   "end": 13
+  }
+ },
+ {
+  "text": "$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 42
+  }
+ },
+ {
+  "text": "5^2",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 1,
+   "end": 2,
+   "message": "Powers aren't supported yet"
+  }
+ },
+ {
+  "text": "max(1, 2)",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 0,
+   "end": 3,
+   "message": "Functions like round() aren't supported yet"
+  }
+ },
+ {
+  "text": "rent * 2",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 0,
+   "end": 4,
+   "message": "Variable names start with $ (did you mean $rent?)"
+  }
+ },
+ {
+  "text": "5;3",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 1,
+   "end": 2,
+   "message": "Semicolons can't be used inside a formula"
+  }
+ },
+ {
+  "text": "1,250",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 1,
+   "end": 2
+  }
+ },
+ {
+  "text": "50%",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 2,
+   "end": 3
+  }
+ },
+ {
+  "text": "%5",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "5 * round (2)",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 4,
+   "end": 9,
+   "message": "Functions like round() aren't supported yet"
+  }
+ },
+ {
+  "text": "2 ^ -1",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 2,
+   "end": 3
+  }
+ },
+ {
+  "text": ",",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "$rent%",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 5,
+   "end": 6
+  }
+ },
+ {
+  "text": "1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 +1",
+  "field": null,
+  "expect": {
+   "value": "2"
+  }
+ },
+ {
+  "text": "1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  +1",
+  "field": null,
+  "expect": {
+   "error": "too_long",
+   "start": 500,
+   "end": 501
+  }
+ },
+ {
+  "text": "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1",
+  "field": null,
+  "expect": {
+   "value": "100"
+  }
+ },
+ {
+  "text": "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1",
+  "field": null,
+  "expect": {
+   "error": "too_long",
+   "start": 200,
+   "end": 201
+  }
+ },
+ {
+  "text": "-1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1",
+  "field": null,
+  "expect": {
+   "value": "98"
+  }
+ },
+ {
+  "text": "((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))",
+  "field": null,
+  "expect": {
+   "value": "1"
+  }
+ },
+ {
+  "text": "(((((((((((((((((((((((((((((((((1)))))))))))))))))))))))))))))))))",
+  "field": null,
+  "expect": {
+   "error": "too_deep",
+   "start": 32,
+   "end": 33
+  }
+ },
+ {
+  "text": "--------5",
+  "field": null,
+  "expect": {
+   "value": "5"
+  }
+ },
+ {
+  "text": "---------5",
+  "field": null,
+  "expect": {
+   "error": "too_deep",
+   "start": 8,
+   "end": 9
+  }
+ },
+ {
+  "text": "--------5*--------5",
+  "field": null,
+  "expect": {
+   "value": "25"
+  }
+ },
+ {
+  "text": "1/0",
+  "field": null,
+  "expect": {
+   "error": "division_by_zero",
+   "start": 1,
+   "end": 2,
+   "message": "Division by zero"
+  }
+ },
+ {
+  "text": "1/(2-2)",
+  "field": null,
+  "expect": {
+   "error": "division_by_zero",
+   "start": 1,
+   "end": 2
+  }
+ },
+ {
+  "text": "$rent/($zero)",
+  "field": null,
+  "expect": {
+   "error": "division_by_zero",
+   "start": 5,
+   "end": 6,
+   "message": "Division by zero: $zero is 0"
+  }
+ },
+ {
+  "text": "0/0",
+  "field": null,
+  "expect": {
+   "error": "division_by_zero",
+   "start": 1,
+   "end": 2
+  }
+ },
+ {
+  "text": "1 / $zero * 2",
+  "field": null,
+  "expect": {
+   "error": "division_by_zero",
+   "start": 2,
+   "end": 3
+  }
+ },
+ {
+  "text": "1 / $ZERO",
+  "field": null,
+  "expect": {
+   "error": "division_by_zero",
+   "start": 2,
+   "end": 3,
+   "message": "Division by zero: $zero is 0"
+  }
+ },
+ {
+  "text": "0/1",
+  "field": null,
+  "expect": {
+   "value": "0"
+  }
+ },
+ {
+  "text": "999999999999999 + 1",
+  "field": null,
+  "expect": {
+   "value": "1000000000000000"
+  }
+ },
+ {
+  "text": "999999999999999 + 2",
+  "field": null,
+  "expect": {
+   "error": "overflow",
+   "start": 0,
+   "end": 19,
+   "message": "This works out too large"
+  }
+ },
+ {
+  "text": "1000000 * 1000000000",
+  "field": null,
+  "expect": {
+   "value": "1000000000000000"
+  }
+ },
+ {
+  "text": "1000000 * 1000000001",
+  "field": null,
+  "expect": {
+   "error": "overflow",
+   "start": 0,
+   "end": 20
+  }
+ },
+ {
+  "text": "-999999999999999 - 2",
+  "field": null,
+  "expect": {
+   "error": "overflow",
+   "start": 0,
+   "end": 20
+  }
+ },
+ {
+  "text": "1 / 0.0000000001 / 0.0000000001",
+  "field": null,
+  "expect": {
+   "error": "overflow",
+   "start": 0,
+   "end": 31
+  }
+ },
+ {
+  "text": "999999999999999 * 2 / 2",
+  "field": null,
+  "expect": {
+   "error": "overflow",
+   "start": 0,
+   "end": 19
+  }
+ },
+ {
+  "text": "-1 + 0",
+  "field": "loan.ratePct",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 6,
+   "message": "At least 0%"
+  }
+ },
+ {
+  "text": "0 * 5",
+  "field": "event.count",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 5,
+   "message": "At least 1"
+  }
+ },
+ {
+  "text": "$weeks - 20",
+  "field": "loan.chargeDay",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 11,
+   "message": "A day from 1 to 31"
+  }
+ },
+ {
+  "text": "$weeks - 21",
+  "field": "loan.chargeDay",
+  "expect": {
+   "value": "31"
+  }
+ },
+ {
+  "text": "7 / 2",
+  "field": "event.count",
+  "expect": {
+   "error": "not_whole",
+   "start": 0,
+   "end": 5
+  }
+ },
+ {
+  "text": "$weeks / 10",
+  "field": "event.interval",
+  "expect": {
+   "error": "not_whole",
+   "start": 0,
+   "end": 11
+  }
+ },
+ {
+  "text": "0 * 1",
+  "field": "event.amount",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 5,
+   "message": "Enter an amount above zero"
+  }
+ },
+ {
+  "text": "1000000000000 * 1",
+  "field": "event.amount",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 17,
+   "message": "At most $999,999,999,999.99"
+  }
+ },
+ {
+  "text": "999999999999.99 * 1",
+  "field": "event.amount",
+  "expect": {
+   "value": "999999999999.99"
+  }
+ },
+ {
+  "text": "0.004 + 0.001",
+  "field": "event.amount",
+  "expect": {
+   "value": "0.01"
+  }
+ },
+ {
+  "text": "0.004 * 1",
+  "field": "event.amount",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 9
+  }
+ },
+ {
+  "text": "100000 + 1",
+  "field": "event.count",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 10
+  }
+ },
+ {
+  "text": "100000 * 1",
+  "field": "event.count",
+  "expect": {
+   "value": "100000"
+  }
+ },
+ {
+  "text": "1.12345678901",
+  "field": "variable.value",
+  "expect": {
+   "error": "too_many_decimals",
+   "start": 0,
+   "end": 13
+  }
+ },
+ {
+  "text": "1.1234567890",
+  "field": "variable.value",
+  "expect": {
+   "plain": "1.123456789"
+  }
+ },
+ {
+  "text": "1 / 3",
+  "field": "variable.value",
+  "expect": {
+   "value": "0.3333333333"
+  }
+ },
+ {
+  "text": "-$rent / 7",
+  "field": "variable.value",
+  "expect": {
+   "value": "-171.4285714286"
+  }
+ },
+ {
+  "text": "5 + 😀",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 4,
+   "end": 6
+  }
+ },
+ {
+  "text": "😀",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 0,
+   "end": 2
+  }
+ },
+ {
+  "text": "5😀",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 1,
+   "end": 3
+  }
+ },
+ {
+  "text": "$rent😀",
+  "field": null,
+  "expect": {
+   "error": "unexpected_character",
+   "start": 5,
+   "end": 7
+  }
+ },
+ {
+  "text": "$5",
+  "field": "event.amount",
+  "expect": {
+   "plain": "5"
+  }
+ },
+ {
+  "text": "$5 * 2",
+  "field": "event.amount",
+  "expect": {
+   "value": "10"
+  }
+ },
+ {
+  "text": "$5 * 2",
+  "field": "loan.ratePct",
+  "expect": {
+   "error": "unexpected_character",
+   "start": 0,
+   "end": 1,
+   "message": "Remove the $ from the number"
+  }
+ },
+ {
+  "text": "$.5 + $1",
+  "field": "event.amount",
+  "expect": {
+   "value": "1.5"
+  }
+ },
+ {
+  "text": "$ 5",
+  "field": "event.amount",
+  "expect": {
+   "plain": "5"
+  }
+ },
+ {
+  "text": "$5 * 2",
+  "field": "stream.seed",
+  "expect": {
+   "value": "10"
+  }
+ },
+ {
+  "text": "2 * $3",
+  "field": "event.count",
+  "expect": {
+   "error": "unexpected_character",
+   "start": 4,
+   "end": 5
+  }
+ },
+ {
+  "text": "1,250.50",
+  "field": "event.amount",
+  "expect": {
+   "plain": "1250.5"
+  }
+ },
+ {
+  "text": "A$1,250.50",
+  "field": "event.amount",
+  "expect": {
+   "plain": "1250.5"
+  }
+ },
+ {
+  "text": "0",
+  "field": "event.amount",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 1,
+   "message": "Enter an amount above zero"
+  }
+ },
+ {
+  "text": "-5",
+  "field": "event.amount",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 2,
+   "message": "Use Money out instead of a negative amount"
+  }
+ },
+ {
+  "text": "",
+  "field": "stream.threshold",
+  "expect": {
+   "plain": "0"
+  }
+ },
+ {
+  "text": "",
+  "field": "stream.seed",
+  "expect": {
+   "error": "empty",
+   "start": 0,
+   "end": 0,
+   "message": "Enter an amount, e.g. 2500 or -120.50"
+  }
+ },
+ {
+  "text": "150",
+  "field": "loan.ratePct",
+  "expect": {
+   "error": "out_of_range",
+   "start": 0,
+   "end": 3,
+   "message": "At most 100%"
+  }
+ },
+ {
+  "text": "6.4",
+  "field": "loan.ratePct",
+  "expect": {
+   "plain": "6.4"
+  }
+ },
+ {
+  "text": "1e3",
+  "field": "goal.amount",
+  "expect": {
+   "plain": "1000"
+  }
+ },
+ {
+  "text": "2000",
+  "field": "goal.rate",
+  "expect": {
+   "plain": "2000"
+  }
+ },
+ {
+  "text": "-5",
+  "field": "goal.startBalance",
+  "expect": {
+   "plain": "-5"
+  }
+ },
+ {
+  "text": "",
+  "field": "solve.total",
+  "expect": {
+   "plain": "null"
+  }
+ },
+ {
+  "text": "12",
+  "field": "event.count",
+  "expect": {
+   "plain": "12"
+  }
+ },
+ {
+  "text": " 7 ",
+  "field": "loan.chargeDay",
+  "expect": {
+   "plain": "7"
+  }
+ },
+ {
+  "text": "$rate * 3",
+  "field": "event.amount",
+  "expect": {
+   "value": "16.5",
+   "hints": [
+    "percent_in_amount"
+   ]
+  }
+ },
+ {
+  "text": "$rate / 100 * $rent",
+  "field": "event.amount",
+  "expect": {
+   "value": "66",
+   "hints": []
+  }
+ },
+ {
+  "text": "($rate) / 100 * 1000",
+  "field": "event.amount",
+  "expect": {
+   "value": "55",
+   "hints": []
+  }
+ },
+ {
+  "text": "$rent / 100",
+  "field": "loan.ratePct",
+  "expect": {
+   "value": "12",
+   "hints": [
+    "money_in_rate"
+   ]
+  }
+ },
+ {
+  "text": "$weeks * 2",
+  "field": "event.count",
+  "expect": {
+   "value": "104",
+   "hints": []
+  }
+ },
+ {
+  "text": "$rate * 2",
+  "field": "event.count",
+  "expect": {
+   "value": "11",
+   "hints": [
+    "percent_in_amount"
+   ]
+  }
+ }
+]

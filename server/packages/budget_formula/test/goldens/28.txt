@@ -1,0 +1,4 @@
+text: 1234567890123456
+error: FormulaError(number_too_long [0,16) "Numbers can have at most 15 digits before the decimal point")
+highlight:
+  invalid         [0,16) 1234567890123456

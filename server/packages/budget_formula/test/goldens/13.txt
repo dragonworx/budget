@@ -1,0 +1,6 @@
+text: 5 +
+error: FormulaError(expected_operand [3,3) "Add a number or a $variable here")
+highlight:
+  number          [0,1) 5
+  whitespace      [1,2)  
+  invalid         [2,3) +

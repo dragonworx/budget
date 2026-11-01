@@ -1,0 +1,5 @@
+text: 5%
+error: FormulaError(reserved_syntax [1,2) "Percent signs aren't supported yet. Write 5 / 100 for 5%.")
+highlight:
+  number          [0,1) 5
+  invalid         [1,2) %

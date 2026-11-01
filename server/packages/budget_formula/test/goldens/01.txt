@@ -1,0 +1,18 @@
+text: $rent * 12 / 52
+Binary divide [0,15)
+  Binary multiply [0,10)
+    Var $rent [0,5)
+    Number 12 [8,10)
+  Number 52 [13,15)
+pretty: $rent * 12 / 52
+value: 276.9230769231
+highlight:
+  variableKnown   [0,5) $rent
+  whitespace      [5,6)  
+  operator        [6,7) *
+  whitespace      [7,8)  
+  number          [8,10) 12
+  whitespace      [10,11)  
+  operator        [11,12) /
+  whitespace      [12,13)  
+  number          [13,15) 52

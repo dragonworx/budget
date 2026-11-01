@@ -1,0 +1,8 @@
+text: rent * 2
+error: FormulaError(reserved_syntax [0,4) "Variable names start with $ (did you mean $rent?)" hint "Did you mean $rent?")
+highlight:
+  invalid         [0,4) rent
+  whitespace      [4,5)  
+  operator        [5,6) *
+  whitespace      [6,7)  
+  number          [7,8) 2

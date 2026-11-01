@@ -1,0 +1,7 @@
+text: round(5)
+error: FormulaError(reserved_syntax [0,5) "Functions like round() aren't supported yet")
+highlight:
+  invalid         [0,5) round
+  paren           [5,6) (
+  number          [6,7) 5
+  paren           [7,8) )

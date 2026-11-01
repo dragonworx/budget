@@ -1,0 +1,8 @@
+tags:
+  fuzz:
+    skip: "20,000-case fuzz run: dart test -P fuzz"
+presets:
+  fuzz:
+    tags:
+      fuzz:
+        skip: false

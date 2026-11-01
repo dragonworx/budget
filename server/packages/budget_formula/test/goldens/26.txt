@@ -1,0 +1,4 @@
+text: $
+error: FormulaError(expected_operand [0,1) "Type a variable name after $")
+highlight:
+  invalid         [0,1) $

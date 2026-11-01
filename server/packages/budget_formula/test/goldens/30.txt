@@ -1,0 +1,14 @@
+text:  \t\u00a0$weeks\u00a0*\u00a07 
+Binary multiply [3,13)
+  Var $weeks [3,9)
+  Number 7 [12,13)
+pretty: $weeks * 7
+value: 364
+highlight:
+  whitespace      [0,3)  \t\u00a0
+  variableKnown   [3,9) $weeks
+  whitespace      [9,10) \u00a0
+  operator        [10,11) *
+  whitespace      [11,12) \u00a0
+  number          [12,13) 7
+  whitespace      [13,14)  

@@ -1,0 +1,8 @@
+text: 2 ^ 3
+error: FormulaError(reserved_syntax [2,3) "Powers aren't supported yet")
+highlight:
+  number          [0,1) 2
+  whitespace      [1,2)  
+  invalid         [2,3) ^
+  whitespace      [3,4)  
+  number          [4,5) 3

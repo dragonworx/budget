@@ -1,0 +1,6 @@
+text: * 5
+error: FormulaError(unexpected_token [0,1) "Put a number or a $variable before *")
+highlight:
+  invalid         [0,1) *
+  whitespace      [1,2)  
+  number          [2,3) 5

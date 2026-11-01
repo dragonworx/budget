@@ -1,0 +1,4 @@
+text: 1.2.3
+error: FormulaError(bad_number [0,5) "This number has more than one decimal point")
+highlight:
+  invalid         [0,5) 1.2.3

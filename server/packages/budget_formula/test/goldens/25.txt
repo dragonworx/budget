@@ -1,0 +1,4 @@
+text: 5.
+error: FormulaError(bad_number [0,2) "Add digits after the decimal point")
+highlight:
+  invalid         [0,2) 5.

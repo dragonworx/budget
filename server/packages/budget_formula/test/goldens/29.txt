@@ -1,0 +1,12 @@
+text: 999999999999999 * 2
+Binary multiply [0,19)
+  Number 999999999999999 [0,15)
+  Number 2 [18,19)
+pretty: 999999999999999 * 2
+error: FormulaError(overflow [0,19) "This works out too large")
+highlight:
+  invalid         [0,15) 999999999999999
+  invalid         [15,16)  
+  invalid         [16,17) *
+  invalid         [17,18)  
+  invalid         [18,19) 2

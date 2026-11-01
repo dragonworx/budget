@@ -1,0 +1,9 @@
+text: 5 + 3)
+error: FormulaError(unmatched_paren [5,6) "This ) has no matching (")
+highlight:
+  number          [0,1) 5
+  whitespace      [1,2)  
+  operator        [2,3) +
+  whitespace      [3,4)  
+  number          [4,5) 3
+  invalid         [5,6) )

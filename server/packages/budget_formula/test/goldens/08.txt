@@ -1,0 +1,18 @@
+text: 10 / 3 * 3
+Binary multiply [0,10)
+  Binary divide [0,6)
+    Number 10 [0,2)
+    Number 3 [5,6)
+  Number 3 [9,10)
+pretty: 10 / 3 * 3
+value: 10
+highlight:
+  number          [0,2) 10
+  whitespace      [2,3)  
+  operator        [3,4) /
+  whitespace      [4,5)  
+  number          [5,6) 3
+  whitespace      [6,7)  
+  operator        [7,8) *
+  whitespace      [8,9)  
+  number          [9,10) 3

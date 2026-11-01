@@ -1,0 +1,6 @@
+text: 12 😀
+error: FormulaError(unexpected_character [3,5) "😀 can't be used in a formula")
+highlight:
+  number          [0,2) 12
+  whitespace      [2,3)  
+  invalid         [3,5) 😀

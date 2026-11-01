@@ -1,0 +1,8 @@
+text: 5 x 3
+error: FormulaError(missing_operator [2,3) "Use * to multiply")
+highlight:
+  number          [0,1) 5
+  whitespace      [1,2)  
+  invalid         [2,3) x
+  whitespace      [3,4)  
+  number          [4,5) 3

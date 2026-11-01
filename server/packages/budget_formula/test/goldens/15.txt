@@ -1,0 +1,9 @@
+text: (5 + 3
+error: FormulaError(unclosed_paren [0,1) "This ( is never closed")
+highlight:
+  invalid         [0,1) (
+  number          [1,2) 5
+  whitespace      [2,3)  
+  operator        [3,4) +
+  whitespace      [4,5)  
+  number          [5,6) 3

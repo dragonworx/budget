@@ -1,0 +1,19 @@
+name: budget_formula
+description: >-
+  Formula grammar v1 for numeric fields (`$rent * 3`): lexer, Pratt parser,
+  exact rational evaluator, per-field specs, legacy plain-number parsers and
+  the helpers the client needs (highlighting, completion, rename rewriting).
+  Shared by the server (the authority) and the Flutter client.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  decimal: ^3.0.2
+  rational: ^2.2.3
+
+dev_dependencies:
+  lints: ^5.1.1
+  test: ^1.25.0
