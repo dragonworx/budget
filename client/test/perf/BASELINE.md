@@ -34,3 +34,50 @@ phase 1 (LOD, spec 006). The after-run's settle doesn't wait for the
 debounced /balance fetch, so settledMs is not comparable.
 
 `tool/perf/calibrate.mjs` (unthrottled, 5 runs): median 236.6 ms.
+
+# Phase 2 (spec 006: client LOD, group markers, label budget), d0e4611
+
+## flutter_tester debug median at 35y (`test/perf/pan_bench_test.dart`)
+
+Budget: ≤ 40 ms at 1600×900, ≤ 25 ms at 390×844.
+
+| size / mode | before (50k / 1M) | after 50k | after 200k | after 1M | budget |
+|---|---|---|---|---|---|
+| 1600 lane-less | 279 / 778 ms | 11.9 ms | 9.0 ms | 8.4 ms | ≤ 40 ✓ |
+| 1600 lanes | ~220 ms | 15.2 ms | 16.2 ms | 15.3 ms | ≤ 40 ✓ |
+| 390 lane-less | – | 5.4–6.5 ms | 5.4–6.5 ms | 5.4–6.5 ms | ≤ 25 ✓ |
+| 390 lanes | – | 7.4–7.6 ms | 7.4–7.6 ms | 7.4–7.6 ms | ≤ 25 ✓ |
+
+## Playwright, profile web build + PERF_HUD, PERF 50k at 35y (`tool/perf/pan_35y.mjs`)
+
+Headless Chromium renders WebGL through SwiftShader, so rasterisation is
+CPU-bound; absolute numbers are pessimistic versus real GPUs. "Before" is
+the phase 1 after-run above.
+
+| profile / phase | rAF p95 before → after | max frame after | long tasks after (count / total / longest) | heap |
+|---|---|---|---|---|
+| desk pan | 6,236 → 133 ms | 467 ms | 32 / 3.8 s / 252 ms | 51 MB |
+| desk zoom | 5,796 → 250 ms | 500 ms | 29 / 5.0 s / 493 ms | 51 MB |
+| mob6 pan | 59,739 → 767 ms | 767 ms | 15 / 5.3 s / 769 ms | 35.6 MB |
+| mob6 zoom | 29,534 → 550 ms | 550 ms | 19 / 5.8 s / 522 ms | 35.6 MB |
+| mob4 pan | 24,950 → 583 ms | 583 ms | 18 / 4.9 s / 586 ms | 40.1 MB |
+| mob4 zoom | 36,451 → 383 ms | 450 ms | 22 / 5.7 s / 436 ms | 40.1 MB |
+
+The harness records long-task count, total and longest only; with 15–32
+tasks per run the long-task p95 is ≈ the longest. The multi-second task
+per gesture was CanvasKit rasterising antialiased multi-contour coarse
+paths (`drawPicture` ≈ 5 s vs ≈ 25 ms Dart paint); coarse fills and the
+lane ribbon are now non-antialiased (L0 unchanged).
+
+Gates met: flutter_tester medians; mob6 heap ≤ 80 MB (35.6 MB).
+
+Gates not met: DESK p95 ≤ 8 ms / max ≤ 16 ms; MOB-6x p95 ≤ 33 ms /
+max ≤ 50 ms; 0 long tasks during gestures on MOB-6x; touch latency p95
+≤ 40 ms (not measured: harness latency empty); real-device checklist
+not done; no browser 200k/1M numbers (no PERF_SYNTH).
+
+Not built in phase 2: viewport ValueNotifier (`_applyViewport` still
+setStates per frame); pointer coalescing; holding v1 decode until 120 ms
+after a gesture; 0 idle frames; `PERF_SYNTH`; prewarm/time-slice of the
+LOD and cluster builds; shader caching; combined bucket-level changes
+beyond what exists.
