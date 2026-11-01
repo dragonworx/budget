@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:budget_formula/budget_formula.dart' show fieldSpecs;
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,7 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/formula/formula_field.dart';
 import '../../widgets/recurrence_interval_field.dart';
 import '../categories/categories_manager.dart';
 import '../planning/plan_schedule.dart';
@@ -91,10 +93,11 @@ class SolveSheet extends ConsumerStatefulWidget {
 /// Public so the Plan view can carry the shared schedule across modes.
 class SolveSheetState extends ConsumerState<SolveSheet> {
   late final TextEditingController _name;
-  late final TextEditingController _amount;
-  late final TextEditingController _total;
-  late final TextEditingController _interval;
-  late final TextEditingController _count;
+  // Formulas (spec 013 D11): worked out here, sent as numbers.
+  late final FormulaEditingController _amount;
+  late final FormulaEditingController _total;
+  late final FormulaEditingController _interval;
+  late final FormulaEditingController _count;
   late EventDirection _direction;
   late RecurrenceUnit _unit;
   late RoundingMode _rounding;
@@ -126,10 +129,22 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
             )
           : i.name,
     );
-    _amount = TextEditingController(text: i.amount?.toString() ?? '');
-    _total = TextEditingController(text: i.targetTotal?.toString() ?? '');
-    _interval = TextEditingController(text: i.interval?.toString() ?? '');
-    _count = TextEditingController(text: i.occurrenceCount?.toString() ?? '');
+    final on = ServerFeatures.variables;
+    FormulaEditingController field(String text, String spec) {
+      final c = FormulaEditingController(
+        text: text,
+        spec: fieldSpecs[spec]!,
+        formulasEnabled: on,
+      );
+      // Variables arriving (or changing) re-resolve a formula: solve again.
+      if (on) c.addListener(_formulaMaybeChanged);
+      return c;
+    }
+
+    _amount = field(i.amount?.toString() ?? '', 'solve.amount');
+    _total = field(i.targetTotal?.toString() ?? '', 'solve.total');
+    _interval = field(i.interval?.toString() ?? '', 'solve.interval');
+    _count = field(i.occurrenceCount?.toString() ?? '', 'solve.count');
     _direction = widget.creditOnly ? EventDirection.credit : i.direction;
     _unit = i.unit;
     _rounding = i.rounding;
@@ -151,12 +166,42 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
 
   // --- Input parsing -------------------------------------------------------
 
-  Decimal? _parseMoney(TextEditingController c) =>
-      Decimal.tryParse(c.text.trim());
+  /// What each formula last resolved to, so only a real change re-solves.
+  final _lastFormulaValues = <FormulaEditingController, Object?>{};
 
-  int? _parseInt(TextEditingController c) => int.tryParse(c.text.trim());
+  void _formulaMaybeChanged() {
+    var changed = false;
+    for (final c in [_amount, _total, _interval, _count]) {
+      final f = c.formula;
+      final now = c.showsFormula ? (f.value, f.message, f.pending) : null;
+      if (_lastFormulaValues[c] != now) {
+        _lastFormulaValues[c] = now;
+        if (now != null) changed = true;
+      }
+    }
+    if (changed && mounted) _scheduleSolve();
+  }
 
-  String? _moneyError(TextEditingController c) {
+  /// A formula's value (null while it has an error or waits for
+  /// variables); a plain number parses as today.
+  Decimal? _parseMoney(FormulaEditingController c) {
+    if (c.showsFormula) return c.formula.isValid ? c.formula.value : null;
+    return Decimal.tryParse(c.text.trim());
+  }
+
+  int? _parseInt(FormulaEditingController c) {
+    if (c.showsFormula) return c.formula.isValid ? c.formula.intValue : null;
+    return int.tryParse(c.text.trim());
+  }
+
+  /// A formula with an error, or one still waiting for variables: the
+  /// field shows why; nothing is solved meanwhile.
+  bool _formulaBlocked(FormulaEditingController c) =>
+      c.showsFormula && !c.formula.isValid;
+
+  /// Plain text only (a formula's errors show in its field).
+  String? _moneyError(FormulaEditingController c) {
+    if (c.showsFormula) return null;
     final raw = c.text.trim();
     if (raw.isEmpty) return null;
     final v = Decimal.tryParse(raw);
@@ -165,7 +210,8 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
     return null;
   }
 
-  String? _intError(TextEditingController c) {
+  String? _intError(FormulaEditingController c) {
+    if (c.showsFormula) return null;
     final raw = c.text.trim();
     if (raw.isEmpty) return null;
     final v = int.tryParse(raw);
@@ -177,7 +223,8 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
       _moneyError(_amount) != null ||
       _moneyError(_total) != null ||
       _intError(_interval) != null ||
-      _intError(_count) != null;
+      _intError(_count) != null ||
+      [_amount, _total, _interval, _count].any(_formulaBlocked);
 
   SolveRequest _request() => SolveRequest(
     name: _name.text.trim().isEmpty ? widget.initial.name : _name.text.trim(),
@@ -283,6 +330,8 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
       keyPrefix: 'plan',
       caption: 'Frequency',
       controller: _interval,
+      spec: fieldSpecs['solve.interval'],
+      scope: _scope(),
       unit: _unit,
       autoInterval: auto,
       allowBlank: true,
@@ -310,6 +359,11 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
       _result != null &&
       !_result!.isComplete &&
       _result!.needsOneOf.contains(v);
+
+  /// The stream's variables (its owner's, D11); empty with formulas off.
+  VariableScope _scope() => ServerFeatures.variables
+      ? scopeFor(ref, streamId: widget.streamId)
+      : VariableScope.empty;
 
   // --- UI ------------------------------------------------------------------
 
@@ -343,6 +397,12 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
                         'the event.',
               style: theme.textTheme.bodySmall,
             ),
+            if (ServerFeatures.variables)
+              Text(
+                'Formulas are worked out now; the plan stores the numbers.',
+                key: const ValueKey('plan-formula-note'),
+                style: theme.textTheme.bodySmall,
+              ),
             const SizedBox(height: 16),
             TextField(
               key: const ValueKey('plan-name'),
@@ -381,7 +441,8 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
             ],
             const SizedBox(height: 16),
             _MoneyField(
-              key: const ValueKey('plan-total'),
+              fieldKey: 'plan-total',
+              scope: _scope(),
               controller: _total,
               label: 'Total amount',
               help: 'Sum of every payment',
@@ -421,7 +482,8 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
             ),
             const SizedBox(height: 12),
             _MoneyField(
-              key: const ValueKey('plan-amount'),
+              fieldKey: 'plan-amount',
+              scope: _scope(),
               controller: _amount,
               label: 'Amount each time',
               help: 'Amount of each payment',
@@ -434,6 +496,8 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
             _frequencyField(values?.interval),
             const SizedBox(height: 12),
             _IntField(
+              fieldKey: 'plan-count',
+              scope: _scope(),
               controller: _count,
               label: 'Count',
               suffix: 'times',
@@ -634,7 +698,8 @@ TextStyle? _helperStyle(
 
 class _MoneyField extends StatelessWidget {
   const _MoneyField({
-    super.key,
+    required this.fieldKey,
+    required this.scope,
     required this.controller,
     required this.label,
     required this.help,
@@ -644,7 +709,10 @@ class _MoneyField extends StatelessWidget {
     required this.onChanged,
   });
 
-  final TextEditingController controller;
+  /// `plan-total`, `plan-amount`.
+  final String fieldKey;
+  final VariableScope scope;
+  final FormulaEditingController controller;
   final String label;
   final String help;
   final Decimal? calculated;
@@ -655,10 +723,12 @@ class _MoneyField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasValue = controller.text.trim().isNotEmpty;
-    return TextField(
+    return _planField(
+      fieldKey: fieldKey,
+      scope: scope,
       controller: controller,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      onChanged: (_) => onChanged(),
+      onChanged: onChanged,
       decoration: _decoration(
         context,
         label: label,
@@ -683,6 +753,8 @@ class _MoneyField extends StatelessWidget {
 
 class _IntField extends StatelessWidget {
   const _IntField({
+    required this.fieldKey,
+    required this.scope,
     required this.controller,
     required this.label,
     required this.suffix,
@@ -693,7 +765,9 @@ class _IntField extends StatelessWidget {
     required this.onChanged,
   });
 
-  final TextEditingController controller;
+  final String fieldKey;
+  final VariableScope scope;
+  final FormulaEditingController controller;
   final String label;
   final String suffix;
   final String help;
@@ -705,10 +779,12 @@ class _IntField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasValue = controller.text.trim().isNotEmpty;
-    return TextField(
+    return _planField(
+      fieldKey: fieldKey,
+      scope: scope,
       controller: controller,
       keyboardType: TextInputType.number,
-      onChanged: (_) => onChanged(),
+      onChanged: onChanged,
       decoration: _decoration(
         context,
         label: label,
@@ -731,6 +807,38 @@ class _IntField extends StatelessWidget {
     );
   }
 }
+
+/// A planner number as a [FormulaField] with the planner's [decoration]
+/// (✦ / ? icon, calculated hint, clear button). Plain numbers' errors are
+/// the sheet's own (as today); a formula's show in the field.
+Widget _planField({
+  required String fieldKey,
+  required VariableScope scope,
+  required FormulaEditingController controller,
+  required TextInputType keyboardType,
+  required VoidCallback onChanged,
+  required InputDecoration decoration,
+}) => FormulaField(
+  key: ValueKey(fieldKey),
+  spec: controller.spec,
+  scope: scope,
+  controller: controller,
+  legacyKeyboardType: keyboardType,
+  allowEmpty: true,
+  plainErrors: false,
+  label: decoration.labelText,
+  hintText: decoration.hintText,
+  hintStyle: decoration.hintStyle,
+  floatingLabelBehavior: decoration.floatingLabelBehavior,
+  helperText: decoration.helperText,
+  helperStyle: decoration.helperStyle,
+  errorText: decoration.errorText,
+  suffixText: decoration.suffixText,
+  prefixIcon: decoration.prefixIcon,
+  trailing: decoration.suffixIcon,
+  enabledBorder: decoration.enabledBorder,
+  onChanged: (_) => onChanged(),
+);
 
 InputDecoration _decoration(
   BuildContext context, {

@@ -177,7 +177,9 @@ class RecurrenceIntervalField extends StatelessWidget {
               ],
               dense: true,
               allowEmpty: allowBlank,
-              autovalidateMode: AutovalidateMode.disabled,
+              // Plain N: no field errors (the screen's errorText shows
+              // them, as today); a formula's own errors show.
+              plainErrors: false,
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
               hintText: autoInterval == null ? null : '$autoInterval',
               hintStyle: TextStyle(

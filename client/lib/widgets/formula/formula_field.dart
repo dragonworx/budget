@@ -67,6 +67,10 @@ class FormulaField extends StatefulWidget {
     this.hintStyle,
     this.enabledBorder,
     this.growWidth,
+    this.prefixIcon,
+    this.floatingLabelBehavior,
+    this.helperStyle,
+    this.trailing,
   });
 
   /// Range, scale, unit, today's parser and messages.
@@ -121,6 +125,14 @@ class FormulaField extends StatefulWidget {
   /// max (spec 013, the interval box). Also wide while the touch keys row
   /// shows, so its keys don't wrap one a line.
   final (double, double)? growWidth;
+
+  /// Passed to the decoration as is (the planner's ✦ / ? icons).
+  final Widget? prefixIcon;
+  final FloatingLabelBehavior? floatingLabelBehavior;
+  final TextStyle? helperStyle;
+
+  /// After the formula suffix (picker, help): e.g. a clear button.
+  final Widget? trailing;
 
   /// As [InputDecoration.errorMaxLines] (the stock field's setting).
   final int? errorMaxLines;
@@ -733,6 +745,7 @@ class _FormulaFieldState extends State<FormulaField> {
             setState(() => _helpOpen = open);
           },
         ),
+      ?widget.trailing,
     ];
 
     // Touch: the operator row sits right under the field box and the line
@@ -747,6 +760,9 @@ class _FormulaFieldState extends State<FormulaField> {
       suffixText: widget.suffixText,
       hintText: widget.hintText,
       hintStyle: widget.hintStyle,
+      prefixIcon: widget.prefixIcon,
+      floatingLabelBehavior: widget.floatingLabelBehavior,
+      helperStyle: widget.helperStyle,
       contentPadding: widget.contentPadding,
       enabledBorder: widget.enabledBorder,
       helperText: helper == null ? widget.helperText : null,

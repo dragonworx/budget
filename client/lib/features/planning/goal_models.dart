@@ -48,6 +48,7 @@ class GoalRequest {
     this.count,
     this.oneOff,
     this.rate,
+    this.exprs,
   });
 
   final GoalVar solveFor;
@@ -69,7 +70,12 @@ class GoalRequest {
   /// Annual %, compounded daily.
   final double? rate;
 
-  Map<String, dynamic> toJson() => {
+  /// The formulas behind the numbers, by [GoalVar.name] (spec 013 D11):
+  /// for re-editing a saved scenario only; the numbers are what's solved.
+  final Map<String, String>? exprs;
+
+  /// [withExprs] false: the goal solve call (it uses the numbers only).
+  Map<String, dynamic> toJson({bool withExprs = true}) => {
     'solveFor': solveFor.name,
     'mode': mode.name,
     'unit': unit.toJson(),
@@ -82,6 +88,7 @@ class GoalRequest {
     if (count != null) 'count': count,
     if (oneOff != null) 'oneOff': oneOff,
     if (rate != null) 'rate': rate,
+    if (withExprs && exprs != null && exprs!.isNotEmpty) 'exprs': exprs,
   };
 
   factory GoalRequest.fromJson(Map<String, dynamic> j) {
@@ -105,6 +112,13 @@ class GoalRequest {
       count: int_('count'),
       oneOff: num_('oneOff'),
       rate: num_('rate'),
+      exprs: switch (j['exprs']) {
+        final Map m when m.isNotEmpty => {
+          for (final e in m.entries)
+            if (e.value is String) '${e.key}': e.value as String,
+        },
+        _ => null,
+      },
     );
   }
 
@@ -125,6 +139,8 @@ class GoalRequest {
     count: v == GoalVar.count ? value as int? : count,
     oneOff: v == GoalVar.oneOff ? value as double? : oneOff,
     rate: v == GoalVar.rate ? value as double? : rate,
+    // A locked-in number replaces its formula.
+    exprs: exprs == null ? null : ({...exprs!}..remove(v.name)),
   );
 
   GoalRequest copyWith({
@@ -144,6 +160,7 @@ class GoalRequest {
     count: count,
     oneOff: oneOff,
     rate: rate,
+    exprs: exprs,
   );
 }
 

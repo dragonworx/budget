@@ -170,7 +170,10 @@ class StreamRepository {
   Future<GoalResult> goal(String streamId, GoalRequest request) async {
     final data = await _api.post(
       '/api/streams/$streamId/goal',
-      body: {...request.toJson(), 'today': formatDate(DateTime.now())},
+      body: {
+        ...request.toJson(withExprs: false),
+        'today': formatDate(DateTime.now()),
+      },
     );
     return GoalResult.fromJson(data as Map<String, dynamic>);
   }
