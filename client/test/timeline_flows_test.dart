@@ -11,6 +11,7 @@ import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/planning/goal_models.dart';
 import 'package:budget_client/features/planning/plan_panel.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
+import 'package:budget_client/features/timeline/span_header.dart';
 import 'package:budget_client/features/timeline/occurrence_dates.dart';
 import 'package:budget_client/features/timeline/occurrence_info.dart';
 import 'package:budget_client/features/timeline/selection_period.dart';
@@ -28,6 +29,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
+import 'package:budget_client/features/timeline/duration_format.dart';
 import 'package:budget_client/features/timeline/fit_ranges.dart';
 import 'package:budget_client/widgets/eye_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -376,6 +378,57 @@ Future<void> _viewGo(WidgetTester tester, String which) async {
 }
 
 void main() {
+  for (final size in const [Size(320, 640), Size(390, 844), Size(844, 390)]) {
+    testWidgets('${size.width.toInt()}x${size.height.toInt()}: the span strip '
+        "shows the chart's edge days and the selection wording, live while "
+        'panning', (tester) async {
+      await _pump(tester, size: size);
+      void check() {
+        final chart = tester.widget<BalanceChart>(find.byType(BalanceChart));
+        final (first, last) = visibleDayRange(
+          chart.viewStart,
+          chart.visibleDays,
+        );
+        final span = tester
+            .widget<Text>(find.byKey(const ValueKey('span-header-span')))
+            .data;
+        expect(
+          span,
+          formatSpanDuration(
+            first,
+            last,
+            precision: durationPrecisionFor(chart.visibleDays),
+          ),
+        );
+        final start = tester
+            .widget<Text>(find.byKey(const ValueKey('span-header-start')))
+            .data!;
+        expect(start, contains('${first.day}'));
+      }
+
+      check();
+      final before = tester
+          .widget<Text>(find.byKey(const ValueKey('span-header-start')))
+          .data;
+      final c = tester.getCenter(find.byType(BalanceChart));
+      final g = await tester.startGesture(c, kind: PointerDeviceKind.mouse);
+      for (var i = 0; i < 10; i++) {
+        await g.moveBy(Offset(size.width / 25, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+        check();
+      }
+      await g.up();
+      await tester.pumpAndSettle();
+      check();
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('span-header-start')))
+            .data,
+        isNot(before),
+      );
+    });
+  }
+
   popupSizeProbe();
   testWidgets('the date drag has no Trim hook; the popup\'s ⋮ keeps it', (
     tester,
@@ -2087,7 +2140,11 @@ void main() {
       expect(find.textContaining('for actions'), findsNothing);
       expect(find.textContaining('to zoom'), findsNothing);
       final chart = tester.getRect(find.byType(BalanceChart));
-      expect(chart.top - bar.bottom, inInclusiveRange(0, 14));
+      // Only the thin span strip sits between the header and the chart.
+      final strip = tester.getRect(find.byKey(const ValueKey('span-header')));
+      expect(strip.top - bar.bottom, inInclusiveRange(0, 6));
+      expect(strip.height, spanHeaderHeight);
+      expect(chart.top - strip.bottom, inInclusiveRange(0, 8));
       expect(size.height - chart.bottom, inInclusiveRange(0, 14));
       expect(chart.left, lessThanOrEqualTo(17));
       expect(chart.width, greaterThan(w - 34));

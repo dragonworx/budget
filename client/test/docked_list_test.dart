@@ -7,6 +7,7 @@ import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
+import 'package:budget_client/features/timeline/span_header.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
 import 'package:budget_client/features/timeline/dock_split.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
@@ -178,7 +179,11 @@ void main() {
       // range / heat map row, no tips row.
       final bar = tester.getRect(find.byType(AppBar));
       final chartR = tester.getRect(find.byType(BalanceChart));
-      expect(chartR.top - bar.bottom, inInclusiveRange(0, 14));
+      // Only the thin span strip sits between the header and the chart.
+      final strip = tester.getRect(find.byKey(const ValueKey('span-header')));
+      expect(strip.top - bar.bottom, inInclusiveRange(0, 6));
+      expect(strip.height, spanHeaderHeight);
+      expect(chartR.top - strip.bottom, inInclusiveRange(0, 8));
       expect(size.height - chartR.bottom, inInclusiveRange(0, 14));
       expect(find.byKey(const ValueKey('jump-to-date')), findsNothing);
       expect(find.textContaining('for actions'), findsNothing);

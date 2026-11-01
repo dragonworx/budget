@@ -53,6 +53,7 @@ import 'dock_split.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
 import 'saved_view.dart';
+import 'span_header.dart';
 import 'view_units.dart';
 import 'zoom_level.dart';
 import 'occurrence_info.dart';
@@ -203,6 +204,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   void dispose() {
     _dataWindowTimer?.cancel();
     _hoverEvent.dispose();
+    _viewListenable.dispose();
     _dockAnim.dispose();
     _flushView(keepalive: true);
     final h = _hiddenHandle;
@@ -351,8 +353,30 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
   late DateTime _dataFrom;
   late DateTime _dataTo;
-  late DateTime _viewStart;
-  double _visibleDays = ZoomLevel.week.visibleDays.toDouble();
+  DateTime get _viewStart => _viewStartValue;
+  set _viewStart(DateTime v) {
+    _viewStartValue = v;
+    _publishView();
+  }
+
+  double get _visibleDays => _visibleDaysValue;
+  set _visibleDays(double v) {
+    _visibleDaysValue = v;
+    _publishView();
+  }
+
+  late DateTime _viewStartValue;
+  double _visibleDaysValue = ZoomLevel.week.visibleDays.toDouble();
+
+  /// The view for the span strip ([VisibleSpanHeader]): it listens itself,
+  /// so the strip rebuilds alone as the view moves.
+  late final ValueNotifier<VisibleView> _viewListenable = ValueNotifier((
+    start: _viewStartValue,
+    days: _visibleDaysValue,
+  ));
+
+  void _publishView() =>
+      _viewListenable.value = (start: _viewStartValue, days: _visibleDaysValue);
   String? _windowStreamId;
   BalanceSeries? _seriesCache;
 
@@ -1310,14 +1334,24 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                   stream,
                   Column(
                     children: [
+                      // First / last visible day and the view's length.
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          compact ? 12 : 22,
+                          compact ? 2 : 4,
+                          compact ? 12 : 22,
+                          0,
+                        ),
+                        child: VisibleSpanHeader(view: _viewListenable),
+                      ),
                       Expanded(
                         child: Padding(
-                          // The chart takes the whole body under the header
-                          // (no date range row, no tips row), clear of the
-                          // home indicator.
+                          // The chart takes the rest of the body under the
+                          // header and span strip, clear of the home
+                          // indicator.
                           padding: EdgeInsets.fromLTRB(
                             compact ? 8 : 16,
-                            compact ? 6 : 12,
+                            compact ? 2 : 4,
                             compact ? 8 : 16,
                             (compact ? 8 : 12) +
                                 MediaQuery.viewPaddingOf(context).bottom,
