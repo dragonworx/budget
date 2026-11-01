@@ -81,3 +81,32 @@ setStates per frame); pointer coalescing; holding v1 decode until 120 ms
 after a gesture; 0 idle frames; `PERF_SYNTH`; prewarm/time-slice of the
 LOD and cluster builds; shader caching; combined bucket-level changes
 beyond what exists.
+
+# Phase 2 fix (groups / exact markers with lanes), e2acfa4
+
+Real streams always have lanes, so before e2acfa4 the coarse group overlay
+never drew and the numbers above omit it. Now at coarse tiers occurrences use
+the group overlay (lane ribbon kept); step dots and lane hit-tests are off there.
+
+## flutter_tester debug median at 35y
+
+| size / mode | phase 2 (50k / 200k / 1M) | fix (50k / 200k / 1M) | budget |
+|---|---|---|---|
+| 1600 lane-less | 11.9 / 9.0 / 8.4 ms | 12.3 / 8.3 / 8.1 ms | ≤ 40 ✓ |
+| 1600 lanes | 15.2 / 16.2 / 15.3 ms | 14.6 / 15.2 / 15.8 ms (occ 0.2 → 1.4 ms) | ≤ 40 ✓ |
+| 390 lane-less | 5.7 / 6.5 / 5.4 ms | 5.5 / 5.7 / 5.5 ms | ≤ 25 ✓ |
+| 390 lanes | 7.4 / 7.6 / 7.5 ms | 7.2 / 7.2 / 7.1 ms | ≤ 25 ✓ |
+
+## Playwright rAF p95 (2 runs each; frames quantise to 16.7 ms)
+
+| profile | phase 2 | fix run 1 / run 2 |
+|---|---|---|
+| desk pan | 133 ms | 150 / 133 ms |
+| desk zoom | 250 ms | 217 / 250 ms |
+| mob6 pan | 767 ms | 617 / 683 ms |
+| mob6 zoom | 550 ms | 650 / 650 ms (paint p95 137 → 149 / 216 ms) |
+| mob4 pan | 583 ms | 417 / 417 ms |
+| mob4 zoom | 383 ms | 367 / 350 ms |
+
+mob6 zoom is ~100 ms worse in both runs: the glyphs, badges and coarse labels
+it now draws (previously skipped with lanes). Everything else is level or better.

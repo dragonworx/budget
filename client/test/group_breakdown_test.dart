@@ -335,6 +335,32 @@ void main() {
     expect(find.byKey(const ValueKey('group-breakdown')), findsOneWidget);
   });
 
+  for (final size in const [Size(844, 390), Size(390, 844), Size(1600, 900)]) {
+    testWidgets('lanes, ${size.width.toInt()}: a touch on a label away from '
+        'its glyph opens that group', (tester) async {
+      await pump(tester, size, lanes: true);
+      bool far(Rect r) => glyphs.every((g) => (g.$2 - r.center).distance > 30);
+      final targets = [
+        for (final (l, r) in labelRects)
+          if (l.contains('item') && far(r)) r.center,
+      ];
+      expect(targets, isNotEmpty, reason: 'no label clear of its glyph');
+      for (final at in targets.take(3)) {
+        await tester.pumpWidget(const SizedBox());
+        opened = null;
+        await pump(tester, size, lanes: true);
+        // A real finger: down and up in separate frames.
+        final g = await tester.startGesture(at);
+        await tester.pump(const Duration(milliseconds: 40));
+        await tester.pump(const Duration(milliseconds: 40));
+        await g.up();
+        await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 50));
+        await tester.pumpAndSettle();
+        expect(opened, isNotNull, reason: 'label at $at');
+      }
+    });
+  }
+
   test('alert runs keep only their first breach and first recovery', () {
     // Below / above every other day for 40 days, a quiet year, then again.
     final pts = <BalancePoint>[];
