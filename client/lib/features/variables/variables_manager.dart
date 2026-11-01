@@ -473,7 +473,9 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
       return;
     }
     if (f.message != null) {
-      setState(() => _editError = f.message);
+      // The field already shows its own message under itself: once only.
+      setState(() => _editError = null);
+      _editValueFocus.requestFocus();
       return;
     }
     if (_sameExpr(expr, v.expr)) return _cancelEdit();
@@ -1237,7 +1239,9 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             row,
-            if (editingValue && _editError != null)
+            if (editingValue &&
+                _editError != null &&
+                _editError != _editValue.formula.message)
               Padding(
                 padding: const EdgeInsets.only(top: 4, left: 8),
                 child: Text(

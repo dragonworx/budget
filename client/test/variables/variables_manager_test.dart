@@ -3,6 +3,7 @@
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/variables/variable_impact.dart';
 import 'package:budget_client/features/variables/variables_manager.dart';
+import 'package:budget_client/widgets/formula/formula_controller.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -219,6 +220,31 @@ void main() {
   });
 
   group('value', () {
+    testWidgets('invalid value: error shows once, no request', (tester) async {
+      final h = await pumpManager(tester);
+      await tester.tap(k('variable-value-cell-v2'));
+      await tester.pumpAndSettle();
+      await enter(tester, 'variable-value-field-v2', '5.5 *');
+      await tester.tap(k('variable-value-save-v2'));
+      await tester.pumpAndSettle();
+      final c =
+          tester
+                  .widget<EditableText>(
+                    find.descendant(
+                      of: k('variable-value-field-v2'),
+                      matching: find.byType(EditableText),
+                    ),
+                  )
+                  .controller
+              as FormulaEditingController;
+      final message = c.formula.message;
+      expect(message, isNotNull);
+      expect(find.text(message!), findsOneWidget);
+      expect(k('variable-value-error'), findsNothing);
+      expect(h.vars.calls, isNot(contains(startsWith('update'))));
+      expect(k('variable-value-field-v2'), findsOneWidget);
+    });
+
     testWidgets('unused: saves directly; undo', (tester) async {
       final h = await pumpManager(tester);
       await tester.tap(k('variable-value-cell-v2'));
