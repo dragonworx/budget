@@ -1,9 +1,11 @@
 import 'dart:convert';
 
+import 'package:budget_formula/budget_formula.dart';
 import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 
 import 'enums.dart';
+import 'formulas.dart';
 import 'models.dart' show parseEventColor;
 
 // Import format (see the /transaction skill, named before the rename): every date is a whole number
@@ -78,7 +80,11 @@ class ImportItem {
     this.skippedOffsets = const [],
     this.color,
     this.days = const [],
+    this.amountExpr,
   });
+
+  /// Formula text for the amount (spec 010), canonical; null when plain.
+  final String? amountExpr;
 
   /// The structured rule's days (weekdays 1–7 or month days 1–31).
   final List<int> days;
@@ -128,6 +134,7 @@ class ImportItem {
         'skippedDates': skippedDates.map(_fmt).toList(),
         'startOffset': startOffset,
         'endOffset': endOffset,
+        if (amountExpr != null) 'amountExpr': amountExpr,
         'skippedOffsets': skippedOffsets,
         'color': color,
       };
@@ -202,7 +209,12 @@ String _offsetProblem(Object? v) => v is String
 /// Validates every item, collecting all issues, resolving day offsets
 /// against [root] (the selected timeline day). Throws
 /// [ImportValidationException] if any item is invalid.
-List<ImportItem> parseImport(String raw, {required DateTime root}) {
+///
+/// An item's optional `amountExpr` (spec 010) resolves against [vars] (the
+/// importing stream owner's variables) and replaces `amount`; problems,
+/// unknown names included, fail that item.
+List<ImportItem> parseImport(String raw,
+    {required DateTime root, VariableLookup? vars}) {
   root = DateTime.utc(root.year, root.month, root.day);
   final list = decodeImportPayload(raw);
   if (list.isEmpty) {
@@ -229,6 +241,7 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
       'name',
       'direction',
       'amount',
+      'amountExpr',
       'startOffset',
       'recurrence',
       'end',
@@ -294,8 +307,23 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
     }
 
     Decimal? amount;
+    String? amountExpr;
     final amtRaw = m['amount'];
-    if (amtRaw is num || amtRaw is String) {
+    if (m['amountExpr'] != null) {
+      try {
+        final r = resolveRequestText(
+            m['amountExpr'],
+            fieldSpecs['event.amount']!,
+            vars ?? const MapVariableLookup.empty(),
+            'amountExpr');
+        amount = r.value;
+        amountExpr = r.expr;
+      } on FormulaFieldException catch (e) {
+        bad('amountExpr', e.error.message);
+      } on FormatException catch (e) {
+        bad('amountExpr', e.message);
+      }
+    } else if (amtRaw is num || amtRaw is String) {
       amount = Decimal.tryParse(amtRaw.toString().trim());
       if (amount == null) {
         bad('amount', 'must be a number or numeric string');
@@ -533,6 +561,7 @@ List<ImportItem> parseImport(String raw, {required DateTime root}) {
         endOffset: endOffset,
         skippedOffsets: skippedOffsets,
         color: color,
+        amountExpr: amountExpr,
       ));
     }
   }

@@ -17,7 +17,19 @@ class BudgetStream {
     this.currencyScale = defaultCurrencyScale,
     this.version = 1,
     this.hasLoan = false,
+    this.seedBalanceExpr,
+    this.lossThresholdExpr,
+    this.exprErrors,
   });
+
+  /// Formulas (spec 010) [seedBalance] / [lossThreshold] were resolved
+  /// from; null for a plain number.
+  final String? seedBalanceExpr;
+  final String? lossThresholdExpr;
+
+  /// Field -> {code, message}: a formula that no longer resolves (the last
+  /// valid number is kept). Null when none.
+  final Map<String, dynamic>? exprErrors;
 
   final int version;
 
@@ -52,6 +64,10 @@ class BudgetStream {
         'eventOrder': eventOrder,
         'version': version,
         'hasLoan': hasLoan,
+        // Formula keys only when set, so a plain stream's JSON is unchanged.
+        if (seedBalanceExpr != null) 'seedBalanceExpr': seedBalanceExpr,
+        if (lossThresholdExpr != null) 'lossThresholdExpr': lossThresholdExpr,
+        if (exprErrors != null) 'exprErrors': exprErrors,
       };
 }
 
@@ -81,9 +97,24 @@ class BudgetEvent {
     this.kind = EventKind.standard,
     this.loan,
     this.offsetStreamIds = const [],
+    this.amountExpr,
+    this.intervalExpr,
+    this.countExpr,
+    this.exprErrors,
   });
 
   final int version;
+
+  /// Formulas (spec 010) [amount], the interval and [occurrenceCount] were
+  /// resolved from; null for a plain number. On a transfer the debit row's
+  /// owner resolves them and the peer carries copies.
+  final String? amountExpr;
+  final String? intervalExpr;
+  final String? countExpr;
+
+  /// Field -> {code, message} for a formula that no longer resolves (the
+  /// last valid number is kept); null when none.
+  final Map<String, dynamic>? exprErrors;
 
   /// A loan's offset streams (spec 004, migration 027; at most one now):
   /// their balance above their alert threshold reduces the interest base.
@@ -184,6 +215,11 @@ class BudgetEvent {
         'loan': loan?.toJson(),
         // Loans only, so a standard event's JSON is unchanged.
         if (isLoan) 'offsetStreamIds': offsetStreamIds,
+        // Formula keys only when set, so a plain event's JSON is unchanged.
+        if (amountExpr != null) 'amountExpr': amountExpr,
+        if (intervalExpr != null) 'intervalExpr': intervalExpr,
+        if (countExpr != null) 'occurrenceCountExpr': countExpr,
+        if (exprErrors != null) 'exprErrors': exprErrors,
         'overrides': [
           for (final e
               in (overrides.entries.toList()
@@ -242,6 +278,10 @@ class BudgetEvent {
       kind: kind,
       loan: loan,
       offsetStreamIds: offsetStreamIds,
+      amountExpr: amountExpr,
+      intervalExpr: intervalExpr,
+      countExpr: countExpr,
+      exprErrors: exprErrors,
     );
   }
 
@@ -271,6 +311,10 @@ class BudgetEvent {
         kind: kind,
         loan: loan,
         offsetStreamIds: offsetStreamIds,
+        amountExpr: amountExpr,
+        intervalExpr: intervalExpr,
+        countExpr: countExpr,
+        exprErrors: exprErrors,
       );
 }
 
@@ -315,16 +359,29 @@ class Category {
 
 /// A once-off override of one occurrence's amount and direction.
 class AmountOverride {
-  const AmountOverride({required this.direction, required this.amount});
+  const AmountOverride({
+    required this.direction,
+    required this.amount,
+    this.amountExpr,
+    this.exprError,
+  });
 
   final Direction direction;
   final Decimal amount;
+
+  /// The formula [amount] was resolved from (spec 010); null when plain.
+  final String? amountExpr;
+
+  /// {code, message} when [amountExpr] no longer resolves.
+  final Map<String, dynamic>? exprError;
 
   Decimal get signed => direction == Direction.credit ? amount : -amount;
 
   Map<String, Object?> toJson() => {
         'direction': direction.name,
         'amount': amount.toString(),
+        if (amountExpr != null) 'amountExpr': amountExpr,
+        if (exprError != null) 'exprError': exprError,
       };
 }
 

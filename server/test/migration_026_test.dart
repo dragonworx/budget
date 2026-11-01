@@ -110,7 +110,9 @@ void main() {
     expect(
         // (027's offset_stream_ids is checked by migration_027_test.)
         (await c.execute("SELECT to_jsonb(e.*) - 'kind' - 'loan' "
-                "- 'offset_stream_ids' FROM events e WHERE id = '$before'"))
+                "- 'offset_stream_ids'"
+                // 028's formula columns (checked by migration_028_test).
+                " - 'amount_expr' - 'interval_expr' - 'count_expr' - 'expr_errors' FROM events e WHERE id = '$before'"))
             .first[0],
         beforeRow);
 

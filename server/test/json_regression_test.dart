@@ -163,7 +163,9 @@ void main() {
 
     await step('override', 'PUT', '/api/events/$monthly/overrides/2026-03-15',
         {'amount': '1300.10', 'direction': 'debit'});
-    await step('transfer override', 'PUT',
+    await step(
+        'transfer override',
+        'PUT',
         '/api/events/$transfer/overrides/2026-02-20',
         {'amount': '450', 'direction': 'debit'});
     await step('skip', 'PUT', '/api/events/$weekly/skips/2026-01-07',

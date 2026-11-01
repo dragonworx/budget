@@ -16,6 +16,7 @@ class Config {
     this.openSignup = false,
     this.invitesBypassAllowlist = true,
     this.devBypass = false,
+    this.featureVariables = true,
     this.sessionSecret = devSessionSecret,
     this.sessionTtlDays = 30,
     this.dbPoolSize = 10,
@@ -63,6 +64,7 @@ class Config {
       openSignup: b('AUTH_OPEN_SIGNUP', false),
       invitesBypassAllowlist: b('AUTH_INVITES_BYPASS_ALLOWLIST', true),
       devBypass: b('AUTH_DEV_BYPASS', false),
+      featureVariables: b('FEATURE_VARIABLES', true),
       sessionSecret: v('SESSION_SECRET', devSessionSecret),
       sessionTtlDays: int.parse(v('SESSION_TTL_DAYS', '30')),
       dbPoolSize: int.parse(v('DB_POOL_SIZE', '10')),
@@ -95,6 +97,11 @@ class Config {
   final bool openSignup;
   final bool invitesBypassAllowlist;
   final bool devBypass;
+
+  /// Variables and formula fields (spec 010, D18 kill switch). Off: the
+  /// variable routes 404 and any formula key is refused; stored formula
+  /// rows keep their numbers.
+  final bool featureVariables;
   final String sessionSecret;
   final int sessionTtlDays;
   final int dbPoolSize;

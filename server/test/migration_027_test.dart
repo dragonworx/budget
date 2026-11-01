@@ -87,9 +87,11 @@ void main() {
 
     final std = await ev(_s1);
     final loan = await ev(_s2, loan: true);
-    Future<Object?> snap(String id) async => (await c
-            .execute("SELECT to_jsonb(e.*) - 'offset_stream_ids' FROM events e "
-                "WHERE id = '$id'"))
+    Future<Object?> snap(String id) async => (await c.execute(
+            "SELECT to_jsonb(e.*) - 'offset_stream_ids' "
+            // 028's formula columns (checked by migration_028_test).
+            "- 'amount_expr' - 'interval_expr' - 'count_expr' - 'expr_errors' "
+            "FROM events e WHERE id = '$id'"))
         .first[0];
     final beforeStd = await snap(std), beforeLoan = await snap(loan);
 

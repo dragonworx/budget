@@ -18,6 +18,10 @@ const _mounts = {
   'solve.dart': {'attachSolveRoutes': 'streams'},
   'scenarios.dart': {'attachScenarioRoutes': 'streams'},
   'categories.dart': {'attachCategoryRoutes': 'streams'},
+  'variables.dart': {
+    'attachVariableRoutes': 'streams',
+    'buildVariablesApi': 'variables',
+  },
   'events.dart': {'eventsRouter': 'events'},
   'sharing.dart': {
     'attachStreamSharingRoutes': 'streams',
@@ -83,6 +87,8 @@ void main() {
           p.path.endsWith('/solve') ||
           p.path.endsWith('/goal') ||
           p.path.startsWith('invites/preview') ||
+          // Variable change dry run (rolled back).
+          p.path.endsWith('/preview') ||
           // A per-user preference (landing stream), not shared data.
           p.path.endsWith('/opened') ||
           // Each member's own saved timeline view, likewise.
@@ -106,6 +112,9 @@ void main() {
         'name': 'S',
         'request': {'solveFor': 'amount'}
       });
+      final variable = await h.call('POST', '/api/streams/${s.a}/variables',
+          as: 'owner', body: {'name': 'sweep', 'expr': '1', 'unit': 'number'});
+      expect(variable.status, 201, reason: '${variable.json}');
       final inv = await h.call('POST', '/api/streams/${s.a}/invites',
           as: 'owner', body: {'email': h.email('pending')});
       final ownerId = await h.userId('owner');
@@ -117,6 +126,7 @@ void main() {
         'u': ownerId,
         'i': inv.json['id'] as String,
         'd': '2026-01-01',
+        'v': variable.json['id'] as String,
         'pattern': '@nowhere.example',
         'c': (await h.call('GET', '/api/events/${s.t}', as: 'owner'))
             .json['categoryId'] as String,
@@ -132,6 +142,12 @@ void main() {
         expect(anon.status, 401, reason: 'anonymous ${p.method} $path');
         final out = await h.call(p.method, path, as: 'outsider', body: body);
         final expected = switch (p.scope) {
+          // The caller's own variables (spec 010): another owner's id is
+          // "not found" from the handler (routed), never a missing route.
+          Scope.auth when p.path.startsWith('variables/:v') =>
+            out.json is Map && out.json['error'] == 'variable not found'
+                ? 404
+                : -1,
           Scope.auth => isNot(anyOf(401, 404, 500)),
           Scope.admin => 403,
           _ => 404,
@@ -182,6 +198,9 @@ void main() {
         'name': 'S',
         'request': {'solveFor': 'amount'}
       });
+      final variable = await h.call('POST', '/api/streams/${s.a}/variables',
+          as: 'rowner', body: {'name': 'sweep', 'expr': '1', 'unit': 'number'});
+      expect(variable.status, 201, reason: '${variable.json}');
       final inv = await h.call('POST', '/api/streams/${s.a}/invites',
           as: 'rowner', body: {'email': h.email('rpending')});
       final ids = {
@@ -191,6 +210,7 @@ void main() {
         'u': await h.userId('rviewer'),
         'i': inv.json['id'] as String,
         'd': '2026-01-01',
+        'v': variable.json['id'] as String,
         'c': (await h.call('GET', '/api/events/${s.t}', as: 'rowner'))
             .json['categoryId'] as String,
       };

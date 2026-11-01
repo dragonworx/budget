@@ -17,6 +17,11 @@ import '../repo/trim_batch_repo.dart';
 import 'balance.dart';
 import 'categories.dart';
 import 'json_helpers.dart';
+import 'variables.dart';
+import 'formula_body.dart';
+import '../domain/variable_service.dart';
+import '../repo/variable_ref_repo.dart';
+import '../repo/variable_repo.dart';
 import 'goal.dart';
 import 'stream_view.dart';
 import 'scenarios.dart';
@@ -51,6 +56,7 @@ Router buildStreamsApi(Session conn) {
       final body = await readJsonObject(request);
       final name = requireString(body, 'name').trim();
       if (name.isEmpty) return jsonError(400, 'name is required');
+      final prep = await prepareStreamFormulas(conn, body, me);
       // A 'currency' or 'projectId' field (older clients / exports) is
       // ignored: streams no longer have either.
       final seedBalance = parseDecimal(body['seedBalance'] ?? '0');
@@ -68,8 +74,13 @@ Router buildStreamsApi(Session conn) {
         // No explicit choice: Hundreds, like the dialog's preselected value.
         currencyScale:
             parseCurrencyScale(body) ?? BudgetStream.defaultCurrencyScale,
+        exprs: prep.exprs,
       );
-      return jsonOk({...stream.toJson(), 'role': 'owner', 'shared': false},
+      await VariableRefIndex(conn).reindexStreams([stream.id]);
+      return jsonOk(
+          withResolvedFlag(
+              {...stream.toJson(), 'role': 'owner', 'shared': false},
+              prep.resolvedDifferently),
           status: 201);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
@@ -94,6 +105,8 @@ Router buildStreamsApi(Session conn) {
       if (stream == null) return jsonError(404, 'stream not found');
 
       final body = await readJsonObject(request);
+      final prep = await prepareEventFormulas(conn, body,
+          streamId: streamId, isLoan: body['kind'] == 'loan');
       final loanKind = parseCreateKind(body);
       final parsed = parseEventBody(body);
       final loanTerms = loanKind.terms(parsed);
@@ -140,6 +153,7 @@ Router buildStreamsApi(Session conn) {
           kind: loanKind.kind,
           loan: loanTerms,
           offsetStreamIds: offsetIds ?? const [],
+          exprs: prep.exprs,
         );
         for (final d in skips) {
           await events.setSkip(created.id, d, true);
@@ -147,9 +161,15 @@ Router buildStreamsApi(Session conn) {
         if (transferTo != null) {
           created = await events.linkNewPeer(created, transferTo);
         }
+        if (prep.exprs.columns.values.any((v) => v != null) ||
+            body['loan'] is Map) {
+          await VariableService(tx).afterEventWrite([created.id]);
+          created = (await events.get(created.id))!;
+        }
         return created;
       });
-      return jsonOk(event.toJson(), status: 201);
+      return jsonOk(withResolvedFlag(event.toJson(), prep.resolvedDifferently),
+          status: 201);
     } on OffsetLinkError catch (e) {
       return jsonError(e.status, e.message);
     } on ServerException catch (e) {
@@ -191,7 +211,13 @@ Router buildStreamsApi(Session conn) {
                   '(?root=YYYY-MM-DD)')
         ]);
       }
-      final items = parseImport(raw, root: root);
+      // Formula amounts resolve against the stream owner's variables,
+      // loaded only when an item carries one.
+      final items = parseImport(raw,
+          root: root,
+          vars: raw.contains('amountExpr')
+              ? await VariableRepo(conn).lookup(stream.ownerId)
+              : null);
       if (dryRun) {
         final existing =
             (await events.listByStream(streamId)).map((t) => t.id).toSet();
@@ -208,8 +234,13 @@ Router buildStreamsApi(Session conn) {
           'toSkip': dupes.length,
         });
       }
-      final result = await txOf(conn)
-          .runTx((tx) => EventRepo(tx).importItems(streamId, items));
+      final result = await txOf(conn).runTx((tx) async {
+        final r = await EventRepo(tx).importItems(streamId, items);
+        if (items.any((i) => i.amountExpr != null)) {
+          await VariableRefIndex(tx).reindexEvents(r.created);
+        }
+        return r;
+      });
       return jsonOk({
         'created': result.created.length,
         'skipped': result.skipped.length,
@@ -334,6 +365,7 @@ Router buildStreamsApi(Session conn) {
   attachBalanceRoutes(router, conn);
   attachLoanSummaryRoute(router, conn);
   attachCategoryRoutes(router, conn);
+  attachVariableRoutes(router, conn);
   attachSolveRoutes(router, conn);
   attachGoalRoutes(router, conn);
   attachStreamViewRoutes(router, conn);
@@ -380,6 +412,13 @@ Router buildStreamsApi(Session conn) {
   router.patch('/<id>', (Request request, String id) async {
     try {
       final body = await readJsonObject(request);
+      var owner = '';
+      if (bodyHasFormulas(body)) {
+        final s = await streams.get(id);
+        if (s == null) return jsonError(404, 'stream not found');
+        owner = s.ownerId;
+      }
+      final prep = await prepareStreamFormulas(conn, body, owner);
       final newSeed = body.containsKey('seedDate')
           ? parseDate(requireString(body, 'seedDate'))
           : null;
@@ -401,17 +440,22 @@ Router buildStreamsApi(Session conn) {
           seedDate: newSeed,
           displayOrder: optionalInt(body, 'displayOrder'),
           currencyScale: parseCurrencyScale(body),
+          exprs: prep.exprs,
         );
+        if (prep.exprs.columns.isNotEmpty) {
+          await VariableService(tx).afterStreamWrite(id);
+        }
         if (newSeed != null) {
           await repo.shiftSchedules(
             id,
             calendarDayDelta(before.seedDate, newSeed),
           );
         }
-        return updated;
+        return prep.exprs.columns.isEmpty ? updated : await repo.get(id);
       });
       if (stream == null) return jsonError(404, 'stream not found');
-      return jsonOk(stream.toJson());
+      return jsonOk(
+          withResolvedFlag(stream.toJson(), prep.resolvedDifferently));
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     } on ServerException catch (e) {

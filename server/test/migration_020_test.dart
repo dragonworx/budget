@@ -146,6 +146,8 @@ void main() {
         await count("SELECT count(*) FROM pg_constraint WHERE contype = 'f' "
             "AND conrelid::regclass::text <> 'event_trim_batches' "
             "AND conrelid::regclass::text <> 'categories' "
+            // Tables added later (028) bring their own FKs.
+            "AND conrelid::regclass::text NOT IN ('variables', 'variable_refs') "
             "AND conname <> 'events_category_id_fkey'"),
         fksBefore);
     for (final old in ['pools', 'transactions', 'pool_shares', 'pool_views']) {

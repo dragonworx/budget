@@ -63,11 +63,11 @@ void main() {
     await c.execute("INSERT INTO users (id, email) VALUES ('$_o', 'o@x.io')");
     await c.execute("INSERT INTO streams (id, name, seed_balance, seed_date, "
         "owner_id) VALUES ('$_s1', 'S', 12.5, '2026-01-01', '$_o')");
-    await c.execute(
-        'INSERT INTO events (id, stream_id, name, direction, amount, '
-        'start_date, recurrence_mode, end_mode) '
-        "VALUES ('$_e1', '$_s1', 'E', 'debit', 10, '2026-01-01', 'once', "
-        "'never')");
+    await c
+        .execute('INSERT INTO events (id, stream_id, name, direction, amount, '
+            'start_date, recurrence_mode, end_mode) '
+            "VALUES ('$_e1', '$_s1', 'E', 'debit', 10, '2026-01-01', 'once', "
+            "'never')");
     await c.execute('INSERT INTO occurrence_overrides (event_id, date, amount, '
         "direction) VALUES ('$_e1', '2026-01-01', 11, 'debit')");
     Future<Object?> snap(String t, String where) async =>
@@ -152,9 +152,9 @@ void main() {
     // variable_refs: exactly one owner kind, event under a stream, override
     // under an event (and an existing override), no duplicates.
     final weekly = await variable('weekly', expr: r'$rent / 4');
-    Future<void> ref(String cols, String vals) => c.execute(
-        'INSERT INTO variable_refs (variable_id, field$cols) '
-        "VALUES ('$rent', 'f'$vals)");
+    Future<void> ref(String cols, String vals) =>
+        c.execute('INSERT INTO variable_refs (variable_id, field$cols) '
+            "VALUES ('$rent', 'f'$vals)");
     await ref(', from_variable_id', ", '$weekly'");
     await ref(', stream_id', ", '$_s1'");
     await ref(', stream_id, event_id', ", '$_s1', '$_e1'");
@@ -177,8 +177,7 @@ void main() {
     // variable drops its refs.
     await c.execute("DELETE FROM occurrence_overrides WHERE event_id = '$_e1'");
     await c.execute("DELETE FROM variables WHERE id = '$weekly'");
-    expect(
-        (await c.execute('SELECT count(*) FROM variable_refs')).first[0], 2);
+    expect((await c.execute('SELECT count(*) FROM variable_refs')).first[0], 2);
 
     // Deleting the user cascades through streams, events, variables, refs.
     await c.execute("DELETE FROM users WHERE id = '$_o'");

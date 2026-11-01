@@ -23,6 +23,9 @@ import 'auth.dart';
 import 'json_helpers.dart';
 import 'events.dart';
 import 'legacy_aliases.dart';
+import 'variables.dart';
+import '../domain/formulas.dart';
+import '../domain/variable_service.dart';
 
 Handler buildHandler(Session base, Config config,
     {GoogleIdTokenVerifier? verifier,
@@ -87,6 +90,7 @@ Handler buildHandler(Session base, Config config,
   root.mount('/api/invites', buildInvitesApi(conn, config).call);
   root.mount('/api/admin', buildAdminApi(conn, config, sessions).call);
   root.mount('/api/events', eventsRouter(conn).call);
+  root.mount('/api/variables', buildVariablesApi(conn).call);
   final liveApi = buildLiveApi(conn, sessions, bus, settings: liveSettings);
   root.mount('/api/live', liveApi.call);
   // Deprecated: SSE lived at GET /api/events before the Streams/Events
@@ -109,7 +113,8 @@ Handler buildHandler(Session base, Config config,
       .addMiddleware(removedApi(removedApiPrefixes))
       .addMiddleware(legacyApiAliases())
       .addMiddleware(authMiddleware(sessions))
-      .addMiddleware(authzMiddleware(conn))
+      .addMiddleware(
+          authzMiddleware(conn, featureVariables: config.featureVariables))
       .addHandler(root.call);
 }
 
@@ -120,6 +125,12 @@ Middleware _errorMiddleware(Log log) {
         return await inner(request);
       } on FormatException catch (e) {
         return jsonError(400, e.message);
+      } on FormulaFieldException catch (e) {
+        // Spec 010: a formula field that doesn't resolve (also from a
+        // re-resolution inside a write's transaction).
+        return jsonError(400, e.error.message, details: e.details);
+      } on VariableException catch (e) {
+        return jsonError(e.status, e.message, details: e.details);
       } catch (e, st) {
         final id = requestInfoOf(request)?.id;
         log.error('unhandled', {

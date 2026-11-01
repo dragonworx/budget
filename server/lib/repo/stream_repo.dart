@@ -1,8 +1,29 @@
+import 'dart:convert';
+
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart' hide Pool;
 import 'package:uuid/uuid.dart';
 
 import '../domain/models.dart';
+
+Map<String, dynamic>? _jsonMap(Object? v) => v == null
+    ? null
+    : Map<String, dynamic>.from(
+        (v is String ? jsonDecode(v) : v) as Map<dynamic, dynamic>);
+
+/// The formula columns (spec 010), read by name in [StreamRepo._fromRow].
+const _exprCols = 'seed_balance_expr AS s_seed_expr, '
+    'loss_threshold_expr AS s_threshold_expr, expr_errors AS s_expr_errors';
+
+/// Formula column writes for a stream create / update (spec 010):
+/// [columns] maps `seed_balance_expr` / `loss_threshold_expr` to the text
+/// to store (null clears); [clearErrors] lists `expr_errors` keys to drop.
+class StreamExprWrite {
+  const StreamExprWrite(this.columns, this.clearErrors);
+  final Map<String, String?> columns;
+  final List<String> clearErrors;
+  static const columnNames = {'seed_balance_expr', 'loss_threshold_expr'};
+}
 
 class StreamRepo {
   StreamRepo(this._conn);
@@ -22,7 +43,10 @@ class StreamRepo {
                CASE WHEN a.owner_id = @u::uuid THEN 'owner' ELSE s.role::text END,
                u.email, u.name, u.picture_url,
                EXISTS (SELECT 1 FROM events e WHERE e.stream_id = a.id
-                       AND e.kind = 'loan') AS has_loan
+                       AND e.kind = 'loan') AS has_loan,
+               a.seed_balance_expr AS s_seed_expr,
+               a.loss_threshold_expr AS s_threshold_expr,
+               a.expr_errors AS s_expr_errors
         FROM streams a
         JOIN users u ON u.id = a.owner_id
         LEFT JOIN stream_shares s
@@ -115,7 +139,8 @@ class StreamRepo {
       Sql.named('''
         SELECT id, owner_id, name, seed_balance, seed_date,
                loss_threshold, display_order, event_order, currency_scale, version,
-               EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan
+               EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan,
+                  $_exprCols
         FROM streams WHERE id = @id
       '''),
       parameters: {'id': id},
@@ -132,20 +157,24 @@ class StreamRepo {
     required Decimal lossThreshold,
     int displayOrder = 0,
     int currencyScale = BudgetStream.defaultCurrencyScale,
+    StreamExprWrite? exprs,
   }) async {
     final id = _uuid.v4();
     final rows = await _conn.execute(
       Sql.named('''
         INSERT INTO streams (
           id, owner_id, name, seed_balance, seed_date,
-          loss_threshold, display_order, currency_scale, created_by
+          loss_threshold, display_order, currency_scale, created_by,
+          seed_balance_expr, loss_threshold_expr
         ) VALUES (
           @id, @ownerId::uuid, @name, @seedBalance, @seedDate,
-          @lossThreshold, @displayOrder, @currencyScale, @ownerId::uuid
+          @lossThreshold, @displayOrder, @currencyScale, @ownerId::uuid,
+          @seedExpr, @thresholdExpr
         )
         RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, event_order, currency_scale, version,
-                  EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan
+                  EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan,
+                  $_exprCols
       '''),
       parameters: {
         'id': id,
@@ -156,6 +185,8 @@ class StreamRepo {
         'lossThreshold': lossThreshold.toString(),
         'displayOrder': displayOrder,
         'currencyScale': currencyScale,
+        'seedExpr': exprs?.columns['seed_balance_expr'],
+        'thresholdExpr': exprs?.columns['loss_threshold_expr'],
       },
     );
     return _fromRow(rows.first);
@@ -169,9 +200,24 @@ class StreamRepo {
     Decimal? lossThreshold,
     int? displayOrder,
     int? currencyScale,
+    StreamExprWrite? exprs,
   }) async {
     final existing = await get(id);
     if (existing == null) return null;
+    final exprSets = StringBuffer();
+    final exprParams = <String, Object?>{};
+    for (final e in (exprs?.columns ?? const <String, String?>{}).entries) {
+      if (!StreamExprWrite.columnNames.contains(e.key)) {
+        throw ArgumentError.value(e.key, 'exprs');
+      }
+      exprSets.write(',\n          ${e.key} = @x_${e.key}');
+      exprParams['x_${e.key}'] = e.value;
+    }
+    if (exprs != null && exprs.clearErrors.isNotEmpty) {
+      exprSets.write(',\n          expr_errors = NULLIF(COALESCE(expr_errors, '
+          "'{}'::jsonb) - @x_clear::text[], '{}'::jsonb)");
+      exprParams['x_clear'] = exprs.clearErrors;
+    }
 
     final rows = await _conn.execute(
       Sql.named('''
@@ -181,11 +227,12 @@ class StreamRepo {
           seed_date = @seedDate,
           loss_threshold = @lossThreshold,
           display_order = @displayOrder,
-          currency_scale = @currencyScale
+          currency_scale = @currencyScale$exprSets
         WHERE id = @id
         RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, event_order, currency_scale, version,
-                  EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan
+                  EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan,
+                  $_exprCols
       '''),
       parameters: {
         'id': id,
@@ -201,6 +248,7 @@ class StreamRepo {
             : DateTime.utc(seedDate.year, seedDate.month, seedDate.day),
         'displayOrder': displayOrder ?? existing.displayOrder,
         'currencyScale': currencyScale ?? existing.currencyScale,
+        ...exprParams,
       },
     );
     return _fromRow(rows.first);
@@ -289,7 +337,8 @@ class StreamRepo {
         WHERE id = @id
         RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, event_order, currency_scale, version,
-                  EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan
+                  EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan,
+                  $_exprCols
       '''),
       parameters: {
         'id': id,
@@ -411,6 +460,7 @@ class StreamRepo {
     }
 
     final seedDate = row[4] as DateTime;
+    final cols = row.toColumnMap();
     return BudgetStream(
       id: row[0].toString(),
       ownerId: row[1].toString(),
@@ -422,7 +472,10 @@ class StreamRepo {
       eventOrder: eventOrder,
       currencyScale: row[8] as int,
       version: row.length > 9 ? (row[9] as int? ?? 1) : 1,
-      hasLoan: row.toColumnMap()['has_loan'] == true,
+      hasLoan: cols['has_loan'] == true,
+      seedBalanceExpr: cols['s_seed_expr'] as String?,
+      lossThresholdExpr: cols['s_threshold_expr'] as String?,
+      exprErrors: _jsonMap(cols['s_expr_errors']),
     );
   }
 }

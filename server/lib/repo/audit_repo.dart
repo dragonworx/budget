@@ -9,6 +9,7 @@ const _entityTables = {
   'stream': 'streams',
   'event': 'events',
   'scenario': 'scenarios',
+  'variable': 'variables',
 };
 
 /// Writes audit_log rows. Every mutation of shared data gets one; `id` is
@@ -113,6 +114,7 @@ class AuditRepo {
       'skip' => params['t'],
       'scenario' => params['s'],
       'category' => params['c'],
+      'variable' => params['v'],
       'stream_share' =>
         params['u'] ?? (response?['member'] as Map?)?['userId']?.toString(),
       'invite' => params['i'],
@@ -124,6 +126,8 @@ class AuditRepo {
       'stream_share' => action.endsWith('.left') ? userId : entityId,
       'admin' when action == 'admin.user_updated' => params['u'],
       'invite' when action == 'invite.accepted' => userId,
+      // Only the owner manages variables (D3): their own manager refreshes.
+      'variable' => userId,
       _ => null,
     };
 

@@ -13,6 +13,8 @@ import 'loan_fields.dart';
 import 'offset_link.dart';
 import '../repo/stream_repo.dart';
 import 'json_helpers.dart';
+import 'formula_body.dart';
+import '../domain/variable_service.dart';
 
 Router eventsRouter(Session conn) {
   final events = EventRepo(conn);
@@ -29,6 +31,16 @@ Router eventsRouter(Session conn) {
       final body = await readJsonObject(request);
       final existing = await events.get(id);
       if (existing == null) return jsonError(404, 'event not found');
+      // Formula fields (spec 010): resolved into the plain keys first.
+      final prep = await prepareEventFormulas(conn, body,
+          streamId: existing.streamId,
+          existing: existing,
+          isLoan: existing.isLoan);
+      // A direction flip or new peer can move the resolving owner (D10).
+      final ownerBefore = body.containsKey('direction') ||
+              body.containsKey('transferToStreamId')
+          ? await VariableService(conn).resolvingOwnerOf(id)
+          : null;
       final loanTerms = parsePatchLoan(body, existing);
       final loanStream = await StreamRepo(conn).get(existing.streamId);
       if (loanStream == null) return jsonError(404, 'event not found');
@@ -109,6 +121,7 @@ Router eventsRouter(Session conn) {
               parseEventColor(body['color']) == null,
           loan: loanTerms,
           offsetStreamIds: offsetIds,
+          exprs: prep.exprs,
         ))!;
         // Transfers: retarget / link / unlink, then mirror onto the peer.
         if (body.containsKey('transferToStreamId')) {
@@ -126,6 +139,8 @@ Router eventsRouter(Session conn) {
         // longer sit on an occurrence.
         await events.pruneOverrides(id);
         await events.syncPeer(updated);
+        await VariableService(tx)
+            .afterEventWrite([id], ownerBefore: ownerBefore);
         // Legacy `color`: an event's colour is its category's now, so it
         // recolours the category (and the transfer side's).
         final legacyColor = parseEventColor(body['color']);
@@ -146,7 +161,7 @@ Router eventsRouter(Session conn) {
         }
         return (await events.get(id))!;
       });
-      return jsonOk(event.toJson());
+      return jsonOk(withResolvedFlag(event.toJson(), prep.resolvedDifferently));
     } on OffsetLinkError catch (e) {
       return jsonError(e.status, e.message);
     } on CategoryNameException catch (e) {
@@ -198,12 +213,18 @@ Router eventsRouter(Session conn) {
       if (target == null) return jsonError(404, 'event not found');
       if (target.isLoan) return jsonError(400, loanNotSupported);
       final body = await readJsonObject(request);
+      final prep = await prepareOverrideFormula(conn, id, body);
       final amount = parseDecimal(body['amount']);
       final direction = Direction.parse(requireString(body, 'direction'));
       final d = parseDate(date);
-      final t = await txOf(conn).runTx((tx) => EventRepo(tx)
-          .setOverride(id, d, direction: direction, amount: amount));
-      return jsonOk(t.toJson());
+      final t = await txOf(conn).runTx((tx) async {
+        final repo = EventRepo(tx);
+        await repo.setOverride(id, d,
+            direction: direction, amount: amount, amountExpr: prep.expr);
+        await VariableService(tx).afterEventWrite([id]);
+        return (await repo.get(id))!;
+      });
+      return jsonOk(withResolvedFlag(t.toJson(), prep.resolvedDifferently));
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }
@@ -250,6 +271,8 @@ Router eventsRouter(Session conn) {
       }
       if (existing.isLoan) return jsonError(400, loanNotSupported);
       final body = await readJsonObject(request);
+      final prep = await prepareEventFormulas(conn, body,
+          streamId: existing.streamId, existing: existing, isLoan: false);
       final date = parseDate(requireString(body, 'date'));
       var unit = body['unit'] == null
           ? null
@@ -263,9 +286,8 @@ Router eventsRouter(Session conn) {
         interval = f.frequency!.legacyInterval;
         unit = RecurrenceUnit.parse(f.frequency!.legacyUnit!);
       }
-      final r = await txOf(conn).runTx((tx) async => EventRepo(tx).splitAt(
-            id,
-            date,
+      final r = await txOf(conn).runTx((tx) async {
+        final r = await EventRepo(tx).splitAt(id, date,
             name: await resolveEventCategory(tx, existing.streamId, body,
                     legacyName: optionalString(body, 'name')) ??
                 existing.name,
@@ -278,12 +300,20 @@ Router eventsRouter(Session conn) {
             color: parseEventColor(body['color']),
             clearColor: body.containsKey('color') &&
                 parseEventColor(body['color']) == null,
-          ));
-      return jsonOk({
+            exprs: prep.exprs);
+        await VariableService(tx)
+            .afterEventWrite([id, if (r.created != null) r.created!.id]);
+        final repo = EventRepo(tx);
+        return (
+          original: (await repo.get(r.original.id))!,
+          created: r.created == null ? null : await repo.get(r.created!.id),
+        );
+      });
+      return jsonOk(withResolvedFlag({
         ...r.original.toJson(),
         'original': r.original.toJson(),
         'created': r.created?.toJson(),
-      });
+      }, prep.resolvedDifferently));
     } on CategoryNameException catch (e) {
       return categoryNameError(e);
     } on FormatException catch (e) {

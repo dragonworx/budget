@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 
+import '../api/formula_body.dart';
 import '../api/json_helpers.dart';
 import '../db_scope.dart';
 import '../repo/stream_repo.dart';
 import '../repo/audit_repo.dart';
 import '../repo/scenario_repo.dart';
 import '../repo/event_repo.dart';
+import '../repo/variable_repo.dart';
 import 'authz.dart';
 import 'middleware.dart';
 
@@ -19,7 +21,7 @@ Access? accessOf(Request r) => r.context['access'] as Access?;
 /// - optimistic concurrency (`If-Match` / body `version` on PATCH -> 409),
 /// - an audit_log row for every successful mutation.
 /// Unknown routes are denied (404). No access -> 404; too low a role -> 403.
-Middleware authzMiddleware(ScopedDb db) {
+Middleware authzMiddleware(ScopedDb db, {bool featureVariables = true}) {
   final authz = Authz(db);
   final audit = AuditRepo(db);
   return (inner) => (request) async {
@@ -33,6 +35,10 @@ Middleware authzMiddleware(ScopedDb db) {
         final found = findPolicy(request.method, rest);
         if (found == null) return jsonError(404, 'not found');
         final (policy, params) = found;
+        // Spec 010 D18: with variables off, their routes don't exist.
+        if (!featureVariables && rest.contains('variables')) {
+          return jsonError(404, 'not found');
+        }
         final uid = auth.user.id;
 
         Access? access;
@@ -88,6 +94,10 @@ Middleware authzMiddleware(ScopedDb db) {
             final d = raw.trim().isEmpty ? null : jsonDecode(raw);
             if (d is Map<String, dynamic>) body = d;
           } catch (_) {}
+          if (!featureVariables && mentionsFormulas(body)) {
+            return jsonError(400, 'Formulas are turned off',
+                details: {'code': 'formulas_disabled'});
+          }
 
           // Transfers: editor on the target stream, and on the existing
           // peer of a linked row being changed.
@@ -116,7 +126,8 @@ Middleware authzMiddleware(ScopedDb db) {
             if (expected != null) {
               final v = await _lockVersion(db, policy.versioned!, params);
               if (v != null && v != expected) {
-                final current = await _current(db, policy.versioned!, params);
+                final current =
+                    await _current(db, policy.versioned!, params, uid);
                 final redacted =
                     await _redact(authz, uid, current) as Map<String, dynamic>?;
                 return jsonError(409, 'version conflict',
@@ -181,6 +192,7 @@ Future<int?> _lockVersion(
     'streams' => p['a'],
     'events' => p['t'],
     'scenarios' => p['s'],
+    'variables' => p['v'],
     _ => null,
   };
   if (id == null || !uuidRe.hasMatch(id)) return null;
@@ -204,7 +216,7 @@ int? _expectedVersion(Request r, Map<String, dynamic>? body) {
 }
 
 Future<Map<String, dynamic>?> _current(
-    Session db, String table, Map<String, String> p) async {
+    Session db, String table, Map<String, String> p, String uid) async {
   Object? json;
   switch (table) {
     case 'streams':
@@ -214,6 +226,12 @@ Future<Map<String, dynamic>?> _current(
     case 'scenarios':
       final s = await ScenarioRepo(db).get(p['s']!);
       json = s != null && s.streamId == p['a'] ? s.toJson() : null;
+    case 'variables':
+      // Only the owner's own variable (via the stream or the caller).
+      final v = await VariableRepo(db).get(p['v']!);
+      final owner =
+          p['a'] == null ? uid : (await StreamRepo(db).get(p['a']!))?.ownerId;
+      json = v != null && v.ownerId == owner ? v.toJson() : null;
   }
   return json == null
       ? null

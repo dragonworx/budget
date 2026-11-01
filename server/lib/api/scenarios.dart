@@ -2,6 +2,7 @@ import 'package:postgres/postgres.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
+import 'formula_body.dart';
 import '../engine/solver.dart' show SolverException;
 import '../repo/stream_repo.dart';
 import '../repo/scenario_repo.dart';
@@ -34,6 +35,15 @@ const maxScenariosPerStream = 8;
     if (raw is! Map) throw const FormatException('request must be an object');
     request = Map<String, dynamic>.from(raw)..remove('today');
     parseGoalRequest(request); // throws on invalid input
+    // Formula texts (spec 010, D11): validated, stored, not evaluated.
+    if (request.containsKey('exprs')) {
+      final exprs = validateScenarioExprs(request['exprs']);
+      if (exprs == null || exprs.isEmpty) {
+        request.remove('exprs');
+      } else {
+        request['exprs'] = exprs;
+      }
+    }
   } else if (create) {
     throw const FormatException('request is required');
   }

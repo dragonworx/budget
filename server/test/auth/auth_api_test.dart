@@ -100,6 +100,7 @@ void main() {
       'googleUxMode': 'auto',
       'devBypass': false,
       'user': null,
+      'features': {'variables': true},
     });
     expect((await call(h, 'GET', '/api/auth/me')).status, 401);
   });

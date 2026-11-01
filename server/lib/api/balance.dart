@@ -8,6 +8,7 @@ import '../engine/balance_insights.dart';
 import '../engine/stream_group.dart';
 import '../repo/stream_repo.dart';
 import '../repo/event_repo.dart';
+import 'formula_body.dart';
 import 'json_helpers.dart';
 import 'events.dart' show parseEventBody;
 import 'loan_fields.dart';
@@ -116,6 +117,9 @@ void attachBalanceRoutes(Router router, Session conn) {
         final body = {...item}..remove('replacesEventId');
         final ids = parseOffsetIds(body);
         body.remove('offsetStreamIds');
+        // Formula fields (spec 010) resolve like a create; nothing stored.
+        await prepareEventFormulas(conn, body,
+            streamId: id, isLoan: body['kind'] == 'loan');
         final kind = parseCreateKind(body);
         if (kind.kind == EventKind.loan) {
           final savedIds = [

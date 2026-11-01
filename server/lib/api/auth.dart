@@ -15,7 +15,7 @@ import 'json_helpers.dart';
 
 /// `/api/auth/*` (public: no session required).
 ///
-///   GET  /api/auth/config     -> {googleClientId, devBypass, user|null}
+///   GET  /api/auth/config     -> {googleClientId, devBypass, user|null, features}
 ///   GET  /api/auth/me         -> {user} | 401
 ///   POST /api/auth/google     {credential} -> {user} + Set-Cookie
 ///   POST /api/auth/google/redirect  (GIS redirect mode `login_uri`; form
@@ -73,6 +73,7 @@ Router buildAuthApi({
       'googleUxMode': config.googleUxMode,
       'devBypass': config.devBypass,
       'user': a?.user.toJson(),
+      'features': {'variables': config.featureVariables},
     });
   });
 

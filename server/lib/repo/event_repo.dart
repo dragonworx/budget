@@ -20,12 +20,52 @@ const _enrichedCols = '''
   t.freq_days AS t_freq_days, t.category_id::text AS t_category_id,
   COALESCE(c.hidden, false) AS t_category_hidden,
   t.kind AS t_kind, t.loan AS t_loan,
-  t.offset_stream_ids::text[] AS t_offsets''';
+  t.offset_stream_ids::text[] AS t_offsets,
+  t.amount_expr AS t_amount_expr, t.interval_expr AS t_interval_expr,
+  t.count_expr AS t_count_expr, t.expr_errors AS t_expr_errors''';
 const _peerJoin = '''
   LEFT JOIN categories c ON c.id = t.category_id
   LEFT JOIN events p
     ON t.transfer_id IS NOT NULL AND p.transfer_id = t.transfer_id AND p.id <> t.id
   LEFT JOIN streams pa ON pa.id = p.stream_id''';
+
+/// A JSONB column as a map (null stays null).
+Map<String, dynamic>? _jsonMap(Object? v) => v == null
+    ? null
+    : Map<String, dynamic>.from(
+        (v is String ? jsonDecode(v) : v) as Map<dynamic, dynamic>);
+
+/// Formula column writes for an event create / update (spec 010):
+/// [columns] maps `amount_expr` / `interval_expr` / `count_expr` to the
+/// text to store (null clears); [clearErrors] lists `expr_errors` keys to
+/// drop (the fields this write set or cleared).
+class EventExprWrite {
+  const EventExprWrite(this.columns, this.clearErrors);
+  final Map<String, String?> columns;
+  final List<String> clearErrors;
+  static const columnNames = {'amount_expr', 'interval_expr', 'count_expr'};
+
+  bool get isEmpty => columns.isEmpty && clearErrors.isEmpty;
+
+  /// `, col = @x_col …` SET fragments and their parameters.
+  (String, Map<String, Object?>) sets() {
+    final b = StringBuffer();
+    final p = <String, Object?>{};
+    for (final e in columns.entries) {
+      if (!columnNames.contains(e.key)) {
+        throw ArgumentError.value(e.key, 'exprs');
+      }
+      b.write(',\n          ${e.key} = @x_${e.key}');
+      p['x_${e.key}'] = e.value;
+    }
+    if (clearErrors.isNotEmpty) {
+      b.write(',\n          expr_errors = NULLIF(COALESCE(expr_errors, '
+          "'{}'::jsonb) - @x_clear::text[], '{}'::jsonb)");
+      p['x_clear'] = clearErrors;
+    }
+    return (b.toString(), p);
+  }
+}
 
 class EventRepo {
   EventRepo(this._conn);
@@ -51,7 +91,8 @@ class EventRepo {
     if (list.isEmpty) return list;
     final rows = await _conn.execute(
       Sql.named('''
-        SELECT event_id::text, date, amount::text, direction
+        SELECT event_id::text, date, amount::text, direction, amount_expr,
+               expr_error
         FROM occurrence_overrides WHERE event_id = ANY (@ids::uuid[])
       '''),
       parameters: {
@@ -67,6 +108,8 @@ class EventRepo {
           AmountOverride(
         amount: Decimal.parse(r[2] as String),
         direction: Direction.parse(r[3] as String),
+        amountExpr: r[4] as String?,
+        exprError: _jsonMap(r[5]),
       );
     }
     return [
@@ -80,7 +123,9 @@ class EventRepo {
   /// occurrence of the series. Mirrors onto a transfer peer (opposite
   /// direction) and bumps the version(s). Call inside a DB transaction.
   Future<BudgetEvent> setOverride(String eventId, DateTime date,
-      {required Direction direction, required Decimal amount}) async {
+      {required Direction direction,
+      required Decimal amount,
+      String? amountExpr}) async {
     final t = await get(eventId);
     if (t == null) throw StateError('event not found');
     if (amount < Decimal.zero) throw FormatException('amount must be >= 0');
@@ -90,16 +135,19 @@ class EventRepo {
     }
     Future<void> put(String id, Direction dir) => _conn.execute(
           Sql.named('''
-            INSERT INTO occurrence_overrides (event_id, date, amount, direction)
-            VALUES (@t::uuid, @d, @amount::numeric, @dir)
+            INSERT INTO occurrence_overrides
+              (event_id, date, amount, direction, amount_expr)
+            VALUES (@t::uuid, @d, @amount::numeric, @dir, @expr)
             ON CONFLICT (event_id, date)
-            DO UPDATE SET amount = EXCLUDED.amount, direction = EXCLUDED.direction
+            DO UPDATE SET amount = EXCLUDED.amount, direction = EXCLUDED.direction,
+              amount_expr = EXCLUDED.amount_expr, expr_error = NULL
           '''),
           parameters: {
             't': id,
             'd': d,
             'amount': amount.toString(),
             'dir': dir.name,
+            'expr': amountExpr,
           },
         );
     await put(t.id, direction);
@@ -191,6 +239,7 @@ class EventRepo {
     bool? enabled,
     String? color,
     bool clearColor = false,
+    EventExprWrite? exprs,
   }) async {
     final t = await get(id);
     if (t == null) throw StateError('event not found');
@@ -215,7 +264,8 @@ class EventRepo {
           days: days,
           enabled: enabled,
           color: color,
-          clearColor: clearColor))!;
+          clearColor: clearColor,
+          exprs: exprs))!;
       await clearOverrides(id, date: d);
       await syncPeer(updated);
       return (original: (await get(id))!, created: null);
@@ -244,6 +294,13 @@ class EventRepo {
       occurrenceCount: remaining,
       enabled: enabled ?? t.enabled,
       color: clearColor ? null : (color ?? t.color),
+      // A kept interval keeps its formula; the remaining count is a number.
+      exprs: EventExprWrite(
+          {
+            if (interval == null) 'interval_expr': t.intervalExpr,
+            ...?exprs?.columns,
+          }..remove('count_expr'),
+          const []),
     );
     // Skips from the split date on and later overrides belong to the new
     // series now (an override on the date itself gives way to the edit).
@@ -327,6 +384,7 @@ class EventRepo {
     EventKind kind = EventKind.standard,
     LoanTerms? loan,
     List<String> offsetStreamIds = const [],
+    EventExprWrite? exprs,
   }) async {
     final f = _validateShape(
       recurrenceMode: recurrenceMode,
@@ -346,13 +404,15 @@ class EventRepo {
           id, stream_id, name, direction, amount, start_date,
           recurrence_mode, interval, unit, end_mode, end_date,
           occurrence_count, enabled, transfer_id, color,
-          freq_rule, freq_interval, freq_days, kind, loan, offset_stream_ids
+          freq_rule, freq_interval, freq_days, kind, loan, offset_stream_ids,
+          amount_expr, interval_expr, count_expr
         ) VALUES (
           @id, @streamId, @name, @direction, @amount, @startDate,
           @recurrenceMode, @interval, @unit, @endMode, @endDate,
           @occurrenceCount, @enabled, @transferId::uuid, @color,
           @freqRule, @freqInterval, @freqDays::int[]::smallint[],
-          @kind, @loan::jsonb, @offsets::text[]::uuid[]
+          @kind, @loan::jsonb, @offsets::text[]::uuid[],
+          @amountExpr, @intervalExpr, @countExpr
         )
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -377,6 +437,9 @@ class EventRepo {
         'kind': kind.name,
         'loan': loan == null ? null : jsonEncode(loan.toJson()),
         'offsets': offsetStreamIds,
+        'amountExpr': exprs?.columns['amount_expr'],
+        'intervalExpr': exprs?.columns['interval_expr'],
+        'countExpr': exprs?.columns['count_expr'],
       },
     );
 
@@ -416,9 +479,12 @@ class EventRepo {
     List<int>? days,
     LoanTerms? loan,
     List<String>? offsetStreamIds,
+    EventExprWrite? exprs,
   }) async {
     final existing = await get(id);
     if (existing == null) return null;
+    final (exprSets, exprParams) =
+        (exprs ?? const EventExprWrite({}, [])).sets();
 
     final nextMode = recurrenceMode ?? existing.recurrenceMode;
     final nextEnd = endMode ?? existing.endMode;
@@ -461,7 +527,7 @@ class EventRepo {
           color = @color,
           loan = COALESCE(@loan::jsonb, loan),
           offset_stream_ids =
-            COALESCE(@offsets::text[]::uuid[], offset_stream_ids)
+            COALESCE(@offsets::text[]::uuid[], offset_stream_ids)$exprSets
         WHERE id = @id
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -483,6 +549,7 @@ class EventRepo {
         'color': clearColor ? null : (color ?? existing.color),
         'loan': loan == null ? null : jsonEncode(loan.toJson()),
         'offsets': offsetStreamIds,
+        ...exprParams,
       },
     );
     return (await get(id))!;
@@ -601,12 +668,12 @@ class EventRepo {
             id, stream_id, name, direction, amount, start_date,
             recurrence_mode, interval, unit, end_mode, end_date,
             occurrence_count, enabled, color,
-            freq_rule, freq_interval, freq_days
+            freq_rule, freq_interval, freq_days, amount_expr
           ) VALUES (
             @id, @streamId, @name, @direction, @amount, @startDate,
             @recurrenceMode, @interval, @unit, @endMode, @endDate,
             @occurrenceCount, @enabled, @color,
-            @freqRule, @freqInterval, @freqDays::int[]::smallint[]
+            @freqRule, @freqInterval, @freqDays::int[]::smallint[], @amountExpr
           )
         '''),
         parameters: {
@@ -622,6 +689,7 @@ class EventRepo {
           'occurrenceCount': item.occurrenceCount,
           'enabled': item.enabled,
           'color': item.color,
+          'amountExpr': item.amountExpr,
         },
       );
       for (final d in item.skippedDates) {
@@ -801,6 +869,10 @@ class EventRepo {
     final loanRaw = cols['t_loan'];
     final offsetsRaw = cols['t_offsets'];
     return BudgetEvent(
+      amountExpr: cols['t_amount_expr'] as String?,
+      intervalExpr: cols['t_interval_expr'] as String?,
+      countExpr: cols['t_count_expr'] as String?,
+      exprErrors: _jsonMap(cols['t_expr_errors']),
       offsetStreamIds: offsetsRaw is List
           ? [for (final o in offsetsRaw) o.toString()]
           : const [],
@@ -869,7 +941,18 @@ class EventRepo {
       enabled: source.enabled,
       transferId: transferId,
       color: source.color,
+      exprs: EventExprWrite({
+        'amount_expr': source.amountExpr,
+        'interval_expr': source.intervalExpr,
+        'count_expr': source.countExpr,
+      }, const []),
     );
+    if (source.exprErrors != null) {
+      await _conn.execute(
+        Sql.named('UPDATE events SET expr_errors = @e::jsonb WHERE id = @id'),
+        parameters: {'e': jsonEncode(source.exprErrors), 'id': peer.id},
+      );
+    }
     await _copySkips(source.id, peer.id);
     return (await get(source.id))!;
   }
@@ -902,7 +985,9 @@ class EventRepo {
           freq_rule = s.freq_rule, freq_interval = s.freq_interval,
           freq_days = s.freq_days,
           occurrence_count = s.occurrence_count, enabled = s.enabled,
-          color = (SELECT color FROM categories WHERE id = s.category_id)
+          color = (SELECT color FROM categories WHERE id = s.category_id),
+          amount_expr = s.amount_expr, interval_expr = s.interval_expr,
+          count_expr = s.count_expr, expr_errors = s.expr_errors
         FROM events s
         WHERE s.id = @s AND p.id = @p
       '''),
@@ -973,9 +1058,11 @@ class EventRepo {
     );
     await _conn.execute(
       Sql.named('''
-        INSERT INTO occurrence_overrides (event_id, date, amount, direction)
+        INSERT INTO occurrence_overrides (event_id, date, amount, direction,
+                                          amount_expr, expr_error)
         SELECT @t::uuid, date, amount,
-               CASE direction WHEN 'credit' THEN 'debit' ELSE 'credit' END
+               CASE direction WHEN 'credit' THEN 'debit' ELSE 'credit' END,
+               amount_expr, expr_error
         FROM occurrence_overrides WHERE event_id = @f
       '''),
       parameters: {'t': toId, 'f': fromId},
