@@ -60,9 +60,11 @@ Future<_Img> _render(
 }) async {
   debugLodDisabled = full;
   debugSeriesFillDisabled = true;
+  debugExactMarkersDisabled = true;
   addTearDown(() {
     debugLodDisabled = false;
     debugSeriesFillDisabled = false;
+    debugExactMarkersDisabled = false;
   });
   await tester.pumpWidget(
     MaterialApp(

@@ -27,6 +27,7 @@ import 'tap_menu.dart';
 import 'trim.dart';
 import 'alert_fill.dart';
 import 'lod.dart';
+import 'clusters.dart';
 import 'zoom_level.dart';
 import 'perf_hud.dart';
 import '../../data/alert.dart';
@@ -68,6 +69,11 @@ typedef EditOccurrence = void Function(BudgetEvent event, DateTime date);
 /// Test hook: after each paint, every in-plot vertex as (name, x, labelled).
 @visibleForTesting
 void Function(String name, double x, bool labelled)? debugVertexLabel;
+
+/// Test hook: as [debugVertexLabel], with the vertex's stable key.
+@visibleForTesting
+void Function(int key, String label, double x, bool labelled)?
+debugVertexLabelKey;
 
 /// Test hook: after each paint, every label drawn for an in-view vertex as
 /// (name, dot centre, dot radius, label box).
@@ -6850,8 +6856,7 @@ class _BalanceChartPainter extends CustomPainter {
       ..color = _plotBg
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
-    for (var gi = first; gi < end; gi++) {
-      final g = groups[gi];
+    void dayDot(DayGroup g, {bool label = true}) {
       final day = g.day;
       final nextDay = addCalendarDays(day, 1);
       // A view-width margin each side feeds the label layout (see
@@ -6859,10 +6864,10 @@ class _BalanceChartPainter extends CustomPainter {
       if (day.isBefore(seed) ||
           !nextDay.isAfter(rangeFrom) ||
           day.isAfter(rangeTo)) {
-        continue;
+        return;
       }
       final yValue = closes[day.millisecondsSinceEpoch];
-      if (yValue == null) continue;
+      if (yValue == null) return;
       final x = layout.xOf(_stepAt(day), viewStart, visibleDays);
       final center = Offset(x, scale.yOf(yValue));
       final net = g.net;
@@ -6899,6 +6904,7 @@ class _BalanceChartPainter extends CustomPainter {
             ..strokeWidth = 2,
         );
       }
+      if (!label) return;
       vertices.add(
         _ChartVertex(
           center: center,
@@ -6910,6 +6916,25 @@ class _BalanceChartPainter extends CustomPainter {
           key: day.millisecondsSinceEpoch,
         ),
       );
+    }
+
+    final coarse = lod.tier.coarse && !debugLodDisabled;
+    if (coarse) {
+      _paintGroups(
+        canvas,
+        layout,
+        scale,
+        seed: seed,
+        rangeFrom: rangeFrom,
+        rangeTo: rangeTo,
+        groups: groups,
+        vertices: vertices,
+        dayDot: dayDot,
+      );
+    } else {
+      for (var gi = first; gi < end; gi++) {
+        dayDot(groups[gi]);
+      }
     }
     final seedBal = seedBalance;
     if (seedBal != null) {
@@ -6930,6 +6955,7 @@ class _BalanceChartPainter extends CustomPainter {
             debit: false,
             seed: true,
             key: -1,
+            exact: coarse,
           ),
         );
       }
@@ -6938,6 +6964,276 @@ class _BalanceChartPainter extends CustomPainter {
     perfStart('chart.labels');
     _paintVertexLabels(canvas, layout, vertices);
     perfFinish();
+  }
+
+  /// Coarse zoom (spec 006 §4–6): occurrences as calendar-period groups
+  /// with exact totals, a lone occurrence as its usual dot, and the exact
+  /// markers (lowest / highest in view, alert breach and recovery) that
+  /// no group may hide. Labels: at most K groups, exact markers extra.
+  void _paintGroups(
+    Canvas canvas,
+    ChartLayout layout,
+    _YScale scale, {
+    required DateTime seed,
+    required DateTime rangeFrom,
+    required DateTime rangeTo,
+    required List<DayGroup> groups,
+    required List<_ChartVertex> vertices,
+    required void Function(DayGroup g, {bool label}) dayDot,
+  }) {
+    final plot = layout.plot;
+    final dayPx = plot.width / math.max(visibleDays, 0.001);
+    final period = binPeriodFor(dayPx);
+    final clusters = groupClustersOf(series.occurrences);
+    final level = clusters.level(period);
+    final (b0, b1) = level.range(rangeFrom, rangeTo);
+    final ix = pointIndexOf(series.points);
+    final seedDay = dayIndexOf(seed);
+    double? closeOn(int dayIndex) {
+      final d = DateTime(1970, 1, 1 + dayIndex);
+      final i = ix.upperBound(d.microsecondsSinceEpoch) - 1;
+      return i < 0 ? null : ix.values[i];
+    }
+
+    DayGroup? groupOn(int dayIndex) {
+      final day = DateTime(1970, 1, 1 + dayIndex);
+      var lo = 0, hi = groups.length;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (groups[mid].day.isBefore(day)) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
+        }
+      }
+      return lo < groups.length && groups[lo].day == day ? groups[lo] : null;
+    }
+
+    double xOfDay(double dayIndex) =>
+        plot.left +
+        (dayIndex - dayCoord(viewStart)) /
+            math.max(visibleDays, 0.001) *
+            plot.width;
+
+    // Glyph centre: mid-way through the period's occurrences, on the line.
+    final placed = <(GroupBin, Offset)>[];
+    final mids = <double>[];
+    for (var bi = b0; bi < b1; bi++) {
+      final b = level.bins[bi];
+      if (b.lastDay < seedDay) continue;
+      final from = math.max(b.firstDay, seedDay);
+      final mid = (from + b.lastDay + 1) / 2;
+      final y = closeOn(mid.floor());
+      if (y == null) continue;
+      placed.add((b, Offset(xOfDay(mid), scale.yOf(y))));
+      mids.add(mid);
+    }
+
+    // The label budget: one label per global tile of visibleDays / K
+    // (the largest |net|), over the view plus one label width each side
+    // so edges don't pop; at most K of them in view (the edge-most give
+    // way when a partial tile tips it over).
+    final k = groupLabelBudget(plot.width);
+    int keyOf(GroupBin b) => -(500000000 + period.index * 10000000 + b.key);
+    final candidates = [
+      for (final (i, (b, c)) in placed.indexed)
+        if (c.dx >= plot.left - 120 && c.dx <= plot.right + 120) (b, mids[i]),
+    ];
+    final labelled = k == 0
+        ? <int>{}
+        : tileWinners(candidates, math.max(visibleDays / k, 1));
+    final inView = [
+      for (final (b, c) in placed)
+        if (labelled.contains(b.key) && c.dx >= plot.left && c.dx <= plot.right)
+          (b, c),
+    ];
+    if (inView.length > k) {
+      inView.sort(
+        (a, b) => math
+            .min(b.$2.dx - plot.left, plot.right - b.$2.dx)
+            .compareTo(math.min(a.$2.dx - plot.left, plot.right - a.$2.dx)),
+      );
+      for (final (b, _) in inView.skip(k)) {
+        labelled.remove(b.key);
+      }
+    }
+    debugGroupLabelCandidates = labelled.length;
+
+    final credit = Paint()..color = AppTheme.creditColor;
+    final debit = Paint()..color = AppTheme.debitColor;
+    final bg = Paint()..color = _plotBg;
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    final badgeStyle = labelStyle.copyWith(
+      fontSize: textScaler.scale(9),
+      height: 1.0,
+      fontWeight: FontWeight.w700,
+      color: AppTheme.text,
+    );
+    var glyphs = 0;
+    var badgeRight = double.negativeInfinity;
+    for (final (b, c) in placed) {
+      final inView = c.dx >= plot.left - 12 && c.dx <= plot.right + 12;
+      if (b.single) {
+        final g = groupOn(b.firstDay);
+        if (g != null) dayDot(g, label: labelled.contains(b.key));
+        continue;
+      }
+      if (inView) {
+        glyphs++;
+        // A rounded square (never a dot): money in on the top half, out
+        // on the bottom; hollow when nothing in it counts.
+        // Sized by log(count), never wider than its period.
+        final binPx = period.averageDays * dayPx;
+        final half = math
+            .min(
+              4.0 + 1.1 * math.log(b.total) / math.ln10,
+              math.max(2.5, binPx / 2 - 0.5),
+            )
+            .clamp(2.5, 7.0);
+        final box = Rect.fromCenter(
+          center: c,
+          width: half * 2,
+          height: half * 2,
+        );
+        final rr = RRect.fromRectAndRadius(box, const Radius.circular(2.5));
+        canvas.drawRRect(rr.inflate(1.5), bg);
+        final inner = box.deflate(1.2);
+        if (b.creditCents > 0 && b.debitCents > 0) {
+          canvas.drawRect(
+            Rect.fromLTRB(inner.left, inner.top, inner.right, c.dy),
+            credit,
+          );
+          canvas.drawRect(
+            Rect.fromLTRB(inner.left, c.dy, inner.right, inner.bottom),
+            debit,
+          );
+        } else if (b.creditCents > 0 || b.debitCents > 0) {
+          canvas.drawRect(inner, b.creditCents > 0 ? credit : debit);
+        }
+        canvas.drawRRect(
+          rr,
+          ring
+            ..color = b.count == 0
+                ? AppTheme.textFaint
+                : b.netCents < 0
+                ? AppTheme.debitColor
+                : AppTheme.creditColor,
+        );
+        // The count badge, top right.
+        final n = b.count > 0 ? b.count : b.total;
+        final tp = _axisText.get(groupCountText(n), badgeStyle, maxLines: 1);
+        final badge = Rect.fromLTWH(
+          box.right - 2,
+          box.top - tp.height - 1,
+          tp.width + 4,
+          tp.height + 2,
+        );
+        // Left to right, where it clears the last badge: the label and
+        // breakdown always carry the count when periods are too narrow
+        // for every badge to be readable.
+        if (badge.left >= badgeRight + 1) {
+          badgeRight = badge.right;
+          canvas.drawRRect(
+            RRect.fromRectAndRadius(badge, const Radius.circular(3)),
+            bg,
+          );
+          tp.paint(canvas, badge.topLeft + const Offset(2, 1));
+        }
+        debugGroupGlyph?.call(b, c);
+      }
+      if (labelled.contains(b.key)) {
+        final text = groupLabelText(
+          b,
+          (id) => (eventNames[id]?.trim().isEmpty ?? true)
+              ? 'Event'
+              : eventNames[id]!.trim(),
+        );
+        vertices.add(
+          _ChartVertex(
+            center: c,
+            radius: 6,
+            names: text.lines,
+            amount: b.netCents / 100,
+            amountText: text.amount,
+            skipped: b.count == 0,
+            debit: b.netCents < 0,
+            key: keyOf(b),
+            group: true,
+          ),
+        );
+      }
+    }
+    debugGroupGlyphs = glyphs;
+
+    // Exact markers, from the full daily series (never from bins).
+    final exact = <(int, int, String, Color)>[]; // (kind, point, name, colour)
+    if (debugExactMarkersDisabled) return;
+    final v0 = ix.lowerBound(dateOnly(viewStart).microsecondsSinceEpoch);
+    final viewEnd = addDays(viewStart, visibleDays);
+    final v1 = ix.upperBound(dateOnly(viewEnd).microsecondsSinceEpoch);
+    if (v0 < v1) {
+      final (lo, hi) = ix.rangeArgExtents(v0, v1);
+      if (ix.values[hi] != ix.values[lo]) {
+        exact.add((1, hi, 'Highest', AppTheme.text));
+      }
+      exact.add((2, lo, 'Lowest', AppTheme.text));
+    }
+    if (lossThreshold.isFinite) {
+      final crossings = ix.alertCrossings(lossThreshold, _isLoss);
+      final s0 = ix.lowerBound(dateOnly(rangeFrom).microsecondsSinceEpoch);
+      final s1 = ix.upperBound(dateOnly(rangeTo).microsecondsSinceEpoch);
+      var c0 = 0, c1 = crossings.length;
+      while (c0 < c1) {
+        final m = (c0 + c1) >> 1;
+        if (crossings[m].$1 < s0) {
+          c0 = m + 1;
+        } else {
+          c1 = m;
+        }
+      }
+      for (var ci = c0; ci < crossings.length; ci++) {
+        final (i, low) = crossings[ci];
+        if (i >= s1) break;
+        if (ix.days[i] < dateOnly(seed).microsecondsSinceEpoch) continue;
+        exact.add(
+          low
+              ? (3, i, 'Below alert', AppTheme.debitColor)
+              : (4, i, 'Back above alert', AppTheme.creditColor),
+        );
+      }
+    }
+    final markRing = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    final marks = <(String, DateTime, double)>[];
+    for (final (kind, i, name, color) in exact) {
+      final day = DateTime.fromMicrosecondsSinceEpoch(ix.days[i]);
+      final value = ix.values[i];
+      final c = Offset(
+        layout.xOf(_stepAt(day), viewStart, visibleDays),
+        scale.yOf(value),
+      );
+      marks.add((name, day, value));
+      canvas.drawCircle(c, 4.2, bg);
+      canvas.drawCircle(c, 4.2, markRing..color = color);
+      vertices.add(
+        _ChartVertex(
+          center: c,
+          radius: 4.2,
+          names: [name],
+          amount: value,
+          amountText: formatMoneyAmount(value),
+          amountColor: color,
+          skipped: false,
+          debit: false,
+          key: -(100000000 * kind + i + 2),
+          exact: true,
+        ),
+      );
+    }
+    debugExactMarkers?.call(marks);
   }
 
   /// Opening-balance vertex: a hollow accent diamond, unlike the round
@@ -7039,8 +7335,14 @@ class _BalanceChartPainter extends CustomPainter {
     final anchorGrid = PointGrid(anchors);
     // Previously labelled vertices first, then the rest, each left to right.
     final order = [
-      ...vertices.where((v) => labelMemory.containsKey(v.key)),
-      ...vertices.where((v) => !labelMemory.containsKey(v.key)),
+      for (final exact in [true, false]) ...[
+        ...vertices.where(
+          (v) => v.exact == exact && labelMemory.containsKey(v.key),
+        ),
+        ...vertices.where(
+          (v) => v.exact == exact && !labelMemory.containsKey(v.key),
+        ),
+      ],
     ];
     final shown = <int, _LabelSpot>{};
     final style = labelStyle.copyWith(
@@ -7082,16 +7384,24 @@ class _BalanceChartPainter extends CustomPainter {
       layouts++;
       final faint = vertex.skipped;
       final vertexStyle = faint ? faintStyle : style;
+      // Group and exact-marker labels (coarse zoom) are never shortened,
+      // so they get a wider box than the density cap.
+      final vertexMax = vertex.group || vertex.exact && !vertex.seed
+          ? math.min(180.0, view.width * 0.6)
+          : maxText;
       // Main line: the day's net event total (never the balance). Cached
       // painters (owned by [_labelText]): the same texts recur every frame.
-      final amountColor = vertex.skipped
-          ? null
-          : vertex.seed
-          ? AppTheme.accent
-          : vertex.debit
-          ? AppTheme.debitColor
-          : AppTheme.creditColor;
-      final amountText = _labelAmountText(vertex.seed, vertex.amount);
+      final amountColor =
+          vertex.amountColor ??
+          (vertex.skipped
+              ? null
+              : vertex.seed
+              ? AppTheme.accent
+              : vertex.debit
+              ? AppTheme.debitColor
+              : AppTheme.creditColor);
+      final amountText =
+          vertex.amountText ?? _labelAmountText(vertex.seed, vertex.amount);
       final amount = amountPainters[(faint, amountColor, amountText)] ??=
           _labelText.get(
             amountText,
@@ -7116,6 +7426,7 @@ class _BalanceChartPainter extends CustomPainter {
       // not even a readable stub fits.
       String? fitName(String text, double maxWidth) {
         if (widthOf(text, vertexStyle) <= maxWidth) return text;
+        if (vertex.group) return null;
         final chars = text.characters.toList();
         if (chars.length < 3 || maxWidth < minName) return null;
         String stub(int n) => '${chars.take(n).join().trimRight()}…';
@@ -7230,6 +7541,7 @@ class _BalanceChartPainter extends CustomPainter {
       if (last != null &&
           last.names >= 1 &&
           last.names <= names.length &&
+          (!vertex.group || last.names == names.length) &&
           (!last.compact || names.length > 1)) {
         final lines = layoutLines(
           'last',
@@ -7283,7 +7595,7 @@ class _BalanceChartPainter extends CustomPainter {
                 radius: vertex.radius,
                 side: side,
                 labelHeight: minHeight,
-                maxText: maxText,
+                maxText: vertexMax,
                 minText: minText,
                 pad: pad,
                 occupied: placed,
@@ -7299,9 +7611,14 @@ class _BalanceChartPainter extends CustomPainter {
       ];
       if (!open.contains(true)) continue;
       final specs = [
-        for (var k = math.min(names.length, maxLabelNames); k >= 1; k--)
-          (k, false, linesFor(k)),
-        if (names.length > 1) (1, true, linesFor(1, compact: true)),
+        // A group label keeps every line (count, interest) or none.
+        if (vertex.group)
+          (names.length, false, linesFor(names.length))
+        else ...[
+          for (var k = math.min(names.length, maxLabelNames); k >= 1; k--)
+            (k, false, linesFor(k)),
+          if (names.length > 1) (1, true, linesFor(1, compact: true)),
+        ],
       ];
       // Same reasoning: a budget depends only on (offset, height, side)
       // here, so specs of the same height share it.
@@ -7322,7 +7639,7 @@ class _BalanceChartPainter extends CustomPainter {
                   radius: vertex.radius,
                   side: side,
                   labelHeight: height,
-                  maxText: maxText,
+                  maxText: vertexMax,
                   minText: minText,
                   pad: pad,
                   occupied: placed,
@@ -7382,6 +7699,13 @@ class _BalanceChartPainter extends CustomPainter {
         final rel = shown[v.key]?.rect;
         if (rel == null || !view.contains(v.center)) continue;
         rectHook(v.label, v.center, v.radius, rel.shift(v.center));
+      }
+    }
+    final keyHook = debugVertexLabelKey;
+    if (keyHook != null) {
+      for (final v in vertices) {
+        if (!view.contains(v.center)) continue;
+        keyHook(v.key, v.label, v.center.dx, shown.containsKey(v.key));
       }
     }
     final hook = debugVertexLabel;
@@ -7549,10 +7873,25 @@ class _ChartVertex {
     required this.debit,
     this.seed = false,
     this.key = 0,
+    this.amountText,
+    this.amountColor,
+    this.exact = false,
+    this.group = false,
   });
 
   /// Stable identity across frames (day, or -1 for the opening vertex).
   final int key;
+
+  /// Coarse zoom (spec 006): the total line's own text and colour (a
+  /// group's "net …", an exact marker's balance).
+  final String? amountText;
+  final Color? amountColor;
+
+  /// An exact marker: laid out before every other label (spec 006 §4).
+  final bool exact;
+
+  /// A group label: its lines carry exact counts, never shortened.
+  final bool group;
 
   /// The opening-balance vertex: amount unsigned, in the accent colour.
   final bool seed;
@@ -7927,6 +8266,22 @@ String _labelAmountText(bool seed, num amount) {
       ? formatMoneyAmount(amount)
       : formatSignedAmount(amount);
 }
+
+/// Test hooks (spec 006): group glyphs drawn last paint, group labels
+/// budgeted, each glyph drawn, and the exact markers drawn.
+@visibleForTesting
+int debugGroupGlyphs = 0;
+
+/// Test flag: no exact markers (the envelope parity test compares the
+/// series layer alone).
+@visibleForTesting
+bool debugExactMarkersDisabled = false;
+@visibleForTesting
+int debugGroupLabelCandidates = 0;
+@visibleForTesting
+void Function(GroupBin bin, Offset center)? debugGroupGlyph;
+@visibleForTesting
+void Function(List<(String, DateTime, double)> marks)? debugExactMarkers;
 
 /// Test hook: chart text layouts (TextPainters built by the caches).
 @visibleForTesting

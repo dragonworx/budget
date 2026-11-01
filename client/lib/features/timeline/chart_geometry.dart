@@ -176,6 +176,46 @@ class PointIndex {
     return (mins, maxs);
   }();
 
+  /// Indices of the first minimum and first maximum of `values[lo, hi)`
+  /// (`lo < hi`), via the block extremes: O(n / 64 + 128).
+  (int, int) rangeArgExtents(int lo, int hi) {
+    final (mins, maxs) = _blocks;
+    final e = rangeExtents(lo, hi);
+    int find(double v, List<double> blocks) {
+      var i = lo;
+      while (i < hi) {
+        final b = i ~/ _block;
+        final bEnd = math.min(hi, (b + 1) * _block);
+        if (i == b * _block && bEnd == (b + 1) * _block && blocks[b] != v) {
+          i = bEnd;
+          continue;
+        }
+        for (; i < bEnd; i++) {
+          if (values[i] == v) return i;
+        }
+      }
+      return lo;
+    }
+
+    return (find(e.min, mins), find(e.max, maxs));
+  }
+
+  final _crossings = <double, List<(int, bool)>>{};
+
+  /// Where the balance goes below [isLow] (true) or back (false): point
+  /// indices, computed once per threshold.
+  List<(int, bool)> alertCrossings(double key, bool Function(double) isLow) =>
+      _crossings[key] ??= () {
+        final out = <(int, bool)>[];
+        var low = false;
+        for (var i = 0; i < values.length; i++) {
+          final l = isLow(values[i]);
+          if (l != low) out.add((i, l));
+          low = l;
+        }
+        return out;
+      }();
+
   /// Exact min and max of `values[lo, hi)` (`lo < hi`).
   BalanceExtents rangeExtents(int lo, int hi) {
     var minV = values[lo], maxV = minV;
