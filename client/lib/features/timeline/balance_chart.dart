@@ -28,6 +28,7 @@ import 'trim.dart';
 import 'alert_fill.dart';
 import 'lod.dart';
 import 'clusters.dart';
+import 'group_breakdown_sheet.dart';
 import 'zoom_level.dart';
 import 'perf_hud.dart';
 import '../../data/alert.dart';
@@ -109,6 +110,54 @@ typedef _LabelSpot = ({Rect rect, int names, bool compact});
 
 /// An event label as painted last frame (chart coords) and the centre
 /// of the dot it names; taps / hover on it act as on that dot.
+/// Coarse zoom hit targets from the last paint: the group glyphs drawn
+/// (left to right) and the exact markers.
+class _GroupHits {
+  final glyphs = <(GroupBin, Offset)>[];
+  final exact = <(String, DateTime, double, Offset)>[];
+
+  void clear() {
+    glyphs.clear();
+    exact.clear();
+  }
+
+  /// What's at [pos] within [slop]: an exact marker wins ties, then the
+  /// nearest glyph (binary search on x).
+  Object? at(Offset pos, double slop) {
+    (String, DateTime, double, Offset)? bestExact;
+    var bd = slop * slop;
+    for (final e in exact) {
+      final d = (e.$4 - pos).distanceSquared;
+      if (d <= bd) {
+        bd = d;
+        bestExact = e;
+      }
+    }
+    if (bestExact != null) return bestExact;
+    var lo = 0, hi = glyphs.length;
+    while (lo < hi) {
+      final m = (lo + hi) >> 1;
+      if (glyphs[m].$2.dx < pos.dx - slop) {
+        lo = m + 1;
+      } else {
+        hi = m;
+      }
+    }
+    (GroupBin, Offset)? best;
+    bd = slop * slop;
+    for (var i = lo; i < glyphs.length; i++) {
+      final g = glyphs[i];
+      if (g.$2.dx > pos.dx + slop) break;
+      final d = (g.$2 - pos).distanceSquared;
+      if (d <= bd) {
+        bd = d;
+        best = g;
+      }
+    }
+    return best;
+  }
+}
+
 typedef _LabelHit = ({Rect rect, Offset dot});
 
 /// One text line under a label's total: a name, a "+N more", or both.
@@ -448,6 +497,92 @@ class _BalanceChartState extends State<BalanceChart>
     _dtAnim.forward(from: 0);
   }
 
+  /// A group's "Zoom in" (and a double-tap on it): its period at about a
+  /// third of the plot, centred, its balances filling the height.
+  void _zoomToBin(GroupBin bin) {
+    final y = _ensureYRange();
+    if (y == null) return;
+    _cancelGroupTap();
+    _groupTip.value = null;
+    _stopDoubleTap();
+    _clearTip();
+    _tapTip = false;
+    _tapTipTimer?.cancel();
+    _hoverDots.value = null;
+    final start = dayCoord(bin.start);
+    final len = math.max(dayCoord(bin.end) - start, 1.0);
+    final days = (len * 3).clamp(minVisibleDays, maxVisibleDays).toDouble();
+    final ix = pointIndexOf(widget.series.points);
+    final lo = ix.lowerBound(bin.start.microsecondsSinceEpoch);
+    final hi = ix.lowerBound(bin.end.microsecondsSinceEpoch);
+    var ty = y;
+    if (lo < hi) {
+      final e = ix.rangeExtents(lo, hi);
+      final pad = math.max((e.max - e.min) * 0.2, 1.0);
+      ty = BalanceExtents(e.min - pad, e.max + pad);
+    }
+    _dtFrom = (
+      startCoord: dayCoord(widget.viewStart),
+      days: widget.visibleDays,
+      y: y,
+    );
+    _dtTo = (startCoord: start + len / 2 - days / 2, days: days, y: ty);
+    _dtBase = widget.viewStart;
+    _dtAnim.forward(from: 0);
+  }
+
+  /// Mouse hover over a group glyph / exact marker: its card.
+  final ValueNotifier<Object?> _groupTip = ValueNotifier<Object?>(null);
+
+  /// A tap on a group waits out the double-tap window before its sheet
+  /// opens (a second tap zooms instead).
+  Timer? _groupTapTimer;
+  Object? _groupTapHit;
+
+  void _cancelGroupTap() {
+    _groupTapTimer?.cancel();
+    _groupTapTimer = null;
+    _groupTapHit = null;
+  }
+
+  GroupBreakdown _breakdownOf(GroupBin bin) {
+    final streams = widget.combinedStreams;
+    return buildGroupBreakdown(
+      groupClustersOf(widget.series.occurrences),
+      bin,
+      pointIndexOf(widget.series.points),
+      nameOf: (id) {
+        final n = (widget.eventNames[id] ?? widget.otherEvents[id]?.name)
+            ?.trim();
+        return n == null || n.isEmpty ? 'Event' : n;
+      },
+      streamName: streams.isEmpty
+          ? null
+          : (id) => id == null ? 'This stream' : streams[id]?.name ?? 'Stream',
+    );
+  }
+
+  void _openGroup(Object hit) {
+    _cancelGroupTap();
+    if (!mounted) return;
+    _groupTip.value = null;
+    if (hit case (final GroupBin bin, Offset _)) {
+      debugGroupOpened?.call(bin);
+      showGroupBreakdownSheet(
+        context,
+        _breakdownOf(bin),
+        onZoomIn: () => _zoomToBin(bin),
+      );
+    } else if (hit case (
+      final String name,
+      final DateTime day,
+      final double value,
+      Offset _,
+    )) {
+      showExactMarkerSheet(context, name: name, day: day, value: value);
+    }
+  }
+
   /// Tests: the balance range currently shown.
   @visibleForTesting
   BalanceExtents? get debugYRange => _yRange;
@@ -553,6 +688,9 @@ class _BalanceChartState extends State<BalanceChart>
 
   /// Painted label boxes (see [_LabelHit]); refreshed by every paint.
   final List<_LabelHit> _labelHits = <_LabelHit>[];
+
+  /// Coarse zoom: what the last paint drew as groups / exact markers.
+  final _GroupHits _groupHits = _GroupHits();
   static const Duration _holdDelay = Duration(milliseconds: 450);
   bool _overAdd = false;
 
@@ -826,6 +964,8 @@ class _BalanceChartState extends State<BalanceChart>
     }
     _holdTimer?.cancel();
     _tapTipTimer?.cancel();
+    _groupTapTimer?.cancel();
+    _groupTip.dispose();
     _nudgeTimer?.cancel();
     _dtAnim.dispose();
     _switchTimer?.cancel();
@@ -1361,6 +1501,12 @@ class _BalanceChartState extends State<BalanceChart>
           (localPosition - lastPos).distance <= kDoubleTapSlop &&
           _layout.plot.contains(localPosition)) {
         _lastTapAt = _lastTapPos = null;
+        final pending = _groupTapHit;
+        if (pending case (final GroupBin bin, Offset _)) {
+          _zoomToBin(bin);
+          return;
+        }
+        _cancelGroupTap();
         _doubleTapZoom(localPosition);
         return;
       }
@@ -1394,6 +1540,20 @@ class _BalanceChartState extends State<BalanceChart>
   void _showTapTip(Offset pos, double hitRadius) {
     _tapTipTimer?.cancel();
     final layout = _layout;
+    // Coarse zoom: a group glyph or exact marker under the tap (24 px touch
+    // slop) opens its breakdown once a double-tap is ruled out.
+    final gh = layout.plot.inflate(8).contains(pos)
+        ? _groupHits.at(pos, _touchDown ? 24 : 10)
+        : null;
+    if (gh != null) {
+      _clearTip();
+      _tapTip = false;
+      _hoverDots.value = null;
+      _cancelGroupTap();
+      _groupTapHit = gh;
+      _groupTapTimer = Timer(kDoubleTapTimeout, () => _openGroup(gh));
+      return;
+    }
     final onPlot = layout.plot.contains(pos);
     // Right on a step dot (its drawn size and a few px), the dot wins;
     // otherwise a net chip keeps its whole-day popup.
@@ -1801,6 +1961,7 @@ class _BalanceChartState extends State<BalanceChart>
           // A row's ⋮ menu takes the mouse: keep its popup up.
           if (_rowMenuOpen) return;
           _hoverDots.value = null;
+          _groupTip.value = null;
           _tapTip = false;
           if (!_stepPinned) _stepTip.value = null;
           if (_overAdd || _overDot) {
@@ -1838,6 +1999,7 @@ class _BalanceChartState extends State<BalanceChart>
                         painter: _BalanceChartPainter(
                           labelMemory: _labelMemory,
                           lod: _lod,
+                          groupHits: _groupHits,
                           labelHits: _labelHits,
                           series: widget.series,
                           seedDate: widget.seedDate,
@@ -1901,6 +2063,11 @@ class _BalanceChartState extends State<BalanceChart>
                     }
                     return _addButton(theme, day);
                   },
+                ),
+                ValueListenableBuilder<Object?>(
+                  valueListenable: _groupTip,
+                  builder: (context, hit, _) =>
+                      _groupCard(hit, constraints.biggest),
                 ),
                 ValueListenableBuilder<_DotTip?>(
                   valueListenable: _hoverDots,
@@ -3210,7 +3377,12 @@ class _BalanceChartState extends State<BalanceChart>
       if (_overAdd) setState(() => _overAdd = false);
       return;
     }
-    if (!_hasSelection && !_stepHover(layout, pos)) {
+    final gh = _hasSelection ? null : _groupHits.at(pos, 10);
+    if (!identical(gh, _groupTip.value)) _groupTip.value = gh;
+    if (gh != null) {
+      _hoverDots.value = null;
+      if (!_stepPinned) _stepTip.value = null;
+    } else if (!_hasSelection && !_stepHover(layout, pos)) {
       _updateDotHover(layout, pos);
     }
     final axisBottom =
@@ -3335,6 +3507,7 @@ class _BalanceChartState extends State<BalanceChart>
       widget.seedBalance,
       _lineStart,
       _laneSet(),
+      _lod.tier,
     );
     if (_dotsKey == key && _dotsMemo != null) return _dotsMemo!;
     _dotsKey = key;
@@ -3370,9 +3543,22 @@ class _BalanceChartState extends State<BalanceChart>
       from: widget.viewStart,
       to: viewEnd,
     );
+    // Coarse zoom: only a period's lone occurrence keeps its dot; the rest
+    // are its group's (hit-tested from the painted glyphs).
+    Set<int>? singles;
+    if (_lod.tier.coarse && !debugLodDisabled) {
+      final level = groupClustersOf(widget.series.occurrences)
+          .level(binPeriodFor(dayPx));
+      final (b0, b1) = level.range(widget.viewStart, viewEnd);
+      singles = {
+        for (var bi = b0; bi < b1; bi++)
+          if (level.bins[bi].single) level.bins[bi].firstDay,
+      };
+    }
     for (var gi = first; gi < end; gi++) {
       final g = groups[gi];
       final day = g.day;
+      if (singles != null && !singles.contains(dayIndexOf(day))) continue;
       if (day.isBefore(lineStart) ||
           !addCalendarDays(day, 1).isAfter(widget.viewStart) ||
           day.isAfter(viewEnd)) {
@@ -4814,6 +5000,35 @@ class _BalanceChartState extends State<BalanceChart>
     );
   }
 
+  /// The hover card of a group glyph / exact marker, beside it and kept
+  /// inside the chart.
+  Widget _groupCard(Object? hit, Size size) {
+    final Offset at;
+    final Widget card;
+    const w = 264.0;
+    if (hit case (final GroupBin bin, final Offset c)) {
+      at = c;
+      card = GroupBreakdownCard(data: _breakdownOf(bin));
+    } else if (hit case (
+      final String name,
+      final DateTime day,
+      final double value,
+      final Offset c,
+    )) {
+      at = c;
+      card = ExactMarkerCard(name: name, day: day, value: value);
+    } else {
+      return const SizedBox.shrink();
+    }
+    final left = at.dx + 14 + w > size.width ? at.dx - 14 - w : at.dx + 14;
+    return Positioned(
+      left: left.clamp(0.0, math.max(0.0, size.width - w)),
+      top: (at.dy - 40).clamp(0.0, math.max(0.0, size.height - 120)),
+      width: w,
+      child: IgnorePointer(child: card),
+    );
+  }
+
   Widget _addButton(ThemeData theme, DateTime day) {
     final rect = _dayButtonRect(_layout, day);
     if (rect == null) return const SizedBox.shrink();
@@ -5069,6 +5284,7 @@ class _BalanceChartPainter extends CustomPainter {
     required this.lossThreshold,
     this.payoffDates = const [],
     required this.lod,
+    required this.groupHits,
     required this.viewStart,
     required this.visibleDays,
     required this.labelStyle,
@@ -5125,6 +5341,10 @@ class _BalanceChartPainter extends CustomPainter {
 
   /// Level of detail: the tier shown last frame (updated by [paint]).
   final LodMemory lod;
+
+  /// Coarse zoom: the group glyphs and exact markers drawn (hit targets),
+  /// refilled every paint.
+  final _GroupHits groupHits;
   final DateTime viewStart;
   final double visibleDays;
   final TextStyle labelStyle;
@@ -6919,6 +7139,7 @@ class _BalanceChartPainter extends CustomPainter {
     }
 
     final coarse = lod.tier.coarse && !debugLodDisabled;
+    groupHits.clear();
     if (coarse) {
       _paintGroups(
         canvas,
@@ -7142,6 +7363,7 @@ class _BalanceChartPainter extends CustomPainter {
           tp.paint(canvas, badge.topLeft + const Offset(2, 1));
         }
         debugGroupGlyph?.call(b, c);
+        groupHits.glyphs.add((b, c));
       }
       if (labelled.contains(b.key)) {
         final text = groupLabelText(
@@ -7216,6 +7438,8 @@ class _BalanceChartPainter extends CustomPainter {
         scale.yOf(value),
       );
       marks.add((name, day, value));
+      groupHits.exact.add((name, day, value, c));
+      debugExactMarkerAt?.call(name, c);
       canvas.drawCircle(c, 4.2, bg);
       canvas.drawCircle(c, 4.2, markRing..color = color);
       vertices.add(
@@ -8280,6 +8504,14 @@ bool debugExactMarkersDisabled = false;
 int debugGroupLabelCandidates = 0;
 @visibleForTesting
 void Function(GroupBin bin, Offset center)? debugGroupGlyph;
+
+/// Tests: where each exact marker was drawn.
+@visibleForTesting
+void Function(String name, Offset center)? debugExactMarkerAt;
+
+/// Tests: a group's breakdown sheet opened (tap / click on its glyph).
+@visibleForTesting
+void Function(GroupBin bin)? debugGroupOpened;
 @visibleForTesting
 void Function(List<(String, DateTime, double)> marks)? debugExactMarkers;
 
