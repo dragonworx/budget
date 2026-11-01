@@ -27,6 +27,7 @@ import 'tap_menu.dart';
 import 'trim.dart';
 import 'alert_fill.dart';
 import 'zoom_level.dart';
+import 'perf_hud.dart';
 import '../../data/alert.dart';
 import '../loans/loan_display.dart';
 
@@ -351,6 +352,31 @@ class BalanceChart extends StatefulWidget {
 
 class _BalanceChartState extends State<BalanceChart>
     with TickerProviderStateMixin {
+  // Painter inputs rebuilt from the widget each build: the previous
+  // instance is passed on while the contents are equal, so the painter
+  // (and its per-instance lookups) compare and reuse by identity.
+  Map<String, Color>? _streamColorsMemo;
+  List<DateTime>? _payoffDatesMemo;
+  List<String>? _eventOrderMemo;
+
+  Map<String, Color> _memoStreamColors(Map<String, Color> next) {
+    final prev = _streamColorsMemo;
+    if (prev != null && mapEquals(prev, next)) return prev;
+    return _streamColorsMemo = next;
+  }
+
+  List<DateTime> _memoPayoffDates(List<DateTime> next) {
+    final prev = _payoffDatesMemo;
+    if (prev != null && listEquals(prev, next)) return prev;
+    return _payoffDatesMemo = next;
+  }
+
+  List<String> _memoEventOrder(List<String> next) {
+    final prev = _eventOrderMemo;
+    if (prev != null && listEquals(prev, next)) return prev;
+    return _eventOrderMemo = next;
+  }
+
   /// Double-tap zoom: time 2x in about the tapped point and the balance
   /// range centred on it, eased together over [doubleTapZoomDuration].
   late final AnimationController _dtAnim = AnimationController(
@@ -1733,6 +1759,15 @@ class _BalanceChartState extends State<BalanceChart>
 
   @override
   Widget build(BuildContext context) {
+    perfStart('chart.build');
+    try {
+      return _buildChart(context);
+    } finally {
+      perfFinish();
+    }
+  }
+
+  Widget _buildChart(BuildContext context) {
     _syncPinnedDay();
     _checkRestoredRange();
     final theme = Theme.of(context);
@@ -1796,13 +1831,15 @@ class _BalanceChartState extends State<BalanceChart>
                           series: widget.series,
                           seedDate: widget.seedDate,
                           lineStart: _lineStart,
-                          streamColors: {
+                          streamColors: _memoStreamColors({
                             for (final p in widget.combinedStreams.values)
                               p.id: p.color,
-                          },
+                          }),
                           seedBalance: widget.seedBalance,
                           lossThreshold: _threshold,
-                          payoffDates: widget.loanPayoffs.values.toList(),
+                          payoffDates: _memoPayoffDates(
+                            widget.loanPayoffs.values.toList(),
+                          ),
                           viewStart: widget.viewStart,
                           visibleDays: widget.visibleDays,
                           labelStyle:
@@ -1814,7 +1851,9 @@ class _BalanceChartState extends State<BalanceChart>
                               (theme.textTheme.labelSmall ?? const TextStyle())
                                   .copyWith(fontWeight: FontWeight.w600),
                           eventNames: widget.eventNames,
-                          eventOrder: widget.events.keys.toList(),
+                          eventOrder: _memoEventOrder(
+                            widget.events.keys.toList(),
+                          ),
                           lanes: _laneSet(),
                           textScaler: MediaQuery.textScalerOf(context),
                           dataFrom: widget.dataFrom,
@@ -2006,12 +2045,8 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   /// The drawn step dot on [day], if any (in view, not thinned out).
-  StepDot? _stepDotOn(ChartLayout layout, DateTime day) {
-    for (final d in _stepDots(layout)) {
-      if (d.step.day == day) return d;
-    }
-    return null;
-  }
+  StepDot? _stepDotOn(ChartLayout layout, DateTime day) =>
+      stepDotOnDay(_stepDots(layout), day);
 
   /// Where the hovered / tapped dot's highlight ring goes, from the current
   /// geometry (the very dot the painter draws, even after a resize, a
@@ -2053,12 +2088,8 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   /// [step]'s drawn dot, if it is in view (and not thinned out).
-  StepDot? _stepDotOf(BalanceStep step) {
-    for (final d in _stepDots(_layout)) {
-      if (d.step.day == step.day) return d;
-    }
-    return null;
-  }
+  StepDot? _stepDotOf(BalanceStep step) =>
+      stepDotOnDay(_stepDots(_layout), step.day);
 
   /// Mouse hover over a step dot shows its tooltip (true: the pointer is on
   /// one, so lanes get no hover). Off every dot, an unpinned tip hides.
@@ -2355,11 +2386,9 @@ class _BalanceChartState extends State<BalanceChart>
         .clamp(axis.top, math.max(axis.top, axis.bottom - pillH))
         .toDouble();
     final label = formatSelectedDate(day);
-    final textW = (TextPainter(
-      text: TextSpan(text: label, style: style),
-      textDirection: TextDirection.ltr,
-      textScaler: MediaQuery.textScalerOf(context),
-    )..layout()).width;
+    final textW = _axisText
+        .get(label, style, scaler: MediaQuery.textScalerOf(context))
+        .width;
     // Never wider than the axis (a 320px phone): long dates ellipsize.
     final pillW = math.min(textW + 16, math.max(40.0, axis.width - 2));
     final pillLeft = (x - pillW / 2)
@@ -3305,10 +3334,7 @@ class _BalanceChartState extends State<BalanceChart>
     final seed = dateOnly(widget.seedDate);
     final lineStart = _lineStart;
     final viewEnd = addDays(widget.viewStart, widget.visibleDays);
-    final closes = <DateTime, double>{
-      for (final p in widget.series.points)
-        dateOnly(p.date): p.closingBalance.toDouble(),
-    };
+    final closes = pointIndexOf(widget.series.points).closeByDayMs;
     final dayPx = layout.plot.width / math.max(widget.visibleDays, 0.001);
     final radius = dayPx > 28
         ? 4.5
@@ -3326,14 +3352,22 @@ class _BalanceChartState extends State<BalanceChart>
     final lanes = _laneSet();
     final laneH = lanes.isEmpty ? 0.0 : _laneHeight(lanes, layout);
     if (!lanes.isEmpty && dayPx < laneDotsMinDayPx) return _dotsMemo = dots;
-    for (final g in groupByDay(widget.series.occurrences)) {
+    final groups = groupByDay(widget.series.occurrences);
+    final (first, end) = dayGroupRange(
+      groups,
+      seed: lineStart,
+      from: widget.viewStart,
+      to: viewEnd,
+    );
+    for (var gi = first; gi < end; gi++) {
+      final g = groups[gi];
       final day = g.day;
       if (day.isBefore(lineStart) ||
           !addCalendarDays(day, 1).isAfter(widget.viewStart) ||
           day.isAfter(viewEnd)) {
         continue;
       }
-      final close = closes[day];
+      final close = closes[day.millisecondsSinceEpoch];
       if (close == null) continue;
       // The day's left edge: where its balance steps and its lanes begin.
       final x = layout.xOf(day, widget.viewStart, widget.visibleDays);
@@ -3402,14 +3436,37 @@ class _BalanceChartState extends State<BalanceChart>
     double slop = labelHitSlop,
   }) {
     if (!layout.plot.contains(pos)) return null;
+    final dots = _dots(layout);
+    final sorted = _dotsSorted(dots);
     for (final hit in _labelHits.reversed) {
       if (!hit.rect.inflate(slop).contains(pos)) continue;
-      for (final d in _dots(layout)) {
+      // In x order, only dots within reach in x can be under the label's
+      // dot (the same first match: the candidates keep their order).
+      var from = 0, to = dots.length;
+      if (sorted) {
+        from = lowerBoundByX(dots, _dotX, hit.dot.dx - 2.5);
+        to = upperBoundByX(dots, _dotX, hit.dot.dx + 2.5);
+      }
+      for (var i = from; i < to; i++) {
+        final d = dots[i];
         if ((d.center - hit.dot).distance < 1.5) return _wholeDay(layout, d);
       }
     }
     return null;
   }
+
+  static double _dotX(_Dot d) => d.center.dx;
+
+  /// Whether [dots] (a [_dots] list) run left to right, checked once per
+  /// list.
+  bool _dotsSorted(List<_Dot> dots) =>
+      _dotsSortedMemo[dots] ??= sortedByX(dots, _dotX);
+
+  final _dotsSortedMemo = Expando<bool>('DotsSorted');
+
+  /// [_nearestDot]'s candidates for a [_dots] list: the always drawn dots
+  /// near the plot, and their centres.
+  final _lineDotsMemo = Expando<(List<_Dot>, List<Offset>)>('LineDots');
 
   /// A day's net chip speaks for the whole day: the popup lists every
   /// event on it (a lane dot, by contrast, inspects only its own).
@@ -3445,15 +3502,21 @@ class _BalanceChartState extends State<BalanceChart>
   /// no lane (on the line itself).
   _Dot? _nearestDot(ChartLayout layout, Offset pos, double maxDistance) {
     if (!layout.plot.inflate(maxDistance).contains(pos)) return null;
-    final dots = _dots(layout)
-        .where(
-          (d) => d.txId == null && layout.plot.inflate(8).contains(d.center),
-        )
-        .toList();
+    // Memoised per [_dots] list (its key includes the plot rect).
+    final all = _dots(layout);
+    final (dots, centers) = _lineDotsMemo[all] ??= () {
+      final dots = all
+          .where(
+            (d) => d.txId == null && layout.plot.inflate(8).contains(d.center),
+          )
+          .toList();
+      return (dots, [for (final d in dots) d.center]);
+    }();
     final i = nearestPointIndex(
-      [for (final d in dots) d.center],
+      centers,
       pos,
       maxDistance: maxDistance,
+      pointsSortedByX: _dotsSorted(all),
     );
     return i == null ? null : dots[i];
   }
@@ -4222,6 +4285,16 @@ class _BalanceChartState extends State<BalanceChart>
   }
 
   double _textWidth(String text, TextStyle? style) {
+    if (style != null) {
+      return _axisText
+          .get(
+            text,
+            style,
+            scaler: MediaQuery.textScalerOf(context),
+            maxLines: 1,
+          )
+          .width;
+    }
     final p = TextPainter(
       text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,
@@ -5064,6 +5137,17 @@ class _BalanceChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final sw = perfPaintStopwatch();
+    perfStart('chart.paint');
+    try {
+      _paintChart(canvas, size);
+    } finally {
+      perfFinish();
+      perfPaintDone(sw);
+    }
+  }
+
+  void _paintChart(Canvas canvas, Size size) {
     final layout = ChartLayout.of(size, visibleDays);
     final seed = lineStart;
     final viewEnd = _viewEnd;
@@ -5097,14 +5181,20 @@ class _BalanceChartPainter extends CustomPainter {
     final global = balanceExtentsFrom(series.points, seed) ?? visible.extents;
     final gridLabels = _paintGrid(canvas, layout, scale, global);
     _paintMarkers(canvas, layout, viewEnd, dateOnly(seedDate));
+    perfStart('chart.series');
     _paintSeries(canvas, layout, scale, visible, seed, viewEnd);
+    perfFinish();
+    perfStart('chart.occ');
     _paintOccurrences(canvas, layout, scale, viewEnd, seed);
+    perfFinish();
+    perfStart('chart.overlays');
     if (!lanes.isEmpty) _paintStepDots(canvas, layout, scale);
     // Axis values float over the plot: drawn after the line and dots.
     for (final (y, text) in gridLabels) {
       _paintYText(canvas, layout, y, text, labelStyle);
     }
     _paintOffscreenHints(canvas, layout, scale, visible.extents);
+    perfFinish();
   }
 
   void _paintPlotBands(Canvas canvas, ChartLayout layout, DateTime viewEnd) {
@@ -5495,12 +5585,13 @@ class _BalanceChartPainter extends CustomPainter {
   ) {
     final hy = highlightY;
     if (hy != null && (y - hy).abs() < 18) return;
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
+    final painter = _axisText.get(
+      text,
+      style,
       maxLines: 1,
       ellipsis: '…',
-    )..layout(maxWidth: math.max(40, layout.plot.width * 0.45));
+      maxWidth: math.max(40, layout.plot.width * 0.45),
+    );
     final minTop = layout.plot.top + 1;
     final maxTop = math.max(minTop, layout.plot.bottom - painter.height - 1);
     final top = (y - painter.height / 2).clamp(minTop, maxTop).toDouble();
@@ -5512,7 +5603,6 @@ class _BalanceChartPainter extends CustomPainter {
     );
     canvas.drawRRect(bg, Paint()..color = _plotBg.withValues(alpha: 0.72));
     painter.paint(canvas, Offset(left, top));
-    painter.dispose();
   }
 
   void _paintMarkers(
@@ -5604,13 +5694,7 @@ class _BalanceChartPainter extends CustomPainter {
         y += 7;
       }
     }
-    final painter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: laneStyle.copyWith(color: labelColor),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+    final painter = _axisText.get(label, laneStyle.copyWith(color: labelColor));
     final dx = alignLeft ? x - painter.width - 4 : x + 4;
     painter.paint(
       canvas,
@@ -5619,7 +5703,6 @@ class _BalanceChartPainter extends CustomPainter {
         layout.plot.top + 2,
       ),
     );
-    painter.dispose();
   }
 
   void _paintSeries(
@@ -5776,17 +5859,14 @@ class _BalanceChartPainter extends CustomPainter {
           ..color = AppTheme.debitColor.withValues(alpha: 0.55)
           ..strokeWidth = 1,
       );
-      final tp = TextPainter(
-        text: TextSpan(
-          text: 'Alert < ${formatMoneyAmount(lossThreshold)}',
-          style: TextStyle(
-            color: AppTheme.debitColor.withValues(alpha: 0.9),
-            fontSize: 10.5,
-            fontWeight: FontWeight.w600,
-          ),
+      final tp = _axisText.get(
+        'Alert < ${formatMoneyAmount(lossThreshold)}',
+        TextStyle(
+          color: AppTheme.debitColor.withValues(alpha: 0.9),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
         ),
-        textDirection: TextDirection.ltr,
-      )..layout();
+      );
       final above = thresholdY - tp.height - 3 >= layout.plot.top;
       tp.paint(
         canvas,
@@ -5798,7 +5878,9 @@ class _BalanceChartPainter extends CustomPainter {
     }
 
     if (!lanes.isEmpty) {
+      perfStart('chart.stack');
       _paintStack(canvas, layout, scale, visible.samples, drawStart, drawEnd);
+      perfFinish();
       canvas.restore();
       return;
     }
@@ -6268,11 +6350,21 @@ class _BalanceChartPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.5;
       final marginDays = 80 / math.max(dayPx, 0.001);
-      for (final g in groupByDay(series.occurrences)) {
+      final groups = groupByDay(series.occurrences);
+      final rangeFrom = addDays(viewStart, -marginDays);
+      final rangeTo = addDays(viewEnd, marginDays);
+      final (first, end) = dayGroupRange(
+        groups,
+        seed: seed,
+        from: rangeFrom,
+        to: rangeTo,
+      );
+      for (var gi = first; gi < end; gi++) {
+        final g = groups[gi];
         final day = g.day;
         if (day.isBefore(seed) ||
-            !addCalendarDays(day, 1).isAfter(addDays(viewStart, -marginDays)) ||
-            day.isAfter(addDays(viewEnd, marginDays))) {
+            !addCalendarDays(day, 1).isAfter(rangeFrom) ||
+            day.isAfter(rangeTo)) {
           continue;
         }
         final yValue = closes[day.millisecondsSinceEpoch];
@@ -6490,14 +6582,11 @@ class _BalanceChartPainter extends CustomPainter {
   ) {
     final text = offscreenHint(extents, scale.yMin);
     if (text == null) return;
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: strongStyle.copyWith(fontSize: 11, color: AppTheme.onAccent),
-      ),
-      textDirection: TextDirection.ltr,
+    final painter = _axisText.get(
+      text,
+      strongStyle.copyWith(fontSize: 11, color: AppTheme.onAccent),
       maxLines: 1,
-    )..layout();
+    );
     final w = painter.width + 16;
     final h = painter.height + 6;
     final left = layout.plot.center.dx - w / 2;
@@ -6510,7 +6599,6 @@ class _BalanceChartPainter extends CustomPainter {
       Paint()..color = AppTheme.accent.withValues(alpha: 0.9),
     );
     painter.paint(canvas, Offset(left + 8, y + 3));
-    painter.dispose();
   }
 
   double _absMax(BalanceExtents extents) =>
@@ -6543,14 +6631,35 @@ class _BalanceChartPainter extends CustomPainter {
 
     canvas.save();
     canvas.clipRect(layout.plot);
-    for (final g in groupByDay(series.occurrences)) {
+    final groups = groupByDay(series.occurrences);
+    final rangeFrom = addDays(viewStart, -visibleDays);
+    final rangeTo = addDays(viewEnd, visibleDays);
+    final (first, end) = dayGroupRange(
+      groups,
+      seed: seed,
+      from: rangeFrom,
+      to: rangeTo,
+    );
+    final skippedFill = Paint()..color = _plotBg;
+    final skippedRing = Paint()
+      ..color = AppTheme.textFaint
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    final debitFill = Paint()..color = AppTheme.debitColor;
+    final creditFill = Paint()..color = AppTheme.creditColor;
+    final outline = Paint()
+      ..color = _plotBg
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    for (var gi = first; gi < end; gi++) {
+      final g = groups[gi];
       final day = g.day;
       final nextDay = addCalendarDays(day, 1);
       // A view-width margin each side feeds the label layout (see
       // _paintVertexLabels); those dots fall outside the clip.
       if (day.isBefore(seed) ||
-          !nextDay.isAfter(addDays(viewStart, -visibleDays)) ||
-          day.isAfter(addDays(viewEnd, visibleDays))) {
+          !nextDay.isAfter(rangeFrom) ||
+          day.isAfter(rangeTo)) {
         continue;
       }
       final yValue = closes[day.millisecondsSinceEpoch];
@@ -6559,18 +6668,10 @@ class _BalanceChartPainter extends CustomPainter {
       final center = Offset(x, scale.yOf(yValue));
       final net = g.net;
       if (g.allSkipped) {
-        canvas.drawCircle(center, radius, Paint()..color = _plotBg);
-        canvas.drawCircle(
-          center,
-          radius,
-          Paint()
-            ..color = AppTheme.textFaint
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.4,
-        );
+        canvas.drawCircle(center, radius, skippedFill);
+        canvas.drawCircle(center, radius, skippedRing);
       } else {
-        final color = net < 0 ? AppTheme.debitColor : AppTheme.creditColor;
-        canvas.drawCircle(center, radius, Paint()..color = color);
+        canvas.drawCircle(center, radius, net < 0 ? debitFill : creditFill);
         if (g.mixed) {
           // Money in and out that day: half-and-half dot.
           canvas.drawArc(
@@ -6578,18 +6679,10 @@ class _BalanceChartPainter extends CustomPainter {
             -math.pi / 2,
             math.pi,
             true,
-            Paint()
-              ..color = net < 0 ? AppTheme.creditColor : AppTheme.debitColor,
+            net < 0 ? creditFill : debitFill,
           );
         }
-        canvas.drawCircle(
-          center,
-          radius,
-          Paint()
-            ..color = _plotBg
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5,
-        );
+        canvas.drawCircle(center, radius, outline);
       }
       // Combined view: another stream's money that day gets its tint as a
       // ring (split into arcs when several other streams share the day).
@@ -6643,7 +6736,9 @@ class _BalanceChartPainter extends CustomPainter {
       }
     }
     canvas.restore();
+    perfStart('chart.labels');
     _paintVertexLabels(canvas, layout, vertices);
+    perfFinish();
   }
 
   /// Opening-balance vertex: a hollow accent diamond, unlike the round
@@ -6665,6 +6760,15 @@ class _BalanceChartPainter extends CustomPainter {
     );
   }
 
+  /// [eventOrder] and [eventNames] positions for [_dayNames], built once
+  /// per painter instead of once per day.
+  late final Map<String, int> _eventRank = {
+    for (final (i, id) in eventOrder.indexed) id: i,
+  };
+  late final Map<String, int> _nameRank = {
+    for (final (i, id) in eventNames.keys.indexed) id: i,
+  };
+
   /// Names of the events counted on day [g] (the skipped ones only
   /// when every one is skipped), once each, in the order they were added
   /// (as the dot popup's Edit menu lists them).
@@ -6672,8 +6776,8 @@ class _BalanceChartPainter extends CustomPainter {
     final ids = <String>{
       for (final o in g.allSkipped ? g.all : g.active) o.eventId,
     }.toList();
-    final order = {for (final (i, id) in eventOrder.indexed) id: i};
-    final fallback = {for (final (i, id) in eventNames.keys.indexed) id: i};
+    final order = _eventRank;
+    final fallback = _nameRank;
     int rank(String id) =>
         order[id] ?? (order.length + (fallback[id] ?? fallback.length));
     final sorted = [...ids]
@@ -6733,6 +6837,7 @@ class _BalanceChartPainter extends CustomPainter {
       return b.center.dy.compareTo(a.center.dy);
     });
     final anchors = [for (final vertex in vertices) vertex.center];
+    final anchorGrid = PointGrid(anchors);
     // Previously labelled vertices first, then the rest, each left to right.
     final order = [
       ...vertices.where((v) => labelMemory.containsKey(v.key)),
@@ -6752,47 +6857,56 @@ class _BalanceChartPainter extends CustomPainter {
     canvas.save();
     canvas.clipRect(view);
     final placed = <Rect>[..._markerLabelRects(layout)];
-    final labeledAt = <Offset>[];
+    final placedIndex = RectIndex(placed);
     final neighborGap = dayPx >= 4.5 ? 10.0 : 30.0;
+    final labeledAt = LabelCrowding(gapX: neighborGap, gapY: labelHeight + 18);
+    var layouts = 0;
+    final paintersBefore = debugTextPainterConstructions;
+    // The label styles (a skipped day's are faint), built once per paint,
+    // and per-paint memos of the text measured with them: the style-keyed
+    // caches are looked up once per text instead of once per probe.
+    final faintStyle = style.copyWith(color: AppTheme.textFaint);
+    final moreStyles = [
+      for (final st in [style, faintStyle])
+        st.copyWith(color: AppTheme.textMuted, fontWeight: FontWeight.w500),
+    ];
+    TextStyle amountStyle(TextStyle vertexStyle, Color? color) =>
+        vertexStyle.copyWith(fontWeight: FontWeight.w800, color: color);
+    final amountStyles = <(bool, Color?), TextStyle>{};
+    final amountPainters = <(bool, Color?, String), TextPainter>{};
+    final widthMemo = [<String, double>{}, <String, double>{}];
+    final lineMemo = <(bool, String?, String), TextPainter>{};
     for (final vertex in order) {
       if (!plot.contains(vertex.center)) continue;
-      final crowded = labeledAt.any((at) {
-        final dx = (vertex.center.dx - at.dx).abs();
-        final dy = (vertex.center.dy - at.dy).abs();
-        return dx < neighborGap && dy < labelHeight + 18;
-      });
+      final crowded = labeledAt.crowded(vertex.center);
       if (crowded) continue;
-      final vertexStyle = vertex.skipped
-          ? style.copyWith(color: AppTheme.textFaint)
-          : style;
-      // Main line: the day's net event total (never the balance).
-      final amount = TextPainter(
-        text: TextSpan(
-          text: vertex.seed
-              ? formatMoneyAmount(vertex.amount)
-              : formatSignedAmount(vertex.amount),
-          style: vertexStyle.copyWith(
-            fontWeight: FontWeight.w800,
-            color: vertex.skipped
-                ? null
-                : vertex.seed
-                ? AppTheme.accent
-                : vertex.debit
-                ? AppTheme.debitColor
-                : AppTheme.creditColor,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-      )..layout();
+      layouts++;
+      final faint = vertex.skipped;
+      final vertexStyle = faint ? faintStyle : style;
+      // Main line: the day's net event total (never the balance). Cached
+      // painters (owned by [_labelText]): the same texts recur every frame.
+      final amountColor = vertex.skipped
+          ? null
+          : vertex.seed
+          ? AppTheme.accent
+          : vertex.debit
+          ? AppTheme.debitColor
+          : AppTheme.creditColor;
+      final amountText = _labelAmountText(vertex.seed, vertex.amount);
+      final amount = amountPainters[(faint, amountColor, amountText)] ??=
+          _labelText.get(
+            amountText,
+            amountStyles[(faint, amountColor)] ??= amountStyle(
+              vertexStyle,
+              amountColor,
+            ),
+            maxLines: 1,
+          );
       final names = vertex.names;
-      final moreStyle = vertexStyle.copyWith(
-        color: AppTheme.textMuted,
-        fontWeight: FontWeight.w500,
-      );
+      final moreStyle = moreStyles[faint ? 1 : 0];
       // A name is shortened with "…" down to about three letters, no less.
       final minName = fontSize * 2.4;
-      final widths = <String, double>{};
+      final widths = widthMemo[faint ? 1 : 0];
       double widthOf(String text, TextStyle st) => widths.putIfAbsent(
         '${identical(st, moreStyle) ? 'm' : 'n'}$text',
         // Shortening probes many stubs per name; they recur every frame.
@@ -6835,8 +6949,8 @@ class _BalanceChartPainter extends CustomPainter {
 
       final laidOut = <String, List<TextPainter>?>{};
       // Painters for [spec] at most [maxWidth] wide (names shortened to
-      // fit), or null when a line can't be made readable. Cached: the
-      // painters are disposed after this vertex.
+      // fit), or null when a line can't be made readable. Cached here and
+      // in [_labelText] (which owns the painters).
       List<TextPainter>? layoutLines(
         String key,
         List<_LabelLine> spec,
@@ -6854,17 +6968,12 @@ class _BalanceChartPainter extends CustomPainter {
             return null;
           }
           out.add(
-            TextPainter(
-              text: TextSpan(
-                children: [
-                  if (text != null) TextSpan(text: text, style: vertexStyle),
-                  if (suffix.isNotEmpty)
-                    TextSpan(text: suffix, style: moreStyle),
-                ],
-              ),
-              textDirection: TextDirection.ltr,
-              maxLines: 1,
-            )..layout(),
+            lineMemo[(faint, text, suffix)] ??= _labelText.line(
+              text,
+              vertexStyle,
+              suffix,
+              moreStyle,
+            ),
           );
         }
         return out;
@@ -6900,7 +7009,11 @@ class _BalanceChartPainter extends CustomPainter {
           for (final l in lines) l.plainText,
         ]);
         placed.add(rect);
-        if (leader != null) placed.add(leader);
+        placedIndex.add(rect);
+        if (leader != null) {
+          placed.add(leader);
+          placedIndex.add(leader);
+        }
         labeledAt.add(vertex.center);
         shown[vertex.key] = (
           rect: rect.shift(-vertex.center),
@@ -6935,6 +7048,9 @@ class _BalanceChartPainter extends CustomPainter {
                 occupied: placed,
                 anchors: anchors,
                 attachReach: 96,
+                anchorsSortedByX: true,
+                occupiedIndex: placedIndex,
+                anchorGrid: anchorGrid,
               )) {
             draw(rect, lines, last.names, last.compact);
             drawn = true;
@@ -6948,30 +7064,75 @@ class _BalanceChartPainter extends CustomPainter {
       // fits right against the dot is the label pushed a little further
       // away (with a leader line) before the dot goes unlabelled — never
       // amount-only.
+      // Drawn already (the search below would stop at once), or nothing to
+      // name (no options): done with this dot.
+      if (drawn || names.isEmpty) continue;
+      // A taller label's row contains a shorter one's, so its budget is no
+      // larger: where even the shortest option (one line under the total)
+      // can't fit the total at an (offset, side), no option can, and that
+      // spot is skipped unprobed. Nothing is placed during this search, so
+      // the spots are judged once, up front; a dot with no open spot is done.
+      const offsets = [0.0, 6.0, 12.0, 18.0, maxVertexLabelOffset];
+      final minHeight = amount.height + lineHeight + 4;
+      final open = [
+        for (final offset in offsets)
+          for (final side in VertexLabelSide.values)
+            () {
+              final bound = vertexLabelTextBudget(
+                plot: plot,
+                center: vertex.center,
+                radius: vertex.radius,
+                side: side,
+                labelHeight: minHeight,
+                maxText: maxText,
+                minText: minText,
+                pad: pad,
+                occupied: placed,
+                anchors: anchors,
+                offset: offset,
+                anchorsSortedByX: true,
+                occupiedIndex: placedIndex,
+                anchorGrid: anchorGrid,
+                slack: 1e-6,
+              );
+              return bound > 0 && bound >= amount.width;
+            }(),
+      ];
+      if (!open.contains(true)) continue;
       final specs = [
         for (var k = math.min(names.length, maxLabelNames); k >= 1; k--)
           (k, false, linesFor(k)),
         if (names.length > 1) (1, true, linesFor(1, compact: true)),
       ];
+      // Same reasoning: a budget depends only on (offset, height, side)
+      // here, so specs of the same height share it.
+      final budgets = <(double, double, VertexLabelSide), double>{};
       search:
-      for (final offset in const [0.0, 6.0, 12.0, 18.0, maxVertexLabelOffset]) {
-        if (drawn) break;
+      for (var oi = 0; oi < offsets.length; oi++) {
+        final offset = offsets[oi];
         for (final (k, compact, spec) in specs) {
           final height = amount.height + spec.length * lineHeight + 4;
           for (final side in VertexLabelSide.values) {
-            final budget = vertexLabelTextBudget(
-              plot: plot,
-              center: vertex.center,
-              radius: vertex.radius,
-              side: side,
-              labelHeight: height,
-              maxText: maxText,
-              minText: minText,
-              pad: pad,
-              occupied: placed,
-              anchors: anchors,
-              offset: offset,
-            );
+            if (!open[oi * VertexLabelSide.values.length + side.index]) {
+              continue;
+            }
+            final budget = budgets[(offset, height, side)] ??=
+                vertexLabelTextBudget(
+                  plot: plot,
+                  center: vertex.center,
+                  radius: vertex.radius,
+                  side: side,
+                  labelHeight: height,
+                  maxText: maxText,
+                  minText: minText,
+                  pad: pad,
+                  occupied: placed,
+                  anchors: anchors,
+                  offset: offset,
+                  anchorsSortedByX: true,
+                  occupiedIndex: placedIndex,
+                  anchorGrid: anchorGrid,
+                );
             if (budget <= 0 || budget < amount.width) continue;
             final lines = layoutLines('$k$compact', spec, budget);
             if (lines == null) continue;
@@ -6991,6 +7152,9 @@ class _BalanceChartPainter extends CustomPainter {
               occupied: placed,
               anchors: anchors,
               attachReach: offset + 10,
+              anchorsSortedByX: true,
+              occupiedIndex: placedIndex,
+              anchorGrid: anchorGrid,
             )) {
               draw(rect, lines, k, compact);
               drawn = true;
@@ -6999,14 +7163,10 @@ class _BalanceChartPainter extends CustomPainter {
           }
         }
       }
-      for (final ps in laidOut.values) {
-        for (final p in ps ?? const <TextPainter>[]) {
-          p.dispose();
-        }
-      }
-      amount.dispose();
     }
     canvas.restore();
+    debugVertexLabelCandidates = layouts;
+    debugVertexLabelLayouts = debugTextPainterConstructions - paintersBefore;
     labelMemory
       ..clear()
       ..addAll(shown);
@@ -7042,10 +7202,7 @@ class _BalanceChartPainter extends CustomPainter {
       if (!next.isAfter(viewStart) || day.isAfter(_viewEnd)) return;
       final x = layout.xOf(day, viewStart, visibleDays);
       if (x < layout.plot.left || x > layout.plot.right) return;
-      final painter = TextPainter(
-        text: TextSpan(text: label, style: laneStyle),
-        textDirection: TextDirection.ltr,
-      )..layout();
+      final painter = _axisText.get(label, laneStyle);
       final rawLeft = alignLeft ? x - painter.width - 4 : x + 4;
       final left = rawLeft
           .clamp(layout.plot.left, layout.plot.right - painter.width)
@@ -7058,7 +7215,6 @@ class _BalanceChartPainter extends CustomPainter {
           painter.height,
         ).inflate(4),
       );
-      painter.dispose();
     }
 
     final today = dateOnly(DateTime.now());
@@ -7478,20 +7634,69 @@ class _TextCache {
     final key = (text, style, scaler, maxLines, ellipsis, align, maxWidth);
     final hit = _painters.remove(key);
     if (hit != null) return _painters[key] = hit;
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-      textScaler: scaler,
-      textAlign: align,
-      maxLines: maxLines,
-      ellipsis: ellipsis,
-    )..layout(maxWidth: maxWidth);
+    return _add(
+      key,
+      TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        textAlign: align,
+        maxLines: maxLines,
+        ellipsis: ellipsis,
+      )..layout(maxWidth: maxWidth),
+    );
+  }
+
+  /// One label line: [text] in [style] (none when null) then [suffix] in
+  /// [suffixStyle] (none when empty), on one line, laid out unbounded.
+  TextPainter line(
+    String? text,
+    TextStyle style,
+    String suffix,
+    TextStyle suffixStyle,
+  ) {
+    if (!_listening) {
+      _listening = true;
+      PaintingBinding.instance.systemFonts.addListener(clear);
+    }
+    final key = (#line, text, style, suffix, suffixStyle);
+    final hit = _painters.remove(key);
+    if (hit != null) return _painters[key] = hit;
+    return _add(
+      key,
+      TextPainter(
+        text: TextSpan(
+          children: [
+            if (text != null) TextSpan(text: text, style: style),
+            if (suffix.isNotEmpty) TextSpan(text: suffix, style: suffixStyle),
+          ],
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout(),
+    );
+  }
+
+  TextPainter _add(Object key, TextPainter painter) {
+    debugTextPainterConstructions++;
     _painters[key] = painter;
     if (_painters.length > capacity) {
-      _painters.remove(_painters.keys.first)!.dispose();
+      // Disposed once the current paint is done: a caller may still hold
+      // it for this paint (per-paint memos).
+      _retired.add(_painters.remove(_painters.keys.first)!);
+      if (_retired.length == 1) {
+        scheduleMicrotask(() {
+          for (final p in _retired) {
+            p.dispose();
+          }
+          _retired.clear();
+        });
+      }
     }
     return painter;
   }
+
+  final _retired = <TextPainter>[];
 
   void clear() {
     for (final p in _painters.values) {
@@ -7505,6 +7710,38 @@ class _TextCache {
 }
 
 final _axisText = _TextCache(1500);
+
+/// Occurrence label text (amounts and name lines). Its own cache, large
+/// enough that a painter in use for the current label is never evicted.
+final _labelText = _TextCache(4000);
+
+/// Label amount texts by (opening balance?, amount, locale): formatting
+/// builds a NumberFormat each time, and the same amounts recur per frame.
+final _amountTexts = <(bool, num, String), String>{};
+
+String _labelAmountText(bool seed, num amount) {
+  final key = (seed, amount, Intl.getCurrentLocale());
+  final hit = _amountTexts[key];
+  if (hit != null) return hit;
+  if (_amountTexts.length >= 20000) _amountTexts.clear();
+  return _amountTexts[key] = seed
+      ? formatMoneyAmount(amount)
+      : formatSignedAmount(amount);
+}
+
+/// Test hook: chart text layouts (TextPainters built by the caches).
+@visibleForTesting
+int debugTextPainterConstructions = 0;
+
+/// Test hook: label text layouts (new TextPainters) in the last occurrence
+/// label pass; cached texts cost none.
+@visibleForTesting
+int debugVertexLabelLayouts = 0;
+
+/// Test hook: dots that passed the crowding check in the last occurrence
+/// label pass (each tries the label placements).
+@visibleForTesting
+int debugVertexLabelCandidates = 0;
 
 /// Test hook: how many axis labels are cached.
 @visibleForTesting

@@ -15,6 +15,7 @@ import 'dart:io';
 
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
+import 'package:budget_client/features/timeline/perf_hud.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,25 +118,56 @@ void main() {
         final sw = Stopwatch()..start();
         await tester.pumpWidget(build());
         final first = sw.elapsedMicroseconds / 1000;
+        final sections = debugPerfSectionUs = <String, int>{};
+        addTearDown(() => debugPerfSectionUs = null);
         final t = <double>[];
+        var maxLayouts = 0, maxCandidates = 0, newPainters = 0;
         for (var i = 1; i <= 20; i++) {
           // About 1px per frame at 1600px.
           viewStart = _view0.add(Duration(days: i * 9));
+          final before = debugTextPainterConstructions;
           sw.reset();
           await tester.pumpWidget(build());
           t.add(sw.elapsedMicroseconds / 1000);
+          newPainters += debugTextPainterConstructions - before;
+          if (!lanes && debugVertexLabelLayouts > maxLayouts) {
+            maxLayouts = debugVertexLabelLayouts;
+          }
+          if (!lanes && debugVertexLabelCandidates > maxCandidates) {
+            maxCandidates = debugVertexLabelCandidates;
+          }
         }
+        final perFrame = [
+          for (final e in sections.entries)
+            '${e.key}=${(e.value / 20000).toStringAsFixed(1)}',
+        ].join(' ');
+        debugPerfSectionUs = null;
+        // The same pan again: every label text has been seen, so no frame
+        // lays out a new TextPainter.
+        final replayFrom = debugTextPainterConstructions;
+        for (var i = 1; i <= 20; i++) {
+          viewStart = _view0.add(Duration(days: i * 9));
+          await tester.pumpWidget(build());
+        }
+        final replayPainters = debugTextPainterConstructions - replayFrom;
         t.sort();
         final line =
             'n=$n occ=${d.s.occurrences.length} events=${d.names.length} '
             'lanes=$lanes first=${first.toStringAsFixed(0)}ms '
             'median=${t[10].toStringAsFixed(1)}ms '
             'p95=${t[18].toStringAsFixed(1)}ms '
-            'max=${t.last.toStringAsFixed(1)}ms';
+            'max=${t.last.toStringAsFixed(1)}ms '
+            'labelLayouts/frame<=$maxLayouts '
+            'labelCandidates/frame<=$maxCandidates '
+            'newPainters(20 frames)=$newPainters '
+            'replayNewPainters=$replayPainters '
+            'ms/frame: $perFrame';
         stdout.writeln(line);
         if (out != null) {
           File(out).writeAsStringSync('$line\n', mode: FileMode.append);
         }
+        expect(maxLayouts, lessThanOrEqualTo(200));
+        expect(replayPainters, 0);
       }, timeout: const Timeout(Duration(minutes: 20)));
     }
   }

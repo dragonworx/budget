@@ -118,7 +118,11 @@ List<StepDot> visibleStepDots({
   final gap = stepDotMinGap(r);
   final out = <StepDot>[];
   double? lastX;
-  for (final s in steps) {
+  // Steps are in date order and [xOf] grows with the day, so the ones left
+  // of the plot (skipped below) are a prefix: start past it.
+  final first = lowerBoundByX(steps, (s) => xOf(s.day), plot.left - r);
+  for (var i = first; i < steps.length; i++) {
+    final s = steps[i];
     final c = stepCenter(s.day, s.balance, xOf: xOf, yOf: yOf);
     final x = c.dx, y = c.dy;
     if (x < plot.left - r) continue;
@@ -135,11 +139,28 @@ List<StepDot> visibleStepDots({
 double stepDotHitRadius({required bool touch}) => touch ? 22 : 11;
 
 /// The drawn dot nearest [pos] within its hit radius.
+///
+/// [dots] as from [visibleStepDots] (left to right, one radius): only those
+/// within reach in x are visited. Same result as testing every dot.
 StepDot? stepDotAt(List<StepDot> dots, Offset pos, {required bool touch}) {
   final hit = stepDotHitRadius(touch: touch);
   StepDot? best;
   var bestD = double.infinity;
-  for (final d in dots) {
+  var from = 0, to = dots.length;
+  if (dots.isNotEmpty) {
+    final radius = dots.first.radius;
+    // Checked once per list (the chart reuses its list while the view
+    // holds still).
+    final indexable = _indexable[dots] ??=
+        dots.every((d) => d.radius == radius) && sortedByX(dots, _stepX);
+    if (indexable) {
+      final reach = math.max(hit, radius) + 1;
+      from = lowerBoundByX(dots, _stepX, pos.dx - reach);
+      to = upperBoundByX(dots, _stepX, pos.dx + reach);
+    }
+  }
+  for (var i = from; i < to; i++) {
+    final d = dots[i];
     final dist = (d.center - pos).distance;
     if (dist <= math.max(hit, d.radius) && dist < bestD) {
       best = d;
@@ -147,6 +168,31 @@ StepDot? stepDotAt(List<StepDot> dots, Offset pos, {required bool touch}) {
     }
   }
   return best;
+}
+
+final _indexable = Expando<bool>('StepDotsIndexable');
+
+double _stepX(StepDot d) => d.center.dx;
+
+/// The dot in [dots] (as from [visibleStepDots], in date order) for [day]:
+/// the first whose step day equals it, or null.
+StepDot? stepDotOnDay(List<StepDot> dots, DateTime day) {
+  final us = day.microsecondsSinceEpoch;
+  var lo = 0, hi = dots.length;
+  while (lo < hi) {
+    final mid = (lo + hi) >> 1;
+    if (dots[mid].step.day.microsecondsSinceEpoch < us) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  for (var i = lo; i < dots.length; i++) {
+    final d = dots[i];
+    if (d.step.day.microsecondsSinceEpoch != us) break;
+    if (d.step.day == day) return d;
+  }
+  return null;
 }
 
 /// "+$250.00" / "−$100.00".

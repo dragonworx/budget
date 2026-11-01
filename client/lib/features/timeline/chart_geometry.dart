@@ -486,6 +486,10 @@ double vertexLabelTextBudget({
   required List<Rect> occupied,
   required List<Offset> anchors,
   double offset = 0,
+  bool anchorsSortedByX = false,
+  RectIndex? occupiedIndex,
+  double slack = 0,
+  PointGrid? anchorGrid,
 }) {
   if (maxText < minText || labelHeight <= 0 || pad < 0) return 0;
   final box = vertexLabelRect(
@@ -497,20 +501,65 @@ double vertexLabelTextBudget({
     offset: offset,
   );
   final left = box.left;
-  if (box.top < plot.top + 1 || box.bottom > plot.bottom - 1) return 0;
-  final row = Rect.fromLTRB(left, box.top, plot.right, box.bottom).inflate(2);
+  if (box.top < plot.top + 1 - slack || box.bottom > plot.bottom - 1 + slack) {
+    return 0;
+  }
+  // [slack] > 0 shrinks the row's top and bottom a hair: the result is then
+  // an upper bound on this budget for any taller label on the same side
+  // and offset (whose row contains this one, rounding included).
+  final row = Rect.fromLTRB(
+    left,
+    box.top + slack,
+    plot.right,
+    box.bottom - slack,
+  ).inflate(2);
   var limit = plot.right - 1;
-  for (final other in occupied) {
+  // With [occupiedIndex] (the same rects as [occupied]), only rects that
+  // start where they could lower the result are visited: one starting
+  // past the room [maxText] needs can't. The checks are order-free.
+  final candidates =
+      occupiedIndex?.near(
+        row.left,
+        math.min(row.right, left + pad + maxText + 4),
+      ) ??
+      occupied;
+  for (final other in candidates) {
     if (!other.overlaps(row)) continue;
     // Something already sits where the label starts.
     if (other.left <= left + 1) return 0;
     if (other.left - 3 < limit) limit = other.left - 3;
   }
-  for (final point in anchors) {
+  // With [anchorsSortedByX], only dots that can matter are visited: those
+  // in the row's x range, up to where the room would exceed [maxText]
+  // anyway (a dot further right can't lower the result). Same result.
+  if (anchorGrid != null) {
+    // With [anchorGrid] (the same points as [anchors]): the leftmost dot in
+    // the row sets the stop; dots past the room [maxText] needs can't lower
+    // the result (it is capped at [maxText]).
+    final dx = anchorGrid.minDx(
+      row,
+      except: center,
+      maxX: left + pad + maxText + 4,
+    );
+    if (dx != null && dx - 3 < limit) limit = dx - 3;
+    final budget = limit - left - pad;
+    if (budget < minText) return 0;
+    return math.min(maxText, budget);
+  }
+  var from = 0, to = anchors.length;
+  if (anchorsSortedByX) {
+    from = _anchorLowerBound(anchors, row.left);
+    to = _anchorUpperBound(anchors, left + pad + maxText + 4);
+  }
+  for (var i = from; i < to; i++) {
+    final point = anchors[i];
+    // Sorted by x, so no later dot can lower [limit] either.
+    if (anchorsSortedByX && point.dx - 3 >= limit) break;
     if (point == center || !row.contains(point)) continue;
     // Keep the padded box (see [vertexLabelFits]) clear of other dots.
     final stop = point.dx - 3;
     if (stop < limit) limit = stop;
+    if (anchorsSortedByX) break;
   }
   final budget = limit - left - pad;
   if (budget < minText) return 0;
@@ -527,6 +576,9 @@ bool vertexLabelFits({
   required List<Rect> occupied,
   required List<Offset> anchors,
   double attachReach = 10,
+  bool anchorsSortedByX = false,
+  RectIndex? occupiedIndex,
+  PointGrid? anchorGrid,
 }) {
   const inset = 1.0;
   if (rect.left < plot.left + inset ||
@@ -536,11 +588,34 @@ bool vertexLabelFits({
     return false;
   }
   final padded = rect.inflate(2);
-  for (final other in occupied) {
-    if (padded.overlaps(other)) return false;
+  // With [occupiedIndex] (the same rects as [occupied]): only rects in
+  // the tested x range.
+  if (occupiedIndex != null) {
+    if (occupiedIndex.anyOverlaps(padded)) return false;
+  } else {
+    for (final other in occupied) {
+      if (padded.overlaps(other)) return false;
+    }
   }
-  for (final point in anchors) {
-    if (padded.contains(point)) return false;
+  // With [anchorsSortedByX], only dots in the x range the tests below can
+  // hit (the padded box, the leader strip) are visited. Same result.
+  var from = 0, to = anchors.length;
+  if (anchorsSortedByX) {
+    from = _anchorLowerBound(
+      anchors,
+      math.min(padded.left, anchor.dx) - radius - 4,
+    );
+    to = _anchorUpperBound(
+      anchors,
+      math.max(padded.right, anchor.dx) + radius + 4,
+    );
+  }
+  if (anchorGrid != null) {
+    if (anchorGrid.any(padded)) return false;
+  } else {
+    for (var i = from; i < to; i++) {
+      if (padded.contains(anchors[i])) return false;
+    }
   }
   final near = Rect.fromCircle(center: anchor, radius: radius + attachReach);
   if (!rect.inflate(2).overlaps(near)) return false;
@@ -548,12 +623,21 @@ bool vertexLabelFits({
   final leader = vertexLabelLeader(center: anchor, radius: radius, rect: rect);
   if (leader != null) {
     final strip = leader.inflate(2);
-    for (final other in occupied) {
-      if (strip.overlaps(other)) return false;
+    if (occupiedIndex != null) {
+      if (occupiedIndex.anyOverlaps(strip)) return false;
+    } else {
+      for (final other in occupied) {
+        if (strip.overlaps(other)) return false;
+      }
     }
-    for (final point in anchors) {
-      if (point != anchor && strip.inflate(radius).contains(point)) {
-        return false;
+    if (anchorGrid != null) {
+      if (anchorGrid.any(strip.inflate(radius), except: anchor)) return false;
+    } else {
+      for (var i = from; i < to; i++) {
+        final point = anchors[i];
+        if (point != anchor && strip.inflate(radius).contains(point)) {
+          return false;
+        }
       }
     }
   }
@@ -630,14 +714,24 @@ const double scrubMaxDistance = 96;
 
 /// Index of the point nearest [pos] by 2D distance, or null when there are
 /// none or the nearest is farther than [maxDistance]. Ties keep the earlier.
+///
+/// With [pointsSortedByX] (x non-decreasing) and a finite [maxDistance],
+/// only points within [maxDistance] (plus 1px for rounding) in x are
+/// visited: any other is farther than [maxDistance], so never the answer.
 int? nearestPointIndex(
   List<Offset> points,
   Offset pos, {
   double maxDistance = double.infinity,
+  bool pointsSortedByX = false,
 }) {
   int? best;
   var bestD = double.infinity;
-  for (var i = 0; i < points.length; i++) {
+  var from = 0, to = points.length;
+  if (pointsSortedByX && maxDistance.isFinite) {
+    from = _anchorLowerBound(points, pos.dx - maxDistance - 1);
+    to = _anchorUpperBound(points, pos.dx + maxDistance + 1);
+  }
+  for (var i = from; i < to; i++) {
     final d = (points[i] - pos).distanceSquared;
     if (d < bestD) {
       bestD = d;
@@ -834,11 +928,15 @@ class DayGroup {
   /// Every occurrence that day, in series order (skipped ones included).
   final List<Occurrence> all;
 
+  // The derived values below are computed once per group (groups are
+  // cached per series and read on every frame); [all] is never changed
+  // after construction.
+
   /// Occurrences that count (not skipped).
-  List<Occurrence> get active => [
+  late final List<Occurrence> active = List.unmodifiable([
     for (final o in all)
       if (!o.skipped) o,
-  ];
+  ]);
 
   /// Every occurrence that day is skipped: drawn hollow / faint.
   bool get allSkipped => active.isEmpty;
@@ -848,15 +946,17 @@ class DayGroup {
 
   /// Net of the counted occurrences (skipped ones when all are skipped).
   /// Transfers between combined streams ([Occurrence.netted]) net out.
-  double get net => (allSkipped ? all : active).fold(
+  late final double net = (allSkipped ? all : active).fold(
     0.0,
     (sum, o) => o.netted ? sum : sum + o.signedDelta.toDouble(),
   );
 
-  bool get hasCredit =>
-      active.any((o) => !o.netted && o.signedDelta.toDouble() > 0);
-  bool get hasDebit =>
-      active.any((o) => !o.netted && o.signedDelta.toDouble() < 0);
+  late final bool hasCredit = active.any(
+    (o) => !o.netted && o.signedDelta.toDouble() > 0,
+  );
+  late final bool hasDebit = active.any(
+    (o) => !o.netted && o.signedDelta.toDouble() < 0,
+  );
 
   /// The other streams (combined view) with occurrences on this day.
   Set<String> get otherStreams => {for (final o in all) ?o.streamId};
@@ -884,6 +984,243 @@ List<DayGroup> _groupByDay(Iterable<Occurrence> occurrences) {
   }
   final days = byDay.keys.toList()..sort();
   return [for (final d in days) DayGroup(d, byDay[d]!)];
+}
+
+/// The index range `[start, end)` of [groups] (days ascending, as from
+/// [groupByDay]) that pass the chart's day filter: on or after [seed], the
+/// day ending after [from], and not after [to]. The same as testing every
+/// group (each condition is monotone in the day), by binary search.
+(int, int) dayGroupRange(
+  List<DayGroup> groups, {
+  required DateTime seed,
+  required DateTime from,
+  required DateTime to,
+}) {
+  int firstWhere(int lo, bool Function(DayGroup g) test) {
+    var hi = groups.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (test(groups[mid])) {
+        hi = mid;
+      } else {
+        lo = mid + 1;
+      }
+    }
+    return lo;
+  }
+
+  final start = firstWhere(
+    0,
+    (g) => !g.day.isBefore(seed) && addCalendarDays(g.day, 1).isAfter(from),
+  );
+  final end = firstWhere(start, (g) => g.day.isAfter(to));
+  return (start, end);
+}
+
+/// The labelled dots of one paint, for the "too close to a labelled dot"
+/// check: a dot is crowded when one added before is closer than [gapX]
+/// in x and [gapY] in y (both strictly). Kept in a grid of gapX x gapY
+/// cells so a check looks at the nearby cells, not every dot; two cells
+/// each way (one would do in exact arithmetic) so float rounding at a
+/// cell edge never misses one. Same answer as testing every added dot.
+class LabelCrowding {
+  LabelCrowding({required this.gapX, required this.gapY});
+
+  final double gapX, gapY;
+  final _cells = <(int, int), List<Offset>>{};
+
+  (int, int) _cell(Offset p) => ((p.dx / gapX).floor(), (p.dy / gapY).floor());
+
+  bool crowded(Offset p) {
+    final (cx, cy) = _cell(p);
+    for (var c = cx - 2; c <= cx + 2; c++) {
+      for (var r = cy - 2; r <= cy + 2; r++) {
+        final cell = _cells[(c, r)];
+        if (cell == null) continue;
+        for (final at in cell) {
+          if ((p.dx - at.dx).abs() < gapX && (p.dy - at.dy).abs() < gapY) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  void add(Offset p) => (_cells[_cell(p)] ??= []).add(p);
+}
+
+/// Points bucketed into 16 px x columns, each sorted by y, so "a point
+/// inside this rect" is a few binary searches instead of a scan of every
+/// point in the x range. Uses [Rect.contains] semantics exactly;
+/// non-finite points are left out (no finite rect contains them).
+class PointGrid {
+  PointGrid(Iterable<Offset> points) {
+    final finite = [
+      for (final p in points)
+        if (p.dx.isFinite && p.dy.isFinite) p,
+    ];
+    if (finite.isEmpty) return;
+    var lo = finite.first.dx, hi = lo;
+    for (final p in finite) {
+      if (p.dx < lo) lo = p.dx;
+      if (p.dx > hi) hi = p.dx;
+    }
+    _base = (lo / _w).floor();
+    _cols = List.generate((hi / _w).floor() - _base + 1, (_) => <Offset>[]);
+    for (final p in finite) {
+      _cols[(p.dx / _w).floor() - _base].add(p);
+    }
+    for (final col in _cols) {
+      col.sort((a, b) => a.dy.compareTo(b.dy));
+    }
+  }
+
+  static const double _w = 16;
+  int _base = 0;
+  List<List<Offset>> _cols = const [];
+
+  /// First index in [col] with dy >= [y].
+  static int _lower(List<Offset> col, double y) {
+    var lo = 0, hi = col.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (col[mid].dy < y) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  }
+
+  (int, int) _colRange(double left, double right) {
+    final a = math.max((left / _w).floor() - _base, 0);
+    final b = math.min((right / _w).floor() - _base, _cols.length - 1);
+    return (a, b);
+  }
+
+  /// Whether some point other than [except] lies in [r].
+  bool any(Rect r, {Offset? except}) {
+    if (!(r.left <= r.right) || !(r.top <= r.bottom)) return false;
+    final (a, b) = _colRange(r.left, r.right);
+    for (var c = a; c <= b; c++) {
+      final col = _cols[c];
+      for (var i = _lower(col, r.top); i < col.length; i++) {
+        final p = col[i];
+        if (p.dy >= r.bottom) break;
+        if (p != except && r.contains(p)) return true;
+      }
+    }
+    return false;
+  }
+
+  /// The smallest dx of a point other than [except] in [r], looking only
+  /// at points with dx <= [maxX] (plus the rest of their column); null when
+  /// there is none.
+  double? minDx(Rect r, {Offset? except, double maxX = double.infinity}) {
+    if (!(r.left <= r.right) || !(r.top <= r.bottom)) return null;
+    final (a, b) = _colRange(r.left, math.min(r.right, maxX));
+    for (var c = a; c <= b; c++) {
+      final col = _cols[c];
+      double? best;
+      for (var i = _lower(col, r.top); i < col.length; i++) {
+        final p = col[i];
+        if (p.dy >= r.bottom) break;
+        if (p != except && r.contains(p) && (best == null || p.dx < best)) {
+          best = p.dx;
+        }
+      }
+      // Columns are disjoint and increasing in x: the first hit is the min.
+      if (best != null) return best;
+    }
+    return null;
+  }
+}
+
+/// Rects bucketed by x column, for "which placed labels can touch this
+/// x range" without scanning them all. [near] may yield a rect more than
+/// once and yields every added rect whose x extent meets the range (one
+/// spare column each side for rounding); callers keep their own exact
+/// tests, so only answers that don't depend on order or repeats use it.
+class RectIndex {
+  RectIndex([Iterable<Rect> rects = const []]) {
+    rects.forEach(add);
+  }
+
+  static const _w = 64.0;
+  final _cols = <int, List<Rect>>{};
+
+  void add(Rect r) {
+    final a = (r.left / _w).floor(), b = (r.right / _w).floor();
+    for (var c = a; c <= b; c++) {
+      (_cols[c] ??= []).add(r);
+    }
+  }
+
+  Iterable<Rect> near(double left, double right) => [
+    for (var c = (left / _w).floor() - 1; c <= (right / _w).floor() + 1; c++)
+      ...?_cols[c],
+  ];
+
+  /// Whether any rect near `[r.left, r.right]` overlaps [r].
+  bool anyOverlaps(Rect r) {
+    final b = (r.right / _w).floor() + 1;
+    for (var c = (r.left / _w).floor() - 1; c <= b; c++) {
+      final col = _cols[c];
+      if (col == null) continue;
+      for (final other in col) {
+        if (r.overlaps(other)) return true;
+      }
+    }
+    return false;
+  }
+}
+
+/// First index in [items] (sorted by [xOf], non-decreasing) whose x is
+/// `>= x`.
+int lowerBoundByX<T>(List<T> items, double Function(T item) xOf, double x) {
+  var lo = 0, hi = items.length;
+  while (lo < hi) {
+    final mid = (lo + hi) >> 1;
+    if (xOf(items[mid]) < x) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
+/// First index in [items] (sorted by [xOf], non-decreasing) whose x is
+/// `> x`.
+int upperBoundByX<T>(List<T> items, double Function(T item) xOf, double x) {
+  var lo = 0, hi = items.length;
+  while (lo < hi) {
+    final mid = (lo + hi) >> 1;
+    if (xOf(items[mid]) <= x) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}
+
+double _dx(Offset o) => o.dx;
+
+int _anchorLowerBound(List<Offset> anchors, double x) =>
+    lowerBoundByX(anchors, _dx, x);
+
+int _anchorUpperBound(List<Offset> anchors, double x) =>
+    upperBoundByX(anchors, _dx, x);
+
+/// Whether [items] are in non-decreasing x order.
+bool sortedByX<T>(List<T> items, double Function(T item) xOf) {
+  for (var i = 1; i < items.length; i++) {
+    if (xOf(items[i]) < xOf(items[i - 1])) return false;
+  }
+  return true;
 }
 
 /// Width of the label's count chip around a number [textWidth] wide:
