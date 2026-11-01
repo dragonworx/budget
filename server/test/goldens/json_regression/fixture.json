@@ -1,0 +1,3285 @@
+[
+ {
+  "step": "create stream A",
+  "request": "POST /api/streams",
+  "status": 201,
+  "json": {
+   "id": "id1",
+   "ownerId": "id2",
+   "currencyScale": 100,
+   "name": "Everyday",
+   "seedBalance": "1500.25",
+   "seedDate": "2026-01-01",
+   "lossThreshold": "200",
+   "displayOrder": 0,
+   "eventOrder": [],
+   "version": 1,
+   "hasLoan": false,
+   "role": "owner",
+   "shared": false
+  }
+ },
+ {
+  "step": "create stream B",
+  "request": "POST /api/streams",
+  "status": 201,
+  "json": {
+   "id": "id3",
+   "ownerId": "id2",
+   "currencyScale": 100,
+   "name": "Savings",
+   "seedBalance": "0",
+   "seedDate": "2026-01-01",
+   "lossThreshold": "0",
+   "displayOrder": 0,
+   "eventOrder": [],
+   "version": 1,
+   "hasLoan": false,
+   "role": "owner",
+   "shared": false
+  }
+ },
+ {
+  "step": "create stream C",
+  "request": "POST /api/streams",
+  "status": 201,
+  "json": {
+   "id": "id4",
+   "ownerId": "id2",
+   "currencyScale": 100,
+   "name": "Home",
+   "seedBalance": "0",
+   "seedDate": "2027-01-01",
+   "lossThreshold": "0",
+   "displayOrder": 0,
+   "eventOrder": [],
+   "version": 1,
+   "hasLoan": false,
+   "role": "owner",
+   "shared": false
+  }
+ },
+ {
+  "step": "once event",
+  "request": "POST /api/streams/id1/events",
+  "status": 201,
+  "json": {
+   "id": "id5",
+   "streamId": "id1",
+   "name": "Car service",
+   "direction": "debit",
+   "amount": "1250.5",
+   "startDate": "2026-02-03",
+   "recurrenceMode": "once",
+   "interval": null,
+   "unit": null,
+   "frequency": {
+    "rule": "once",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "never",
+   "endDate": null,
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#3D6FD8",
+   "categoryId": "id6",
+   "categoryHidden": false,
+   "version": 1,
+   "kind": "standard",
+   "loan": null,
+   "overrides": []
+  }
+ },
+ {
+  "step": "monthly counted",
+  "request": "POST /api/streams/id1/events",
+  "status": 201,
+  "json": {
+   "id": "id7",
+   "streamId": "id1",
+   "name": "Rent",
+   "direction": "debit",
+   "amount": "1200",
+   "startDate": "2026-01-15",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "count",
+   "endDate": null,
+   "occurrenceCount": 12,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#9250C8",
+   "categoryId": "id8",
+   "categoryHidden": false,
+   "version": 1,
+   "kind": "standard",
+   "loan": null,
+   "overrides": []
+  }
+ },
+ {
+  "step": "weekly days",
+  "request": "POST /api/streams/id1/events",
+  "status": 201,
+  "json": {
+   "id": "id9",
+   "streamId": "id1",
+   "name": "Coffee",
+   "direction": "debit",
+   "amount": "4.5",
+   "startDate": "2026-01-05",
+   "recurrenceMode": "every",
+   "interval": 2,
+   "unit": "weeks",
+   "frequency": {
+    "rule": "every_n_weeks",
+    "interval": 2,
+    "days": [
+     1,
+     3
+    ]
+   },
+   "days": [
+    1,
+    3
+   ],
+   "endMode": "until_date",
+   "endDate": "2026-12-31",
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#B36A12",
+   "categoryId": "id10",
+   "categoryHidden": false,
+   "version": 1,
+   "kind": "standard",
+   "loan": null,
+   "overrides": []
+  }
+ },
+ {
+  "step": "legacy cadence",
+  "request": "POST /api/streams/id1/events",
+  "status": 201,
+  "json": {
+   "id": "id11",
+   "streamId": "id1",
+   "name": "Salary",
+   "direction": "credit",
+   "amount": "2500.5",
+   "startDate": "2026-01-28",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "never",
+   "endDate": null,
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#2B8AA8",
+   "categoryId": "id12",
+   "categoryHidden": false,
+   "version": 1,
+   "kind": "standard",
+   "loan": null,
+   "overrides": []
+  }
+ },
+ {
+  "step": "transfer A to B",
+  "request": "POST /api/streams/id1/events",
+  "status": 201,
+  "json": {
+   "id": "id13",
+   "streamId": "id1",
+   "name": "To savings",
+   "direction": "debit",
+   "amount": "300",
+   "startDate": "2026-01-20",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "never",
+   "endDate": null,
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": {
+    "id": "id14",
+    "peerEventId": "id15",
+    "peerStreamId": "id3",
+    "peerStreamName": "Savings",
+    "peerReadable": true
+   },
+   "color": "#B8488E",
+   "categoryId": "id16",
+   "categoryHidden": false,
+   "version": 2,
+   "kind": "standard",
+   "loan": null,
+   "overrides": []
+  }
+ },
+ {
+  "step": "loan",
+  "request": "POST /api/streams/id4/events",
+  "status": 201,
+  "json": {
+   "id": "id17",
+   "streamId": "id4",
+   "name": "Home loan",
+   "direction": "debit",
+   "amount": "600000",
+   "startDate": "2027-01-15",
+   "recurrenceMode": "once",
+   "interval": null,
+   "unit": null,
+   "frequency": {
+    "rule": "once",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "never",
+   "endDate": null,
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#5B7A2A",
+   "categoryId": "id18",
+   "categoryHidden": false,
+   "version": 1,
+   "kind": "loan",
+   "loan": {
+    "v": 1,
+    "mode": "advanced",
+    "interestType": "reducing",
+    "termMonths": 360,
+    "repaymentFrequency": "monthly",
+    "firstRepaymentDate": "2027-02-15",
+    "chargeSchedule": "monthly",
+    "chargeDay": "anniversary",
+    "dayCount": "365",
+    "ratePeriods": [
+     {
+      "from": "2027-01-15",
+      "ratePct": "5.89",
+      "type": "fixed",
+      "interestOnly": false,
+      "offsetApplies": false
+     }
+    ]
+   },
+   "offsetStreamIds": [],
+   "overrides": []
+  }
+ },
+ {
+  "step": "override",
+  "request": "PUT /api/events/id7/overrides/2026-03-15",
+  "status": 200,
+  "json": {
+   "id": "id7",
+   "streamId": "id1",
+   "name": "Rent",
+   "direction": "debit",
+   "amount": "1200",
+   "startDate": "2026-01-15",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "count",
+   "endDate": null,
+   "occurrenceCount": 12,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#9250C8",
+   "categoryId": "id8",
+   "categoryHidden": false,
+   "version": 2,
+   "kind": "standard",
+   "loan": null,
+   "overrides": [
+    {
+     "date": "2026-03-15",
+     "direction": "debit",
+     "amount": "1300.1"
+    }
+   ]
+  }
+ },
+ {
+  "step": "transfer override",
+  "request": "PUT /api/events/id13/overrides/2026-02-20",
+  "status": 200,
+  "json": {
+   "id": "id13",
+   "streamId": "id1",
+   "name": "To savings",
+   "direction": "debit",
+   "amount": "300",
+   "startDate": "2026-01-20",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "never",
+   "endDate": null,
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": {
+    "id": "id14",
+    "peerEventId": "id15",
+    "peerStreamId": "id3",
+    "peerStreamName": "Savings",
+    "peerReadable": true
+   },
+   "color": "#B8488E",
+   "categoryId": "id16",
+   "categoryHidden": false,
+   "version": 3,
+   "kind": "standard",
+   "loan": null,
+   "overrides": [
+    {
+     "date": "2026-02-20",
+     "direction": "debit",
+     "amount": "450"
+    }
+   ]
+  }
+ },
+ {
+  "step": "skip",
+  "request": "PUT /api/events/id9/skips/2026-01-07",
+  "status": 200,
+  "json": {
+   "eventId": "id9",
+   "date": "2026-01-07",
+   "skipped": true
+  }
+ },
+ {
+  "step": "patch amount",
+  "request": "PATCH /api/events/id5",
+  "status": 200,
+  "json": {
+   "id": "id5",
+   "streamId": "id1",
+   "name": "Car service",
+   "direction": "debit",
+   "amount": "1300",
+   "startDate": "2026-02-03",
+   "recurrenceMode": "once",
+   "interval": null,
+   "unit": null,
+   "frequency": {
+    "rule": "once",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "never",
+   "endDate": null,
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#3D6FD8",
+   "categoryId": "id6",
+   "categoryHidden": false,
+   "version": 2,
+   "kind": "standard",
+   "loan": null,
+   "overrides": []
+  }
+ },
+ {
+  "step": "patch count",
+  "request": "PATCH /api/events/id7",
+  "status": 200,
+  "json": {
+   "id": "id7",
+   "streamId": "id1",
+   "name": "Rent",
+   "direction": "debit",
+   "amount": "1200",
+   "startDate": "2026-01-15",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "count",
+   "endDate": null,
+   "occurrenceCount": 10,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#9250C8",
+   "categoryId": "id8",
+   "categoryHidden": false,
+   "version": 3,
+   "kind": "standard",
+   "loan": null,
+   "overrides": [
+    {
+     "date": "2026-03-15",
+     "direction": "debit",
+     "amount": "1300.1"
+    }
+   ]
+  }
+ },
+ {
+  "step": "patch interval",
+  "request": "PATCH /api/events/id9",
+  "status": 200,
+  "json": {
+   "id": "id9",
+   "streamId": "id1",
+   "name": "Coffee",
+   "direction": "debit",
+   "amount": "4.5",
+   "startDate": "2026-01-05",
+   "recurrenceMode": "every",
+   "interval": 3,
+   "unit": "weeks",
+   "frequency": {
+    "rule": "every_n_weeks",
+    "interval": 3,
+    "days": [
+     1,
+     3
+    ]
+   },
+   "days": [
+    1,
+    3
+   ],
+   "endMode": "until_date",
+   "endDate": "2026-12-31",
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#B36A12",
+   "categoryId": "id10",
+   "categoryHidden": false,
+   "version": 2,
+   "kind": "standard",
+   "loan": null,
+   "overrides": []
+  }
+ },
+ {
+  "step": "patch transfer amount",
+  "request": "PATCH /api/events/id13",
+  "status": 200,
+  "json": {
+   "id": "id13",
+   "streamId": "id1",
+   "name": "To savings",
+   "direction": "debit",
+   "amount": "320",
+   "startDate": "2026-01-20",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "never",
+   "endDate": null,
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": {
+    "id": "id14",
+    "peerEventId": "id15",
+    "peerStreamId": "id3",
+    "peerStreamName": "Savings",
+    "peerReadable": true
+   },
+   "color": "#B8488E",
+   "categoryId": "id16",
+   "categoryHidden": false,
+   "version": 4,
+   "kind": "standard",
+   "loan": null,
+   "overrides": [
+    {
+     "date": "2026-02-20",
+     "direction": "debit",
+     "amount": "450"
+    }
+   ]
+  }
+ },
+ {
+  "step": "split",
+  "request": "POST /api/events/id7/split",
+  "status": 200,
+  "json": {
+   "id": "id7",
+   "streamId": "id1",
+   "name": "Rent",
+   "direction": "debit",
+   "amount": "1200",
+   "startDate": "2026-01-15",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "until_date",
+   "endDate": "2026-06-14",
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#9250C8",
+   "categoryId": "id8",
+   "categoryHidden": false,
+   "version": 4,
+   "kind": "standard",
+   "loan": null,
+   "overrides": [
+    {
+     "date": "2026-03-15",
+     "direction": "debit",
+     "amount": "1300.1"
+    }
+   ],
+   "original": {
+    "id": "id7",
+    "streamId": "id1",
+    "name": "Rent",
+    "direction": "debit",
+    "amount": "1200",
+    "startDate": "2026-01-15",
+    "recurrenceMode": "every",
+    "interval": 1,
+    "unit": "months",
+    "frequency": {
+     "rule": "monthly",
+     "interval": 1,
+     "days": []
+    },
+    "days": [],
+    "endMode": "until_date",
+    "endDate": "2026-06-14",
+    "occurrenceCount": null,
+    "enabled": true,
+    "createdAt": "<ts>",
+    "transfer": null,
+    "color": "#9250C8",
+    "categoryId": "id8",
+    "categoryHidden": false,
+    "version": 4,
+    "kind": "standard",
+    "loan": null,
+    "overrides": [
+     {
+      "date": "2026-03-15",
+      "direction": "debit",
+      "amount": "1300.1"
+     }
+    ]
+   },
+   "created": {
+    "id": "id19",
+    "streamId": "id1",
+    "name": "Rent",
+    "direction": "debit",
+    "amount": "1250",
+    "startDate": "2026-06-15",
+    "recurrenceMode": "every",
+    "interval": 1,
+    "unit": "months",
+    "frequency": {
+     "rule": "monthly",
+     "interval": 1,
+     "days": []
+    },
+    "days": [],
+    "endMode": "count",
+    "endDate": null,
+    "occurrenceCount": 5,
+    "enabled": true,
+    "createdAt": "<ts>",
+    "transfer": null,
+    "color": "#9250C8",
+    "categoryId": "id8",
+    "categoryHidden": false,
+    "version": 1,
+    "kind": "standard",
+    "loan": null,
+    "overrides": []
+   }
+  }
+ },
+ {
+  "step": "patch stream",
+  "request": "PATCH /api/streams/id1",
+  "status": 200,
+  "json": {
+   "id": "id1",
+   "ownerId": "id2",
+   "currencyScale": 100,
+   "name": "Everyday",
+   "seedBalance": "1600",
+   "seedDate": "2026-01-01",
+   "lossThreshold": "-50.5",
+   "displayOrder": 0,
+   "eventOrder": [
+    "id5",
+    "id7",
+    "id19",
+    "id9",
+    "id11",
+    "id13"
+   ],
+   "version": 9,
+   "hasLoan": false
+  }
+ },
+ {
+  "step": "scenario",
+  "request": "POST /api/streams/id1/scenarios",
+  "status": 201,
+  "json": {
+   "id": "id20",
+   "streamId": "id1",
+   "name": "Holiday",
+   "colorIndex": 0,
+   "included": true,
+   "request": {
+    "mode": "onDate",
+    "unit": "weeks",
+    "endDate": "2026-09-01",
+    "interval": 1,
+    "solveFor": "amount",
+    "startDate": "2026-03-01",
+    "targetBalance": "5000"
+   },
+   "createdAt": "<ts>",
+   "version": 1
+  }
+ },
+ {
+  "step": "list streams",
+  "request": "GET /api/streams",
+  "status": 200,
+  "json": {
+   "streams": [
+    {
+     "id": "id1",
+     "ownerId": "id2",
+     "currencyScale": 100,
+     "name": "Everyday",
+     "seedBalance": "1600",
+     "seedDate": "2026-01-01",
+     "lossThreshold": "-50.5",
+     "displayOrder": 0,
+     "eventOrder": [
+      "id5",
+      "id7",
+      "id19",
+      "id9",
+      "id11",
+      "id13"
+     ],
+     "version": 9,
+     "hasLoan": false,
+     "role": "owner",
+     "shared": false,
+     "owner": {
+      "id": "id2",
+      "email": "owner@jsonreg.test",
+      "name": "Test Person",
+      "pictureUrl": "https://example.com/p.png"
+     }
+    },
+    {
+     "id": "id4",
+     "ownerId": "id2",
+     "currencyScale": 100,
+     "name": "Home",
+     "seedBalance": "0",
+     "seedDate": "2027-01-01",
+     "lossThreshold": "0",
+     "displayOrder": 0,
+     "eventOrder": [
+      "id17"
+     ],
+     "version": 2,
+     "hasLoan": true,
+     "role": "owner",
+     "shared": false,
+     "owner": {
+      "id": "id2",
+      "email": "owner@jsonreg.test",
+      "name": "Test Person",
+      "pictureUrl": "https://example.com/p.png"
+     }
+    },
+    {
+     "id": "id3",
+     "ownerId": "id2",
+     "currencyScale": 100,
+     "name": "Savings",
+     "seedBalance": "0",
+     "seedDate": "2026-01-01",
+     "lossThreshold": "0",
+     "displayOrder": 0,
+     "eventOrder": [
+      "id15"
+     ],
+     "version": 2,
+     "hasLoan": false,
+     "role": "owner",
+     "shared": false,
+     "owner": {
+      "id": "id2",
+      "email": "owner@jsonreg.test",
+      "name": "Test Person",
+      "pictureUrl": "https://example.com/p.png"
+     }
+    }
+   ],
+   "lastStreamId": null
+  }
+ },
+ {
+  "step": "get stream",
+  "request": "GET /api/streams/id1",
+  "status": 200,
+  "json": {
+   "id": "id1",
+   "ownerId": "id2",
+   "currencyScale": 100,
+   "name": "Everyday",
+   "seedBalance": "1600",
+   "seedDate": "2026-01-01",
+   "lossThreshold": "-50.5",
+   "displayOrder": 0,
+   "eventOrder": [
+    "id5",
+    "id7",
+    "id19",
+    "id9",
+    "id11",
+    "id13"
+   ],
+   "version": 9,
+   "hasLoan": false,
+   "role": "owner",
+   "shared": false
+  }
+ },
+ {
+  "step": "list events",
+  "request": "GET /api/streams/id1/events",
+  "status": 200,
+  "json": {
+   "events": [
+    {
+     "id": "id5",
+     "streamId": "id1",
+     "name": "Car service",
+     "direction": "debit",
+     "amount": "1300",
+     "startDate": "2026-02-03",
+     "recurrenceMode": "once",
+     "interval": null,
+     "unit": null,
+     "frequency": {
+      "rule": "once",
+      "interval": 1,
+      "days": []
+     },
+     "days": [],
+     "endMode": "never",
+     "endDate": null,
+     "occurrenceCount": null,
+     "enabled": true,
+     "createdAt": "<ts>",
+     "transfer": null,
+     "color": "#3D6FD8",
+     "categoryId": "id6",
+     "categoryHidden": false,
+     "version": 2,
+     "kind": "standard",
+     "loan": null,
+     "overrides": []
+    },
+    {
+     "id": "id7",
+     "streamId": "id1",
+     "name": "Rent",
+     "direction": "debit",
+     "amount": "1200",
+     "startDate": "2026-01-15",
+     "recurrenceMode": "every",
+     "interval": 1,
+     "unit": "months",
+     "frequency": {
+      "rule": "monthly",
+      "interval": 1,
+      "days": []
+     },
+     "days": [],
+     "endMode": "until_date",
+     "endDate": "2026-06-14",
+     "occurrenceCount": null,
+     "enabled": true,
+     "createdAt": "<ts>",
+     "transfer": null,
+     "color": "#9250C8",
+     "categoryId": "id8",
+     "categoryHidden": false,
+     "version": 4,
+     "kind": "standard",
+     "loan": null,
+     "overrides": [
+      {
+       "date": "2026-03-15",
+       "direction": "debit",
+       "amount": "1300.1"
+      }
+     ]
+    },
+    {
+     "id": "id9",
+     "streamId": "id1",
+     "name": "Coffee",
+     "direction": "debit",
+     "amount": "4.5",
+     "startDate": "2026-01-05",
+     "recurrenceMode": "every",
+     "interval": 3,
+     "unit": "weeks",
+     "frequency": {
+      "rule": "every_n_weeks",
+      "interval": 3,
+      "days": [
+       1,
+       3
+      ]
+     },
+     "days": [
+      1,
+      3
+     ],
+     "endMode": "until_date",
+     "endDate": "2026-12-31",
+     "occurrenceCount": null,
+     "enabled": true,
+     "createdAt": "<ts>",
+     "transfer": null,
+     "color": "#B36A12",
+     "categoryId": "id10",
+     "categoryHidden": false,
+     "version": 2,
+     "kind": "standard",
+     "loan": null,
+     "overrides": []
+    },
+    {
+     "id": "id11",
+     "streamId": "id1",
+     "name": "Salary",
+     "direction": "credit",
+     "amount": "2500.5",
+     "startDate": "2026-01-28",
+     "recurrenceMode": "every",
+     "interval": 1,
+     "unit": "months",
+     "frequency": {
+      "rule": "monthly",
+      "interval": 1,
+      "days": []
+     },
+     "days": [],
+     "endMode": "never",
+     "endDate": null,
+     "occurrenceCount": null,
+     "enabled": true,
+     "createdAt": "<ts>",
+     "transfer": null,
+     "color": "#2B8AA8",
+     "categoryId": "id12",
+     "categoryHidden": false,
+     "version": 1,
+     "kind": "standard",
+     "loan": null,
+     "overrides": []
+    },
+    {
+     "id": "id13",
+     "streamId": "id1",
+     "name": "To savings",
+     "direction": "debit",
+     "amount": "320",
+     "startDate": "2026-01-20",
+     "recurrenceMode": "every",
+     "interval": 1,
+     "unit": "months",
+     "frequency": {
+      "rule": "monthly",
+      "interval": 1,
+      "days": []
+     },
+     "days": [],
+     "endMode": "never",
+     "endDate": null,
+     "occurrenceCount": null,
+     "enabled": true,
+     "createdAt": "<ts>",
+     "transfer": {
+      "id": "id14",
+      "peerEventId": "id15",
+      "peerStreamId": "id3",
+      "peerStreamName": "Savings",
+      "peerReadable": true
+     },
+     "color": "#B8488E",
+     "categoryId": "id16",
+     "categoryHidden": false,
+     "version": 4,
+     "kind": "standard",
+     "loan": null,
+     "overrides": [
+      {
+       "date": "2026-02-20",
+       "direction": "debit",
+       "amount": "450"
+      }
+     ]
+    },
+    {
+     "id": "id19",
+     "streamId": "id1",
+     "name": "Rent",
+     "direction": "debit",
+     "amount": "1250",
+     "startDate": "2026-06-15",
+     "recurrenceMode": "every",
+     "interval": 1,
+     "unit": "months",
+     "frequency": {
+      "rule": "monthly",
+      "interval": 1,
+      "days": []
+     },
+     "days": [],
+     "endMode": "count",
+     "endDate": null,
+     "occurrenceCount": 5,
+     "enabled": true,
+     "createdAt": "<ts>",
+     "transfer": null,
+     "color": "#9250C8",
+     "categoryId": "id8",
+     "categoryHidden": false,
+     "version": 1,
+     "kind": "standard",
+     "loan": null,
+     "overrides": []
+    }
+   ]
+  }
+ },
+ {
+  "step": "get stream",
+  "request": "GET /api/streams/id3",
+  "status": 200,
+  "json": {
+   "id": "id3",
+   "ownerId": "id2",
+   "currencyScale": 100,
+   "name": "Savings",
+   "seedBalance": "0",
+   "seedDate": "2026-01-01",
+   "lossThreshold": "0",
+   "displayOrder": 0,
+   "eventOrder": [
+    "id15"
+   ],
+   "version": 2,
+   "hasLoan": false,
+   "role": "owner",
+   "shared": false
+  }
+ },
+ {
+  "step": "list events",
+  "request": "GET /api/streams/id3/events",
+  "status": 200,
+  "json": {
+   "events": [
+    {
+     "id": "id15",
+     "streamId": "id3",
+     "name": "To savings",
+     "direction": "credit",
+     "amount": "320",
+     "startDate": "2026-01-20",
+     "recurrenceMode": "every",
+     "interval": 1,
+     "unit": "months",
+     "frequency": {
+      "rule": "monthly",
+      "interval": 1,
+      "days": []
+     },
+     "days": [],
+     "endMode": "never",
+     "endDate": null,
+     "occurrenceCount": null,
+     "enabled": true,
+     "createdAt": "<ts>",
+     "transfer": {
+      "id": "id14",
+      "peerEventId": "id13",
+      "peerStreamId": "id1",
+      "peerStreamName": "Everyday",
+      "peerReadable": true
+     },
+     "color": "#B8488E",
+     "categoryId": "id16",
+     "categoryHidden": false,
+     "version": 3,
+     "kind": "standard",
+     "loan": null,
+     "overrides": [
+      {
+       "date": "2026-02-20",
+       "direction": "credit",
+       "amount": "450"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "step": "get stream",
+  "request": "GET /api/streams/id4",
+  "status": 200,
+  "json": {
+   "id": "id4",
+   "ownerId": "id2",
+   "currencyScale": 100,
+   "name": "Home",
+   "seedBalance": "0",
+   "seedDate": "2027-01-01",
+   "lossThreshold": "0",
+   "displayOrder": 0,
+   "eventOrder": [
+    "id17"
+   ],
+   "version": 2,
+   "hasLoan": true,
+   "role": "owner",
+   "shared": false
+  }
+ },
+ {
+  "step": "list events",
+  "request": "GET /api/streams/id4/events",
+  "status": 200,
+  "json": {
+   "events": [
+    {
+     "id": "id17",
+     "streamId": "id4",
+     "name": "Home loan",
+     "direction": "debit",
+     "amount": "600000",
+     "startDate": "2027-01-15",
+     "recurrenceMode": "once",
+     "interval": null,
+     "unit": null,
+     "frequency": {
+      "rule": "once",
+      "interval": 1,
+      "days": []
+     },
+     "days": [],
+     "endMode": "never",
+     "endDate": null,
+     "occurrenceCount": null,
+     "enabled": true,
+     "createdAt": "<ts>",
+     "transfer": null,
+     "color": "#5B7A2A",
+     "categoryId": "id18",
+     "categoryHidden": false,
+     "version": 1,
+     "kind": "loan",
+     "loan": {
+      "v": 1,
+      "mode": "advanced",
+      "interestType": "reducing",
+      "termMonths": 360,
+      "repaymentFrequency": "monthly",
+      "firstRepaymentDate": "2027-02-15",
+      "chargeSchedule": "monthly",
+      "chargeDay": "anniversary",
+      "dayCount": "365",
+      "ratePeriods": [
+       {
+        "from": "2027-01-15",
+        "ratePct": "5.89",
+        "type": "fixed",
+        "interestOnly": false,
+        "offsetApplies": false
+       }
+      ]
+     },
+     "offsetStreamIds": [],
+     "overrides": []
+    }
+   ]
+  }
+ },
+ {
+  "step": "get event",
+  "request": "GET /api/events/id5",
+  "status": 200,
+  "json": {
+   "id": "id5",
+   "streamId": "id1",
+   "name": "Car service",
+   "direction": "debit",
+   "amount": "1300",
+   "startDate": "2026-02-03",
+   "recurrenceMode": "once",
+   "interval": null,
+   "unit": null,
+   "frequency": {
+    "rule": "once",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "never",
+   "endDate": null,
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#3D6FD8",
+   "categoryId": "id6",
+   "categoryHidden": false,
+   "version": 2,
+   "kind": "standard",
+   "loan": null,
+   "overrides": []
+  }
+ },
+ {
+  "step": "get event",
+  "request": "GET /api/events/id7",
+  "status": 200,
+  "json": {
+   "id": "id7",
+   "streamId": "id1",
+   "name": "Rent",
+   "direction": "debit",
+   "amount": "1200",
+   "startDate": "2026-01-15",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "until_date",
+   "endDate": "2026-06-14",
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#9250C8",
+   "categoryId": "id8",
+   "categoryHidden": false,
+   "version": 4,
+   "kind": "standard",
+   "loan": null,
+   "overrides": [
+    {
+     "date": "2026-03-15",
+     "direction": "debit",
+     "amount": "1300.1"
+    }
+   ]
+  }
+ },
+ {
+  "step": "get event",
+  "request": "GET /api/events/id9",
+  "status": 200,
+  "json": {
+   "id": "id9",
+   "streamId": "id1",
+   "name": "Coffee",
+   "direction": "debit",
+   "amount": "4.5",
+   "startDate": "2026-01-05",
+   "recurrenceMode": "every",
+   "interval": 3,
+   "unit": "weeks",
+   "frequency": {
+    "rule": "every_n_weeks",
+    "interval": 3,
+    "days": [
+     1,
+     3
+    ]
+   },
+   "days": [
+    1,
+    3
+   ],
+   "endMode": "until_date",
+   "endDate": "2026-12-31",
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": null,
+   "color": "#B36A12",
+   "categoryId": "id10",
+   "categoryHidden": false,
+   "version": 2,
+   "kind": "standard",
+   "loan": null,
+   "overrides": []
+  }
+ },
+ {
+  "step": "get event",
+  "request": "GET /api/events/id13",
+  "status": 200,
+  "json": {
+   "id": "id13",
+   "streamId": "id1",
+   "name": "To savings",
+   "direction": "debit",
+   "amount": "320",
+   "startDate": "2026-01-20",
+   "recurrenceMode": "every",
+   "interval": 1,
+   "unit": "months",
+   "frequency": {
+    "rule": "monthly",
+    "interval": 1,
+    "days": []
+   },
+   "days": [],
+   "endMode": "never",
+   "endDate": null,
+   "occurrenceCount": null,
+   "enabled": true,
+   "createdAt": "<ts>",
+   "transfer": {
+    "id": "id14",
+    "peerEventId": "id15",
+    "peerStreamId": "id3",
+    "peerStreamName": "Savings",
+    "peerReadable": true
+   },
+   "color": "#B8488E",
+   "categoryId": "id16",
+   "categoryHidden": false,
+   "version": 4,
+   "kind": "standard",
+   "loan": null,
+   "overrides": [
+    {
+     "date": "2026-02-20",
+     "direction": "debit",
+     "amount": "450"
+    }
+   ]
+  }
+ },
+ {
+  "step": "scenarios",
+  "request": "GET /api/streams/id1/scenarios",
+  "status": 200,
+  "json": [
+   {
+    "id": "id20",
+    "streamId": "id1",
+    "name": "Holiday",
+    "colorIndex": 0,
+    "included": true,
+    "request": {
+     "mode": "onDate",
+     "unit": "weeks",
+     "endDate": "2026-09-01",
+     "interval": 1,
+     "solveFor": "amount",
+     "startDate": "2026-03-01",
+     "targetBalance": "5000"
+    },
+    "createdAt": "<ts>",
+    "version": 1
+   }
+  ]
+ },
+ {
+  "step": "balance",
+  "request": "GET /api/streams/id1/balance?from=2026-01-01&to=2026-12-31",
+  "status": 200,
+  "json": {
+   "points": [
+    {
+     "date": "2026-01-01",
+     "closingBalance": "1600"
+    },
+    {
+     "date": "2026-01-02",
+     "closingBalance": "1600"
+    },
+    {
+     "date": "2026-01-03",
+     "closingBalance": "1600"
+    },
+    {
+     "date": "2026-01-04",
+     "closingBalance": "1600"
+    },
+    {
+     "date": "2026-01-05",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-06",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-07",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-08",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-09",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-10",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-11",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-12",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-13",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-14",
+     "closingBalance": "1595.5"
+    },
+    {
+     "date": "2026-01-15",
+     "closingBalance": "395.5"
+    },
+    {
+     "date": "2026-01-16",
+     "closingBalance": "395.5"
+    },
+    {
+     "date": "2026-01-17",
+     "closingBalance": "395.5"
+    },
+    {
+     "date": "2026-01-18",
+     "closingBalance": "395.5"
+    },
+    {
+     "date": "2026-01-19",
+     "closingBalance": "395.5"
+    },
+    {
+     "date": "2026-01-20",
+     "closingBalance": "75.5"
+    },
+    {
+     "date": "2026-01-21",
+     "closingBalance": "75.5"
+    },
+    {
+     "date": "2026-01-22",
+     "closingBalance": "75.5"
+    },
+    {
+     "date": "2026-01-23",
+     "closingBalance": "75.5"
+    },
+    {
+     "date": "2026-01-24",
+     "closingBalance": "75.5"
+    },
+    {
+     "date": "2026-01-25",
+     "closingBalance": "75.5"
+    },
+    {
+     "date": "2026-01-26",
+     "closingBalance": "71"
+    },
+    {
+     "date": "2026-01-27",
+     "closingBalance": "71"
+    },
+    {
+     "date": "2026-01-28",
+     "closingBalance": "2567"
+    },
+    {
+     "date": "2026-01-29",
+     "closingBalance": "2567"
+    },
+    {
+     "date": "2026-01-30",
+     "closingBalance": "2567"
+    },
+    {
+     "date": "2026-01-31",
+     "closingBalance": "2567"
+    },
+    {
+     "date": "2026-02-01",
+     "closingBalance": "2567"
+    },
+    {
+     "date": "2026-02-02",
+     "closingBalance": "2567"
+    },
+    {
+     "date": "2026-02-03",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-04",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-05",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-06",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-07",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-08",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-09",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-10",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-11",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-12",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-13",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-14",
+     "closingBalance": "1267"
+    },
+    {
+     "date": "2026-02-15",
+     "closingBalance": "67"
+    },
+    {
+     "date": "2026-02-16",
+     "closingBalance": "62.5"
+    },
+    {
+     "date": "2026-02-17",
+     "closingBalance": "62.5"
+    },
+    {
+     "date": "2026-02-18",
+     "closingBalance": "58"
+    },
+    {
+     "date": "2026-02-19",
+     "closingBalance": "58"
+    },
+    {
+     "date": "2026-02-20",
+     "closingBalance": "-392"
+    },
+    {
+     "date": "2026-02-21",
+     "closingBalance": "-392"
+    },
+    {
+     "date": "2026-02-22",
+     "closingBalance": "-392"
+    },
+    {
+     "date": "2026-02-23",
+     "closingBalance": "-392"
+    },
+    {
+     "date": "2026-02-24",
+     "closingBalance": "-392"
+    },
+    {
+     "date": "2026-02-25",
+     "closingBalance": "-392"
+    },
+    {
+     "date": "2026-02-26",
+     "closingBalance": "-392"
+    },
+    {
+     "date": "2026-02-27",
+     "closingBalance": "-392"
+    },
+    {
+     "date": "2026-02-28",
+     "closingBalance": "2108.5"
+    },
+    {
+     "date": "2026-03-01",
+     "closingBalance": "2108.5"
+    },
+    {
+     "date": "2026-03-02",
+     "closingBalance": "2108.5"
+    },
+    {
+     "date": "2026-03-03",
+     "closingBalance": "2108.5"
+    },
+    {
+     "date": "2026-03-04",
+     "closingBalance": "2108.5"
+    },
+    {
+     "date": "2026-03-05",
+     "closingBalance": "2108.5"
+    },
+    {
+     "date": "2026-03-06",
+     "closingBalance": "2108.5"
+    },
+    {
+     "date": "2026-03-07",
+     "closingBalance": "2108.5"
+    },
+    {
+     "date": "2026-03-08",
+     "closingBalance": "2108.5"
+    },
+    {
+     "date": "2026-03-09",
+     "closingBalance": "2104"
+    },
+    {
+     "date": "2026-03-10",
+     "closingBalance": "2104"
+    },
+    {
+     "date": "2026-03-11",
+     "closingBalance": "2099.5"
+    },
+    {
+     "date": "2026-03-12",
+     "closingBalance": "2099.5"
+    },
+    {
+     "date": "2026-03-13",
+     "closingBalance": "2099.5"
+    },
+    {
+     "date": "2026-03-14",
+     "closingBalance": "2099.5"
+    },
+    {
+     "date": "2026-03-15",
+     "closingBalance": "799.4"
+    },
+    {
+     "date": "2026-03-16",
+     "closingBalance": "799.4"
+    },
+    {
+     "date": "2026-03-17",
+     "closingBalance": "799.4"
+    },
+    {
+     "date": "2026-03-18",
+     "closingBalance": "799.4"
+    },
+    {
+     "date": "2026-03-19",
+     "closingBalance": "799.4"
+    },
+    {
+     "date": "2026-03-20",
+     "closingBalance": "479.4"
+    },
+    {
+     "date": "2026-03-21",
+     "closingBalance": "479.4"
+    },
+    {
+     "date": "2026-03-22",
+     "closingBalance": "479.4"
+    },
+    {
+     "date": "2026-03-23",
+     "closingBalance": "479.4"
+    },
+    {
+     "date": "2026-03-24",
+     "closingBalance": "479.4"
+    },
+    {
+     "date": "2026-03-25",
+     "closingBalance": "479.4"
+    },
+    {
+     "date": "2026-03-26",
+     "closingBalance": "479.4"
+    },
+    {
+     "date": "2026-03-27",
+     "closingBalance": "479.4"
+    },
+    {
+     "date": "2026-03-28",
+     "closingBalance": "2979.9"
+    },
+    {
+     "date": "2026-03-29",
+     "closingBalance": "2979.9"
+    },
+    {
+     "date": "2026-03-30",
+     "closingBalance": "2975.4"
+    },
+    {
+     "date": "2026-03-31",
+     "closingBalance": "2975.4"
+    },
+    {
+     "date": "2026-04-01",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-02",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-03",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-04",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-05",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-06",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-07",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-08",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-09",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-10",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-11",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-12",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-13",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-14",
+     "closingBalance": "2970.9"
+    },
+    {
+     "date": "2026-04-15",
+     "closingBalance": "1770.9"
+    },
+    {
+     "date": "2026-04-16",
+     "closingBalance": "1770.9"
+    },
+    {
+     "date": "2026-04-17",
+     "closingBalance": "1770.9"
+    },
+    {
+     "date": "2026-04-18",
+     "closingBalance": "1770.9"
+    },
+    {
+     "date": "2026-04-19",
+     "closingBalance": "1770.9"
+    },
+    {
+     "date": "2026-04-20",
+     "closingBalance": "1446.4"
+    },
+    {
+     "date": "2026-04-21",
+     "closingBalance": "1446.4"
+    },
+    {
+     "date": "2026-04-22",
+     "closingBalance": "1441.9"
+    },
+    {
+     "date": "2026-04-23",
+     "closingBalance": "1441.9"
+    },
+    {
+     "date": "2026-04-24",
+     "closingBalance": "1441.9"
+    },
+    {
+     "date": "2026-04-25",
+     "closingBalance": "1441.9"
+    },
+    {
+     "date": "2026-04-26",
+     "closingBalance": "1441.9"
+    },
+    {
+     "date": "2026-04-27",
+     "closingBalance": "1441.9"
+    },
+    {
+     "date": "2026-04-28",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-04-29",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-04-30",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-01",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-02",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-03",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-04",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-05",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-06",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-07",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-08",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-09",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-10",
+     "closingBalance": "3942.4"
+    },
+    {
+     "date": "2026-05-11",
+     "closingBalance": "3937.9"
+    },
+    {
+     "date": "2026-05-12",
+     "closingBalance": "3937.9"
+    },
+    {
+     "date": "2026-05-13",
+     "closingBalance": "3933.4"
+    },
+    {
+     "date": "2026-05-14",
+     "closingBalance": "3933.4"
+    },
+    {
+     "date": "2026-05-15",
+     "closingBalance": "2733.4"
+    },
+    {
+     "date": "2026-05-16",
+     "closingBalance": "2733.4"
+    },
+    {
+     "date": "2026-05-17",
+     "closingBalance": "2733.4"
+    },
+    {
+     "date": "2026-05-18",
+     "closingBalance": "2733.4"
+    },
+    {
+     "date": "2026-05-19",
+     "closingBalance": "2733.4"
+    },
+    {
+     "date": "2026-05-20",
+     "closingBalance": "2413.4"
+    },
+    {
+     "date": "2026-05-21",
+     "closingBalance": "2413.4"
+    },
+    {
+     "date": "2026-05-22",
+     "closingBalance": "2413.4"
+    },
+    {
+     "date": "2026-05-23",
+     "closingBalance": "2413.4"
+    },
+    {
+     "date": "2026-05-24",
+     "closingBalance": "2413.4"
+    },
+    {
+     "date": "2026-05-25",
+     "closingBalance": "2413.4"
+    },
+    {
+     "date": "2026-05-26",
+     "closingBalance": "2413.4"
+    },
+    {
+     "date": "2026-05-27",
+     "closingBalance": "2413.4"
+    },
+    {
+     "date": "2026-05-28",
+     "closingBalance": "4913.9"
+    },
+    {
+     "date": "2026-05-29",
+     "closingBalance": "4913.9"
+    },
+    {
+     "date": "2026-05-30",
+     "closingBalance": "4913.9"
+    },
+    {
+     "date": "2026-05-31",
+     "closingBalance": "4913.9"
+    },
+    {
+     "date": "2026-06-01",
+     "closingBalance": "4909.4"
+    },
+    {
+     "date": "2026-06-02",
+     "closingBalance": "4909.4"
+    },
+    {
+     "date": "2026-06-03",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-04",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-05",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-06",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-07",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-08",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-09",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-10",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-11",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-12",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-13",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-14",
+     "closingBalance": "4904.9"
+    },
+    {
+     "date": "2026-06-15",
+     "closingBalance": "3654.9"
+    },
+    {
+     "date": "2026-06-16",
+     "closingBalance": "3654.9"
+    },
+    {
+     "date": "2026-06-17",
+     "closingBalance": "3654.9"
+    },
+    {
+     "date": "2026-06-18",
+     "closingBalance": "3654.9"
+    },
+    {
+     "date": "2026-06-19",
+     "closingBalance": "3654.9"
+    },
+    {
+     "date": "2026-06-20",
+     "closingBalance": "3334.9"
+    },
+    {
+     "date": "2026-06-21",
+     "closingBalance": "3334.9"
+    },
+    {
+     "date": "2026-06-22",
+     "closingBalance": "3330.4"
+    },
+    {
+     "date": "2026-06-23",
+     "closingBalance": "3330.4"
+    },
+    {
+     "date": "2026-06-24",
+     "closingBalance": "3325.9"
+    },
+    {
+     "date": "2026-06-25",
+     "closingBalance": "3325.9"
+    },
+    {
+     "date": "2026-06-26",
+     "closingBalance": "3325.9"
+    },
+    {
+     "date": "2026-06-27",
+     "closingBalance": "3325.9"
+    },
+    {
+     "date": "2026-06-28",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-06-29",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-06-30",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-01",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-02",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-03",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-04",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-05",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-06",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-07",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-08",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-09",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-10",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-11",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-12",
+     "closingBalance": "5826.4"
+    },
+    {
+     "date": "2026-07-13",
+     "closingBalance": "5821.9"
+    },
+    {
+     "date": "2026-07-14",
+     "closingBalance": "5821.9"
+    },
+    {
+     "date": "2026-07-15",
+     "closingBalance": "4567.4"
+    },
+    {
+     "date": "2026-07-16",
+     "closingBalance": "4567.4"
+    },
+    {
+     "date": "2026-07-17",
+     "closingBalance": "4567.4"
+    },
+    {
+     "date": "2026-07-18",
+     "closingBalance": "4567.4"
+    },
+    {
+     "date": "2026-07-19",
+     "closingBalance": "4567.4"
+    },
+    {
+     "date": "2026-07-20",
+     "closingBalance": "4247.4"
+    },
+    {
+     "date": "2026-07-21",
+     "closingBalance": "4247.4"
+    },
+    {
+     "date": "2026-07-22",
+     "closingBalance": "4247.4"
+    },
+    {
+     "date": "2026-07-23",
+     "closingBalance": "4247.4"
+    },
+    {
+     "date": "2026-07-24",
+     "closingBalance": "4247.4"
+    },
+    {
+     "date": "2026-07-25",
+     "closingBalance": "4247.4"
+    },
+    {
+     "date": "2026-07-26",
+     "closingBalance": "4247.4"
+    },
+    {
+     "date": "2026-07-27",
+     "closingBalance": "4247.4"
+    },
+    {
+     "date": "2026-07-28",
+     "closingBalance": "6747.9"
+    },
+    {
+     "date": "2026-07-29",
+     "closingBalance": "6747.9"
+    },
+    {
+     "date": "2026-07-30",
+     "closingBalance": "6747.9"
+    },
+    {
+     "date": "2026-07-31",
+     "closingBalance": "6747.9"
+    },
+    {
+     "date": "2026-08-01",
+     "closingBalance": "6747.9"
+    },
+    {
+     "date": "2026-08-02",
+     "closingBalance": "6747.9"
+    },
+    {
+     "date": "2026-08-03",
+     "closingBalance": "6743.4"
+    },
+    {
+     "date": "2026-08-04",
+     "closingBalance": "6743.4"
+    },
+    {
+     "date": "2026-08-05",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-06",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-07",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-08",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-09",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-10",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-11",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-12",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-13",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-14",
+     "closingBalance": "6738.9"
+    },
+    {
+     "date": "2026-08-15",
+     "closingBalance": "5488.9"
+    },
+    {
+     "date": "2026-08-16",
+     "closingBalance": "5488.9"
+    },
+    {
+     "date": "2026-08-17",
+     "closingBalance": "5488.9"
+    },
+    {
+     "date": "2026-08-18",
+     "closingBalance": "5488.9"
+    },
+    {
+     "date": "2026-08-19",
+     "closingBalance": "5488.9"
+    },
+    {
+     "date": "2026-08-20",
+     "closingBalance": "5168.9"
+    },
+    {
+     "date": "2026-08-21",
+     "closingBalance": "5168.9"
+    },
+    {
+     "date": "2026-08-22",
+     "closingBalance": "5168.9"
+    },
+    {
+     "date": "2026-08-23",
+     "closingBalance": "5168.9"
+    },
+    {
+     "date": "2026-08-24",
+     "closingBalance": "5164.4"
+    },
+    {
+     "date": "2026-08-25",
+     "closingBalance": "5164.4"
+    },
+    {
+     "date": "2026-08-26",
+     "closingBalance": "5159.9"
+    },
+    {
+     "date": "2026-08-27",
+     "closingBalance": "5159.9"
+    },
+    {
+     "date": "2026-08-28",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-08-29",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-08-30",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-08-31",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-01",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-02",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-03",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-04",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-05",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-06",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-07",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-08",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-09",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-10",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-11",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-12",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-13",
+     "closingBalance": "7660.4"
+    },
+    {
+     "date": "2026-09-14",
+     "closingBalance": "7655.9"
+    },
+    {
+     "date": "2026-09-15",
+     "closingBalance": "6405.9"
+    },
+    {
+     "date": "2026-09-16",
+     "closingBalance": "6401.4"
+    },
+    {
+     "date": "2026-09-17",
+     "closingBalance": "6401.4"
+    },
+    {
+     "date": "2026-09-18",
+     "closingBalance": "6401.4"
+    },
+    {
+     "date": "2026-09-19",
+     "closingBalance": "6401.4"
+    },
+    {
+     "date": "2026-09-20",
+     "closingBalance": "6081.4"
+    },
+    {
+     "date": "2026-09-21",
+     "closingBalance": "6081.4"
+    },
+    {
+     "date": "2026-09-22",
+     "closingBalance": "6081.4"
+    },
+    {
+     "date": "2026-09-23",
+     "closingBalance": "6081.4"
+    },
+    {
+     "date": "2026-09-24",
+     "closingBalance": "6081.4"
+    },
+    {
+     "date": "2026-09-25",
+     "closingBalance": "6081.4"
+    },
+    {
+     "date": "2026-09-26",
+     "closingBalance": "6081.4"
+    },
+    {
+     "date": "2026-09-27",
+     "closingBalance": "6081.4"
+    },
+    {
+     "date": "2026-09-28",
+     "closingBalance": "8581.9"
+    },
+    {
+     "date": "2026-09-29",
+     "closingBalance": "8581.9"
+    },
+    {
+     "date": "2026-09-30",
+     "closingBalance": "8581.9"
+    },
+    {
+     "date": "2026-10-01",
+     "closingBalance": "8581.9"
+    },
+    {
+     "date": "2026-10-02",
+     "closingBalance": "8581.9"
+    },
+    {
+     "date": "2026-10-03",
+     "closingBalance": "8581.9"
+    },
+    {
+     "date": "2026-10-04",
+     "closingBalance": "8581.9"
+    },
+    {
+     "date": "2026-10-05",
+     "closingBalance": "8577.4"
+    },
+    {
+     "date": "2026-10-06",
+     "closingBalance": "8577.4"
+    },
+    {
+     "date": "2026-10-07",
+     "closingBalance": "8572.9"
+    },
+    {
+     "date": "2026-10-08",
+     "closingBalance": "8572.9"
+    },
+    {
+     "date": "2026-10-09",
+     "closingBalance": "8572.9"
+    },
+    {
+     "date": "2026-10-10",
+     "closingBalance": "8572.9"
+    },
+    {
+     "date": "2026-10-11",
+     "closingBalance": "8572.9"
+    },
+    {
+     "date": "2026-10-12",
+     "closingBalance": "8572.9"
+    },
+    {
+     "date": "2026-10-13",
+     "closingBalance": "8572.9"
+    },
+    {
+     "date": "2026-10-14",
+     "closingBalance": "8572.9"
+    },
+    {
+     "date": "2026-10-15",
+     "closingBalance": "7322.9"
+    },
+    {
+     "date": "2026-10-16",
+     "closingBalance": "7322.9"
+    },
+    {
+     "date": "2026-10-17",
+     "closingBalance": "7322.9"
+    },
+    {
+     "date": "2026-10-18",
+     "closingBalance": "7322.9"
+    },
+    {
+     "date": "2026-10-19",
+     "closingBalance": "7322.9"
+    },
+    {
+     "date": "2026-10-20",
+     "closingBalance": "7002.9"
+    },
+    {
+     "date": "2026-10-21",
+     "closingBalance": "7002.9"
+    },
+    {
+     "date": "2026-10-22",
+     "closingBalance": "7002.9"
+    },
+    {
+     "date": "2026-10-23",
+     "closingBalance": "7002.9"
+    },
+    {
+     "date": "2026-10-24",
+     "closingBalance": "7002.9"
+    },
+    {
+     "date": "2026-10-25",
+     "closingBalance": "7002.9"
+    },
+    {
+     "date": "2026-10-26",
+     "closingBalance": "6998.4"
+    },
+    {
+     "date": "2026-10-27",
+     "closingBalance": "6998.4"
+    },
+    {
+     "date": "2026-10-28",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-10-29",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-10-30",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-10-31",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-01",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-02",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-03",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-04",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-05",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-06",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-07",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-08",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-09",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-10",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-11",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-12",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-13",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-14",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-15",
+     "closingBalance": "9494.4"
+    },
+    {
+     "date": "2026-11-16",
+     "closingBalance": "9489.9"
+    },
+    {
+     "date": "2026-11-17",
+     "closingBalance": "9489.9"
+    },
+    {
+     "date": "2026-11-18",
+     "closingBalance": "9485.4"
+    },
+    {
+     "date": "2026-11-19",
+     "closingBalance": "9485.4"
+    },
+    {
+     "date": "2026-11-20",
+     "closingBalance": "9165.4"
+    },
+    {
+     "date": "2026-11-21",
+     "closingBalance": "9165.4"
+    },
+    {
+     "date": "2026-11-22",
+     "closingBalance": "9165.4"
+    },
+    {
+     "date": "2026-11-23",
+     "closingBalance": "9165.4"
+    },
+    {
+     "date": "2026-11-24",
+     "closingBalance": "9165.4"
+    },
+    {
+     "date": "2026-11-25",
+     "closingBalance": "9165.4"
+    },
+    {
+     "date": "2026-11-26",
+     "closingBalance": "9165.4"
+    },
+    {
+     "date": "2026-11-27",
+     "closingBalance": "9165.4"
+    },
+    {
+     "date": "2026-11-28",
+     "closingBalance": "11665.9"
+    },
+    {
+     "date": "2026-11-29",
+     "closingBalance": "11665.9"
+    },
+    {
+     "date": "2026-11-30",
+     "closingBalance": "11665.9"
+    },
+    {
+     "date": "2026-12-01",
+     "closingBalance": "11665.9"
+    },
+    {
+     "date": "2026-12-02",
+     "closingBalance": "11665.9"
+    },
+    {
+     "date": "2026-12-03",
+     "closingBalance": "11665.9"
+    },
+    {
+     "date": "2026-12-04",
+     "closingBalance": "11665.9"
+    },
+    {
+     "date": "2026-12-05",
+     "closingBalance": "11665.9"
+    },
+    {
+     "date": "2026-12-06",
+     "closingBalance": "11665.9"
+    },
+    {
+     "date": "2026-12-07",
+     "closingBalance": "11661.4"
+    },
+    {
+     "date": "2026-12-08",
+     "closingBalance": "11661.4"
+    },
+    {
+     "date": "2026-12-09",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-10",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-11",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-12",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-13",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-14",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-15",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-16",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-17",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-18",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-19",
+     "closingBalance": "11656.9"
+    },
+    {
+     "date": "2026-12-20",
+     "closingBalance": "11336.9"
+    },
+    {
+     "date": "2026-12-21",
+     "closingBalance": "11336.9"
+    },
+    {
+     "date": "2026-12-22",
+     "closingBalance": "11336.9"
+    },
+    {
+     "date": "2026-12-23",
+     "closingBalance": "11336.9"
+    },
+    {
+     "date": "2026-12-24",
+     "closingBalance": "11336.9"
+    },
+    {
+     "date": "2026-12-25",
+     "closingBalance": "11336.9"
+    },
+    {
+     "date": "2026-12-26",
+     "closingBalance": "11336.9"
+    },
+    {
+     "date": "2026-12-27",
+     "closingBalance": "11336.9"
+    },
+    {
+     "date": "2026-12-28",
+     "closingBalance": "13832.9"
+    },
+    {
+     "date": "2026-12-29",
+     "closingBalance": "13832.9"
+    },
+    {
+     "date": "2026-12-30",
+     "closingBalance": "13828.4"
+    },
+    {
+     "date": "2026-12-31",
+     "closingBalance": "13828.4"
+    }
+   ],
+   "occurrences": [
+    {
+     "eventId": "id9",
+     "date": "2026-01-05",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-01-07",
+     "signedDelta": "-4.5",
+     "skipped": true
+    },
+    {
+     "eventId": "id7",
+     "date": "2026-01-15",
+     "signedDelta": "-1200",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-01-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-01-26",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-01-28",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-01-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id5",
+     "date": "2026-02-03",
+     "signedDelta": "-1300",
+     "skipped": false
+    },
+    {
+     "eventId": "id7",
+     "date": "2026-02-15",
+     "signedDelta": "-1200",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-02-16",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-02-18",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-02-20",
+     "signedDelta": "-450",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-02-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-03-09",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-03-11",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id7",
+     "date": "2026-03-15",
+     "signedDelta": "-1300.1",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-03-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-03-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-03-30",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-04-01",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id7",
+     "date": "2026-04-15",
+     "signedDelta": "-1200",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-04-20",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-04-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-04-22",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-04-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-05-11",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-05-13",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id7",
+     "date": "2026-05-15",
+     "signedDelta": "-1200",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-05-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-05-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-06-01",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-06-03",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id19",
+     "date": "2026-06-15",
+     "signedDelta": "-1250",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-06-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-06-22",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-06-24",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-06-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-07-13",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id19",
+     "date": "2026-07-15",
+     "signedDelta": "-1250",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-07-15",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-07-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-07-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-08-03",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-08-05",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id19",
+     "date": "2026-08-15",
+     "signedDelta": "-1250",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-08-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-08-24",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-08-26",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-08-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-09-14",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id19",
+     "date": "2026-09-15",
+     "signedDelta": "-1250",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-09-16",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-09-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-09-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-10-05",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-10-07",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id19",
+     "date": "2026-10-15",
+     "signedDelta": "-1250",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-10-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-10-26",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-10-28",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-10-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-11-16",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-11-18",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-11-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-11-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-12-07",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-12-09",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id13",
+     "date": "2026-12-20",
+     "signedDelta": "-320",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-12-28",
+     "signedDelta": "-4.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id11",
+     "date": "2026-12-28",
+     "signedDelta": "2500.5",
+     "skipped": false
+    },
+    {
+     "eventId": "id9",
+     "date": "2026-12-30",
+     "signedDelta": "-4.5",
+     "skipped": false
+    }
+   ]
+  }
+ }
+]
