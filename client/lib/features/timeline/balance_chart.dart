@@ -6090,7 +6090,10 @@ class _BalanceChartPainter extends CustomPainter {
       for (final r in rects) {
         path.addRect(r);
       }
-      canvas.drawPath(path, paint);
+      // Hard edges: a many-contour antialiased path is rasterised on the
+      // CPU by CanvasKit (seconds per frame on a phone); its columns are
+      // pixel-wide and its top edge sits under the line anyway.
+      canvas.drawPath(path, paint..isAntiAlias = false);
     }
 
     if (!debugSeriesFillDisabled) fillAll(split.safe, areaFill);
@@ -6531,8 +6534,16 @@ class _BalanceChartPainter extends CustomPainter {
       }
     }
 
+    // Coarse tiers: hard-edged fills (see `fillAll` in _paintSeries); the
+    // shapes there are bucket-wide rectangles.
+    final aa = env == null;
     if (collapse) {
-      canvas.drawPath(band, Paint()..color = const Color(0xFF4A6285));
+      canvas.drawPath(
+        band,
+        Paint()
+          ..color = const Color(0xFF4A6285)
+          ..isAntiAlias = aa,
+      );
     } else {
       final hid = highlightEventId;
       final hi = hid == null ? null : lanes.indexOf(hid);
@@ -6541,7 +6552,12 @@ class _BalanceChartPainter extends CustomPainter {
         if (path == null || (emphasise && li == hi)) continue;
         final c = lanes.lanes[li].color;
         final fill = emphasise ? c.withValues(alpha: c.a * 0.3) : c;
-        canvas.drawPath(path, Paint()..color = fill);
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = fill
+            ..isAntiAlias = aa,
+        );
         debugLanePaint?.call(lanes.lanes[li].id, fill, false);
       }
       if (emphasise) {
@@ -6573,7 +6589,12 @@ class _BalanceChartPainter extends CustomPainter {
         debugLanePaint?.call(lanes.lanes[hi].id, c.withValues(alpha: 1), true);
       }
     }
-    canvas.drawPath(loss, Paint()..color = AppTheme.debitColor);
+    canvas.drawPath(
+      loss,
+      Paint()
+        ..color = AppTheme.debitColor
+        ..isAntiAlias = aa,
+    );
 
     // Lane names and amount pills first: the balance line goes over them.
     final drawText = <void Function()>[];
@@ -6603,9 +6624,24 @@ class _BalanceChartPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 4.2,
     );
-    canvas.drawPath(halo, Paint()..color = outline);
-    canvas.drawPath(core, Paint()..color = _lineColor);
-    canvas.drawPath(thin, Paint()..color = _lineColor);
+    canvas.drawPath(
+      halo,
+      Paint()
+        ..color = outline
+        ..isAntiAlias = aa,
+    );
+    canvas.drawPath(
+      core,
+      Paint()
+        ..color = _lineColor
+        ..isAntiAlias = aa,
+    );
+    canvas.drawPath(
+      thin,
+      Paint()
+        ..color = _lineColor
+        ..isAntiAlias = aa,
+    );
   }
 
   void _layoutLaneTexts(

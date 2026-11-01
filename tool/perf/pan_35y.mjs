@@ -3,7 +3,7 @@
 //
 //   NODE_PATH=$(npm root -g) node tool/perf/pan_35y.mjs \
 //     [--profile=desk|mob6|mob4] [--app=http://127.0.0.1:8000] \
-//     [--stream='PERF 50k'] [--runs=1] [--shot=out.png]
+//     [--stream='PERF 50k'] [--runs=1] [--shot=out.png] [--cpuprofile=pan.cpuprofile]
 //
 // Run against a PERF_HUD profile build served with an API on a `_perf`
 // database seeded by server/tool/perf_seed.dart (dev login must be on):
@@ -208,9 +208,18 @@ const runs = +(args.runs || 1);
 const out = { profile: PROFILE, stream: STREAM, loadMs, runs: [] };
 for (let run = 0; run < runs; run++) {
   await resetAll();
+  if (args.cpuprofile && run === 0) {
+    await cdp.send('Profiler.enable');
+    await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
+    await cdp.send('Profiler.start');
+  }
   const panT0 = Date.now();
   const dragMs = await drag();
   await settle();
+  if (args.cpuprofile && run === 0) {
+    const { profile } = await cdp.send('Profiler.stop');
+    (await import('node:fs')).writeFileSync(args.cpuprofile, JSON.stringify(profile));
+  }
   const panSettledMs = Date.now() - panT0;
   const panPerf = await perf();
   const panBalance = summary(reqs);
