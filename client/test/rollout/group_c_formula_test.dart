@@ -300,6 +300,34 @@ void main() {
     expect(_step(tester, 'plus').onPressed, isNull);
   });
 
+  testWidgets('320 px: the focused formula box and its keys keep − / + '
+      'on its line (only the unit wraps)', (tester) async {
+    await _pump(
+      tester,
+      existing: _series(3, RecurrenceUnit.weeks),
+      size: const Size(320, 1600),
+    );
+    await tester.ensureVisible(_k('editor-interval'));
+    // enterText focuses the box (touch: the keys row shows) and keeps it.
+    await tester.enterText(_input('editor-interval'), r'$months / 6');
+    await tester.pumpAndSettle();
+    expect(_k('editor-interval-keys'), findsOneWidget);
+    final box = tester.getRect(_input('editor-interval'));
+    final minus = tester.getRect(_k('editor-interval-minus'));
+    final plus = tester.getRect(_k('editor-interval-plus'));
+    final every = tester.getRect(find.text('Every'));
+    expect(minus.right, lessThanOrEqualTo(box.left + 0.5));
+    expect(plus.left, greaterThanOrEqualTo(box.right - 0.5));
+    final outer = tester.getRect(_k('editor-interval'));
+    for (final r in [every, minus, plus]) {
+      expect(r.top, greaterThanOrEqualTo(outer.top));
+      expect(r.bottom, lessThanOrEqualTo(outer.bottom));
+    }
+    expect(plus.right, lessThanOrEqualTo(320));
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+  });
+
   for (final size in const [Size(700, 1600), Size(400, 1600)]) {
     testWidgets('widened interval box golden (${size.width})', (tester) async {
       await _pump(

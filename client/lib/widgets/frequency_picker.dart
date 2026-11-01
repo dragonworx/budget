@@ -76,6 +76,24 @@ class FrequencyPicker extends StatelessWidget {
     onIntervalChanged();
   }
 
+  /// The most the formula box may take (48..180): the row less "Every"
+  /// and − / + (48 each, their tap targets), so they stay on its line.
+  double _room(BuildContext context, double row) {
+    if (!row.isFinite) return 180;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: 'Every',
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final every = painter.width + 4;
+    painter.dispose();
+    return (row - every - 96).floorToDouble().clamp(48.0, 180.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -127,48 +145,51 @@ class FrequencyPicker extends StatelessWidget {
               : Padding(
                   padding: const EdgeInsets.only(top: 8),
                   // A Wrap, not a Row: with plain numbers it lays out the
-                  // same; a widened formula box keeps its width and the
-                  // "+ unit" part flows to the next line (320 px phones).
-                  child: Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text('Every', style: theme.textTheme.bodyMedium),
-                      const SizedBox(width: 4),
-                      step(
-                        Icons.remove_rounded,
-                        'Fewer',
-                        _n <= _min ? null : () => _set(_n - 1),
-                        'minus',
-                      ),
-                      FormulaField(
-                        key: ValueKey('$p-interval'),
-                        spec: intervalSpec(_min),
-                        scope: scope ?? VariableScope.empty,
-                        controller: interval,
-                        enabled: enabled,
-                        textAlign: TextAlign.center,
-                        legacyKeyboardType: TextInputType.number,
-                        legacyFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(2),
-                        ],
-                        dense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 12,
+                  // same; a widened formula box keeps "Every − box +" on
+                  // one line (its room, at most 180) and only the unit word
+                  // flows to the next line (320 px phones, touch keys).
+                  child: LayoutBuilder(
+                    builder: (context, box) => Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text('Every', style: theme.textTheme.bodyMedium),
+                        const SizedBox(width: 4),
+                        step(
+                          Icons.remove_rounded,
+                          'Fewer',
+                          _n <= _min ? null : () => _set(_n - 1),
+                          'minus',
                         ),
-                        previewInTooltip: true,
-                        growWidth: (48, 180),
-                        onChanged: (_) => onIntervalChanged(),
-                      ),
-                      step(
-                        Icons.add_rounded,
-                        'More',
-                        _n >= maxRuleInterval ? null : () => _set(_n + 1),
-                        'plus',
-                      ),
-                      const SizedBox(width: 6),
-                      Text(unit, style: theme.textTheme.bodyMedium),
-                    ],
+                        FormulaField(
+                          key: ValueKey('$p-interval'),
+                          spec: intervalSpec(_min),
+                          scope: scope ?? VariableScope.empty,
+                          controller: interval,
+                          enabled: enabled,
+                          textAlign: TextAlign.center,
+                          legacyKeyboardType: TextInputType.number,
+                          legacyFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(2),
+                          ],
+                          dense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
+                          previewInTooltip: true,
+                          growWidth: (48, _room(context, box.maxWidth)),
+                          onChanged: (_) => onIntervalChanged(),
+                        ),
+                        step(
+                          Icons.add_rounded,
+                          'More',
+                          _n >= maxRuleInterval ? null : () => _set(_n + 1),
+                          'plus',
+                        ),
+                        const SizedBox(width: 6),
+                        Text(unit, style: theme.textTheme.bodyMedium),
+                      ],
+                    ),
                   ),
                 ),
         ),
