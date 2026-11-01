@@ -396,4 +396,37 @@ void main() {
       expect(a.accrued, dec('6'));
     });
   });
+
+  group('formula keys (spec 010)', () {
+    test('carried through toJson, absent when unset', () {
+      final t = LoanTerms.fromJson(base(extra: {
+        'termYearsExpr': r'$years',
+        'termMonthsExpr': '0',
+        'chargeDayExpr': r'$payday',
+      }, periods: [
+        {'from': '2027-01-15', 'ratePct': '6.25', 'ratePctExpr': r'$rate'}
+      ])).withDefaults(start);
+      final j = t.toJson();
+      expect(j['termYearsExpr'], r'$years');
+      expect(j['termMonthsExpr'], '0');
+      expect(j['chargeDayExpr'], r'$payday');
+      expect((j['ratePeriods'] as List).single['ratePctExpr'], r'$rate');
+      expect(LoanTerms.fromJson(j).toJson(), j);
+      final plain = LoanTerms.fromJson(base()).withDefaults(start).toJson();
+      expect(plain.keys, isNot(contains('termYearsExpr')));
+      expect((plain['ratePeriods'] as List).single,
+          isNot(contains('ratePctExpr')));
+    });
+    test('must be 1 to 500 character strings', () {
+      expect(() => LoanTerms.fromJson(base(extra: {'termYearsExpr': 3})),
+          rejects('loan.termYearsExpr must be a formula'));
+      expect(() => LoanTerms.fromJson(base(extra: {'chargeDayExpr': ''})),
+          rejects('loan.chargeDayExpr'));
+      expect(
+          () => LoanTerms.fromJson(base(periods: [
+                {'from': '2027-01-15', 'ratePct': '6', 'ratePctExpr': 'x' * 501}
+              ])),
+          rejects('loan.ratePeriods[0].ratePctExpr'));
+    });
+  });
 }

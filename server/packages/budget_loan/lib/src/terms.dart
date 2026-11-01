@@ -97,6 +97,7 @@ class RatePeriod {
     this.interestOnly = false,
     this.offsetApplies = true,
     String? ratePctText,
+    this.ratePctExpr,
   }) : _text = ratePctText;
 
   /// Inclusive start (UTC date).
@@ -107,6 +108,9 @@ class RatePeriod {
   final bool offsetApplies;
   final String? _text;
 
+  /// The formula [ratePct] was resolved from (spec 010), carried as is.
+  final String? ratePctExpr;
+
   /// The rate as written (e.g. "6.40"), kept for round trips.
   String get ratePctText => _text ?? ratePct.toString();
 
@@ -116,6 +120,7 @@ class RatePeriod {
         'type': type.name,
         'interestOnly': interestOnly,
         'offsetApplies': offsetApplies,
+        if (ratePctExpr != null) 'ratePctExpr': ratePctExpr,
       };
 }
 
@@ -131,7 +136,16 @@ class LoanTerms {
     this.chargeDay = const AnniversaryChargeDay(),
     this.dayCount = DayCount.d365,
     required this.ratePeriods,
+    this.termYearsExpr,
+    this.termMonthsExpr,
+    this.chargeDayExpr,
   });
+
+  /// Formulas (spec 010) the API resolved [termMonths] (years * 12 +
+  /// months) and a day-of-month [chargeDay] from; carried as is.
+  final String? termYearsExpr;
+  final String? termMonthsExpr;
+  final String? chargeDayExpr;
 
   final LoanMode mode;
   final InterestType interestType;
@@ -160,6 +174,9 @@ class LoanTerms {
     'chargeDay',
     'dayCount',
     'ratePeriods',
+    'termYearsExpr',
+    'termMonthsExpr',
+    'chargeDayExpr',
   };
   static const _periodKeys = {
     'from',
@@ -167,7 +184,20 @@ class LoanTerms {
     'type',
     'interestOnly',
     'offsetApplies',
+    'ratePctExpr',
   };
+  static const maxExprLength = 500;
+
+  static String? _expr(Map<String, Object?> m, String key, String field) {
+    final v = m[key];
+    if (v == null) return null;
+    if (v is! String || v.isEmpty || v.length > maxExprLength) {
+      throw LoanFormatException(
+          '$field must be a formula of 1 to $maxExprLength characters');
+    }
+    return v;
+  }
+
   static final _ratePattern = RegExp(r'^\d{1,3}(\.\d{1,4})?$');
 
   /// Parses and checks the shape and every rule that needs no start date
@@ -293,6 +323,7 @@ class LoanTerms {
         type: type,
         interestOnly: io,
         offsetApplies: offset,
+        ratePctExpr: _expr(pm, 'ratePctExpr', '$f.ratePctExpr'),
       ));
     }
     return LoanTerms(
@@ -305,6 +336,9 @@ class LoanTerms {
       chargeDay: chargeDay,
       dayCount: dayCount,
       ratePeriods: List.unmodifiable(periods),
+      termYearsExpr: _expr(m, 'termYearsExpr', 'loan.termYearsExpr'),
+      termMonthsExpr: _expr(m, 'termMonthsExpr', 'loan.termMonthsExpr'),
+      chargeDayExpr: _expr(m, 'chargeDayExpr', 'loan.chargeDayExpr'),
     );
   }
 
@@ -407,6 +441,9 @@ class LoanTerms {
         chargeDay: chargeDay,
         dayCount: dayCount,
         ratePeriods: ratePeriods,
+        termYearsExpr: termYearsExpr,
+        termMonthsExpr: termMonthsExpr,
+        chargeDayExpr: chargeDayExpr,
       );
 
   /// Stored form: every field present (call [withDefaults] first so
@@ -424,6 +461,9 @@ class LoanTerms {
         'chargeDay': chargeDay?.json,
         'dayCount': dayCount.json,
         'ratePeriods': [for (final p in ratePeriods) p.toJson()],
+        if (termYearsExpr != null) 'termYearsExpr': termYearsExpr,
+        if (termMonthsExpr != null) 'termMonthsExpr': termMonthsExpr,
+        if (chargeDayExpr != null) 'chargeDayExpr': chargeDayExpr,
       };
 
   static T? _enum<T extends Enum>(
