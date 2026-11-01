@@ -3,9 +3,11 @@ import 'dart:ui' show Tristate;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:budget_client/widgets/formula/formula_cheat_sheet.dart';
 import 'package:budget_client/widgets/formula/formula_field.dart';
 
 import 'formula_support.dart';
@@ -476,5 +478,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(suggestions, findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('touch: the field and its help keep one semantics parent', (
+    tester,
+  ) async {
+    // On web the engine moves a node whose place among its siblings
+    // changes; moving the focused input blurs it. The touch error line
+    // under the keys used to swap the field and help nodes.
+    final handle = tester.ensureSemantics();
+    await pumpFormula(tester, touch: true, inDialog: true);
+    SemanticsNode help() =>
+        tester.getSemantics(find.byKey(const ValueKey('editor-amount-help')));
+    SemanticsNode field() => tester.getSemantics(find.byType(EditableText));
+    bool under(SemanticsNode n, SemanticsNode a) {
+      if (identical(n, a)) return true;
+      for (SemanticsNode? p = n.parent; p != null; p = p.parent) {
+        if (identical(p, a)) return true;
+      }
+      return false;
+    }
+
+    // The field's container (sort key 0) holds both, in every state.
+    SemanticsNode box() {
+      for (SemanticsNode? p = help().parent; p != null; p = p.parent) {
+        final k = p.sortKey;
+        if (k is OrdinalSortKey && k.name == formulaSortName && k.order == 0) {
+          return p;
+        }
+      }
+      throw StateError('no field container above the help button');
+    }
+
+    await typeText(tester, '1+');
+    expect(find.byKey(const ValueKey('editor-amount-error')), findsOneWidget);
+    final parent = box();
+    expect(under(field(), parent), isTrue);
+    await typeText(tester, r'1+$');
+    expect(suggestions, findsOneWidget);
+    expect(identical(box(), parent), isTrue);
+    expect(under(field(), parent), isTrue);
+    handle.dispose();
   });
 }

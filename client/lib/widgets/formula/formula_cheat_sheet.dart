@@ -1,5 +1,6 @@
 // The "Formulas" help popover: one constant shared with the docs.
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import '../../theme/app_theme.dart';
 
@@ -36,6 +37,10 @@ const formulaHelp = FormulaHelp(
 );
 
 /// The `?` suffix button and its popover.
+/// Sort-key group for a formula field and its help button (see
+/// FormulaField's build).
+const formulaSortName = 'formula-field';
+
 class FormulaHelpButton extends StatelessWidget {
   const FormulaHelpButton({
     super.key,
@@ -54,6 +59,14 @@ class FormulaHelpButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final small = theme.textTheme.bodySmall;
+    return Semantics(
+      container: true,
+      sortKey: const OrdinalSortKey(1, name: formulaSortName),
+      child: _anchor(context, theme, small),
+    );
+  }
+
+  Widget _anchor(BuildContext context, ThemeData theme, TextStyle? small) {
     return MenuAnchor(
       onOpen: () => onOpenChanged?.call(true),
       onClose: () => onOpenChanged?.call(false),

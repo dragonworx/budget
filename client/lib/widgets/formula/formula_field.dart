@@ -737,27 +737,35 @@ class _FormulaFieldState extends State<FormulaField> {
     );
 
     _markEntry();
+    // A fixed traversal order for the field and its help popover (an
+    // OverlayPortal, so a separate semantics node): without it the two swap
+    // as the touch error line comes and goes, and the web engine moves the
+    // focused input's DOM node, which blurs it.
     return CompositedTransformTarget(
       link: _link,
-      child: Column(
-        key: _targetKey,
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Focus(
-            canRequestFocus: false,
-            skipTraversal: true,
-            onKeyEvent: _onKey,
-            child: Semantics(label: semantics, child: textField),
-          ),
-          if (showKeys)
-            FormulaKeysRow(
-              keyPrefix: _keyBase,
-              onKey: _type,
-              onPicker: showPicker ? _openPicker : null,
+      child: Semantics(
+        container: true,
+        sortKey: const OrdinalSortKey(0, name: formulaSortName),
+        child: Column(
+          key: _targetKey,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Focus(
+              canRequestFocus: false,
+              skipTraversal: true,
+              onKeyEvent: _onKey,
+              child: Semantics(label: semantics, child: textField),
             ),
-          ?lineUnderKeys,
-        ],
+            if (showKeys)
+              FormulaKeysRow(
+                keyPrefix: _keyBase,
+                onKey: _type,
+                onPicker: showPicker ? _openPicker : null,
+              ),
+            ?lineUnderKeys,
+          ],
+        ),
       ),
     );
   }
