@@ -3,7 +3,6 @@
 // carries only numbers; a formula with an error (or waiting for its
 // variables) blocks the solve and shows in its field; formulas off is as
 // before.
-import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
