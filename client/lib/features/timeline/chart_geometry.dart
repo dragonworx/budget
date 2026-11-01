@@ -216,6 +216,37 @@ class PointIndex {
         return out;
       }();
 
+  final _runMarks = <(double, int), List<(int, bool)>>{};
+
+  /// [alertCrossings] thinned for coarse zoom (spec 006 §4): crossings
+  /// at most [gapDays] apart form one run, and a run keeps only its first
+  /// breach and its first recovery. Runs are found over the whole series
+  /// (not the view), so a pan never changes which crossings are kept.
+  List<(int, bool)> alertRunMarks(
+    double key,
+    bool Function(double) isLow,
+    int gapDays,
+  ) => _runMarks[(key, gapDays)] ??= () {
+    final all = alertCrossings(key, isLow);
+    final gapUs = gapDays * Duration.microsecondsPerDay;
+    final out = <(int, bool)>[];
+    var last = -1;
+    var low = false, high = false;
+    for (final c in all) {
+      final (i, l) = c;
+      if (last < 0 || days[i] - days[last] > gapUs) low = high = false;
+      last = i;
+      if (l ? low : high) continue;
+      if (l) {
+        low = true;
+      } else {
+        high = true;
+      }
+      out.add(c);
+    }
+    return out;
+  }();
+
   /// Exact min and max of `values[lo, hi)` (`lo < hi`).
   BalanceExtents rangeExtents(int lo, int hi) {
     var minV = values[lo], maxV = minV;

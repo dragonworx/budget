@@ -67,9 +67,8 @@ String binLabel(BinPeriod p, int key) {
       return dmy.format(s);
     case BinPeriod.month:
       return DateFormat('MMM y').format(s);
-    case BinPeriod.year:
-      return '${s.year}';
     case BinPeriod.week:
+    case BinPeriod.year:
     case BinPeriod.quarter:
       final head = s.year == lastDay.year
           ? DateFormat('d MMM').format(s)

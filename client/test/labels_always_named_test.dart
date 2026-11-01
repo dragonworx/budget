@@ -2,9 +2,12 @@
 // event name: never the amount alone, never just "+N more". Checked
 // across widths × heights × zooms on crowded data, together with the label
 // rules (flush left with the dot, never overlapping, never covering a dot).
+import 'dart:math' as math;
+
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
 import 'package:budget_client/features/timeline/chart_geometry.dart';
+import 'package:budget_client/features/timeline/lod.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,10 +116,43 @@ void _expectNamed(List<_Label> labels, String ctx) {
   }
 }
 
-void _expectGeometry(List<_Label> labels, Rect plot, String ctx) {
+void _expectGeometry(
+  List<_Label> labels,
+  Rect plot,
+  String ctx, {
+  bool coarse = false,
+}) {
   for (var i = 0; i < labels.length; i++) {
     final (lines, rect, c, r) = labels[i];
     final why = '$ctx: $lines at $rect (dot $c r$r)';
+    if (coarse) {
+      // Coarse zoom (spec 006): the box stays whole inside the plot (shifted
+      // in from an edge, never clipped), near its dot, never over it.
+      expect(rect.left, greaterThanOrEqualTo(plot.left), reason: why);
+      expect(rect.right, lessThanOrEqualTo(plot.right), reason: why);
+      expect(rect.top, greaterThanOrEqualTo(plot.top), reason: why);
+      expect(rect.bottom, lessThanOrEqualTo(plot.bottom), reason: why);
+      expect(rect.inflate(r).contains(c!), isFalse, reason: why);
+      final dx = c.dx < rect.left
+          ? rect.left - c.dx
+          : c.dx > rect.right
+          ? c.dx - rect.right
+          : 0.0;
+      final dy = c.dy < rect.top
+          ? rect.top - c.dy
+          : c.dy > rect.bottom
+          ? c.dy - rect.bottom
+          : 0.0;
+      expect(math.max(dx, dy), lessThanOrEqualTo(64 + r + 4), reason: why);
+      for (var j = i + 1; j < labels.length; j++) {
+        expect(
+          rect.overlaps(labels[j].$2),
+          isFalse,
+          reason: '$why overlaps ${labels[j].$1}',
+        );
+      }
+      continue;
+    }
     expect(rect.left, closeTo(c!.dx - r, 0.5), reason: 'flush left $why');
     final above = rect.bottom <= c.dy - r + 0.01;
     final below = rect.top >= c.dy + r - 0.01;
@@ -165,7 +201,13 @@ void main() {
         final labels = await _labels(tester, size, data, days);
         total += labels.length;
         _expectNamed(labels, ctx);
-        _expectGeometry(labels, ChartLayout.of(size, days).plot, ctx);
+        final plot = ChartLayout.of(size, days).plot;
+        _expectGeometry(
+          labels,
+          plot,
+          ctx,
+          coarse: plot.width / days < lodL0MinDayPx,
+        );
       }
       expect(total, greaterThan(0));
     });

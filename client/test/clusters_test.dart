@@ -87,7 +87,7 @@ void main() {
     );
     expect(
       binLabel(BinPeriod.year, binKeyOf(BinPeriod.year, DateTime(2031, 2, 9))),
-      '2031',
+      '1 Jan – 31 Dec 2031',
     );
   });
 

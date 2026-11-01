@@ -23,6 +23,8 @@ class GroupBreakdown {
     this.closing,
     this.min,
     this.max,
+    this.alertBelow = 0,
+    this.alertAbove = 0,
   });
 
   final GroupBin bin;
@@ -32,6 +34,10 @@ class GroupBreakdown {
   /// Combined view: one line per stream (empty otherwise).
   final List<BreakdownLine> streams;
   final double? opening, closing, min, max;
+
+  /// Times the balance went below the alert / back above it in the period
+  /// (the chart marks only a run's first of each at coarse zoom).
+  final int alertBelow, alertAbove;
 }
 
 GroupBreakdown buildGroupBreakdown(
@@ -40,12 +46,30 @@ GroupBreakdown buildGroupBreakdown(
   PointIndex ix, {
   required String Function(String eventId) nameOf,
   String Function(String? streamId)? streamName,
+  List<(int, bool)> alertCrossings = const [],
 }) {
   final us0 = bin.start.microsecondsSinceEpoch;
   final us1 = bin.end.microsecondsSinceEpoch;
   final before = ix.lowerBound(us0) - 1;
   final lo = ix.lowerBound(us0), hi = ix.lowerBound(us1);
   final ext = lo < hi ? ix.rangeExtents(lo, hi) : null;
+  var below = 0, above = 0;
+  var c = 0, z = alertCrossings.length;
+  while (c < z) {
+    final m = (c + z) >> 1;
+    if (alertCrossings[m].$1 < lo) {
+      c = m + 1;
+    } else {
+      z = m;
+    }
+  }
+  for (; c < alertCrossings.length && alertCrossings[c].$1 < hi; c++) {
+    if (alertCrossings[c].$2) {
+      below++;
+    } else {
+      above++;
+    }
+  }
   final streams = <String?, (int, int)>{};
   if (streamName != null) {
     for (var k = bin.from; k < bin.to; k++) {
@@ -73,6 +97,8 @@ GroupBreakdown buildGroupBreakdown(
     closing: hi > 0 ? ix.values[hi - 1] : null,
     min: ext?.min,
     max: ext?.max,
+    alertBelow: below,
+    alertAbove: above,
   );
 }
 
@@ -191,6 +217,19 @@ class GroupBreakdownView extends StatelessWidget {
         row('Closing balance', _balance(data.closing)),
         row('Lowest balance', _balance(data.min)),
         row('Highest balance', _balance(data.max)),
+        if (data.alertBelow > 0)
+          row(
+            'Went below alert',
+            '×${groupCountText(data.alertBelow)}',
+            color: AppTheme.debitColor,
+            key: const ValueKey('group-breakdown-alert-below'),
+          ),
+        if (data.alertAbove > 0)
+          row(
+            'Back above alert',
+            '×${groupCountText(data.alertAbove)}',
+            color: AppTheme.creditColor,
+          ),
         if (data.streams.isNotEmpty) ...[
           const Divider(height: 12),
           for (final s in data.streams)

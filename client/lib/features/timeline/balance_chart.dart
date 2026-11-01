@@ -116,13 +116,28 @@ class _GroupHits {
   final glyphs = <(GroupBin, Offset)>[];
   final exact = <(String, DateTime, double, Offset)>[];
 
+  /// The painted group / exact-marker labels and what each opens.
+  final labels = <(Rect, Object)>[];
+
+  /// Label key → hit target, filled while painting the glyphs and markers.
+  final targets = <int, Object>{};
+
   void clear() {
     glyphs.clear();
     exact.clear();
+    labels.clear();
+    targets.clear();
   }
 
-  /// What's at [pos] within [slop]: an exact marker wins ties, then the
-  /// nearest glyph (binary search on x).
+  /// How close a pointer must be to an exact marker's centre to be
+  /// "clearly on" it (its ring is 4.2 px): there it wins over any group.
+  static const double onExact = 7;
+
+  /// What's at [pos] within [slop]: right on an exact marker's ring, that
+  /// marker; else a label under [pos]; else the nearest glyph (binary
+  /// search on x); else an exact marker within [slop] (spec 006 §7: a
+  /// group tap is not stolen by a nearby ring, a tap on the ring itself
+  /// is the marker's).
   Object? at(Offset pos, double slop) {
     (String, DateTime, double, Offset)? bestExact;
     var bd = slop * slop;
@@ -133,7 +148,10 @@ class _GroupHits {
         bestExact = e;
       }
     }
-    if (bestExact != null) return bestExact;
+    if (bestExact != null && bd <= onExact * onExact) return bestExact;
+    for (final (rect, target) in labels.reversed) {
+      if (rect.contains(pos)) return target;
+    }
     var lo = 0, hi = glyphs.length;
     while (lo < hi) {
       final m = (lo + hi) >> 1;
@@ -144,17 +162,17 @@ class _GroupHits {
       }
     }
     (GroupBin, Offset)? best;
-    bd = slop * slop;
+    var bg = slop * slop;
     for (var i = lo; i < glyphs.length; i++) {
       final g = glyphs[i];
       if (g.$2.dx > pos.dx + slop) break;
       final d = (g.$2 - pos).distanceSquared;
-      if (d <= bd) {
-        bd = d;
+      if (d <= bg) {
+        bg = d;
         best = g;
       }
     }
-    return best;
+    return best ?? bestExact;
   }
 }
 
@@ -559,6 +577,10 @@ class _BalanceChartState extends State<BalanceChart>
       streamName: streams.isEmpty
           ? null
           : (id) => id == null ? 'This stream' : streams[id]?.name ?? 'Stream',
+      alertCrossings: _threshold.isFinite
+          ? pointIndexOf(widget.series.points)
+                .alertCrossings(_threshold, (v) => belowAlert(v, _threshold))
+          : const [],
     );
   }
 
@@ -1558,7 +1580,7 @@ class _BalanceChartState extends State<BalanceChart>
     // Right on a step dot (its drawn size and a few px), the dot wins;
     // otherwise a net chip keeps its whole-day popup.
     final onDot = onPlot ? _stepOnDot(layout, pos) : null;
-    final chip = onDot != null || !onPlot || _laneSet().isEmpty
+    final chip = onDot != null || !onPlot || _occLanes().isEmpty
         ? null
         : _labelDotAt(layout, pos, slop: 0);
     // A tap / click anywhere on an event's lane (or, with a mouse, on its
@@ -2192,7 +2214,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// (stacked lanes only: a lane-less chart already dots every day).
   List<StepDot> _stepDots(ChartLayout layout) {
     final range = _ensureYRange();
-    if (range == null || _size == Size.zero || _laneSet().isEmpty) {
+    if (range == null || _size == Size.zero || _occLanes().isEmpty) {
       return const [];
     }
     final key = (
@@ -3491,6 +3513,13 @@ class _BalanceChartState extends State<BalanceChart>
     );
   }
 
+  /// The lanes occurrences are drawn and hit-tested on: none at coarse
+  /// zoom, where the lanes keep only their ribbon and occurrences are the
+  /// line's group glyphs and exact markers (spec 006 §4–7; "lane dots stay
+  /// off below laneDotsMinDayPx").
+  LaneSet _occLanes() =>
+      _lod.tier.coarse && !debugLodDisabled ? LaneSet.empty : _laneSet();
+
   List<_Dot>? _dotsMemo;
   Object? _dotsKey;
 
@@ -3533,7 +3562,7 @@ class _BalanceChartState extends State<BalanceChart>
         dots.add(_Dot(c, seedVertexRadius(radius), const [], seedBalance));
       }
     }
-    final lanes = _laneSet();
+    final lanes = _occLanes();
     final laneH = lanes.isEmpty ? 0.0 : _laneHeight(lanes, layout);
     if (!lanes.isEmpty && dayPx < laneDotsMinDayPx) return _dotsMemo = dots;
     final groups = groupByDay(widget.series.occurrences);
@@ -3622,7 +3651,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// wins over the (far bigger) dot hit radius, whose nearest dot is just
   /// one event.
   _Dot? _dotAt(ChartLayout layout, Offset pos, double maxDistance) =>
-      (_laneSet().isEmpty ? null : _labelDotAt(layout, pos, slop: 0)) ??
+      (_occLanes().isEmpty ? null : _labelDotAt(layout, pos, slop: 0)) ??
       _nearestDot(layout, pos, maxDistance) ??
       _labelDotAt(layout, pos);
 
@@ -3669,7 +3698,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// event on it (a lane dot, by contrast, inspects only its own).
   _Dot _wholeDay(ChartLayout layout, _Dot d) {
     final day = d.day;
-    if (d.isSeed || day == null || _laneSet().isEmpty) return d;
+    if (d.isSeed || day == null || _occLanes().isEmpty) return d;
     return _wholeDayMemo[day] ??= _wholeDayOf(layout, d, day);
   }
 
@@ -3768,7 +3797,7 @@ class _BalanceChartState extends State<BalanceChart>
   /// if that dot itself were hovered. [slop] grows the stack's top and
   /// bottom a little (thin lanes). Null off every lane.
   _Dot? _laneDotAt(ChartLayout layout, Offset pos, {double slop = 2}) {
-    final lanes = _laneSet();
+    final lanes = _occLanes();
     final range = _ensureYRange();
     if (lanes.isEmpty || range == null || !layout.plot.contains(pos)) {
       return null;
@@ -3924,7 +3953,7 @@ class _BalanceChartState extends State<BalanceChart>
         return;
       }
     }
-    final chip = _laneSet().isEmpty ? null : _labelDotAt(layout, pos, slop: 0);
+    final chip = _occLanes().isEmpty ? null : _labelDotAt(layout, pos, slop: 0);
     final lane = chip == null ? _laneDotAt(layout, pos) : null;
     final nearest =
         chip ??
@@ -3972,7 +4001,7 @@ class _BalanceChartState extends State<BalanceChart>
     _switchTimer?.cancel();
     _switchTimer = null;
     if (overlapping == null) {
-      final chip = _laneSet().isEmpty
+      final chip = _occLanes().isEmpty
           ? null
           : _labelDotAt(layout, pos, slop: 0);
       final lane = chip == null ? _laneDotAt(layout, pos) : null;
@@ -5424,7 +5453,7 @@ class _BalanceChartPainter extends CustomPainter {
     _paintOccurrences(canvas, layout, scale, viewEnd, seed);
     perfFinish();
     perfStart('chart.overlays');
-    if (!lanes.isEmpty) _paintStepDots(canvas, layout, scale);
+    if (_laneOccurrences) _paintStepDots(canvas, layout, scale);
     // Axis values float over the plot: drawn after the line and dots.
     for (final (y, text) in gridLabels) {
       _paintYText(canvas, layout, y, text, labelStyle);
@@ -6992,6 +7021,12 @@ class _BalanceChartPainter extends CustomPainter {
   /// A dot on the balance line wherever it steps: the line's colour (red
   /// below the alert, like the line) with a dark ring, over the line and
   /// the lanes. The hovered / tapped one is larger with a white ring.
+  /// Occurrences drawn on the stacked lanes (fine zoom). At coarse zoom
+  /// the lanes keep their ribbon, but occurrences are the line's group
+  /// glyphs and exact markers, as on a lane-less chart (spec 006 §4–7).
+  bool get _laneOccurrences =>
+      !lanes.isEmpty && !(lod.tier.coarse && !debugLodDisabled);
+
   void _paintStepDots(Canvas canvas, ChartLayout layout, _YScale scale) {
     if (stepDots.isEmpty) return;
     canvas.save();
@@ -7079,7 +7114,7 @@ class _BalanceChartPainter extends CustomPainter {
     // Days before the seed are skipped below, so no seed filter here.
     final closes = pointIndexOf(series.points).closeByDayMs;
     final dayPx = layout.plot.width / math.max(visibleDays, 0.001);
-    if (!lanes.isEmpty) {
+    if (_laneOccurrences) {
       _paintLaneOccurrences(canvas, layout, scale, viewEnd, seed, closes);
       return;
     }
@@ -7089,6 +7124,11 @@ class _BalanceChartPainter extends CustomPainter {
         ? 3.4
         : 2.2;
     final vertices = <_ChartVertex>[];
+    final coarse = lod.tier.coarse && !debugLodDisabled;
+    // Coarse zoom: what labels must keep clear of (count badges, exact
+    // rings, lone dots), and what they avoid when they can (group glyphs:
+    // a dense stretch of them leaves no room otherwise).
+    final obstacles = <Rect>[], soft = <Rect>[];
 
     canvas.save();
     canvas.clipRect(layout.plot);
@@ -7126,6 +7166,7 @@ class _BalanceChartPainter extends CustomPainter {
       if (yValue == null) return;
       final x = layout.xOf(_stepAt(day), viewStart, visibleDays);
       final center = Offset(x, scale.yOf(yValue));
+      if (coarse) obstacles.add(Rect.fromCircle(center: center, radius: 5));
       final net = g.net;
       if (g.allSkipped) {
         canvas.drawCircle(center, radius, skippedFill);
@@ -7174,7 +7215,6 @@ class _BalanceChartPainter extends CustomPainter {
       );
     }
 
-    final coarse = lod.tier.coarse && !debugLodDisabled;
     groupHits.clear();
     if (coarse) {
       _paintGroups(
@@ -7186,6 +7226,8 @@ class _BalanceChartPainter extends CustomPainter {
         rangeTo: rangeTo,
         groups: groups,
         vertices: vertices,
+        obstacles: obstacles,
+        soft: soft,
         dayDot: dayDot,
       );
     } else {
@@ -7202,6 +7244,11 @@ class _BalanceChartPainter extends CustomPainter {
       if (layout.plot.inflate(2).contains(c) ||
           (c.dx - layout.plot.center.dx).abs() < layout.plot.width * 1.5) {
         _paintSeedVertex(canvas, c, seedVertexRadius(radius));
+        if (coarse) {
+          obstacles.add(
+            Rect.fromCircle(center: c, radius: seedVertexRadius(radius) + 1),
+          );
+        }
         vertices.add(
           _ChartVertex(
             center: c,
@@ -7219,7 +7266,11 @@ class _BalanceChartPainter extends CustomPainter {
     }
     canvas.restore();
     perfStart('chart.labels');
-    _paintVertexLabels(canvas, layout, vertices);
+    if (coarse) {
+      _paintCoarseLabels(canvas, layout, vertices, obstacles, soft);
+    } else {
+      _paintVertexLabels(canvas, layout, vertices);
+    }
     perfFinish();
   }
 
@@ -7236,6 +7287,8 @@ class _BalanceChartPainter extends CustomPainter {
     required DateTime rangeTo,
     required List<DayGroup> groups,
     required List<_ChartVertex> vertices,
+    required List<Rect> obstacles,
+    required List<Rect> soft,
     required void Function(DayGroup g, {bool label}) dayDot,
   }) {
     final plot = layout.plot;
@@ -7332,6 +7385,7 @@ class _BalanceChartPainter extends CustomPainter {
     var badgeRight = double.negativeInfinity;
     for (final (b, c) in placed) {
       final inView = c.dx >= plot.left - 12 && c.dx <= plot.right + 12;
+      var labelRadius = 6.0;
       if (b.single) {
         final g = groupOn(b.firstDay);
         if (g != null) dayDot(g, label: labelled.contains(b.key));
@@ -7355,6 +7409,8 @@ class _BalanceChartPainter extends CustomPainter {
           height: half * 2,
         );
         final rr = RRect.fromRectAndRadius(box, const Radius.circular(2.5));
+        labelRadius = half + 1.5;
+        soft.add(box.inflate(1.5));
         canvas.drawRRect(rr.inflate(1.5), bg);
         final inner = box.deflate(1.2);
         if (b.creditCents > 0 && b.debitCents > 0) {
@@ -7392,6 +7448,7 @@ class _BalanceChartPainter extends CustomPainter {
         // for every badge to be readable.
         if (badge.left >= badgeRight + 1) {
           badgeRight = badge.right;
+          obstacles.add(badge);
           canvas.drawRRect(
             RRect.fromRectAndRadius(badge, const Radius.circular(3)),
             bg,
@@ -7400,6 +7457,7 @@ class _BalanceChartPainter extends CustomPainter {
         }
         debugGroupGlyph?.call(b, c);
         groupHits.glyphs.add((b, c));
+        groupHits.targets[keyOf(b)] = (b, c);
       }
       if (labelled.contains(b.key)) {
         final text = groupLabelText(
@@ -7411,7 +7469,7 @@ class _BalanceChartPainter extends CustomPainter {
         vertices.add(
           _ChartVertex(
             center: c,
-            radius: 6,
+            radius: labelRadius,
             names: text.lines,
             amount: b.netCents / 100,
             amountText: text.amount,
@@ -7439,7 +7497,13 @@ class _BalanceChartPainter extends CustomPainter {
       exact.add((2, lo, 'Lowest', AppTheme.text));
     }
     if (lossThreshold.isFinite) {
-      final crossings = ix.alertCrossings(lossThreshold, _isLoss);
+      // A run of crossings (each within one label tile of the last) keeps
+      // its first breach and first recovery; the rest are counted in each
+      // group's breakdown. The tile is rounded down to a power of two days
+      // so the runs stay put during a pinch.
+      final tile = math.max(visibleDays / math.max(k, 1), 1.0);
+      final gapDays = 1 << (math.log(tile) / math.ln2).floor();
+      final crossings = ix.alertRunMarks(lossThreshold, _isLoss, gapDays);
       final s0 = ix.lowerBound(dateOnly(rangeFrom).microsecondsSinceEpoch);
       final s1 = ix.upperBound(dateOnly(rangeTo).microsecondsSinceEpoch);
       var c0 = 0, c1 = crossings.length;
@@ -7475,6 +7539,8 @@ class _BalanceChartPainter extends CustomPainter {
       );
       marks.add((name, day, value));
       groupHits.exact.add((name, day, value, c));
+      groupHits.targets[-(100000000 * kind + i + 2)] = (name, day, value, c);
+      obstacles.add(Rect.fromCircle(center: c, radius: 6));
       debugExactMarkerAt?.call(name, c);
       canvas.drawCircle(c, 4.2, bg);
       canvas.drawCircle(c, 4.2, markRing..color = color);
@@ -7545,6 +7611,230 @@ class _BalanceChartPainter extends CustomPainter {
         if (eventNames[id] case final raw?)
           raw.trim().isEmpty ? 'Event' : raw.trim(),
     ];
+  }
+
+  /// Coarse zoom labels (spec 006 §4–6). Exact markers (and the opening)
+  /// first, each always shown: never dropped for a group label, placed
+  /// where it overlaps least when no spot is free. Then the budgeted group
+  /// labels and lone dots' labels, only where they fit. Every box stays
+  /// inside the plot (shifted in from an edge, never clipped) and clear of
+  /// the glyphs, their count badges, the rings, the Seed / Today lines and
+  /// their labels, and the labels placed before it.
+  void _paintCoarseLabels(
+    Canvas canvas,
+    ChartLayout layout,
+    List<_ChartVertex> vertices,
+    List<Rect> obstacles,
+    List<Rect> soft,
+  ) {
+    final view = layout.plot;
+    final edge = view.deflate(2);
+    final style = labelStyle.copyWith(
+      fontSize: textScaler.scale(10),
+      height: 1.0,
+      fontWeight: FontWeight.w600,
+      color: AppTheme.text,
+    );
+    final faintStyle = style.copyWith(color: AppTheme.textFaint);
+    final moreStyle = style.copyWith(
+      color: AppTheme.textMuted,
+      fontWeight: FontWeight.w500,
+    );
+    const pad = 10.0;
+    final placed = <Rect>[..._markerLabelRects(layout), ...obstacles];
+    // The Seed / Today lines: a label beside a marker on them, not across.
+    for (final d in [dateOnly(DateTime.now()), dateOnly(seedDate)]) {
+      final x = layout.xOf(d, viewStart, visibleDays);
+      if (x < view.left || x > view.right) continue;
+      placed.add(Rect.fromLTRB(x - 1.5, view.top, x + 1.5, view.bottom));
+    }
+    // Exact markers first; then the group labels shown last frame, so a
+    // pan does not hand their spot to a neighbour (no flicker); then the
+    // rest.
+    int rank(_ChartVertex v) => v.exact || v.seed
+        ? 0
+        : v.group
+        ? (labelMemory.containsKey(v.key) ? 1 : 2)
+        : 3;
+    final order =
+        [
+          for (final v in vertices)
+            if (view.contains(v.center)) v,
+        ]..sort((a, b) {
+          final r = rank(a).compareTo(rank(b));
+          return r != 0 ? r : a.center.dx.compareTo(b.center.dx);
+        });
+    final shown = <(_ChartVertex, Rect)>[];
+    double area(List<Rect> rects, Rect r) {
+      var a = 0.0;
+      for (final p in rects) {
+        if (!p.overlaps(r)) continue;
+        final i = p.intersect(r);
+        a += i.width * i.height;
+      }
+      return a;
+    }
+
+    canvas.save();
+    canvas.clipRect(view);
+    final leaderPaint = Paint()
+      ..color = AppTheme.border
+      ..strokeWidth = 1;
+    for (final v in order) {
+      final vs = v.skipped ? faintStyle : style;
+      final color =
+          v.amountColor ??
+          (v.skipped
+              ? null
+              : v.seed
+              ? AppTheme.accent
+              : v.debit
+              ? AppTheme.debitColor
+              : AppTheme.creditColor);
+      final amount = _labelText.get(
+        v.amountText ?? _labelAmountText(v.seed, v.amount),
+        vs.copyWith(fontWeight: FontWeight.w800, color: color),
+        maxLines: 1,
+      );
+      // A group keeps every line (count, interest); a lone dot lists two
+      // names at most, then "+N more".
+      final names = v.names;
+      final listed = v.group || v.exact || v.seed
+          ? names.length
+          : math.min(names.length, 2);
+      String short(String n) =>
+          n.characters.length > 24 ? '${n.characters.take(23)}…' : n;
+      final lines = [
+        for (final n in names.take(listed))
+          _labelText.line(short(n), vs, '', moreStyle),
+        if (names.length > listed)
+          _labelText.line(
+            null,
+            vs,
+            '+${names.length - listed} more',
+            moreStyle,
+          ),
+      ];
+      final w = lines.fold(amount.width, (m, p) => math.max(m, p.width)) + pad;
+      final h = lines.fold(amount.height, (t, p) => t + p.height) + 4;
+      final must = rank(v) == 0;
+      if (!must && (w > edge.width || h > edge.height)) continue;
+      Rect inside(Rect r) {
+        var dx = 0.0, dy = 0.0;
+        if (r.right > edge.right) dx = edge.right - r.right;
+        if (r.left + dx < edge.left) dx = edge.left - r.left;
+        if (r.bottom > edge.bottom) dy = edge.bottom - r.bottom;
+        if (r.top + dy < edge.top) dy = edge.top - r.top;
+        return r.shift(Offset(dx, dy));
+      }
+
+      final c = v.center;
+      final gap = v.radius + vertexLabelGap;
+      final last = labelMemory[v.key]?.rect;
+      final candidates = <Rect>[
+        // Last frame's box first, if the same size: it stays put.
+        if (last != null &&
+            (last.width - w).abs() < 0.5 &&
+            (last.height - h).abs() < 0.5)
+          last.shift(c),
+        for (final off in const [0.0, 8.0, 16.0, 28.0, 44.0, 64.0])
+          for (final side in VertexLabelSide.values)
+            for (final flushRight in const [false, true])
+              vertexLabelRect(
+                center: c,
+                radius: v.radius,
+                side: side,
+                width: w,
+                height: h,
+                offset: off,
+              ).shift(Offset(flushRight ? 2 * v.radius - w : 0, 0)),
+        // Beside the dot: right, then left.
+        Rect.fromLTWH(c.dx + gap, c.dy - h / 2, w, h),
+        Rect.fromLTWH(c.dx - gap - w, c.dy - h / 2, w, h),
+      ];
+      // The first spot clear of everything; else (a dense stretch) the one
+      // covering the least of the glyphs and nothing else; an exact marker
+      // takes the least covered spot of all rather than go unlabelled.
+      Rect? pick;
+      var best = double.infinity;
+      Rect? fallback;
+      for (final raw in candidates) {
+        // Shifted in from the plot's edges; a box shifted far off its dot
+        // (more than its own size) is not this dot's label.
+        final r = inside(raw);
+        if (!must && (r.center - raw.center).distance > math.max(w, h)) {
+          continue;
+        }
+        if (r.contains(c)) continue;
+        final hard = area(placed, r);
+        final light = area(soft, r);
+        if (hard == 0 && light == 0) {
+          pick = r;
+          break;
+        }
+        final cost = hard * 50 + light;
+        if ((must || hard == 0) && cost < best) {
+          best = cost;
+          fallback = r;
+        }
+      }
+      pick ??= fallback;
+      if (pick == null && must) pick = inside(candidates.first);
+      if (pick == null) continue;
+      // A leader when the box is not right against the dot.
+      final lx = c.dx.clamp(pick.left + 2, pick.right - 2).toDouble();
+      final ly = pick.bottom <= c.dy
+          ? pick.bottom
+          : pick.top >= c.dy
+          ? pick.top
+          : c.dy;
+      final reach = (Offset(lx, ly) - c).distance;
+      if (reach > v.radius + vertexLabelGap + 1.5) {
+        canvas.drawLine(
+          c + (Offset(lx, ly) - c) * (v.radius / reach),
+          Offset(lx, ly),
+          leaderPaint,
+        );
+      }
+      _drawVertexLabel(canvas, amount, lines, pick);
+      placed.add(pick);
+      shown.add((v, pick));
+      debugVertexLabelLines?.call(pick, [
+        amount.plainText,
+        for (final l in lines) l.plainText,
+      ]);
+    }
+    canvas.restore();
+    labelMemory.clear();
+    labelHits.clear();
+    final shownKeys = <int>{};
+    for (final (v, rect) in shown) {
+      shownKeys.add(v.key);
+      // Kept for group and exact labels only: their keys never meet a fine
+      // zoom label's (a day, or the opening).
+      if (v.group || v.exact && !v.seed) {
+        labelMemory[v.key] = (
+          rect: rect.shift(-v.center),
+          names: 0,
+          compact: false,
+        );
+      }
+      final target = groupHits.targets[v.key];
+      if (target != null) {
+        groupHits.labels.add((rect, target));
+      } else {
+        labelHits.add((rect: rect, dot: v.center));
+      }
+      debugVertexLabelRect?.call(v.label, v.center, v.radius, rect);
+    }
+    final keyHook = debugVertexLabelKey, hook = debugVertexLabel;
+    if (keyHook != null || hook != null) {
+      for (final v in vertices) {
+        if (!view.contains(v.center)) continue;
+        keyHook?.call(v.key, v.label, v.center.dx, shownKeys.contains(v.key));
+        hook?.call(v.label, v.center.dx, shownKeys.contains(v.key));
+      }
+    }
   }
 
   /// Event labels for each occurrence dot, flush left with the dot and
