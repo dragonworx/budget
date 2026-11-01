@@ -75,6 +75,7 @@ class _Repo extends EventRepository {
     DateTime date, {
     required EventDirection direction,
     required Decimal amount,
+    String? amountExpr,
     int? version,
   }) async {
     calls.add(

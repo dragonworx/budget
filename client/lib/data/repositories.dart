@@ -527,6 +527,7 @@ class EventRepository {
     DateTime date, {
     required EventDirection direction,
     required Decimal amount,
+    String? amountExpr,
     int? version,
   }) async {
     final data = await _api.put(
@@ -534,6 +535,9 @@ class EventRepository {
       body: {
         'direction': direction.toJson(),
         'amount': moneyToJson(amount),
+        // Spec 010/011: the once-off amount's formula, when it is one.
+        if (ServerFeatures.variables && amountExpr != null)
+          'amountExpr': amountExpr,
         'version': ?version,
       },
     );
@@ -564,6 +568,9 @@ class EventRepository {
         'name': edited.name,
         'direction': edited.direction.toJson(),
         'amount': moneyToJson(edited.amount),
+        // Spec 011: the new series keeps the amount's formula.
+        if (ServerFeatures.variables && edited.amountExpr != null)
+          'amountExpr': edited.amountExpr,
         'interval': ?edited.interval,
         'unit': ?edited.unit?.toJson(),
         // The new series' rule with its days (wins over interval / unit).

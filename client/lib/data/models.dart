@@ -454,7 +454,13 @@ class BudgetEvent {
     this.intervalExpr,
     this.occurrenceCountExpr,
     this.exprErrors,
+    this.resolvedDifferently = false,
   });
+
+  /// A write's response said a formula resolved to another value than the
+  /// one sent (`formulaResolvedDifferently`: a variable changed meanwhile).
+  /// Response only: never sent, not carried by [copyWith].
+  final bool resolvedDifferently;
 
   /// Formula texts (spec 010), as stored by the server; null when plain.
   /// Sent back only when set on purpose (not carried by [copyWith], so a
@@ -674,6 +680,7 @@ class BudgetEvent {
       intervalExpr: json['intervalExpr'] as String?,
       occurrenceCountExpr: json['occurrenceCountExpr'] as String?,
       exprErrors: _jsonMap(json['exprErrors']),
+      resolvedDifferently: json['formulaResolvedDifferently'] == true,
       overrides: {
         for (final o in (json['overrides'] as List?) ?? const [])
           parseDate((o as Map)['date']): OccurrenceOverride(

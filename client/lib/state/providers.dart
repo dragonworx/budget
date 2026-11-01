@@ -260,7 +260,11 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     return created;
   }
 
-  Future<void> updateEvent(BudgetEvent event, {bool force = false}) async {
+  /// Returns the server's copy (with its `formulaResolvedDifferently`).
+  Future<BudgetEvent> updateEvent(
+    BudgetEvent event, {
+    bool force = false,
+  }) async {
     final updated = await ref
         .read(eventRepositoryProvider)
         .update(event, force: force);
@@ -272,6 +276,7 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     _touchPeer(before?.transfer);
     _touchPeer(updated.transfer);
     _categoriesMayChange(updated.transfer);
+    return updated;
   }
 
   /// A write can create a category (a plan's own, a transfer's far side's
@@ -351,6 +356,7 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     DateTime date, {
     required EventDirection direction,
     required Decimal amount,
+    String? amountExpr,
     int? version,
   }) async {
     final updated = await ref
@@ -360,6 +366,7 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
           date,
           direction: direction,
           amount: amount,
+          amountExpr: amountExpr,
           version: version,
         );
     _replace(updated);

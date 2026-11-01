@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:budget_formula/budget_formula.dart' show fieldSpecs;
 import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,8 @@ import '../../widgets/stream_picker.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/frequency_picker.dart';
+import '../../widgets/formula/formula_style.dart' show formatFieldValue;
+import '../../widgets/formula/formula_field.dart';
 import '../../widgets/ui.dart';
 import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
@@ -195,7 +198,10 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   }
 
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _amount;
+
+  /// The amount (spec 011): a plain number or a formula; read its
+  /// [FormulaEditingController.formula] instead of parsing the text.
+  late final FormulaEditingController _amount;
   late final TextEditingController _interval;
   late final TextEditingController _count;
   late EventDirection _direction;
@@ -244,7 +250,17 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     _openedEvent = id == null ? null : ref.read(remoteChangesProvider)[id]?.id;
     final existing = widget.existing;
     _categoryId = existing?.categoryId;
-    _amount = TextEditingController(text: existing?.amount.toString() ?? '');
+    // A formula event shows its formula, not the number it resolves to.
+    final expr = ServerFeatures.variables ? existing?.amountExpr : null;
+    _amount = FormulaEditingController(
+      text: expr ?? existing?.amount.toString() ?? '',
+      spec: fieldSpecs['event.amount']!,
+      formulasEnabled: ServerFeatures.variables,
+    );
+    final broken = existing?.exprErrors?['amount'];
+    if (expr != null && broken is Map && broken['message'] is String) {
+      _amount.flag(broken['message'] as String, existing!.amount);
+    }
     final savedFreq = existing?.frequency;
     _interval = TextEditingController(
       text:
@@ -491,8 +507,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         offsetChange: _ownsStream && loan.offsetChanged ? loan.offsetIds : null,
       );
     }
-    final parsedAmount =
-        amount ?? parseMoneyInput(_amount.text) ?? Decimal.zero;
+    final parsedAmount = amount ?? _amount.formula.value ?? Decimal.zero;
     final repeating = _recurrenceMode == RecurrenceMode.every;
     final endMode = repeating ? _endMode : EndMode.never;
     final f = _frequency;
@@ -503,6 +518,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       categoryId: _category?.id ?? widget.existing?.categoryId,
       direction: _direction,
       amount: parsedAmount,
+      amountExpr: _amount.formula.expr,
       startDate: _startDate,
       recurrenceMode: _recurrenceMode,
       interval: f.legacyInterval,
@@ -958,41 +974,24 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (!_loanMode) ...[
-            TextFormField(
+            FormulaField(
               key: const ValueKey('editor-amount'),
+              spec: fieldSpecs['event.amount']!,
+              scope: _amountScope(),
               controller: _amount,
               focusNode: _amountFocus,
               autofocus: !_readOnly && widget.existing == null,
-              decoration: InputDecoration(
-                labelText: _recurrenceMode == RecurrenceMode.every
-                    ? 'Amount each time'
-                    : 'Amount',
-                prefixText: symbol.isEmpty ? null : '$symbol ',
-                hintText: '0.00',
-              ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
+              label: _recurrenceMode == RecurrenceMode.every
+                  ? 'Amount each time'
+                  : 'Amount',
+              prefixText: symbol.isEmpty ? null : '$symbol ',
+              hintText: '0.00',
+              formulasEnabled: ServerFeatures.variables,
               // Type and category always have a value: Enter / the
-              // keyboard's Done saves.
+              // keyboard's Done saves (only when no suggestion is open).
               textInputAction: TextInputAction.done,
-              onFieldSubmitted: (_) => _save(),
+              onSubmitted: (_) => _save(),
               onChanged: (_) => setState(() {}),
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Enter an amount';
-                }
-                final amount = parseMoneyInput(value);
-                if (amount == null) {
-                  return 'Enter a number, e.g. 1250 or 1,250.50';
-                }
-                if (amount == Decimal.zero) return 'Enter an amount above zero';
-                if (amount < Decimal.zero) {
-                  return 'Use Money out instead of a negative amount';
-                }
-                return null;
-              },
             ),
             const SizedBox(height: 12),
           ],
@@ -1385,7 +1384,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     if (!_onlyAmountChanged) {
       return 'Only the amount can change for one date';
     }
-    final amount = parseMoneyInput(_amount.text);
+    final amount = _amount.formula.value;
     if (amount == null) return null; // the form validator explains
     final date = _day(widget.focusDate!);
     final e = widget.existing!;
@@ -1548,13 +1547,16 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     if (_onceOffBlock != null) return;
     final existing = widget.existing!;
     final date = _day(widget.focusDate!);
-    final amount = parseMoneyInput(_amount.text)!;
+    final amount = _amount.formula.value!;
+    final amountExpr = _amount.formula.expr;
     final notifier = ref.read(eventsProvider(widget.streamId).notifier);
     setState(() => _saving = true);
     try {
       // Back to the natural value: that is clearing the override.
       final natural =
-          amount == existing.amount && _direction == existing.direction;
+          amount == existing.amount &&
+          _direction == existing.direction &&
+          amountExpr == existing.amountExpr;
       BudgetEvent saved = existing;
       final r = await saveWithConflictCheck(
         context,
@@ -1567,6 +1569,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
               date,
               direction: _direction,
               amount: amount,
+              amountExpr: amountExpr,
               version: force ? null : existing.version,
             );
           }
@@ -1578,6 +1581,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         if (mounted) _finish(null);
         return;
       }
+      if (!natural) _resolvedNote(saved);
       if (mounted) {
         _finish(
           _outcome(
@@ -1769,6 +1773,36 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     }
   }
 
+  /// The server worked a formula out to another value than the preview
+  /// (a variable changed meanwhile): say what was saved (spec 011).
+  void _resolvedNote(BudgetEvent saved) {
+    if (!mounted || !saved.resolvedDifferently) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        key: const ValueKey('editor-resolved-differently'),
+        content: Text(
+          'Saved as ${formatFieldValue(saved.amount, _amount.spec)}: '
+          'a variable changed while you were editing.',
+        ),
+      ),
+    );
+  }
+
+  /// Whose variables the amount uses: the event's stream, or for a
+  /// transfer its debit side (D10).
+  VariableScope _amountScope() {
+    if (!ServerFeatures.variables) return VariableScope.empty;
+    return scopeFor(
+      ref,
+      streamId: debitSideStreamId(
+        rowStreamId: widget.streamId,
+        isTransfer: _transferMode && _transfer != null,
+        moneyOut: _direction == EventDirection.debit,
+        transferToStreamId: _transfer?.peerStreamId,
+      ),
+    );
+  }
+
   void _toast(Object error) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -1800,7 +1834,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       return null;
     }
 
-    return _draft(amount: parseMoneyInput(_amount.text)!).copyWith(
+    return _draft(amount: _amount.formula.value!).copyWith(
+      // copyWith drops formula texts on purpose (a plain edit clears one).
+      amountExpr: _amount.formula.expr,
       id: widget.existing?.id ?? const Uuid().v4(),
       streamId: widget.streamId,
       name: category.name,
@@ -1850,12 +1886,14 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     try {
       final notifier = ref.read(eventsProvider(widget.streamId).notifier);
       final BudgetEvent saved;
+      BudgetEvent? fromServer;
       if (widget.existing == null) {
-        saved = await notifier.create(draft);
+        saved = fromServer = await notifier.create(draft);
       } else {
         final r = await saveWithConflictCheck(
           context,
-          save: (force) => notifier.updateEvent(draft, force: force),
+          save: (force) async =>
+              fromServer = await notifier.updateEvent(draft, force: force),
           reload: () => ref.invalidate(eventsProvider(widget.streamId)),
         );
         if (r == SaveResult.cancelled) return;
@@ -1869,6 +1907,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         ref.read(lastCategoryProvider(widget.streamId).notifier).state =
             saved.categoryId;
       }
+      if (fromServer != null) _resolvedNote(fromServer!);
       if (mounted) {
         _finish(
           _outcome(
