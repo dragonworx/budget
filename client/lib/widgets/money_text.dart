@@ -1,3 +1,4 @@
+import 'package:budget_formula/budget_formula.dart' show parseLegacyMoney;
 import 'package:decimal/decimal.dart';
 import 'package:intl/intl.dart';
 
@@ -32,20 +33,8 @@ String formatSignedAmount(num signedAmount) {
 /// Parses a typed amount, tolerating thousands separators, spaces and a
 /// leading currency symbol or prefix ("$1,250.50", "A$1,250.50",
 /// "-1 200"). Null when invalid.
-Decimal? parseMoneyInput(String input) {
-  var t = input.trim().replaceAll(RegExp(r'[\s,_]'), '');
-  var negative = false;
-  if (t.startsWith('-')) {
-    negative = true;
-    t = t.substring(1);
-  }
-  t = t.replaceFirst(RegExp(r'^[A-Za-z]{0,3}[$€£¥]?'), '');
-  if (t.startsWith('-')) {
-    negative = !negative;
-    t = t.substring(1);
-  }
-  if (!RegExp(r'^\d+(\.\d+)?$|^\.\d+$').hasMatch(t)) return null;
-  final d = Decimal.tryParse(t);
-  if (d == null) return null;
-  return negative ? -d : d;
-}
+///
+/// The implementation lives in `budget_formula` (`parseLegacyMoney`) so
+/// the server and the formula fields share it; behaviour is unchanged
+/// (corpus test in money_text_test.dart).
+Decimal? parseMoneyInput(String input) => parseLegacyMoney(input);

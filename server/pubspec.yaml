@@ -7,6 +7,8 @@ environment:
   sdk: ^3.3.0
 
 dependencies:
+  budget_formula:
+    path: packages/budget_formula
   budget_loan:
     path: packages/budget_loan
   budget_recurrence:

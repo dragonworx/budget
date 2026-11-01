@@ -13,6 +13,8 @@ dependencies:
     path: ../server/packages/budget_recurrence
   budget_loan:
     path: ../server/packages/budget_loan
+  budget_formula:
+    path: ../server/packages/budget_formula
   flutter_localizations:
     sdk: flutter
   flutter_riverpod: ^2.6.1

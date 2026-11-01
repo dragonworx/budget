@@ -14,6 +14,8 @@ RUN flutter config --no-analytics --enable-web >/dev/null && flutter precache --
 COPY server/packages/budget_recurrence /src/server/packages/budget_recurrence
 # Loan terms and interest maths shared with the server (spec 003).
 COPY server/packages/budget_loan /src/server/packages/budget_loan
+# Formula grammar, evaluator and field specs shared with the server (spec 009).
+COPY server/packages/budget_formula /src/server/packages/budget_formula
 WORKDIR /src/client
 COPY client/pubspec.yaml client/pubspec.lock ./
 RUN flutter pub get
