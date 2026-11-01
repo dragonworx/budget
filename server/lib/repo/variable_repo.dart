@@ -97,12 +97,31 @@ class VariableRepo {
   }
 
   /// The lookup formulas of [ownerId]'s rows resolve against.
-  Future<MapVariableLookup> lookup(String ownerId) async {
-    final rows = await _db.execute(
-      Sql.named('SELECT name, value::text, unit FROM variables '
-          'WHERE owner_id = @o::uuid'),
-      parameters: {'o': ownerId},
-    );
+  Future<MapVariableLookup> lookup(String ownerId) async => _lookup(
+        await _db.execute(
+          Sql.named('SELECT name, value::text, unit FROM variables '
+              'WHERE owner_id = @o::uuid'),
+          parameters: {'o': ownerId},
+        ),
+      );
+
+  /// The variables of [preferStreamId]'s owner, else [streamId]'s (one
+  /// round trip; D10's resolving owner for event writes).
+  Future<MapVariableLookup> lookupForStream(String streamId,
+          {String? preferStreamId}) async =>
+      _lookup(
+        await _db.execute(
+          Sql.named('''
+            SELECT name, value::text, unit FROM variables
+            WHERE owner_id = COALESCE(
+              (SELECT owner_id FROM streams WHERE id = @p::uuid),
+              (SELECT owner_id FROM streams WHERE id = @s::uuid))
+          '''),
+          parameters: {'p': preferStreamId, 's': streamId},
+        ),
+      );
+
+  MapVariableLookup _lookup(Result rows) {
     return MapVariableLookup([
       for (final r in rows)
         VariableValue(

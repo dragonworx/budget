@@ -319,24 +319,6 @@ Map<String, String>? validateScenarioExprs(Object? raw) {
 Map<String, dynamic> withResolvedFlag(Map<String, dynamic> json, bool flag) =>
     flag ? {...json, 'formulaResolvedDifferently': true} : json;
 
-/// The owner an event will resolve against after this write (D10): the
-/// debit side's stream owner, from the body's direction / transfer target
-/// or the existing row's.
-Future<String?> _predictOwner(Session db, Map<String, dynamic> body,
-    String streamId, BudgetEvent? existing) async {
-  final direction =
-      body['direction']?.toString() ?? existing?.direction.name ?? 'debit';
-  final peerStream = body.containsKey('transferToStreamId')
-      ? body['transferToStreamId']?.toString()
-      : existing?.transfer?.peerStreamId;
-  final service = VariableService(db);
-  if (peerStream != null && direction == 'credit') {
-    return await service.streamOwner(peerStream) ??
-        await service.streamOwner(streamId);
-  }
-  return service.streamOwner(streamId);
-}
-
 /// [prepareEventBody] with the resolving owner's variables, loaded only
 /// when the body carries formula text.
 Future<EventFormulaPrep> prepareEventFormulas(
@@ -346,8 +328,15 @@ Future<EventFormulaPrep> prepareEventFormulas(
     required bool isLoan}) async {
   VariableLookup vars = const MapVariableLookup.empty();
   if (bodyHasFormulas(body)) {
-    final owner = await _predictOwner(db, body, streamId, existing);
-    if (owner != null) vars = await VariableRepo(db).lookup(owner);
+    final direction =
+        body['direction']?.toString() ?? existing?.direction.name ?? 'debit';
+    final peerStream = body.containsKey('transferToStreamId')
+        ? body['transferToStreamId']?.toString()
+        : existing?.transfer?.peerStreamId;
+    // D10: a transfer's credit side resolves against the debit side's
+    // owner (falling back to its own stream's).
+    vars = await VariableRepo(db).lookupForStream(streamId,
+        preferStreamId: direction == 'credit' ? peerStream : null);
   }
   return prepareEventBody(body, vars, isLoan: isLoan);
 }

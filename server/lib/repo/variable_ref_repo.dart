@@ -15,7 +15,9 @@ class VariableRefIndex {
   /// overrides. Call after every write that may change texts, direction,
   /// transfer link or overrides (and after syncPeer, whose override copy
   /// cascades the peer's refs away).
-  Future<void> reindexEvents(Iterable<String> ids) async {
+  /// With [fresh] the rows were just inserted (no refs or overrides yet):
+  /// the delete and the overrides read are skipped.
+  Future<void> reindexEvents(Iterable<String> ids, {bool fresh = false}) async {
     final idList = ids.toSet().toList();
     if (idList.isEmpty) return;
     final rows = await _db.execute(
@@ -35,27 +37,31 @@ class VariableRefIndex {
     );
     final allIds = [for (final r in rows) r[0] as String];
     if (allIds.isEmpty) return;
-    await _db.execute(
-      Sql.named('DELETE FROM variable_refs '
-          'WHERE event_id = ANY(@ids::text[]::uuid[])'),
-      parameters: {'ids': allIds},
-    );
+    if (!fresh) {
+      await _db.execute(
+        Sql.named('DELETE FROM variable_refs '
+            'WHERE event_id = ANY(@ids::text[]::uuid[])'),
+        parameters: {'ids': allIds},
+      );
+    }
     // Indexed rows: plain events and the debit side of transfers.
     final indexed = [
       for (final r in rows)
         if (!(r[4] as bool) || r[3] == 'debit') r,
     ];
     if (indexed.isEmpty) return;
-    final overrides = await _db.execute(
-      Sql.named('''
+    final overrides = fresh
+        ? const <ResultRow>[]
+        : await _db.execute(
+            Sql.named('''
         SELECT event_id::text, date::text, amount_expr
         FROM occurrence_overrides
         WHERE event_id = ANY(@ids::text[]::uuid[]) AND amount_expr IS NOT NULL
       '''),
-      parameters: {
-        'ids': [for (final r in indexed) r[0] as String]
-      },
-    );
+            parameters: {
+              'ids': [for (final r in indexed) r[0] as String]
+            },
+          );
     final byEvent = <String, List<ResultRow>>{};
     for (final o in overrides) {
       (byEvent[o[0] as String] ??= []).add(o);

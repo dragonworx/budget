@@ -163,8 +163,8 @@ Router buildStreamsApi(Session conn) {
         }
         if (prep.exprs.columns.values.any((v) => v != null) ||
             body['loan'] is Map) {
-          await VariableService(tx).afterEventWrite([created.id]);
-          created = (await events.get(created.id))!;
+          // Already resolved (prep): no re-resolve or re-read needed.
+          await VariableService(tx).afterEventCreate([created.id]);
         }
         return created;
       });

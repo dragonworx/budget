@@ -1,7 +1,7 @@
-// DB-backed timing check (spec 010): with 1000 fields referencing one
-// variable, p95 of a value PATCH (re-resolve + fan-out), a rename and a
-// preview <= 250 ms; a formula event write adds <= 5 ms (median) over a
-// plain one.
+// DB-backed timing check (spec 010): with 1000 fields across 20 streams
+// referencing one variable, p95 of a value PATCH (re-resolve + fan-out),
+// a rename and a preview <= 250 ms; a formula event write adds <= 5 ms
+// (p95) over a plain one.
 @Tags(['perf'])
 library;
 
@@ -21,9 +21,13 @@ void main() {
 
   test('1000 refs: patch / rename / preview p95 <= 250 ms', () async {
     if (!h.ok) return markTestSkipped('no test DB');
-    final a = (await h.call('POST', '/api/streams',
-            as: 'p', body: {'name': 'Perf', 'seedDate': '2026-01-01'}))
-        .json['id'];
+    final streams = [
+      for (var i = 0; i < 20; i++)
+        (await h.call('POST', '/api/streams',
+                as: 'p', body: {'name': 'Perf $i', 'seedDate': '2026-01-01'}))
+            .json['id'],
+    ];
+    final a = streams.first;
     final v = await h.call('POST', '/api/streams/$a/variables',
         as: 'p', body: {'name': 'base', 'expr': '100', 'unit': 'money'});
     final vid = v.json['id'];
@@ -41,23 +45,53 @@ void main() {
     // Write cost: plain vs formula creates (warm, interleaved).
     final plain = <int>[], formula = <int>[];
     for (var i = 0; i < 1000; i++) {
+      final s = streams[i % 20];
       final sw = Stopwatch()..start();
-      final r = await h.call('POST', '/api/streams/$a/events',
+      final r = await h.call('POST', '/api/streams/$s/events',
           as: 'p', body: ev(i, formula: true));
       formula.add(sw.elapsedMicroseconds);
       expect(r.status, 201);
       if (i < 200) {
         final sw2 = Stopwatch()..start();
-        await h.call('POST', '/api/streams/$a/events',
+        await h.call('POST', '/api/streams/$s/events',
             as: 'p', body: ev(i, formula: false));
         plain.add(sw2.elapsedMicroseconds);
       }
     }
-    final added = p(formula, 0.5) - p(plain, 0.5);
+    // Like for like: the 200 interleaved pairs.
+    final paired = formula.take(200).toList();
+    final added = p(paired, .95) - p(plain, .95);
     // ignore: avoid_print
-    print('create median: plain ${p(plain, 0.5)} ms, formula '
-        '${p(formula, 0.5)} ms (+${added.toStringAsFixed(2)} ms)');
+    print('create p95: plain ${p(plain, .95)} ms, formula '
+        '${p(paired, .95)} ms (+${added.toStringAsFixed(2)} ms); median '
+        '+${(p(paired, .5) - p(plain, .5)).toStringAsFixed(2)} ms');
     expect(added, lessThanOrEqualTo(5));
+
+    // Patch cost: plain vs formula amount on the same rows (interleaved).
+    final ids = [
+      for (final s in streams.take(5))
+        for (final e in (await h.call('GET', '/api/streams/$s/events', as: 'p'))
+            .json['events'] as List)
+          (e as Map)['id'] as String,
+    ].take(100).toList();
+    final pPlain = <int>[], pFormula = <int>[];
+    for (var i = 0; i < ids.length; i++) {
+      var sw = Stopwatch()..start();
+      var r = await h.call('PATCH', '/api/events/${ids[i]}',
+          as: 'p', body: {'amount': '${50 + i}'});
+      pPlain.add(sw.elapsedMicroseconds);
+      expect(r.status, 200, reason: '${r.json}');
+      sw = Stopwatch()..start();
+      r = await h.call('PATCH', '/api/events/${ids[i]}',
+          as: 'p', body: {'amountExpr': '\$base + $i'});
+      pFormula.add(sw.elapsedMicroseconds);
+      expect(r.status, 200, reason: '${r.json}');
+    }
+    final pAdded = p(pFormula, .95) - p(pPlain, .95);
+    // ignore: avoid_print
+    print('patch p95: plain ${p(pPlain, .95)} ms, formula '
+        '${p(pFormula, .95)} ms (+${pAdded.toStringAsFixed(2)} ms)');
+    expect(pAdded, lessThanOrEqualTo(5));
 
     final patch = <int>[], rename = <int>[], preview = <int>[];
     for (var i = 0; i < 20; i++) {

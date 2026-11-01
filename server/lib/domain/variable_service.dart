@@ -143,6 +143,12 @@ class VariableService {
     await VariableRefIndex(_db).reindexEvents(ids);
   }
 
+  /// After creating events (and their transfer peers) whose formulas were
+  /// just resolved against their resolving owner in this transaction
+  /// (prepareEventFormulas, D10 prediction): only the refs are written.
+  Future<void> afterEventCreate(Iterable<String> ids) =>
+      VariableRefIndex(_db).reindexEvents(ids, fresh: true);
+
   Future<void> afterStreamWrite(String id) async {
     await refreshStreams([id]);
     await VariableRefIndex(_db).reindexStreams([id]);
