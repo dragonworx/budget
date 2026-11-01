@@ -55,6 +55,9 @@ class FormulaField extends StatefulWidget {
     this.autovalidateMode = AutovalidateMode.onUserInteraction,
     this.formulasEnabled,
     this.touchMode,
+    this.errorText,
+    this.plainErrors = true,
+    this.helperMaxLines,
   });
 
   /// Range, scale, unit, today's parser and messages.
@@ -91,6 +94,18 @@ class FormulaField extends StatefulWidget {
   /// Null: iOS / Android. Forces the touch layout (operator row, picker
   /// dialog, 48 px rows) for tests and the demo.
   final bool? touchMode;
+
+  /// An error the screen manages itself (e.g. shown only after Save, as
+  /// the stream dialog does); wins over the field's own validation.
+  final String? errorText;
+
+  /// False: a plain number's errors are not shown (the screen only
+  /// disables its button, as the loan setup dialog does); a formula's
+  /// still are.
+  final bool plainErrors;
+
+  /// As [InputDecoration.helperMaxLines] for [helperText].
+  final int? helperMaxLines;
 
   @override
   State<FormulaField> createState() => _FormulaFieldState();
@@ -558,7 +573,9 @@ class _FormulaFieldState extends State<FormulaField> {
 
   String? _validate(FormulaValue? _) {
     final f = _c.formula;
-    if (f.message != null) return f.message;
+    if (f.message != null) {
+      return widget.plainErrors || f.isFormula ? f.message : null;
+    }
     if (f.pending) return null;
     return widget.extraValidator?.call(f);
   }
@@ -597,7 +614,7 @@ class _FormulaFieldState extends State<FormulaField> {
     // list closes. The value stays invalid either way.
     final errorText = _open && f.isFormula && f.message != null
         ? null
-        : field.errorText;
+        : widget.errorText ?? field.errorText;
     final preview = on && _c.showsFormula && errorText == null
         ? (f.pending
               ? '…'
@@ -671,7 +688,7 @@ class _FormulaFieldState extends State<FormulaField> {
       hintText: widget.hintText,
       helperText: helper == null ? widget.helperText : null,
       helper: lineBelowKeys ? null : helper,
-      helperMaxLines: helper == null ? null : 3,
+      helperMaxLines: helper == null ? widget.helperMaxLines : 3,
       isDense: widget.dense ? true : null,
       suffixIcon: suffix.isEmpty
           ? null

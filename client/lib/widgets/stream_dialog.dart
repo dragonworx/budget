@@ -2,6 +2,7 @@ import '../features/loans/loan_display.dart';
 
 import 'dart:async';
 
+import 'package:budget_formula/budget_formula.dart' show fieldSpecs;
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../boot/page_stub.dart'
     if (dart.library.js_interop) '../boot/page_web.dart';
 import '../data/models.dart';
+import 'formula/formula_field.dart';
 import 'money_text.dart';
 import '../theme/app_theme.dart';
 
@@ -68,8 +70,11 @@ class _StreamDialogState extends State<StreamDialog> {
   }
 
   late final TextEditingController _name;
-  late final TextEditingController _seedBalance;
-  late final TextEditingController _lossThreshold;
+
+  /// Seed and threshold take formulas (spec 013): read
+  /// [FormulaEditingController.formula], not the text.
+  late final FormulaEditingController _seedBalance;
+  late final FormulaEditingController _lossThreshold;
   late DateTime _seedDate;
 
   /// New streams start at Hundreds ([Stream.defaultCurrencyScale]); only
@@ -92,12 +97,41 @@ class _StreamDialogState extends State<StreamDialog> {
     super.initState();
     final existing = widget.existing;
     _name = TextEditingController(text: existing?.name ?? '');
-    _seedBalance = TextEditingController(
-      text: existing?.seedBalance.toString() ?? '0',
+    final on = ServerFeatures.variables;
+    _seedBalance = FormulaEditingController(
+      text:
+          (on ? existing?.seedBalanceExpr : null) ??
+          existing?.seedBalance.toString() ??
+          '0',
+      spec: fieldSpecs['stream.seed']!,
+      formulasEnabled: on,
     );
-    _lossThreshold = TextEditingController(
-      text: existing?.lossThreshold.toString() ?? '0',
+    _lossThreshold = FormulaEditingController(
+      text:
+          (on ? existing?.lossThresholdExpr : null) ??
+          existing?.lossThreshold.toString() ??
+          '0',
+      spec: fieldSpecs['stream.threshold']!,
+      formulasEnabled: on,
     );
+    if (on && existing != null) {
+      if (existing.seedBalanceExpr != null) {
+        flagSavedError(
+          _seedBalance,
+          existing.exprErrors,
+          'seedBalance',
+          existing.seedBalance,
+        );
+      }
+      if (existing.lossThresholdExpr != null) {
+        flagSavedError(
+          _lossThreshold,
+          existing.exprErrors,
+          'lossThreshold',
+          existing.lossThreshold,
+        );
+      }
+    }
     _seedDate = existing?.seedDate ?? DateTime.now();
     _currencyScale =
         existing?.currencyScale ?? BudgetStream.defaultCurrencyScale;
@@ -150,40 +184,54 @@ class _StreamDialogState extends State<StreamDialog> {
               autofocus: true,
             ),
             const SizedBox(height: 12),
-            TextField(
-              key: const ValueKey('stream-seed'),
-              controller: _seedBalance,
-              onChanged: _revalidate,
-              onSubmitted: (_) => _submit(),
-              decoration: InputDecoration(
-                labelText: 'Seed balance',
-                prefixText: '$moneySymbol ',
-                helperText: 'Balance on the seed date, before any events',
-                errorText: _balanceError,
-              ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              key: const ValueKey('stream-threshold'),
-              controller: _lossThreshold,
-              onChanged: _revalidate,
-              onSubmitted: (_) => _submit(),
-              decoration: InputDecoration(
-                labelText: 'Alert threshold',
-                prefixText: '$moneySymbol ',
-                helperText: widget.existing?.hasLoan ?? false
-                    ? loanThresholdHelper
-                    : thresholdHelper(widget.existing),
-                helperMaxLines: 3,
-                errorText: _lossError,
-              ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
+            // The owner's variables; a new stream is mine.
+            VariableScopeBuilder(
+              streamId: widget.existing?.id,
+              builder: (context, scope) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FormulaField(
+                    key: const ValueKey('stream-seed'),
+                    spec: fieldSpecs['stream.seed']!,
+                    scope: scope,
+                    controller: _seedBalance,
+                    label: 'Seed balance',
+                    prefixText: '$moneySymbol ',
+                    helperText: 'Balance on the seed date, before any events',
+                    errorText: _balanceError,
+                    // Errors show after the first Save, then live (below).
+                    autovalidateMode: AutovalidateMode.disabled,
+                    legacyKeyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: true,
+                    ),
+                    textInputAction: TextInputAction.done,
+                    onChanged: (_) => _revalidate(''),
+                    onSubmitted: (_) => _submit(),
+                  ),
+                  const SizedBox(height: 12),
+                  FormulaField(
+                    key: const ValueKey('stream-threshold'),
+                    spec: fieldSpecs['stream.threshold']!,
+                    scope: scope,
+                    controller: _lossThreshold,
+                    label: 'Alert threshold',
+                    prefixText: '$moneySymbol ',
+                    helperText: widget.existing?.hasLoan ?? false
+                        ? loanThresholdHelper
+                        : thresholdHelper(widget.existing),
+                    helperMaxLines: 3,
+                    errorText: _lossError,
+                    autovalidateMode: AutovalidateMode.disabled,
+                    legacyKeyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: true,
+                    ),
+                    textInputAction: TextInputAction.done,
+                    onChanged: (_) => _revalidate(''),
+                    onSubmitted: (_) => _submit(),
+                  ),
+                ],
               ),
             ),
             if (widget.existing != null) ...[
@@ -282,17 +330,18 @@ class _StreamDialogState extends State<StreamDialog> {
 
   /// Validates every field; returns whether all are valid.
   bool _validate() {
-    final lossText = _lossThreshold.text.trim();
+    final seed = _seedBalance.formula, loss = _lossThreshold.formula;
     setState(() {
       _nameError = _name.text.trim().isEmpty ? 'Enter a name' : null;
-      _balanceError = parseMoneyInput(_seedBalance.text) == null
-          ? 'Enter an amount, e.g. 2500 or -120.50'
-          : null;
-      _lossError = lossText.isEmpty || parseMoneyInput(lossText) != null
-          ? null
-          : 'Enter an amount, e.g. 200 (or leave empty for 0)';
+      // The specs carry today's messages (blank threshold = 0).
+      _balanceError = seed.message;
+      _lossError = loss.message;
     });
-    return _nameError == null && _balanceError == null && _lossError == null;
+    return _nameError == null &&
+        _balanceError == null &&
+        _lossError == null &&
+        seed.value != null &&
+        loss.value != null;
   }
 
   void _revalidate(String _) {
@@ -305,11 +354,8 @@ class _StreamDialogState extends State<StreamDialog> {
     _submitted = true;
     if (!_validate()) return;
     final name = _name.text.trim();
-    final balance = parseMoneyInput(_seedBalance.text)!;
-    final lossText = _lossThreshold.text.trim();
-    final lossThreshold = lossText.isEmpty
-        ? Decimal.zero
-        : parseMoneyInput(lossText)!;
+    final balance = _seedBalance.formula.value!;
+    final lossThreshold = _lossThreshold.formula.value ?? Decimal.zero;
     final existing = widget.existing;
     final stream = BudgetStream(
       id: existing?.id ?? '',
@@ -318,6 +364,8 @@ class _StreamDialogState extends State<StreamDialog> {
       seedBalance: balance,
       seedDate: _seedDate,
       lossThreshold: lossThreshold,
+      seedBalanceExpr: _seedBalance.formula.expr,
+      lossThresholdExpr: _lossThreshold.formula.expr,
       eventOrder: existing?.eventOrder ?? const [],
       displayOrder: existing?.displayOrder ?? 0,
       currencyScale: _currencyScale,

@@ -142,6 +142,9 @@ class FakeLoanEventRepository extends EventRepository {
   final Map<String, List<BudgetEvent>> byStream;
   final calls = <String>[];
   final created = <BudgetEvent>[];
+
+  /// What each create would send (its body), formulas included.
+  final createdJson = <Map<String, dynamic>>[];
   final updated = <BudgetEvent>[];
 
   /// A 400 message the next create / update fails with.
@@ -164,6 +167,7 @@ class FakeLoanEventRepository extends EventRepository {
     calls.add('create $streamId ${draft.name} ${draft.amount}');
     final e = draft.copyWith(streamId: streamId, version: 1);
     created.add(e);
+    createdJson.add(draft.toCreateJson());
     (byStream[streamId] ??= []).add(e);
     return e;
   }

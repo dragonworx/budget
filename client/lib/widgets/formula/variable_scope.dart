@@ -1,11 +1,13 @@
 // Whose variables a formula field resolves against (spec 011, D1/D10).
 import 'package:budget_formula/budget_formula.dart';
+import 'package:decimal/decimal.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
 import '../../features/variables/variables_manager.dart';
 import '../../state/providers.dart';
+import 'formula_controller.dart';
 
 /// Opens the variables manager (spec 012); [createName] prefills its add
 /// row. Resolves to the name of the last variable created there.
@@ -131,4 +133,38 @@ VariableScope scopeFor(WidgetRef ref, {String? streamId}) {
         : null,
     loading: async.isLoading && !async.hasValue,
   );
+}
+
+/// Builds a formula field with the variables of [streamId] (null: mine).
+/// Providers are only read when the server has variables on, so a screen
+/// with formulas off builds exactly as before (also without a
+/// ProviderScope, as some tests pump it).
+class VariableScopeBuilder extends StatelessWidget {
+  const VariableScopeBuilder({super.key, this.streamId, required this.builder});
+
+  final String? streamId;
+  final Widget Function(BuildContext context, VariableScope scope) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!ServerFeatures.variables) {
+      return builder(context, VariableScope.empty);
+    }
+    return Consumer(
+      builder: (context, ref, _) =>
+          builder(context, scopeFor(ref, streamId: streamId)),
+    );
+  }
+}
+
+/// A saved field's server error (`exprErrors[key]`, D8) flagged on [c]
+/// so the field shows it and blocks saving until the formula is fixed.
+void flagSavedError(
+  FormulaEditingController c,
+  Map<String, dynamic>? exprErrors,
+  String key,
+  Decimal saved,
+) {
+  final e = exprErrors?[key];
+  if (e is Map && e['message'] is String) c.flag(e['message'] as String, saved);
 }

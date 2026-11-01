@@ -175,7 +175,10 @@ void main() {
     expect(find.byKey(const ValueKey('loan-setup-dialog')), findsOneWidget);
     expect(find.text('Everyday'), findsOneWidget);
     final amount = tester.widget<TextField>(
-      find.byKey(const ValueKey('loan-setup-amount')),
+      find.descendant(
+        of: find.byKey(const ValueKey('loan-setup-amount')),
+        matching: find.byType(TextField),
+      ),
     );
     expect(amount.controller!.text, '3555.00');
     await tapKey(tester, 'loan-setup-create');

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:budget_formula/budget_formula.dart' show fieldSpecs;
 import 'package:budget_loan/budget_loan.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +12,7 @@ import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/confirm_dialog.dart';
-import '../../widgets/money_text.dart' show parseMoneyInput;
+import '../../widgets/formula/formula_field.dart';
 import '../../widgets/stream_picker.dart';
 import '../timeline/occurrence_info.dart' show ordinal;
 import '../timeline/zoom_level.dart' show dateOnly;
@@ -118,7 +119,7 @@ class _LoanSummaryPanelState extends ConsumerState<LoanSummaryPanel> {
     );
     if (r == null || !mounted) return;
     await _run(() async {
-      final draft = repaymentTransferDraft(
+      final plain = repaymentTransferDraft(
         fromStreamId: r.fromStreamId,
         loanStreamId: widget.streamId,
         amount: r.amount,
@@ -126,6 +127,10 @@ class _LoanSummaryPanelState extends ConsumerState<LoanSummaryPanel> {
         first: first,
         count: s.flat?.instalments,
       );
+      // A formula repayment keeps its text (spec 013, as the event amount).
+      final draft = r.amountExpr == null
+          ? plain
+          : plain.copyWith(amountExpr: r.amountExpr);
       final notifier = ref.read(eventsProvider(r.fromStreamId).notifier);
       final created = await notifier.create(draft);
       final flat = s.flat;
@@ -530,7 +535,11 @@ class _LoanSummaryPanelState extends ConsumerState<LoanSummaryPanel> {
   }
 }
 
-typedef _SetupResult = ({String fromStreamId, Decimal amount});
+typedef _SetupResult = ({
+  String fromStreamId,
+  Decimal amount,
+  String? amountExpr,
+});
 
 /// "Set up repayments": which stream pays, and how much (prefilled with
 /// the minimum); the schedule is the loan's.
@@ -558,8 +567,11 @@ class _SetupRepaymentsDialog extends ConsumerStatefulWidget {
 
 class _SetupRepaymentsDialogState
     extends ConsumerState<_SetupRepaymentsDialog> {
-  late final TextEditingController _amount = TextEditingController(
+  /// The repayment (spec 013: a formula, as the event amount).
+  late final FormulaEditingController _amount = FormulaEditingController(
     text: widget.amount.toStringAsFixed(2),
+    spec: fieldSpecs['event.amount']!,
+    formulasEnabled: ServerFeatures.variables,
   );
   BudgetStream? _from;
 
@@ -585,7 +597,7 @@ class _SetupRepaymentsDialogState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final amount = parseMoneyInput(_amount.text);
+    final amount = _amount.formula.value;
     final valid = _from != null && amount != null && amount > Decimal.zero;
     final when =
         '${frequencyLabel(widget.frequency)} from ${loanDate(widget.first)}'
@@ -621,17 +633,23 @@ class _SetupRepaymentsDialogState
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              key: const ValueKey('loan-setup-amount'),
-              controller: _amount,
-              decoration: const InputDecoration(
-                labelText: 'Each repayment',
+            // The payer's variables: the money leaves that stream (D10).
+            VariableScopeBuilder(
+              streamId: _from?.id,
+              builder: (context, scope) => FormulaField(
+                key: const ValueKey('loan-setup-amount'),
+                spec: fieldSpecs['event.amount']!,
+                scope: scope,
+                controller: _amount,
+                label: 'Each repayment',
                 prefixText: '\$ ',
+                // As before: a bad number only disables Create.
+                plainErrors: false,
+                legacyKeyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                onChanged: (_) => setState(() {}),
               ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 10),
             Text(when, style: theme.textTheme.bodySmall),
@@ -646,9 +664,11 @@ class _SetupRepaymentsDialogState
         FilledButton(
           key: const ValueKey('loan-setup-create'),
           onPressed: valid
-              ? () =>
-                    Navigator.of(context)
-                        .pop((fromStreamId: _from!.id, amount: amount))
+              ? () => Navigator.of(context).pop((
+                  fromStreamId: _from!.id,
+                  amount: amount,
+                  amountExpr: _amount.formula.expr,
+                ))
               : null,
           child: const Text('Create'),
         ),

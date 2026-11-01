@@ -69,8 +69,12 @@ void main() {
     expect(find.byKey(const ValueKey('stream-currency')), findsNothing);
     expect(find.text('Currency'), findsNothing);
     expect(find.textContaining('3-letter code'), findsNothing);
+    // The seed is a FormulaField (spec 013): its TextField inside.
     final seed = tester.widget<TextField>(
-      find.byKey(const ValueKey('stream-seed')),
+      find.descendant(
+        of: find.byKey(const ValueKey('stream-seed')),
+        matching: find.byType(TextField),
+      ),
     );
     expect(seed.decoration?.prefixText, r'$ ');
     // New streams have no Currency Scale field (they start at Hundreds).
