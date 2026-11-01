@@ -2,6 +2,7 @@ import 'package:decimal/decimal.dart';
 
 import 'api_client.dart';
 import '../features/planning/goal_models.dart';
+import '../features/timeline/perf_hud.dart';
 import '../features/timeline/saved_view.dart';
 import 'models.dart';
 import '../features/loans/loan_models.dart';
@@ -88,7 +89,12 @@ class StreamRepository {
       '/api/streams/$streamId/balance',
       query: {'from': formatDate(from), 'to': formatDate(to)},
     );
-    return BalanceSeries.fromJson(data);
+    perfStart('decode.balance');
+    try {
+      return BalanceSeries.fromJson(data);
+    } finally {
+      perfFinish();
+    }
   }
 
   Future<BudgetStream> reorderEvents(

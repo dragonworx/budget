@@ -9,6 +9,7 @@ import 'features/auth/invite_page.dart';
 import 'features/auth/sign_in_page.dart';
 import 'features/streams/streams_page.dart';
 import 'features/timeline/timeline_page.dart';
+import 'features/timeline/perf_hud.dart';
 import 'state/auth_providers.dart';
 import 'state/realtime_providers.dart';
 import 'theme/app_theme.dart';
@@ -140,6 +141,7 @@ class BudgetApp extends ConsumerWidget {
       scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'Budgie',
       debugShowCheckedModeBanner: false,
+      showPerformanceOverlay: kPerfHud,
       theme: AppTheme.dark(),
       themeMode: ThemeMode.dark,
       routerConfig: router,
@@ -149,7 +151,7 @@ class BudgetApp extends ConsumerWidget {
         final Widget page = auth.isLoading && !auth.hasValue && !auth.hasError
             ? const ColoredBox(color: AppTheme.bg)
             : child ?? const SizedBox.shrink();
-        return LandingIntroOverlay(child: page);
+        return PerfHud(child: LandingIntroOverlay(child: page));
       },
       // Australian English: dd/MM/yyyy in date pickers and inputs.
       locale: const Locale('en', 'AU'),
