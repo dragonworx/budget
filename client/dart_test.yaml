@@ -1,0 +1,5 @@
+# Benchmarks (tag `perf`) are skipped by default; run them with
+#   flutter test --run-skipped --tags perf test/perf/pan_bench_test.dart
+tags:
+  perf:
+    skip: 'perf benchmark: run with --run-skipped --tags perf'
