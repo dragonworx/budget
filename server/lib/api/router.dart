@@ -155,6 +155,10 @@ Middleware removedApi(List<String> prefixes) {
 
 /// API responses are live data: never let a browser, proxy or CDN cache them
 /// (a cached GET after a delete makes the deleted item reappear on reload).
+/// No `no-transform`: the front proxy (Caddy `encode`) may compress them
+/// (a 35-year /balance is megabytes of repetitive JSON); compression doesn't
+/// change the decoded body. The SSE stream (/api/live) keeps `no-transform`
+/// (Caddy's `encode` passes such responses through) so it stays unbuffered.
 Middleware noStoreApi() {
   return (Handler inner) {
     return (Request request) async {
@@ -164,8 +168,9 @@ Middleware noStoreApi() {
         return response;
       }
       return response.change(headers: {
-        'cache-control':
-            'no-store, no-cache, must-revalidate, max-age=0, no-transform',
+        'cache-control': path == '/api/live'
+            ? 'no-store, no-cache, must-revalidate, max-age=0, no-transform'
+            : 'no-store, no-cache, must-revalidate, max-age=0',
         'pragma': 'no-cache',
         'expires': '0',
       });
