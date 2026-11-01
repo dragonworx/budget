@@ -100,7 +100,13 @@ class _FormulaFieldState extends State<FormulaField> {
   FormulaEditingController? _ownController;
   FocusNode? _ownFocus;
   final _link = LayerLink();
-  final _portal = OverlayPortalController();
+
+  /// The suggestion list. An [OverlayEntry], not an [OverlayPortal]: on
+  /// web with the accessibility tree on, showing an OverlayPortal child
+  /// regroups the route's semantics nodes (traversal parent/child), which
+  /// moves the focused input's DOM subtree and blurs it on the first `$`.
+  OverlayEntry? _entry;
+  bool _entryDirty = false;
   final _targetKey = GlobalKey();
   final _formKey = GlobalKey<FormFieldState<FormulaValue>>();
   final _scroll = ScrollController();
@@ -134,7 +140,30 @@ class _FormulaFieldState extends State<FormulaField> {
       (defaultTargetPlatform == TargetPlatform.iOS ||
           defaultTargetPlatform == TargetPlatform.android ||
           coarsePointer);
-  bool get _open => _portal.isShowing;
+  bool get _open => _entry != null;
+
+  void _showList() {
+    if (_entry != null) return;
+    final overlay = Overlay.of(context);
+    final themes = InheritedTheme.capture(from: context, to: overlay.context);
+    final entry = OverlayEntry(builder: (ctx) => themes.wrap(_overlay(ctx)));
+    _entry = entry;
+    overlay.insert(entry);
+  }
+
+  void _hideList() {
+    final entry = _entry;
+    _entry = null;
+    entry?.remove();
+    entry?.dispose();
+  }
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _entry?.markNeedsBuild();
+  }
+
   String get _keyBase {
     final k = widget.key;
     return k is ValueKey<String> ? k.value : 'formula';
@@ -233,6 +262,7 @@ class _FormulaFieldState extends State<FormulaField> {
     _scroll.dispose();
     _swallowSubmit?.cancel();
     _escGuard?.cancel();
+    _hideList();
     super.dispose();
   }
 
@@ -306,7 +336,7 @@ class _FormulaFieldState extends State<FormulaField> {
       _items = items;
       if (moved || _hi >= items.length) _hi = 0;
     });
-    if (!_portal.isShowing) _portal.show();
+    if (_entry == null) _showList();
     if (moved && _scroll.hasClients) _scroll.jumpTo(0);
     if (_announced != items.length) {
       _announced = items.length;
@@ -328,8 +358,8 @@ class _FormulaFieldState extends State<FormulaField> {
     }
     _picker = false;
     _announced = null;
-    if (_portal.isShowing) {
-      _portal.hide();
+    if (_entry != null) {
+      _hideList();
       if (mounted) setState(() => _ctx = null);
     } else {
       _ctx = null;
@@ -620,7 +650,11 @@ class _FormulaFieldState extends State<FormulaField> {
           onManage: _c.scope.offersManage && editable
               ? () => _openManager()
               : null,
-          onOpenChanged: (open) => setState(() => _helpOpen = open),
+          onOpenChanged: (open) {
+            // The help popover paints over the field: close the list.
+            if (open) _close();
+            setState(() => _helpOpen = open);
+          },
         ),
     ];
 
@@ -702,33 +736,41 @@ class _FormulaFieldState extends State<FormulaField> {
       onSubmitted: _onSubmitted,
     );
 
+    _markEntry();
     return CompositedTransformTarget(
       link: _link,
-      child: OverlayPortal(
-        controller: _portal,
-        overlayChildBuilder: _overlay,
-        child: Column(
-          key: _targetKey,
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Focus(
-              canRequestFocus: false,
-              skipTraversal: true,
-              onKeyEvent: _onKey,
-              child: Semantics(label: semantics, child: textField),
+      child: Column(
+        key: _targetKey,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onKeyEvent: _onKey,
+            child: Semantics(label: semantics, child: textField),
+          ),
+          if (showKeys)
+            FormulaKeysRow(
+              keyPrefix: _keyBase,
+              onKey: _type,
+              onPicker: showPicker ? _openPicker : null,
             ),
-            if (showKeys)
-              FormulaKeysRow(
-                keyPrefix: _keyBase,
-                onKey: _type,
-                onPicker: showPicker ? _openPicker : null,
-              ),
-            ?lineUnderKeys,
-          ],
-        ),
+          ?lineUnderKeys,
+        ],
       ),
     );
+  }
+
+  /// The list follows this field's state: rebuild it after a parent-driven
+  /// rebuild too (scope, spec), as the portal did.
+  void _markEntry() {
+    if (_entry == null || _entryDirty) return;
+    _entryDirty = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _entryDirty = false;
+      _entry?.markNeedsBuild();
+    });
   }
 
   Widget _overlay(BuildContext context) {

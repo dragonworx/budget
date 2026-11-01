@@ -453,4 +453,28 @@ void main() {
     await typeText(tester, r'$');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('opening help closes the list (it would paint over it)', (
+    tester,
+  ) async {
+    await pumpFormula(tester);
+    await typeText(tester, r'$r');
+    expect(suggestions, findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('editor-amount-help')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('formula-help')), findsOneWidget);
+    expect(suggestions, findsNothing);
+  });
+
+  testWidgets('the list goes with the field (no stray overlay entry)', (
+    tester,
+  ) async {
+    await pumpFormula(tester);
+    await typeText(tester, r'$r');
+    expect(suggestions, findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    expect(suggestions, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }
