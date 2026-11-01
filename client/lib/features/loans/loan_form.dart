@@ -223,9 +223,9 @@ class _LoanFormState extends State<LoanForm> {
 
   void _termChanged() {
     final yf = _years.formula, mf = _months.formula;
-    // Empty counts as 0, as before.
-    final y = yf.intValue ?? 0;
-    final m = mf.intValue ?? 0;
+    // Empty counts as 0, as before (a plain number even out of range).
+    final y = _years.typedInt ?? 0;
+    final m = _months.typedInt ?? 0;
     d.termMonths = y * 12 + m;
     // The server adds the two texts up, so with a formula in either both
     // go (the plain one as its number).
@@ -668,10 +668,7 @@ class _LoanFormState extends State<LoanForm> {
                   d.chargeDay = switch (v) {
                     'monthEnd' => const MonthEndChargeDay(),
                     'day' => DayOfMonthChargeDay(
-                      (_chargeDayNumber.formula.intValue ?? d.start.day).clamp(
-                        1,
-                        31,
-                      ),
+                      (_chargeDayNumber.typedInt ?? d.start.day).clamp(1, 31),
                     ),
                     _ => const AnniversaryChargeDay(),
                   };
@@ -694,7 +691,7 @@ class _LoanFormState extends State<LoanForm> {
               onChanged: (f) {
                 d.chargeDayExpr = f.isFormula ? f.expr : null;
                 d.chargeDayProblem = formulaProblem(f);
-                final n = f.intValue;
+                final n = _chargeDayNumber.typedInt;
                 if (n == null || n < 1 || n > 31) {
                   // As before the day stays; the formula state still
                   // updates (Save is blocked by the problem).

@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:budget_formula/budget_formula.dart' show fieldSpecs;
+import 'package:budget_formula/budget_formula.dart'
+    show fieldSpecs, intervalSpec;
 import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
@@ -202,8 +203,10 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   /// The amount (spec 011): a plain number or a formula; read its
   /// [FormulaEditingController.formula] instead of parsing the text.
   late final FormulaEditingController _amount;
-  late final TextEditingController _interval;
-  late final TextEditingController _count;
+
+  /// N and the end-after count take formulas too (spec 013).
+  late final FormulaEditingController _interval;
+  late final FormulaEditingController _count;
   late EventDirection _direction;
 
   /// Transfer mode: the series moves money between this stream and
@@ -262,13 +265,37 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       _amount.flag(broken['message'] as String, existing!.amount);
     }
     final savedFreq = existing?.frequency;
-    _interval = TextEditingController(
+    final on = ServerFeatures.variables;
+    final intervalExpr = on ? existing?.intervalExpr : null;
+    _interval = FormulaEditingController(
       text:
+          intervalExpr ??
           '${savedFreq != null && savedFreq.interval > 1 ? savedFreq.interval : 2}',
+      spec: intervalSpec(1),
+      formulasEnabled: on,
     );
-    _count = TextEditingController(
-      text: (existing?.occurrenceCount ?? 12).toString(),
+    final countExpr = on ? existing?.occurrenceCountExpr : null;
+    _count = FormulaEditingController(
+      text: countExpr ?? (existing?.occurrenceCount ?? 12).toString(),
+      spec: fieldSpecs['event.count']!,
+      formulasEnabled: on,
     );
+    if (intervalExpr != null) {
+      flagSavedError(
+        _interval,
+        existing!.exprErrors,
+        'interval',
+        Decimal.fromInt(savedFreq?.interval ?? 1),
+      );
+    }
+    if (countExpr != null) {
+      flagSavedError(
+        _count,
+        existing!.exprErrors,
+        'count',
+        Decimal.fromInt(existing.occurrenceCount ?? 1),
+      );
+    }
     _direction = existing?.direction ?? EventDirection.debit;
     _transfer = existing?.transfer;
     _transferMode = _transfer != null;
@@ -451,8 +478,22 @@ class _EventEditorState extends ConsumerState<EventEditor> {
 
   static DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
 
-  int get _intervalValue =>
-      (int.tryParse(_interval.text.trim()) ?? 2).clamp(1, maxRuleInterval);
+  int get _intervalValue => (_interval.typedInt ?? 2).clamp(1, maxRuleInterval);
+
+  /// The rule uses N (every N weeks / months, a saved every N days).
+  bool get _usesInterval =>
+      _rule == FreqRule.everyNWeeks ||
+      _rule == FreqRule.everyNMonths ||
+      (_rule == FreqRule.daily && _dailyN);
+
+  /// N's formula text (null: plain or not used).
+  String? get _intervalExpr => _usesInterval ? _interval.formula.expr : null;
+
+  bool get _endsAfterCount =>
+      _recurrenceMode == RecurrenceMode.every && _endMode == EndMode.count;
+
+  /// The count's formula text (null: plain or not ending after a count).
+  String? get _countExpr => _endsAfterCount ? _count.formula.expr : null;
 
   /// The rule as picked (N families read [_interval]; days per family).
   Frequency get _frequency {
@@ -524,13 +565,15 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       startDate: _startDate,
       recurrenceMode: _recurrenceMode,
       interval: f.legacyInterval,
+      intervalExpr: _intervalExpr,
       unit: f.repeats ? RecurrenceUnit.fromJson(f.legacyUnit!) : null,
       days: f.days,
       endMode: endMode,
       endDate: endMode == EndMode.untilDate ? (endDate ?? _endDate) : null,
       occurrenceCount: endMode == EndMode.count
-          ? (count ?? int.tryParse(_count.text.trim()) ?? 1)
+          ? (count ?? _count.typedInt ?? 1)
           : null,
+      occurrenceCountExpr: _countExpr,
       enabled: _enabled,
       transfer: _transferMode ? _transfer : null,
       color: _category?.color ?? widget.existing?.color,
@@ -1174,8 +1217,11 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       _endDateError = null;
       return;
     }
-    final n = int.tryParse(_interval.text.trim()) ?? 0;
-    if ((r == FreqRule.everyNWeeks || r == FreqRule.everyNMonths) && n < 2) {
+    final n = _interval.typedInt ?? 0;
+    // A formula stays (its error says why it doesn't fit the rule).
+    if ((r == FreqRule.everyNWeeks || r == FreqRule.everyNMonths) &&
+        n < 2 &&
+        !_interval.formula.isFormula) {
       _interval.text = '2';
     }
     // A new one from a selected period: repeating ends on its last day.
@@ -1201,6 +1247,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         FrequencyPicker(
           rule: _rule,
           interval: _interval,
+          scope: _amountScope(),
           showDailyInterval: _dailyN,
           enabled: !_readOnly,
           onRuleChanged: _pickRule,
@@ -1322,22 +1369,16 @@ class _EventEditorState extends ConsumerState<EventEditor> {
             ],
             if (_endMode == EndMode.count) ...[
               const SizedBox(height: 12),
-              TextFormField(
+              FormulaField(
                 key: const ValueKey('editor-count'),
+                spec: fieldSpecs['event.count']!,
+                scope: _amountScope(),
                 controller: _count,
-                decoration: const InputDecoration(
-                  labelText: 'Number of occurrences',
-                  helperText: 'Includes the first one',
-                  suffixText: 'times',
-                ),
-                keyboardType: TextInputType.number,
-                onFieldSubmitted: (_) => _save(),
-                autovalidateMode: AutovalidateMode.onUserInteraction,
-                validator: (value) {
-                  if (_endMode != EndMode.count) return null;
-                  final n = int.tryParse(value ?? '');
-                  return n == null || n < 1 ? 'At least 1' : null;
-                },
+                label: 'Number of occurrences',
+                helperText: 'Includes the first one',
+                suffixText: 'times',
+                legacyKeyboardType: TextInputType.number,
+                onSubmitted: (_) => _save(),
               ),
             ],
           ],
@@ -1817,6 +1858,13 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     setState(() => _endDateError = null);
     if (!_formKey.currentState!.validate()) return null;
     if (_loanMode) return _validatedLoan();
+    // A formula still waiting for its variables: nothing to save yet
+    // (its field shows "…"); try again in a moment.
+    if (_amount.formula.pending ||
+        (_usesInterval && _interval.formula.pending) ||
+        (_endsAfterCount && _count.formula.pending)) {
+      return null;
+    }
     if (_recurrenceMode == RecurrenceMode.every &&
         _endMode == EndMode.untilDate &&
         _endDate == null) {
@@ -1840,6 +1888,8 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     return _draft(amount: _amount.formula.value!).copyWith(
       // copyWith drops formula texts on purpose (a plain edit clears one).
       amountExpr: _amount.formula.expr,
+      intervalExpr: _intervalExpr,
+      occurrenceCountExpr: _countExpr,
       id: widget.existing?.id ?? const Uuid().v4(),
       streamId: widget.streamId,
       name: category.name,

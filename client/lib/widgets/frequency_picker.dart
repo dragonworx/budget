@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 
+import 'package:budget_formula/budget_formula.dart' show intervalSpec;
 import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import 'formula/formula_field.dart';
 
 /// Largest "every N" the N families offer.
 const int maxRuleInterval = 99;
@@ -24,6 +26,9 @@ String ruleLabel(FreqRule rule) => switch (rule) {
 /// Every N months, as inline choice chips (no menu or dialog). The N
 /// families (and a legacy daily N > 1) show an inline [− N +] stepper.
 ///
+/// N takes a formula (spec 013): with one the − / + are off ("Clear the
+/// formula to use − / +") and the box widens to fit it (up to 180 px).
+///
 /// Keys: `<prefix>-freq`, `-freq-<apiName>`, `-interval`, `-interval-minus`,
 /// `-interval-plus`.
 class FrequencyPicker extends StatelessWidget {
@@ -36,12 +41,16 @@ class FrequencyPicker extends StatelessWidget {
     this.showDailyInterval = false,
     this.keyPrefix = 'editor',
     this.enabled = true,
+    this.scope,
   });
 
   final FreqRule rule;
 
-  /// The N text (digits) for the N families.
-  final TextEditingController interval;
+  /// The N text for the N families (a number or a formula).
+  final FormulaEditingController interval;
+
+  /// The variables N's formula may use (null: none).
+  final VariableScope? scope;
   final ValueChanged<FreqRule> onRuleChanged;
   final VoidCallback onIntervalChanged;
 
@@ -57,7 +66,10 @@ class FrequencyPicker extends StatelessWidget {
 
   int get _min => rule == FreqRule.daily ? 1 : 2;
 
-  int get _n => int.tryParse(interval.text.trim()) ?? _min;
+  int get _n => interval.typedInt ?? _min;
+
+  /// N is a formula: the steppers are off until it is cleared.
+  bool get _formula => interval.formula.isFormula;
 
   void _set(int n) {
     interval.text = '${n.clamp(_min, maxRuleInterval)}';
@@ -76,8 +88,8 @@ class FrequencyPicker extends StatelessWidget {
     Widget step(IconData icon, String tip, VoidCallback? onPressed, String k) =>
         IconButton(
           key: ValueKey('$p-interval-$k'),
-          tooltip: tip,
-          onPressed: enabled ? onPressed : null,
+          tooltip: _formula ? formulaStepperTip : tip,
+          onPressed: enabled && !_formula ? onPressed : null,
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           padding: EdgeInsets.zero,
           icon: Icon(icon, size: 20),
@@ -114,7 +126,11 @@ class FrequencyPicker extends StatelessWidget {
               ? const SizedBox(width: double.infinity)
               : Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Row(
+                  // A Wrap, not a Row: with plain numbers it lays out the
+                  // same; a widened formula box keeps its width and the
+                  // "+ unit" part flows to the next line (320 px phones).
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text('Every', style: theme.textTheme.bodyMedium),
                       const SizedBox(width: 4),
@@ -124,31 +140,25 @@ class FrequencyPicker extends StatelessWidget {
                         _n <= _min ? null : () => _set(_n - 1),
                         'minus',
                       ),
-                      SizedBox(
-                        width: 48,
-                        child: TextFormField(
-                          key: ValueKey('$p-interval'),
-                          controller: interval,
-                          enabled: enabled,
-                          textAlign: TextAlign.center,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(2),
-                          ],
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            contentPadding: EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onChanged: (_) => onIntervalChanged(),
-                          autovalidateMode: AutovalidateMode.onUserInteraction,
-                          validator: (value) {
-                            final v = int.tryParse((value ?? '').trim());
-                            return v == null || v < _min || v > maxRuleInterval
-                                ? '$_min–$maxRuleInterval'
-                                : null;
-                          },
+                      FormulaField(
+                        key: ValueKey('$p-interval'),
+                        spec: intervalSpec(_min),
+                        scope: scope ?? VariableScope.empty,
+                        controller: interval,
+                        enabled: enabled,
+                        textAlign: TextAlign.center,
+                        legacyKeyboardType: TextInputType.number,
+                        legacyFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(2),
+                        ],
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 12,
                         ),
+                        previewInTooltip: true,
+                        growWidth: (48, 180),
+                        onChanged: (_) => onIntervalChanged(),
                       ),
                       step(
                         Icons.add_rounded,

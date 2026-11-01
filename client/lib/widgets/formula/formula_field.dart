@@ -26,6 +26,9 @@ import 'variable_scope.dart';
 export 'formula_controller.dart' show FormulaEditingController, FormulaValue;
 export 'variable_scope.dart';
 
+/// The − / + tooltip while a stepped box holds a formula (spec 013).
+const formulaStepperTip = 'Clear the formula to use − / +';
+
 class FormulaField extends StatefulWidget {
   const FormulaField({
     super.key,
@@ -60,6 +63,10 @@ class FormulaField extends StatefulWidget {
     this.helperMaxLines,
     this.errorMaxLines,
     this.previewInTooltip = false,
+    this.contentPadding,
+    this.hintStyle,
+    this.enabledBorder,
+    this.growWidth,
   });
 
   /// Range, scale, unit, today's parser and messages.
@@ -103,6 +110,17 @@ class FormulaField extends StatefulWidget {
   /// the interval box): the value in a ✦ suffix tooltip instead of the
   /// line below, no picker button in the box, help only while focused.
   final bool previewInTooltip;
+
+  /// As the [InputDecoration] settings of the stock field this replaces.
+  final EdgeInsetsGeometry? contentPadding;
+  final TextStyle? hintStyle;
+  final InputBorder? enabledBorder;
+
+  /// A fixed-width box (min, max) that widens to fit a formula: today's
+  /// width (min) for a plain number, else as wide as the text needs up to
+  /// max (spec 013, the interval box). Also wide while the touch keys row
+  /// shows, so its keys don't wrap one a line.
+  final (double, double)? growWidth;
 
   /// As [InputDecoration.errorMaxLines] (the stock field's setting).
   final int? errorMaxLines;
@@ -728,6 +746,9 @@ class _FormulaFieldState extends State<FormulaField> {
       prefixText: widget.prefixText,
       suffixText: widget.suffixText,
       hintText: widget.hintText,
+      hintStyle: widget.hintStyle,
+      contentPadding: widget.contentPadding,
+      enabledBorder: widget.enabledBorder,
       helperText: helper == null ? widget.helperText : null,
       helper: lineBelowKeys ? null : helper,
       helperMaxLines: helper == null ? widget.helperMaxLines : 3,
@@ -736,6 +757,10 @@ class _FormulaFieldState extends State<FormulaField> {
       suffixIcon: suffix.isEmpty
           ? null
           : Row(mainAxisSize: MainAxisSize.min, children: suffix),
+      // Narrow boxes: the ✦ / help take only their own width.
+      suffixIconConstraints: compact && suffix.isNotEmpty
+          ? const BoxConstraints(minHeight: 40)
+          : null,
     ).applyDefaults(InputDecorationTheme.of(context));
     Widget? lineUnderKeys;
     if (errorText != null) {
@@ -797,6 +822,52 @@ class _FormulaFieldState extends State<FormulaField> {
     );
 
     _markEntry();
+    final column = Column(
+      key: _targetKey,
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Focus(
+          canRequestFocus: false,
+          skipTraversal: true,
+          onKeyEvent: _onKey,
+          child: Semantics(label: semantics, child: textField),
+        ),
+        if (showKeys)
+          FormulaKeysRow(
+            keyPrefix: _keyBase,
+            onKey: _type,
+            onPicker: showPicker ? _openPicker : null,
+          ),
+        ?lineUnderKeys,
+      ],
+    );
+    Widget box = column;
+    if (widget.growWidth case (final min, final max)) {
+      final wide = on && (_c.showsFormula || showKeys || suffix.isNotEmpty);
+      var width = min;
+      if (wide) {
+        // As wide as the text and its suffix (✦, help) need; all of max
+        // while the keys row shows (fewer wrapped lines).
+        final painter = TextPainter(
+          text: TextSpan(text: _c.text, style: theme.textTheme.bodyLarge),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final suffixWidth =
+            (densePreview != null ? 24.0 : 0) + (showHelp ? 48.0 : 0);
+        width = showKeys
+            ? max
+            : (painter.width + suffixWidth + 16).clamp(min, max);
+        painter.dispose();
+      }
+      box = SizedBox(
+        key: wide ? ValueKey('$_keyBase-wide') : null,
+        width: width,
+        child: column,
+      );
+    }
     // A fixed traversal order for the field and its help popover (an
     // OverlayPortal, so a separate semantics node): without it the two swap
     // as the touch error line comes and goes, and the web engine moves the
@@ -806,26 +877,7 @@ class _FormulaFieldState extends State<FormulaField> {
       child: Semantics(
         container: true,
         sortKey: const OrdinalSortKey(0, name: formulaSortName),
-        child: Column(
-          key: _targetKey,
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Focus(
-              canRequestFocus: false,
-              skipTraversal: true,
-              onKeyEvent: _onKey,
-              child: Semantics(label: semantics, child: textField),
-            ),
-            if (showKeys)
-              FormulaKeysRow(
-                keyPrefix: _keyBase,
-                onKey: _type,
-                onPicker: showPicker ? _openPicker : null,
-              ),
-            ?lineUnderKeys,
-          ],
-        ),
+        child: box,
       ),
     );
   }

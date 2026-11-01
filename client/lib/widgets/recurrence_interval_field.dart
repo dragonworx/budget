@@ -1,8 +1,10 @@
+import 'package:budget_formula/budget_formula.dart' show FieldSpec;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../theme/app_theme.dart';
+import 'formula/formula_field.dart';
 
 /// Largest "every N" offered.
 const int maxRecurrenceInterval = 99;
@@ -26,6 +28,9 @@ String recurrenceUnitWord(RecurrenceUnit unit, int count) {
 /// singular for 1. With [autoInterval] the field may be left blank: the
 /// calculated value shows as an italic hint (✦) and the buttons step from
 /// it; [onClear] then offers a clear button to go back to calculated.
+///
+/// With a [FormulaEditingController] and a [spec] N may be a formula: the
+/// box widens (up to 180) and the − / + buttons are off while it is one.
 class RecurrenceIntervalField extends StatelessWidget {
   const RecurrenceIntervalField({
     super.key,
@@ -42,6 +47,8 @@ class RecurrenceIntervalField extends StatelessWidget {
     this.validator,
     this.onClear,
     this.highlight = false,
+    this.spec,
+    this.scope,
   });
 
   final TextEditingController controller;
@@ -69,7 +76,51 @@ class RecurrenceIntervalField extends StatelessWidget {
   /// Draws attention (e.g. a value the solver needs).
   final bool highlight;
 
-  int? get _typed => int.tryParse(controller.text.trim());
+  /// The field's spec, for a [FormulaEditingController] (formulas).
+  final FieldSpec? spec;
+  final VariableScope? scope;
+
+  FormulaEditingController? get _formulaController => spec == null
+      ? null
+      : switch (controller) {
+          final FormulaEditingController c => c,
+          _ => null,
+        };
+
+  bool get _formula => _formulaController?.showsFormula ?? false;
+
+  int? get _typed =>
+      _formulaController?.typedInt ?? int.tryParse(controller.text.trim());
+
+  /// The most a formula box may take (48..180): the row less "Every",
+  /// − / +, the clear button and the unit dropdown's longest word.
+  double _room(BuildContext context, double row, int n, bool blank) {
+    final theme = Theme.of(context);
+    double measure(String text, TextStyle? style) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      final w = painter.width;
+      painter.dispose();
+      return w;
+    }
+
+    final every = row >= 270
+        ? measure('Every', theme.textTheme.bodyMedium) + 4
+        : 0;
+    var unitWord = 0.0;
+    for (final u in RecurrenceUnit.values) {
+      final w = measure(recurrenceUnitWord(u, n), theme.textTheme.titleMedium);
+      if (w > unitWord) unitWord = w;
+    }
+    // Dropdown: 12 + 12 padding, 24 arrow; the 4 gap before it.
+    final unit = unitWord + 48 + 4;
+    final clear = onClear != null && !blank ? 44 : 0;
+    return (row - every - 88 - unit - clear).clamp(48.0, 180.0);
+  }
 
   void _set(int n) {
     controller.text = '${n.clamp(1, maxRecurrenceInterval)}';
@@ -87,7 +138,7 @@ class RecurrenceIntervalField extends StatelessWidget {
     Widget step(IconData icon, String tip, VoidCallback? onPressed, String k) =>
         IconButton(
           key: ValueKey('$p-interval-$k'),
-          tooltip: tip,
+          tooltip: _formula ? formulaStepperTip : tip,
           onPressed: onPressed,
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           padding: EdgeInsets.zero,
@@ -109,48 +160,77 @@ class RecurrenceIntervalField extends StatelessWidget {
           step(
             Icons.remove_rounded,
             'Fewer',
-            n <= 1 ? null : () => _set(n - 1),
+            _formula || n <= 1 ? null : () => _set(n - 1),
             'minus',
           ),
-          SizedBox(
-            width: 48,
-            child: TextFormField(
+          if (_formulaController case final c?)
+            FormulaField(
               key: ValueKey('$p-interval'),
-              controller: controller,
+              spec: spec!,
+              scope: scope ?? VariableScope.empty,
+              controller: c,
               textAlign: TextAlign.center,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
+              legacyKeyboardType: TextInputType.number,
+              legacyFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(2),
               ],
-              decoration: InputDecoration(
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                hintText: autoInterval == null ? null : '$autoInterval',
-                hintStyle: TextStyle(
-                  color: scheme.primary,
-                  fontStyle: FontStyle.italic,
-                  fontWeight: FontWeight.w700,
-                ),
-                enabledBorder: border,
+              dense: true,
+              allowEmpty: allowBlank,
+              autovalidateMode: AutovalidateMode.disabled,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              hintText: autoInterval == null ? null : '$autoInterval',
+              hintStyle: TextStyle(
+                color: scheme.primary,
+                fontStyle: FontStyle.italic,
+                fontWeight: FontWeight.w700,
               ),
+              enabledBorder: border,
+              previewInTooltip: true,
+              // The unit dropdown keeps its place (and its longest word).
+              growWidth: (48, _room(context, box.maxWidth, n, blank)),
               onChanged: (_) => onChanged(),
-              validator:
-                  validator ??
-                  (value) {
-                    final raw = (value ?? '').trim();
-                    if (raw.isEmpty && allowBlank) return null;
-                    final v = int.tryParse(raw);
-                    return v == null || v < 1 || v > maxRecurrenceInterval
-                        ? '1–$maxRecurrenceInterval'
-                        : null;
-                  },
+            )
+          else
+            SizedBox(
+              width: 48,
+              child: TextFormField(
+                key: ValueKey('$p-interval'),
+                controller: controller,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(2),
+                ],
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  hintText: autoInterval == null ? null : '$autoInterval',
+                  hintStyle: TextStyle(
+                    color: scheme.primary,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  enabledBorder: border,
+                ),
+                onChanged: (_) => onChanged(),
+                validator:
+                    validator ??
+                    (value) {
+                      final raw = (value ?? '').trim();
+                      if (raw.isEmpty && allowBlank) return null;
+                      final v = int.tryParse(raw);
+                      return v == null || v < 1 || v > maxRecurrenceInterval
+                          ? '1–$maxRecurrenceInterval'
+                          : null;
+                    },
+              ),
             ),
-          ),
           step(
             Icons.add_rounded,
             'More',
-            n >= maxRecurrenceInterval ? null : () => _set(n + 1),
+            _formula || n >= maxRecurrenceInterval ? null : () => _set(n + 1),
             'plus',
           ),
           const SizedBox(width: 4),

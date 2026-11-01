@@ -154,6 +154,14 @@ class FormulaEditingController extends TextEditingController {
     return _cache = _resolve(t);
   }
 
+  /// The whole number typed: a formula's resolved value (null unless it
+  /// is a whole number), else today's `int.tryParse(text.trim())` even
+  /// out of range (steppers, live phrases read it as they did).
+  int? get typedInt {
+    final f = formula;
+    return f.isFormula ? f.intValue : parseLegacyInt(text);
+  }
+
   /// Whether [text] is (being) a formula: styled, previewed. Text today's
   /// parser accepts (`-5`, `1,250.50`) never is.
   bool get showsFormula => _enabled && formula.isFormula;
