@@ -137,3 +137,6 @@ class ClipboardReadException implements Exception {
   @override
   String toString() => message;
 }
+
+/// The primary pointer is a finger (phones, tablets).
+bool get coarsePointer => web.window.matchMedia('(pointer: coarse)').matches;

@@ -45,7 +45,6 @@ class FormulaKeysRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               onTap: onTap,
               child: SizedBox(
-                width: 40,
                 height: 40,
                 child: Center(
                   child: Text(
@@ -62,10 +61,8 @@ class FormulaKeysRow extends StatelessWidget {
     return TextFieldTapRegion(
       child: Padding(
         padding: const EdgeInsets.only(top: 6),
-        child: Wrap(
+        child: _KeysLayout(
           key: ValueKey('$keyPrefix-keys'),
-          spacing: 4,
-          runSpacing: 4,
           children: [
             for (final (label, insert) in formulaKeys)
               key(
@@ -88,7 +85,6 @@ class FormulaKeysRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                     onTap: onPicker,
                     child: const SizedBox(
-                      width: 40,
                       height: 40,
                       child: Icon(
                         Icons.data_object,
@@ -104,6 +100,41 @@ class FormulaKeysRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One line of equal keys (at least 40 px each) when they fit, else a wrap
+/// of 40 px keys (320 px phones).
+class _KeysLayout extends StatelessWidget {
+  const _KeysLayout({super.key, required this.children});
+  final List<Widget> children;
+
+  static const _gap = 4.0;
+  static const _min = 40.0;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, c) {
+      final n = children.length;
+      final fits = c.maxWidth >= n * _min + (n - 1) * _gap;
+      if (fits) {
+        // Up to 56 px a key, then left-aligned (wide screens, tablets).
+        final w = ((c.maxWidth - (n - 1) * _gap) / n).clamp(_min, 56.0);
+        return Row(
+          children: [
+            for (var i = 0; i < n; i++) ...[
+              if (i > 0) const SizedBox(width: _gap),
+              SizedBox(width: w, child: children[i]),
+            ],
+          ],
+        );
+      }
+      return Wrap(
+        spacing: _gap,
+        runSpacing: _gap,
+        children: [for (final k in children) SizedBox(width: _min, child: k)],
+      );
+    },
+  );
 }
 
 const _spoken = {

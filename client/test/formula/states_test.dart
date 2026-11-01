@@ -209,6 +209,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(previewText(tester), contains(r'$1,000.00'));
   });
+
+  testWidgets('touch: the keys row stays put as the line under it changes', (
+    tester,
+  ) async {
+    await pumpFormula(tester, touch: true);
+    final keys = find.byKey(const ValueKey('editor-amount-keys'));
+    final y0 = tester.getTopLeft(keys).dy;
+    await typeText(tester, '(');
+    expect(lineUnder(tester), isNotNull); // error line, below the keys
+    expect(tester.getTopLeft(keys).dy, y0);
+    await typeText(tester, r'($rate)');
+    expect(find.byKey(const ValueKey('editor-amount-preview')), findsOneWidget);
+    expect(tester.getTopLeft(keys).dy, y0);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('editor-amount-preview'))).dy,
+      greaterThan(tester.getBottomLeft(keys).dy),
+    );
+    // Unfocused: the line goes back into the field's decoration.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(keys, findsNothing);
+    expect(find.byKey(const ValueKey('editor-amount-error')), findsNothing);
+  });
 }
 
 class _ScopeSwap extends StatefulWidget {

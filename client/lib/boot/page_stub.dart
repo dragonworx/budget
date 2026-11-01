@@ -74,3 +74,5 @@ class ClipboardReadException implements Exception {
   @override
   String toString() => message;
 }
+
+bool get coarsePointer => false;

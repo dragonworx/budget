@@ -161,5 +161,7 @@ String? lineUnder(WidgetTester tester) {
   final d = tester.widget<InputDecorator>(
     find.descendant(of: amountField, matching: find.byType(InputDecorator)),
   );
+  final moved = find.byKey(const ValueKey('editor-amount-error'));
+  if (moved.evaluate().isNotEmpty) return tester.widget<Text>(moved).data;
   return d.decoration.errorText;
 }

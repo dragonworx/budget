@@ -12,6 +12,8 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 
+import '../../boot/page_stub.dart'
+    if (dart.library.js_interop) '../../boot/page_web.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import 'formula_cheat_sheet.dart';
@@ -130,7 +132,8 @@ class _FormulaFieldState extends State<FormulaField> {
   bool get _touch =>
       widget.touchMode ??
       (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.android);
+          defaultTargetPlatform == TargetPlatform.android ||
+          coarsePointer);
   bool get _open => _portal.isShowing;
   String get _keyBase {
     final k = widget.key;
@@ -597,21 +600,54 @@ class _FormulaFieldState extends State<FormulaField> {
         ),
     ];
 
+    // Touch: the operator row sits right under the field box and the line
+    // under the field moves below it, so the keys don't jump as the
+    // preview or error comes and goes (the border still turns red).
+    final showKeys = on && editable && focused && _touch;
+    final lineBelowKeys = showKeys && (helper != null || errorText != null);
+
     var decoration = InputDecoration(
       labelText: widget.label,
       prefixText: widget.prefixText,
       suffixText: widget.suffixText,
       hintText: widget.hintText,
       helperText: helper == null ? widget.helperText : null,
-      helper: helper,
+      helper: lineBelowKeys ? null : helper,
       helperMaxLines: helper == null ? null : 3,
       isDense: widget.dense ? true : null,
       suffixIcon: suffix.isEmpty
           ? null
           : Row(mainAxisSize: MainAxisSize.min, children: suffix),
     ).applyDefaults(InputDecorationTheme.of(context));
+    Widget? lineUnderKeys;
     if (errorText != null) {
-      decoration = decoration.copyWith(errorText: errorText);
+      decoration = lineBelowKeys
+          ? decoration.copyWith(error: const SizedBox.shrink())
+          : decoration.copyWith(errorText: errorText);
+    }
+    if (lineBelowKeys) {
+      final pad =
+          decoration.contentPadding?.resolve(Directionality.of(context)) ??
+          const EdgeInsets.symmetric(horizontal: 12);
+      lineUnderKeys = Padding(
+        padding: EdgeInsets.fromLTRB(pad.left, 6, pad.right, 0),
+        child: errorText != null
+            ? Semantics(
+                liveRegion: true,
+                child: Text(
+                  errorText,
+                  key: ValueKey('$_keyBase-error'),
+                  maxLines: decoration.errorMaxLines ?? 3,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      decoration.errorStyle ??
+                      theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
+                ),
+              )
+            : helper,
+      );
     }
 
     final label = widget.label;
@@ -642,7 +678,6 @@ class _FormulaFieldState extends State<FormulaField> {
       onSubmitted: _onSubmitted,
     );
 
-    final showKeys = on && editable && focused && _touch;
     return CompositedTransformTarget(
       link: _link,
       child: OverlayPortal(
@@ -665,6 +700,7 @@ class _FormulaFieldState extends State<FormulaField> {
                 onKey: _type,
                 onPicker: showPicker ? _openPicker : null,
               ),
+            ?lineUnderKeys,
           ],
         ),
       ),
