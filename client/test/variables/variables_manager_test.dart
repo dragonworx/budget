@@ -388,7 +388,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester.getSemantics(find.text(r'$rent is in use')),
-        containsSemantics(
+        isSemantics(
           label: r'$rent is in use',
           isHeader: true,
           namesRoute: true,
@@ -396,7 +396,7 @@ void main() {
       );
       expect(
         tester.getSemantics(k('variable-usages-message')),
-        containsSemantics(label: 'Change these fields first, then delete it.'),
+        isSemantics(label: 'Change these fields first, then delete it.'),
       );
       sem.dispose();
     });
