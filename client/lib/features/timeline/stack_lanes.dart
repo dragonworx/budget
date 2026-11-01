@@ -360,32 +360,56 @@ List<StackPlateau> stackPlateaus({
   required double Function(DateTime) xOf,
   required double minX,
   required double maxX,
+}) => stackPlateausOf(
+  lanes: lanes,
+  days: [for (final s in samples) dateOnly(s.date)],
+  balanceAt: (i) => samples[i].closingBalance.toDouble(),
+  drawStart: drawStart,
+  drawEnd: drawEnd,
+  xOf: xOf,
+  minX: minX,
+  maxX: maxX,
+);
+
+/// [stackPlateaus] over balance steps given as [days] (ascending, local
+/// midnight) and their balances ([balanceAt] by index): the coarse tiers
+/// pass one step per ladder bucket (its last close), so the ribbon is cut
+/// only where a bucket's value or the active lanes change.
+List<StackPlateau> stackPlateausOf({
+  required LaneSet lanes,
+  required List<DateTime> days,
+  required double Function(int i) balanceAt,
+  required DateTime drawStart,
+  required DateTime drawEnd,
+  required double Function(DateTime) xOf,
+  required double minX,
+  required double maxX,
 }) {
-  if (!drawStart.isBefore(drawEnd) || samples.isEmpty) return const [];
+  if (!drawStart.isBefore(drawEnd) || days.isEmpty) return const [];
   final cuts = <DateTime>{drawStart};
   void cut(DateTime d) {
     if (d.isAfter(drawStart) && d.isBefore(drawEnd)) cuts.add(d);
   }
 
-  for (final s in samples) {
-    cut(dateOnly(s.date));
+  for (final d in days) {
+    cut(d);
   }
   for (final l in lanes.lanes) {
     cut(l.start);
     if (l.end != null) cut(addCalendarDays(l.end!, 1));
   }
-  final days = cuts.toList()..sort();
+  final sorted = cuts.toList()..sort();
   final out = <StackPlateau>[];
   var at = 0;
   double? balance;
-  for (var i = 0; i < days.length; i++) {
-    final d = days[i];
-    while (at < samples.length && !dateOnly(samples[at].date).isAfter(d)) {
-      balance = samples[at].closingBalance.toDouble();
+  for (var i = 0; i < sorted.length; i++) {
+    final d = sorted[i];
+    while (at < days.length && !days[at].isAfter(d)) {
+      balance = balanceAt(at);
       at++;
     }
     if (balance == null) continue;
-    final next = i + 1 < days.length ? days[i + 1] : drawEnd;
+    final next = i + 1 < sorted.length ? sorted[i + 1] : drawEnd;
     final x0 = xOf(d).clamp(minX, maxX).toDouble();
     final x1 = xOf(next).clamp(minX, maxX).toDouble();
     out.add(

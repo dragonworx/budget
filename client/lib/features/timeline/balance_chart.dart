@@ -26,6 +26,7 @@ import 'step_dots.dart';
 import 'tap_menu.dart';
 import 'trim.dart';
 import 'alert_fill.dart';
+import 'lod.dart';
 import 'zoom_level.dart';
 import 'perf_hud.dart';
 import '../../data/alert.dart';
@@ -540,6 +541,9 @@ class _BalanceChartState extends State<BalanceChart>
 
   /// Vertex keys labelled last paint; see [_BalanceChartPainter.labelMemory].
   final Map<int, _LabelSpot> _labelMemory = <int, _LabelSpot>{};
+
+  /// Level-of-detail tier memory (hysteresis), shared by the painters.
+  final LodMemory _lod = LodMemory();
 
   /// Painted label boxes (see [_LabelHit]); refreshed by every paint.
   final List<_LabelHit> _labelHits = <_LabelHit>[];
@@ -1827,6 +1831,7 @@ class _BalanceChartState extends State<BalanceChart>
                         key: _chartPaintKey,
                         painter: _BalanceChartPainter(
                           labelMemory: _labelMemory,
+                          lod: _lod,
                           labelHits: _labelHits,
                           series: widget.series,
                           seedDate: widget.seedDate,
@@ -5057,6 +5062,7 @@ class _BalanceChartPainter extends CustomPainter {
     this.seedBalance,
     required this.lossThreshold,
     this.payoffDates = const [],
+    required this.lod,
     required this.viewStart,
     required this.visibleDays,
     required this.labelStyle,
@@ -5110,6 +5116,9 @@ class _BalanceChartPainter extends CustomPainter {
 
   /// Loan payoff dates: a "Paid off" marker each.
   final List<DateTime> payoffDates;
+
+  /// Level of detail: the tier shown last frame (updated by [paint]).
+  final LodMemory lod;
   final DateTime viewStart;
   final double visibleDays;
   final TextStyle labelStyle;
@@ -5149,6 +5158,7 @@ class _BalanceChartPainter extends CustomPainter {
 
   void _paintChart(Canvas canvas, Size size) {
     final layout = ChartLayout.of(size, visibleDays);
+    lod.update(layout.plot.width / math.max(visibleDays, 0.001));
     final seed = lineStart;
     final viewEnd = _viewEnd;
     final visible = visibleBalance(
@@ -5713,6 +5723,7 @@ class _BalanceChartPainter extends CustomPainter {
     DateTime seed,
     DateTime viewEnd,
   ) {
+    _envelope = null;
     var drawStart = viewStart.isBefore(seed) ? seed : viewStart;
     final from = dataFrom;
     if (from != null && drawStart.isBefore(from) && !from.isBefore(seed)) {
@@ -5726,17 +5737,6 @@ class _BalanceChartPainter extends CustomPainter {
     }
     if (!drawStart.isBefore(drawEnd)) return;
 
-    BalancePoint? carry;
-    final jumps = <BalancePoint>[];
-    for (final sample in visible.samples) {
-      if (!dateOnly(sample.date).isAfter(drawStart)) {
-        carry = sample;
-      } else {
-        jumps.add(sample);
-      }
-    }
-    if (carry == null && jumps.isEmpty) return;
-
     final startX = layout
         .xOf(drawStart, viewStart, visibleDays)
         .clamp(layout.plot.left, layout.plot.right)
@@ -5748,39 +5748,70 @@ class _BalanceChartPainter extends CustomPainter {
 
     final plateaus = <({double x0, double x1, double value})>[];
     final strokes = <({Offset from, Offset to, bool loss})>[];
-    double? current = carry?.closingBalance.toDouble();
-    var cursor = startX;
-    for (final jump in jumps) {
-      final jx = layout
-          .xOf(_stepAt(jump.date), viewStart, visibleDays)
-          .clamp(layout.plot.left, layout.plot.right)
-          .toDouble();
-      final next = jump.closingBalance.toDouble();
-      if (current != null) {
-        final y = scale.yOf(current);
-        plateaus.add((x0: cursor, x1: jx, value: current));
-        strokes.add((
-          from: Offset(cursor, y),
-          to: Offset(jx, y),
-          loss: _isLoss(current),
-        ));
-        strokes.add((
-          from: Offset(jx, y),
-          to: Offset(jx, scale.yOf(next)),
-          loss: _isLoss(next),
-        ));
+    // Coarse tiers: per-bucket fill columns (x0, x1, min, max).
+    List<FillColumn>? columns;
+    final ix = visible.index;
+    if (lod.tier.coarse && ix != null) {
+      columns = [];
+      if (!_envelopeStrokes(
+        layout,
+        scale,
+        visible,
+        ix,
+        drawStart,
+        startX,
+        endX,
+        strokes,
+        columns,
+      )) {
+        return;
       }
-      current = next;
-      cursor = jx;
+    } else {
+      BalancePoint? carry;
+      final jumps = <BalancePoint>[];
+      for (final sample in visible.samples) {
+        if (!dateOnly(sample.date).isAfter(drawStart)) {
+          carry = sample;
+        } else {
+          jumps.add(sample);
+        }
+      }
+      if (carry == null && jumps.isEmpty) return;
+
+      double? current = carry?.closingBalance.toDouble();
+      var cursor = startX;
+      for (final jump in jumps) {
+        final jx = layout
+            .xOf(_stepAt(jump.date), viewStart, visibleDays)
+            .clamp(layout.plot.left, layout.plot.right)
+            .toDouble();
+        final next = jump.closingBalance.toDouble();
+        if (current != null) {
+          final y = scale.yOf(current);
+          plateaus.add((x0: cursor, x1: jx, value: current));
+          strokes.add((
+            from: Offset(cursor, y),
+            to: Offset(jx, y),
+            loss: _isLoss(current),
+          ));
+          strokes.add((
+            from: Offset(jx, y),
+            to: Offset(jx, scale.yOf(next)),
+            loss: _isLoss(next),
+          ));
+        }
+        current = next;
+        cursor = jx;
+      }
+      if (current == null) return;
+      final endY = scale.yOf(current);
+      plateaus.add((x0: cursor, x1: endX, value: current));
+      strokes.add((
+        from: Offset(cursor, endY),
+        to: Offset(endX, endY),
+        loss: _isLoss(current),
+      ));
     }
-    if (current == null) return;
-    final endY = scale.yOf(current);
-    plateaus.add((x0: cursor, x1: endX, value: current));
-    strokes.add((
-      from: Offset(cursor, endY),
-      to: Offset(endX, endY),
-      loss: _isLoss(current),
-    ));
 
     canvas.save();
     canvas.clipRect(layout.plot);
@@ -5797,19 +5828,48 @@ class _BalanceChartPainter extends CustomPainter {
     final thresholdY = lossThreshold.isFinite
         ? scale.yOf(lossThreshold)
         : layout.plot.bottom + 1e4;
-    final split = alertFillOf(
-      [
-        for (final p in plateaus)
-          (x0: p.x0, x1: p.x1, y: scale.yOf(p.value), low: _isLoss(p.value)),
-      ],
-      alertY: thresholdY,
-      plot: layout.plot,
-    );
+    final split = columns != null
+        ? envelopeFill(
+            columns,
+            alertY: thresholdY,
+            plot: layout.plot,
+            yOf: scale.yOf,
+            low: _isLoss,
+          )
+        : alertFillOf(
+            [
+              for (final p in plateaus)
+                (
+                  x0: p.x0,
+                  x1: p.x1,
+                  y: scale.yOf(p.value),
+                  low: _isLoss(p.value),
+                ),
+            ],
+            alertY: thresholdY,
+            plot: layout.plot,
+          );
     debugAlertFill?.call(split, thresholdY);
-    for (final r in split.safe) {
-      canvas.drawRect(r, areaFill);
+    void fillAll(List<Rect> rects, Paint paint) {
+      if (columns == null) {
+        for (final r in rects) {
+          canvas.drawRect(r, paint);
+        }
+        return;
+      }
+      // Coarse: one path for every column (a draw call per px column
+      // would blow the per-frame draw budget).
+      if (rects.isEmpty) return;
+      final path = Path();
+      for (final r in rects) {
+        path.addRect(r);
+      }
+      canvas.drawPath(path, paint);
     }
-    if (split.deficit.isNotEmpty || split.under.isNotEmpty) {
+
+    if (!debugSeriesFillDisabled) fillAll(split.safe, areaFill);
+    if (!debugSeriesFillDisabled &&
+        (split.deficit.isNotEmpty || split.under.isNotEmpty)) {
       // Under the alert line, a low run is red: the band between the alert
       // and the balance line deepens over its first stretch (a shallow dip
       // reads lighter than a deep one), and its column under the line
@@ -5843,12 +5903,8 @@ class _BalanceChartPainter extends CustomPainter {
                 math.max(plot.bottom, top + 1),
               ),
             );
-      for (final r in split.deficit) {
-        canvas.drawRect(r, deficitFill);
-      }
-      for (final r in split.under) {
-        canvas.drawRect(r, underFill);
-      }
+      fillAll(split.deficit, deficitFill);
+      fillAll(split.under, underFill);
     }
 
     if (thresholdY >= layout.plot.top && thresholdY <= layout.plot.bottom) {
@@ -5879,7 +5935,7 @@ class _BalanceChartPainter extends CustomPainter {
 
     if (!lanes.isEmpty) {
       perfStart('chart.stack');
-      _paintStack(canvas, layout, scale, visible.samples, drawStart, drawEnd);
+      _paintStack(canvas, layout, scale, visible, drawStart, drawEnd);
       perfFinish();
       canvas.restore();
       return;
@@ -5915,6 +5971,95 @@ class _BalanceChartPainter extends CustomPainter {
     canvas.restore();
   }
 
+  /// The coarse-tier balance line (spec 006 R3): an M4 step envelope, one
+  /// riser per ladder bucket through its exact min and max, and the flat
+  /// step from one bucket's last close to the next. Never interpolated.
+  /// Adds the line to [strokes] and the fill to [columns]; false when there
+  /// is nothing to draw.
+  bool _envelopeStrokes(
+    ChartLayout layout,
+    _YScale scale,
+    VisibleBalance visible,
+    PointIndex ix,
+    DateTime drawStart,
+    double startX,
+    double endX,
+    List<({Offset from, Offset to, bool loss})> strokes,
+    List<FillColumn> columns,
+  ) {
+    final slod = seriesLodOf(series.points);
+    final j0 = math.max(
+      visible.lo,
+      ix.upperBound(drawStart.microsecondsSinceEpoch),
+    );
+    final hasCarry = j0 - 1 >= visible.lo;
+    if (!hasCarry && j0 >= visible.hi) return false;
+    final plot = layout.plot;
+    final dayPx = plot.width / math.max(visibleDays, 0.001);
+    final level = slod.level(lodBucketDaysFor(dayPx));
+    final v0 = dayCoord(viewStart);
+    double xOfDay(int d) => (plot.left + (d - v0) / visibleDays * plot.width)
+        .clamp(plot.left, plot.right)
+        .toDouble();
+    double? cur = hasCarry ? slod.values[j0 - 1] : null;
+    final env = envelopeOf(slod, level, j0, visible.hi);
+    _envelope = (
+      carryDay: hasCarry ? slod.dayIndex[j0 - 1] : null,
+      carry: cur,
+      columns: env,
+    );
+    var lineX = startX, fillX = startX;
+    void rise(double x, double to) {
+      strokes.add((
+        from: strokes.isEmpty ? Offset(x, scale.yOf(to)) : strokes.last.to,
+        to: Offset(x, scale.yOf(to)),
+        loss: _isLoss(to),
+      ));
+    }
+
+    for (final c in env) {
+      final jx = xOfDay(c.dayIndex);
+      if (cur != null) {
+        final y = scale.yOf(cur);
+        strokes.add((
+          from: Offset(lineX, y),
+          to: Offset(jx, y),
+          loss: _isLoss(cur),
+        ));
+        columns.add((x0: fillX, x1: jx, min: cur, max: cur));
+      } else {
+        strokes.add((
+          from: Offset(jx, scale.yOf(c.first)),
+          to: Offset(jx, scale.yOf(c.first)),
+          loss: _isLoss(c.first),
+        ));
+      }
+      rise(jx, c.first);
+      rise(jx, c.min);
+      rise(jx, c.max);
+      rise(jx, c.last);
+      final endDay = (floorDiv(c.dayIndex, level.days) + 1) * level.days;
+      final bx = math.max(jx, xOfDay(endDay));
+      columns.add((x0: jx, x1: bx, min: c.min, max: c.max));
+      lineX = jx;
+      fillX = bx;
+      cur = c.last;
+    }
+    if (cur == null) return false;
+    final endY = scale.yOf(cur);
+    strokes.add((
+      from: Offset(lineX, endY),
+      to: Offset(endX, endY),
+      loss: _isLoss(cur),
+    ));
+    columns.add((x0: fillX, x1: endX, min: cur, max: cur));
+    return true;
+  }
+
+  /// The coarse envelope [_envelopeStrokes] built this frame (null at L0):
+  /// the lanes ribbon steps on it.
+  ({int? carryDay, double? carry, List<EnvelopeColumn> columns})? _envelope;
+
   /// The ribbon [_paintStack] drew last (for the day totals to steer clear
   /// of).
   List<StackPlateau> _plateaus = const [];
@@ -5928,23 +6073,71 @@ class _BalanceChartPainter extends CustomPainter {
     Canvas canvas,
     ChartLayout layout,
     _YScale scale,
-    List<BalancePoint> samples,
+    VisibleBalance visible,
     DateTime drawStart,
     DateTime drawEnd,
   ) {
     final plot = layout.plot;
     final h = _laneHeight(lanes, layout);
     _laneH = h;
-    final plateaus = [
-      for (final p in stackPlateaus(
+    final env = lod.tier.coarse ? _envelope : null;
+    final List<StackPlateau> raw;
+    // Coarse tiers: one balance step per ladder bucket (its last close);
+    // each bucket's min..max riser is drawn with the true line below.
+    final bars = <Rect>[];
+    if (env != null) {
+      DateTime dayOf(int i) => DateTime(1970, 1, 1 + i);
+      final days = <DateTime>[], values = <double>[];
+      final carryDay = env.carryDay;
+      if (carryDay != null) {
+        days.add(dayOf(carryDay));
+        values.add(env.carry!);
+      }
+      var prev = env.carry;
+      final v0 = dayCoord(viewStart);
+      for (final c in env.columns) {
+        days.add(dayOf(c.dayIndex));
+        values.add(c.last);
+        final hi = math.max(prev ?? c.max, c.max);
+        final lo = math.min(prev ?? c.min, c.min);
+        if (hi - lo > 0) {
+          final x = plot.left + (c.dayIndex - v0) / visibleDays * plot.width;
+          if (x >= plot.left - 2 && x <= plot.right + 2) {
+            bars.add(
+              Rect.fromLTRB(
+                x - 1.5,
+                scale.yOf(hi) - 1.5,
+                x + 1.5,
+                scale.yOf(lo) + 1.5,
+              ),
+            );
+          }
+        }
+        prev = c.last;
+      }
+      raw = stackPlateausOf(
         lanes: lanes,
-        samples: samples,
+        days: days,
+        balanceAt: (i) => values[i],
         drawStart: drawStart,
         drawEnd: drawEnd,
         xOf: (d) => layout.xOf(d, viewStart, visibleDays),
         minX: plot.left,
         maxX: plot.right,
-      ))
+      );
+    } else {
+      raw = stackPlateaus(
+        lanes: lanes,
+        samples: visible.samples,
+        drawStart: drawStart,
+        drawEnd: drawEnd,
+        xOf: (d) => layout.xOf(d, viewStart, visibleDays),
+        minX: plot.left,
+        maxX: plot.right,
+      );
+    }
+    final plateaus = [
+      for (final p in raw)
         if (p.x1 - p.x0 > 0.01) p,
     ];
     _plateaus = plateaus;
@@ -5953,8 +6146,13 @@ class _BalanceChartPainter extends CustomPainter {
     final thin = Path(); // the plain line where no lane is active
     final loss = Path(); // a red rim on the ribbon below the alert
     var cost = 0;
+    final dayPx0 = plot.width / math.max(visibleDays, 0.001);
     for (final p in plateaus) {
-      cost += p.active.length;
+      // Coarse tiers: a bucket plateau stands for the days it spans, so
+      // the collapse below triggers where the per-day ribbon did.
+      cost += env == null
+          ? p.active.length
+          : p.active.length * math.max(1, ((p.x1 - p.x0) / dayPx0).round());
     }
     // A heavy stream zoomed far out: one band, no per-lane shapes.
     final collapse = cost > 9000;
@@ -6165,6 +6363,7 @@ class _BalanceChartPainter extends CustomPainter {
     // so it can be traced on any lane colour. Only the dots and chips, drawn
     // later, sit above it.
     final halo = Path(), core = Path()..addPath(riser, Offset.zero);
+    truth.addAll(bars);
     for (final r in truth) {
       halo.addRect(r.inflate(2.1));
       core.addRect(r);

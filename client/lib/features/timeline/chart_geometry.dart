@@ -86,11 +86,31 @@ class BalanceExtents {
 /// Samples that intersect `[viewStart, viewEnd]`, including the balance
 /// carried in from the latest close at or before [viewStart].
 class VisibleBalance {
-  const VisibleBalance({required this.samples, required this.extents});
+  VisibleBalance({required List<BalancePoint> samples, required this.extents})
+    : _samples = samples,
+      index = null,
+      lo = 0,
+      hi = samples.length;
 
-  /// Ordered closes. The first sample may fall before [viewStart].
-  final List<BalancePoint> samples;
+  VisibleBalance._indexed(
+    PointIndex this.index,
+    this.lo,
+    this.hi,
+    this.extents,
+  );
+
+  /// Ordered closes. The first sample may fall before [viewStart]. Built
+  /// on first use (the level-of-detail path reads [index] / [lo] / [hi]
+  /// instead, so a coarse frame copies no per-day list).
+  List<BalancePoint> get samples => _samples ??= index!.sorted.sublist(lo, hi);
+  List<BalancePoint>? _samples;
   final BalanceExtents extents;
+
+  /// The points' index, and the sample range `[lo, hi)` within it (null
+  /// index: [samples] were given directly).
+  final PointIndex? index;
+  final int lo;
+  final int hi;
 }
 
 VisibleBalance? visibleBalance({
@@ -110,17 +130,7 @@ VisibleBalance? visibleBalance({
   final lo = firstIn > from ? firstIn - 1 : firstIn;
   final hi = ix.upperBound(endUs);
   if (hi <= lo) return null;
-  var minV = ix.values[lo];
-  var maxV = minV;
-  for (var i = lo + 1; i < hi; i++) {
-    final value = ix.values[i];
-    if (value < minV) minV = value;
-    if (value > maxV) maxV = value;
-  }
-  return VisibleBalance(
-    samples: ix.sorted.sublist(lo, hi),
-    extents: BalanceExtents(minV, maxV),
-  );
+  return VisibleBalance._indexed(ix, lo, hi, ix.rangeExtents(lo, hi));
 }
 
 /// Points sorted by day with their days (µs since epoch, local midnight)
@@ -144,6 +154,53 @@ class PointIndex {
   };
 
   final _extentsFrom = <int, BalanceExtents?>{};
+
+  static const _block = 64;
+
+  /// Min / max of [values] per block of [_block] points (range queries in
+  /// O(n / 64 + 128) instead of a scan of every day in view).
+  late final (List<double>, List<double>) _blocks = () {
+    final nb = (values.length + _block - 1) ~/ _block;
+    final mins = List<double>.filled(nb, 0), maxs = List<double>.filled(nb, 0);
+    for (var b = 0; b < nb; b++) {
+      final s = b * _block, e = math.min(values.length, s + _block);
+      var mn = values[s], mx = mn;
+      for (var i = s + 1; i < e; i++) {
+        final v = values[i];
+        if (v < mn) mn = v;
+        if (v > mx) mx = v;
+      }
+      mins[b] = mn;
+      maxs[b] = mx;
+    }
+    return (mins, maxs);
+  }();
+
+  /// Exact min and max of `values[lo, hi)` (`lo < hi`).
+  BalanceExtents rangeExtents(int lo, int hi) {
+    var minV = values[lo], maxV = minV;
+    void scan(int a, int z) {
+      for (var i = a; i < z; i++) {
+        final v = values[i];
+        if (v < minV) minV = v;
+        if (v > maxV) maxV = v;
+      }
+    }
+
+    final b0 = (lo + _block - 1) ~/ _block, b1 = hi ~/ _block;
+    if (b0 >= b1) {
+      scan(lo, hi);
+    } else {
+      scan(lo, b0 * _block);
+      final (mins, maxs) = _blocks;
+      for (var b = b0; b < b1; b++) {
+        if (mins[b] < minV) minV = mins[b];
+        if (maxs[b] > maxV) maxV = maxs[b];
+      }
+      scan(b1 * _block, hi);
+    }
+    return BalanceExtents(minV, maxV);
+  }
 
   /// First index whose day is >= [us].
   int lowerBound(int us) {
