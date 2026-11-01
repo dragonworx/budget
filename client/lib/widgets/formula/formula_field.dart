@@ -58,6 +58,8 @@ class FormulaField extends StatefulWidget {
     this.errorText,
     this.plainErrors = true,
     this.helperMaxLines,
+    this.errorMaxLines,
+    this.previewInTooltip = false,
   });
 
   /// Range, scale, unit, today's parser and messages.
@@ -97,6 +99,14 @@ class FormulaField extends StatefulWidget {
 
   /// An error the screen manages itself (e.g. shown only after Save, as
   /// the stream dialog does); wins over the field's own validation.
+  /// Spec 013 rule 6 for narrow boxes (rate rows, side-by-side terms,
+  /// the interval box): the value in a ✦ suffix tooltip instead of the
+  /// line below, no picker button in the box, help only while focused.
+  final bool previewInTooltip;
+
+  /// As [InputDecoration.errorMaxLines] (the stock field's setting).
+  final int? errorMaxLines;
+
   final String? errorText;
 
   /// False: a plain number's errors are not shown (the screen only
@@ -221,6 +231,13 @@ class _FormulaFieldState extends State<FormulaField> {
     _c.addListener(_onValue);
     _focus.addListener(_onFocus);
     _lastText = _c.text;
+    // Flagged before this field was built (a form's initState): show it
+    // on the first frame, as a later flag does.
+    if (_c.formula.flagged) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _formKey.currentState?.validate();
+      });
+    }
   }
 
   /// The widget's settings win when they change (a new scope from the
@@ -605,10 +622,14 @@ class _FormulaFieldState extends State<FormulaField> {
     final scope = _c.scope;
     final showPicker =
         on && editable && (scope.variables.isNotEmpty || scope.canManage);
+    // Dense / side-by-side boxes (spec 013 rule 6): no picker button in
+    // the box (the `$` key on touch, autocomplete on desktop), the help
+    // only while focused, the value in the ✦ tooltip.
+    final compact = widget.previewInTooltip;
     final showHelp =
         on &&
         editable &&
-        (focused || _helpOpen || (!_touch && _c.showsFormula));
+        (focused || _helpOpen || (!compact && !_touch && _c.showsFormula));
     // While a name is being completed ("$r" with the list open) the
     // "no variable" error would flash under the list: it shows once the
     // list closes. The value stays invalid either way.
@@ -622,7 +643,26 @@ class _FormulaFieldState extends State<FormulaField> {
         : null;
 
     Widget? helper;
-    if (preview != null) {
+    // Dense rows (rate periods, the interval box, term side by side): the
+    // preview sits in a tooltip on a ✦ suffix icon so the row keeps its
+    // height; the line below shows only errors (spec 013 rule 6).
+    Widget? densePreview;
+    if (preview != null && compact) {
+      final primary = theme.colorScheme.primary;
+      final tip = ['= $preview', for (final h in f.hints) h.message].join('\n');
+      densePreview = Tooltip(
+        key: ValueKey('$_keyBase-preview'),
+        message: tip,
+        triggerMode: TooltipTriggerMode.tap,
+        child: Semantics(
+          label: 'Formula value $tip',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Icon(Icons.auto_awesome, size: 16, color: primary),
+          ),
+        ),
+      );
+    } else if (preview != null) {
       final primary = theme.colorScheme.primary;
       helper = Text.rich(
         TextSpan(
@@ -652,7 +692,8 @@ class _FormulaFieldState extends State<FormulaField> {
     }
 
     final suffix = <Widget>[
-      if (showPicker)
+      ?densePreview,
+      if (showPicker && !compact)
         IconButton(
           key: ValueKey('$_keyBase-var-picker'),
           tooltip: 'Insert a variable',
@@ -664,6 +705,7 @@ class _FormulaFieldState extends State<FormulaField> {
       if (showHelp)
         FormulaHelpButton(
           buttonKey: ValueKey('$_keyBase-help'),
+          compact: compact,
           onManage: _c.scope.offersManage && editable
               ? () => _openManager()
               : null,
@@ -689,6 +731,7 @@ class _FormulaFieldState extends State<FormulaField> {
       helperText: helper == null ? widget.helperText : null,
       helper: lineBelowKeys ? null : helper,
       helperMaxLines: helper == null ? widget.helperMaxLines : 3,
+      errorMaxLines: widget.errorMaxLines,
       isDense: widget.dense ? true : null,
       suffixIcon: suffix.isEmpty
           ? null

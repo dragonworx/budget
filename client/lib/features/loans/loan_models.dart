@@ -40,10 +40,25 @@ class RatePeriodDraft {
     this.type = RateType.fixed,
     this.interestOnly = false,
     this.offsetApplies = false,
+    this.rateExpr,
+    this.rateFormulaText,
+    this.rateProblem,
   });
 
   DateTime from;
+
+  /// The rate as typed, or a formula's resolved value (spec 013).
   String rate;
+
+  /// The rate formula to save as `ratePctExpr` (null: a plain rate).
+  String? rateExpr;
+
+  /// The formula text as typed (shown in the field; null: plain).
+  String? rateFormulaText;
+
+  /// Why the typed rate can't be saved yet (a formula error or still
+  /// loading); null when it can. Not saved.
+  String? rateProblem;
   RateType type;
   bool interestOnly;
 
@@ -58,11 +73,19 @@ class RatePeriodDraft {
     type: type,
     interestOnly: interestOnly,
     offsetApplies: offsetApplies,
+    rateExpr: rateExpr,
+    rateFormulaText: rateFormulaText,
+    rateProblem: rateProblem,
   );
+
+  /// The text the rate field shows.
+  String get rateText => rateFormulaText ?? rate;
 
   Map<String, Object?> toJson({required bool flat}) => {
     'from': formatDate(from),
     'ratePct': rate.trim(),
+    // Spec 013 (D12): the formula beside the value; absent when plain.
+    if (ServerFeatures.variables && rateExpr != null) 'ratePctExpr': rateExpr,
     'type': flat ? 'fixed' : type.name,
     'interestOnly': flat ? false : interestOnly,
     'offsetApplies': flat ? false : offsetApplies,
@@ -87,7 +110,44 @@ class LoanDraft {
     this.offsetStreamId,
     this.savedOffsetStreamId,
     this.offsetHidden = false,
+    this.principalExpr,
+    this.termYearsExpr,
+    this.termMonthsExpr,
+    this.chargeDayExpr,
+    this.exprErrors,
   }) : periods = periods ?? [RatePeriodDraft(from: start, rate: '')];
+
+  /// Spec 013: the principal's formula (the loan event's `amountExpr`).
+  String? principalExpr;
+
+  /// Spec 013 (D12): the term and charge-day formulas, saved in the loan
+  /// JSON beside the values (null: plain).
+  String? termYearsExpr, termMonthsExpr, chargeDayExpr;
+
+  /// The saved event's `exprErrors` (formulas that no longer resolve).
+  final Map<String, dynamic>? exprErrors;
+
+  /// Why a loan field can't be saved yet (formula error or loading), by
+  /// field; not saved.
+  String? principalProblem, termYearsProblem, termMonthsProblem;
+  String? chargeDayProblem;
+
+  /// The first field problem that blocks Save (null: none).
+  String? get formulaProblem {
+    final simple = mode == LoanMode.simple || isFlat;
+    return principalProblem ??
+        termYearsProblem ??
+        termMonthsProblem ??
+        (!simple &&
+                chargeSchedule == ChargeSchedule.monthly &&
+                chargeDay is DayOfMonthChargeDay
+            ? chargeDayProblem
+            : null) ??
+        (simple ? periods.take(1) : periods)
+            .map((p) => p.rateProblem)
+            .nonNulls
+            .firstOrNull;
+  }
 
   /// Spec 004: the offset account picked (null: none). Not part of the
   /// `loan` JSON: it is the event's `offsetStreamIds`.
@@ -125,7 +185,20 @@ class LoanDraft {
     }
     final start = dateOnly(e.startDate);
     final offset = e.offsetStreamIds.firstOrNull;
+    // Spec 013: saved formulas, shown only when the server supports them.
+    final on = ServerFeatures.variables;
+    String? expr(Map? m, String k) => on && m?[k] is String ? m![k] : null;
+    final rawPeriods = raw['ratePeriods'];
+    Map? rawPeriod(int i) =>
+        rawPeriods is List && i < rawPeriods.length && rawPeriods[i] is Map
+        ? rawPeriods[i] as Map
+        : null;
     return LoanDraft(
+      principalExpr: on ? e.amountExpr : null,
+      termYearsExpr: expr(raw, 'termYearsExpr'),
+      termMonthsExpr: expr(raw, 'termMonthsExpr'),
+      chargeDayExpr: expr(raw, 'chargeDayExpr'),
+      exprErrors: on ? e.exprErrors : null,
       offsetStreamId: offset,
       savedOffsetStreamId: offset,
       offsetHidden: e.offsetHidden && offset == null,
@@ -142,13 +215,15 @@ class LoanDraft {
       chargeDay: t.chargeDay ?? const AnniversaryChargeDay(),
       dayCount: t.dayCount,
       periods: [
-        for (final p in t.ratePeriods)
+        for (final (i, p) in t.ratePeriods.indexed)
           RatePeriodDraft(
             from: _local(p.from),
             rate: p.ratePctText,
             type: p.type,
             interestOnly: p.interestOnly,
             offsetApplies: p.offsetApplies,
+            rateExpr: expr(rawPeriod(i), 'ratePctExpr'),
+            rateFormulaText: expr(rawPeriod(i), 'ratePctExpr'),
           ),
       ],
     );
@@ -171,22 +246,32 @@ class LoanDraft {
   bool get isFlat => interestType == InterestType.flat;
   bool get advanced => mode == LoanMode.advanced;
 
-  LoanDraft copy() => LoanDraft(
-    start: start,
-    principal: principal,
-    mode: mode,
-    interestType: interestType,
-    termMonths: termMonths,
-    frequency: frequency,
-    firstRepayment: firstRepayment,
-    chargeSchedule: chargeSchedule,
-    chargeDay: chargeDay,
-    dayCount: dayCount,
-    periods: [for (final p in periods) p.copy()],
-    offsetStreamId: offsetStreamId,
-    savedOffsetStreamId: savedOffsetStreamId,
-    offsetHidden: offsetHidden,
-  );
+  LoanDraft copy() =>
+      LoanDraft(
+          start: start,
+          principal: principal,
+          mode: mode,
+          interestType: interestType,
+          termMonths: termMonths,
+          frequency: frequency,
+          firstRepayment: firstRepayment,
+          chargeSchedule: chargeSchedule,
+          chargeDay: chargeDay,
+          dayCount: dayCount,
+          periods: [for (final p in periods) p.copy()],
+          offsetStreamId: offsetStreamId,
+          savedOffsetStreamId: savedOffsetStreamId,
+          offsetHidden: offsetHidden,
+          principalExpr: principalExpr,
+          termYearsExpr: termYearsExpr,
+          termMonthsExpr: termMonthsExpr,
+          chargeDayExpr: chargeDayExpr,
+          exprErrors: exprErrors,
+        )
+        ..principalProblem = principalProblem
+        ..termYearsProblem = termYearsProblem
+        ..termMonthsProblem = termMonthsProblem
+        ..chargeDayProblem = chargeDayProblem;
 
   /// One period's length after [d].
   DateTime periodAfter(DateTime d) => switch (frequency) {
@@ -242,11 +327,23 @@ class LoanDraft {
   Map<String, Object?> toJson() {
     final flat = isFlat;
     final simple = mode == LoanMode.simple || flat;
+    final on = ServerFeatures.variables;
+    final dayOfMonth =
+        !flat &&
+        !simple &&
+        chargeSchedule == ChargeSchedule.monthly &&
+        chargeDay is DayOfMonthChargeDay;
     return {
       'v': 1,
       'mode': mode.name,
       'interestType': interestType.name,
       'termMonths': termMonths,
+      // Spec 013 (D12): formulas beside the values; absent when plain, so
+      // a loan without formulas is byte-identical to before.
+      if (on && termYearsExpr != null) 'termYearsExpr': termYearsExpr,
+      if (on && termMonthsExpr != null) 'termMonthsExpr': termMonthsExpr,
+      if (on && dayOfMonth && chargeDayExpr != null)
+        'chargeDayExpr': chargeDayExpr,
       'repaymentFrequency': frequency.name,
       'firstRepaymentDate': formatDate(effectiveFirstRepayment),
       'chargeSchedule': flat

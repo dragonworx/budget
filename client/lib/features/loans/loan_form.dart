@@ -1,9 +1,13 @@
+import 'package:budget_formula/budget_formula.dart' show FieldSpec, fieldSpecs;
 import 'package:budget_loan/budget_loan.dart';
+import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/models.dart' show ServerFeatures;
 import '../../theme/app_theme.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/formula/formula_field.dart';
 import '../timeline/occurrence_info.dart' show formatOccurrenceDate, ordinal;
 import 'loan_models.dart';
 import 'loan_offset_field.dart';
@@ -82,30 +86,113 @@ String? flatPlanText(LoanDraft d) {
   ].join(' · ');
 }
 
+/// Why a field's text can't be saved yet: its error, or '…' while the
+/// variables load (spec 013; null: it can).
+String? formulaProblem(FormulaValue f) => f.pending ? '…' : f.message;
+
+/// A loan rate field's result into [p] (spec 013): a formula keeps its
+/// text and saves its resolved value; a plain rate stays as typed.
+void applyRate(RatePeriodDraft p, FormulaValue f) {
+  p.rate = f.isFormula ? (f.value?.toString() ?? '') : f.text;
+  p.rateExpr = f.isFormula ? f.expr : null;
+  p.rateFormulaText = f.isFormula ? f.text : null;
+  p.rateProblem = f.isFormula ? formulaProblem(f) : null;
+}
+
+/// A rate controller for [p] (its formula when saved), flagged when the
+/// server says that formula no longer resolves (row [i]).
+FormulaEditingController rateController(LoanDraft d, RatePeriodDraft p, int i) {
+  final c = FormulaEditingController(
+    text: p.rateText,
+    spec: fieldSpecs['loan.ratePct']!,
+    formulasEnabled: ServerFeatures.variables,
+  );
+  if (p.rateExpr != null) {
+    flagSavedError(
+      c,
+      d.exprErrors,
+      'loan.ratePeriods.$i.ratePct',
+      Decimal.tryParse(p.rate) ?? Decimal.zero,
+    );
+    if (c.formula.flagged) p.rateProblem = formulaProblem(c.formula);
+  }
+  return c;
+}
+
 class _LoanFormState extends State<LoanForm> {
-  late final TextEditingController _principal;
-  late final TextEditingController _years;
-  late final TextEditingController _months;
-  late final TextEditingController _rate;
-  late final TextEditingController _chargeDayNumber;
+  // Spec 013: every number here takes a formula; read `.formula`.
+  late final FormulaEditingController _principal;
+  late final FormulaEditingController _years;
+  late final FormulaEditingController _months;
+  late final FormulaEditingController _rate;
+  late final FormulaEditingController _chargeDayNumber;
   String? _simpleBlocked;
 
   LoanDraft get d => widget.draft;
 
+  static FormulaEditingController _ctl(String text, String spec) =>
+      FormulaEditingController(
+        text: text,
+        spec: fieldSpecs[spec]!,
+        formulasEnabled: ServerFeatures.variables,
+      );
+
   @override
   void initState() {
     super.initState();
-    _principal = TextEditingController(text: d.principal);
-    _years = TextEditingController(text: '${d.termMonths ~/ 12}');
-    _months = TextEditingController(text: '${d.termMonths % 12}');
-    _rate = TextEditingController(text: d.periods.first.rate);
-    _chargeDayNumber = TextEditingController(
-      text: switch (d.chargeDay) {
-        DayOfMonthChargeDay(:final day) => '$day',
-        _ => '${d.start.day}',
-      },
+    _principal = _ctl(d.principalExpr ?? d.principal, 'loan.principal');
+    _years = _ctl(d.termYearsExpr ?? '${d.termMonths ~/ 12}', 'loan.termYears');
+    _months = _ctl(
+      d.termMonthsExpr ?? '${d.termMonths % 12}',
+      'loan.termMonths',
     );
+    _rate = rateController(d, d.periods.first, 0);
+    _chargeDayNumber = _ctl(
+      d.chargeDayExpr ??
+          switch (d.chargeDay) {
+            DayOfMonthChargeDay(:final day) => '$day',
+            _ => '${d.start.day}',
+          },
+      'loan.chargeDay',
+    );
+    // Saved formulas that no longer resolve (the server's exprErrors).
+    final errors = d.exprErrors;
+    if (d.principalExpr != null) {
+      flagSavedError(
+        _principal,
+        errors,
+        'amount',
+        Decimal.tryParse(d.principal) ?? Decimal.zero,
+      );
+      d.principalProblem = _flagged(_principal);
+    }
+    if (d.termYearsExpr != null || d.termMonthsExpr != null) {
+      final years = d.termYearsExpr != null;
+      flagSavedError(
+        years ? _years : _months,
+        errors,
+        'loan.term',
+        Decimal.fromInt(years ? d.termMonths ~/ 12 : d.termMonths % 12),
+      );
+      if (years) {
+        d.termYearsProblem = _flagged(_years);
+      } else {
+        d.termMonthsProblem = _flagged(_months);
+      }
+    }
+    if (d.chargeDayExpr != null && d.chargeDay is DayOfMonthChargeDay) {
+      flagSavedError(
+        _chargeDayNumber,
+        errors,
+        'loan.chargeDay',
+        Decimal.fromInt((d.chargeDay as DayOfMonthChargeDay).day),
+      );
+      d.chargeDayProblem = _flagged(_chargeDayNumber);
+    }
   }
+
+  static String? _flagged(FormulaEditingController c) =>
+      c.formula.flagged ? formulaProblem(c.formula) : null;
 
   @override
   void dispose() {
@@ -135,9 +222,18 @@ class _LoanFormState extends State<LoanForm> {
   }
 
   void _termChanged() {
-    final y = int.tryParse(_years.text.trim()) ?? 0;
-    final m = int.tryParse(_months.text.trim()) ?? 0;
+    final yf = _years.formula, mf = _months.formula;
+    // Empty counts as 0, as before.
+    final y = yf.intValue ?? 0;
+    final m = mf.intValue ?? 0;
     d.termMonths = y * 12 + m;
+    // The server adds the two texts up, so with a formula in either both
+    // go (the plain one as its number).
+    final any = yf.isFormula || mf.isFormula;
+    d.termYearsExpr = any ? (yf.expr ?? '$y') : null;
+    d.termMonthsExpr = any ? (mf.expr ?? '$m') : null;
+    d.termYearsProblem = formulaProblem(yf);
+    d.termMonthsProblem = formulaProblem(mf);
     _changed();
   }
 
@@ -200,7 +296,7 @@ class _LoanFormState extends State<LoanForm> {
       d.dayCount = DayCount.d365;
       d.periods.first.offsetApplies = true;
     }
-    _rate.text = d.periods.first.rate;
+    _rate.text = d.periods.first.rateText;
     _simpleBlocked = null;
     _changed();
   }
@@ -213,7 +309,7 @@ class _LoanFormState extends State<LoanForm> {
         setState(() => _simpleBlocked = why);
         return;
       }
-      _rate.text = d.periods.first.rate;
+      _rate.text = d.periods.first.rateText;
     } else if (d.interestType != InterestType.flat) {
       // Simple mode applies the offset to the whole loan; keep that.
       d.periods.first.offsetApplies = true;
@@ -292,33 +388,33 @@ class _LoanFormState extends State<LoanForm> {
           ),
         ],
         const SizedBox(height: 14),
-        TextFormField(
-          key: const ValueKey('loan-principal'),
-          controller: _principal,
-          focusNode: widget.principalFocus,
-          enabled: !ro,
-          decoration: InputDecoration(
-            labelText: 'Amount borrowed',
+        _scoped(
+          (scope) => FormulaField(
+            key: const ValueKey('loan-principal'),
+            spec: fieldSpecs['loan.principal']!,
+            scope: scope,
+            controller: _principal,
+            focusNode: widget.principalFocus,
+            enabled: !ro,
+            label: 'Amount borrowed',
             prefixText: '\$ ',
             hintText: '0.00',
             errorText: _err('principal'),
+            legacyKeyboardType: const TextInputType.numberWithOptions(
+              decimal: true,
+            ),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => widget.onSubmit?.call(),
+            onChanged: (f) {
+              // Plain: the text as typed (as before); a formula: its value.
+              d.principal = f.isFormula
+                  ? (f.value?.toString() ?? '')
+                  : _principal.text;
+              d.principalExpr = f.isFormula ? f.expr : null;
+              d.principalProblem = f.isFormula ? formulaProblem(f) : null;
+              _changed();
+            },
           ),
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textInputAction: TextInputAction.done,
-          onFieldSubmitted: (_) => widget.onSubmit?.call(),
-          autovalidateMode: AutovalidateMode.onUserInteraction,
-          validator: (v) {
-            final t = (v ?? '').trim();
-            if (t.isEmpty) return 'Enter the amount borrowed';
-            final n = double.tryParse(t.replaceAll(',', ''));
-            if (n == null) return 'Enter a number, e.g. 500000';
-            if (n <= 0) return 'Enter an amount above zero';
-            return null;
-          },
-          onChanged: (v) {
-            d.principal = v;
-            _changed();
-          },
         ),
         const SizedBox(height: 12),
         _dateField(
@@ -339,25 +435,27 @@ class _LoanFormState extends State<LoanForm> {
         ),
         const SizedBox(height: 12),
         if (!d.advanced || flat)
-          TextFormField(
-            key: const ValueKey('loan-rate-0'),
-            controller: _rate,
-            enabled: !ro,
-            decoration: InputDecoration(
-              labelText: flat ? 'Flat rate % p.a.' : 'Interest rate % p.a.',
+          _scoped(
+            (scope) => FormulaField(
+              key: const ValueKey('loan-rate-0'),
+              spec: fieldSpecs['loan.ratePct']!,
+              scope: scope,
+              controller: _rate,
+              enabled: !ro,
+              label: flat ? 'Flat rate % p.a.' : 'Interest rate % p.a.',
               suffixText: '%',
               errorText: _err('rate-0'),
+              legacyKeyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              legacyFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+              ],
+              onChanged: (f) {
+                applyRate(d.periods.first, f);
+                _changed();
+              },
             ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
-            ],
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-            validator: (v) => rateTextError(v ?? ''),
-            onChanged: (v) {
-              d.periods.first.rate = v;
-              _changed();
-            },
           ),
         if (!d.advanced || flat) const SizedBox(height: 12),
         Row(
@@ -368,6 +466,7 @@ class _LoanFormState extends State<LoanForm> {
                 key: 'loan-term-years',
                 label: 'Term (years)',
                 controller: _years,
+                spec: 'loan.termYears',
                 error: _err('term'),
               ),
             ),
@@ -377,6 +476,7 @@ class _LoanFormState extends State<LoanForm> {
                 key: 'loan-term-months',
                 label: 'Months',
                 controller: _months,
+                spec: 'loan.termMonths',
               ),
             ),
           ],
@@ -508,6 +608,7 @@ class _LoanFormState extends State<LoanForm> {
       const SizedBox(height: 8),
       RatePeriodsEditor(
         draft: d,
+        streamId: widget.streamId,
         readOnly: ro,
         rowErrors: rowErrors,
         pickDate: _pickDate,
@@ -567,8 +668,10 @@ class _LoanFormState extends State<LoanForm> {
                   d.chargeDay = switch (v) {
                     'monthEnd' => const MonthEndChargeDay(),
                     'day' => DayOfMonthChargeDay(
-                      (int.tryParse(_chargeDayNumber.text) ?? d.start.day)
-                          .clamp(1, 31),
+                      (_chargeDayNumber.formula.intValue ?? d.start.day).clamp(
+                        1,
+                        31,
+                      ),
                     ),
                     _ => const AnniversaryChargeDay(),
                   };
@@ -577,27 +680,31 @@ class _LoanFormState extends State<LoanForm> {
         ),
         if (dayValue == 'day') ...[
           const SizedBox(height: 12),
-          TextFormField(
-            key: const ValueKey('loan-charge-day-number'),
-            controller: _chargeDayNumber,
-            enabled: !ro,
-            decoration: const InputDecoration(
-              labelText: 'Day of month (1–31)',
+          _scoped(
+            (scope) => FormulaField(
+              key: const ValueKey('loan-charge-day-number'),
+              spec: fieldSpecs['loan.chargeDay']!,
+              scope: scope,
+              controller: _chargeDayNumber,
+              enabled: !ro,
+              label: 'Day of month (1–31)',
               helperText: 'Short months use their last day',
+              legacyKeyboardType: TextInputType.number,
+              legacyFormatters: [FilteringTextInputFormatter.digitsOnly],
+              onChanged: (f) {
+                d.chargeDayExpr = f.isFormula ? f.expr : null;
+                d.chargeDayProblem = formulaProblem(f);
+                final n = f.intValue;
+                if (n == null || n < 1 || n > 31) {
+                  // As before the day stays; the formula state still
+                  // updates (Save is blocked by the problem).
+                  if (f.isFormula) _changed();
+                  return;
+                }
+                d.chargeDay = DayOfMonthChargeDay(n);
+                _changed();
+              },
             ),
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-            validator: (v) {
-              final n = int.tryParse(v ?? '');
-              return n == null || n < 1 || n > 31 ? 'A day from 1 to 31' : null;
-            },
-            onChanged: (v) {
-              final n = int.tryParse(v);
-              if (n == null || n < 1 || n > 31) return;
-              d.chargeDay = DayOfMonthChargeDay(n);
-              _changed();
-            },
           ),
         ],
       ],
@@ -648,31 +755,45 @@ class _LoanFormState extends State<LoanForm> {
     );
   }
 
+  /// [build] with the loan stream's variables (mine for a new stream).
+  Widget _scoped(Widget Function(VariableScope scope) build) =>
+      VariableScopeBuilder(
+        streamId: widget.streamId,
+        builder: (context, scope) => build(scope),
+      );
+
   Widget _intField({
     required String key,
     required String label,
-    required TextEditingController controller,
+    required FormulaEditingController controller,
+    required String spec,
     String? error,
   }) {
-    return TextFormField(
-      key: ValueKey(key),
-      controller: controller,
-      enabled: !widget.readOnly,
-      decoration: InputDecoration(
-        labelText: label,
+    final FieldSpec fieldSpec = fieldSpecs[spec]!;
+    return _scoped(
+      (scope) => FormulaField(
+        key: ValueKey(key),
+        spec: fieldSpec,
+        scope: scope,
+        controller: controller,
+        enabled: !widget.readOnly,
+        label: label,
         errorText: error,
         errorMaxLines: 2,
+        // Empty is 0 (the other box may hold the whole term).
+        allowEmpty: true,
+        // Side by side: the value shows in the ✦ tooltip.
+        previewInTooltip: true,
+        legacyKeyboardType: TextInputType.number,
+        legacyFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(3),
+        ],
+        onChanged: (_) => _termChanged(),
+        extraValidator: (_) => d.termMonths < 1 || d.termMonths > 600
+            ? 'A term of 1 month to 50 years'
+            : null,
       ),
-      keyboardType: TextInputType.number,
-      inputFormatters: [
-        FilteringTextInputFormatter.digitsOnly,
-        LengthLimitingTextInputFormatter(3),
-      ],
-      onChanged: (_) => _termChanged(),
-      autovalidateMode: AutovalidateMode.onUserInteraction,
-      validator: (_) => d.termMonths < 1 || d.termMonths > 600
-          ? 'A term of 1 month to 50 years'
-          : null,
     );
   }
 

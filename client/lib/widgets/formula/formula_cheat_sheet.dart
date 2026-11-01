@@ -47,7 +47,11 @@ class FormulaHelpButton extends StatelessWidget {
     this.onOpenChanged,
     this.buttonKey,
     this.onManage,
+    this.compact = false,
   });
+
+  /// A smaller button for dense boxes (rate rows, side-by-side terms).
+  final bool compact;
 
   final ValueChanged<bool>? onOpenChanged;
   final Key? buttonKey;
@@ -139,8 +143,9 @@ class FormulaHelpButton extends StatelessWidget {
       builder: (context, controller, _) => IconButton(
         key: buttonKey,
         tooltip: 'Formula help',
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-        iconSize: 18,
+        constraints: BoxConstraints(minWidth: compact ? 32 : 40, minHeight: 40),
+        padding: compact ? EdgeInsets.zero : null,
+        iconSize: compact ? 16 : 18,
         icon: const Icon(Icons.help_outline),
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),

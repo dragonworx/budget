@@ -1,8 +1,11 @@
+import 'package:budget_formula/budget_formula.dart' show fieldSpecs;
 import 'package:budget_loan/budget_loan.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../theme/app_theme.dart';
+import '../../widgets/formula/formula_field.dart';
+import 'loan_form.dart' show applyRate, rateController;
 import 'loan_models.dart';
 import 'repayment_helpers.dart';
 
@@ -19,9 +22,13 @@ class RatePeriodsEditor extends StatefulWidget {
     this.readOnly = false,
     this.rowErrors = const {},
     required this.pickDate,
+    this.streamId,
   });
 
   final LoanDraft draft;
+
+  /// The loan's stream, for the rate formulas' variables (null: mine).
+  final String? streamId;
   final VoidCallback onChanged;
   final bool readOnly;
 
@@ -62,10 +69,11 @@ String? rateTextError(String text) {
 }
 
 class _RatePeriodsEditorState extends State<RatePeriodsEditor> {
-  final _rates = <RatePeriodDraft, TextEditingController>{};
+  final _rates = <RatePeriodDraft, FormulaEditingController>{};
 
-  TextEditingController _rateFor(RatePeriodDraft p) =>
-      _rates.putIfAbsent(p, () => TextEditingController(text: p.rate));
+  /// Each period's rate takes a formula (spec 013): read `.formula`.
+  FormulaEditingController _rateFor(RatePeriodDraft p, int i) =>
+      _rates.putIfAbsent(p, () => rateController(d, p, i));
 
   @override
   void dispose() {
@@ -92,6 +100,9 @@ class _RatePeriodsEditorState extends State<RatePeriodsEditor> {
       RatePeriodDraft(
         from: from,
         rate: last.rate,
+        rateExpr: last.rateExpr,
+        rateFormulaText: last.rateFormulaText,
+        rateProblem: last.rateProblem,
         type: last.type,
         // Spec 004 §15: fixed periods default unchecked, variable checked.
         offsetApplies: last.type == RateType.variable,
@@ -151,8 +162,8 @@ class _RatePeriodsEditorState extends State<RatePeriodsEditor> {
   Widget _row(ThemeData theme, int i, RatePeriodDraft p, bool wide) {
     final errors = widget.rowErrors[i] ?? const {};
     final dateError = ratePeriodDateError(d, i) ?? errors['from'];
-    final rateCtl = _rateFor(p);
-    if (rateCtl.text != p.rate) rateCtl.text = p.rate;
+    final rateCtl = _rateFor(p, i);
+    if (rateCtl.text != p.rateText) rateCtl.text = p.rateText;
     final from = InkWell(
       key: ValueKey('loan-rate-from-$i'),
       borderRadius: BorderRadius.circular(10),
@@ -170,25 +181,30 @@ class _RatePeriodsEditorState extends State<RatePeriodsEditor> {
         child: Text(loanDate(i == 0 ? d.start : p.from), maxLines: 1),
       ),
     );
-    final rate = TextFormField(
-      key: ValueKey('loan-rate-$i'),
-      controller: rateCtl,
-      enabled: !widget.readOnly,
-      decoration: InputDecoration(
-        labelText: 'Rate % p.a.',
+    final rate = VariableScopeBuilder(
+      streamId: widget.streamId,
+      builder: (context, scope) => FormulaField(
+        key: ValueKey('loan-rate-$i'),
+        spec: fieldSpecs['loan.ratePct']!,
+        scope: scope,
+        controller: rateCtl,
+        enabled: !widget.readOnly,
+        label: 'Rate % p.a.',
         suffixText: '%',
-        isDense: true,
+        dense: true,
+        // A narrow box: the value shows in the ✦ tooltip.
+        previewInTooltip: true,
         errorText: errors['rate'],
         errorMaxLines: 2,
+        legacyKeyboardType: const TextInputType.numberWithOptions(
+          decimal: true,
+        ),
+        legacyFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))],
+        onChanged: (f) {
+          applyRate(p, f);
+          widget.onChanged();
+        },
       ),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))],
-      autovalidateMode: AutovalidateMode.onUserInteraction,
-      validator: (v) => rateTextError(v ?? ''),
-      onChanged: (v) {
-        p.rate = v;
-        widget.onChanged();
-      },
     );
     final type = DropdownButtonFormField<RateType>(
       key: ValueKey('loan-rate-type-$i'),

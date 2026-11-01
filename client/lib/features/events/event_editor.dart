@@ -494,6 +494,8 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         categoryId: _category?.id ?? widget.existing?.categoryId,
         direction: EventDirection.debit,
         amount: loan.principalValue ?? Decimal.zero,
+        // Spec 013: the principal's formula is the loan event's amountExpr.
+        amountExpr: loan.principalExpr,
         startDate: loan.start,
         recurrenceMode: RecurrenceMode.once,
         endMode: EndMode.never,
@@ -546,6 +548,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     final loan = _loanDraft;
     if (loan == null || loan.principalValue == null) return null;
     if (loan.termsOrNull == null) return null;
+    if (loan.formulaProblem != null) return null;
     return _draft();
   }
 
@@ -1863,6 +1866,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       setState(() => _loanErrors = _loanErrorMap(e.message));
       return null;
     }
+    // Spec 013: a formula that doesn't resolve (or is still loading)
+    // blocks Save; its field already shows why.
+    if (loan.formulaProblem != null) return null;
     final category = _category;
     if (category == null) {
       setState(() => _categoryError = 'Create a category first (Manage)');
@@ -1874,6 +1880,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       categoryId: category.id,
       color: category.color,
       version: widget.existing?.version,
+      amountExpr: loan.principalExpr,
     );
   }
 
