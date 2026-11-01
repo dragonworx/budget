@@ -20,8 +20,15 @@ typedef Res = ({int status, dynamic json, Map<String, String> headers});
 /// DB-backed API harness (TEST_DATABASE_URL, default local budget_test).
 /// Users are `<name>@<domain>` and removed in [close].
 class Harness {
-  Harness(this.domain);
+  Harness(this.domain,
+      {this.featureVariables = true, this.rateLimitPerMinute = 600});
   final String domain;
+
+  /// FEATURE_VARIABLES for this harness's server (spec 010).
+  final bool featureVariables;
+
+  /// The API rate limit (0: off, for perf loops).
+  final int rateLimitPerMinute;
   Connection? conn;
   late Handler h;
   final key = TestKey('kid-h');
@@ -52,6 +59,8 @@ class Harness {
       allowlist: ['@$domain'],
       sessionSecret: 'test-secret-test-secret-test-secret',
       rateLimitAuthPerMinute: 0, // many logins from one test IP
+      featureVariables: featureVariables,
+      rateLimitPerMinute: rateLimitPerMinute,
     );
     h = buildHandler(conn!, config,
         verifier: GoogleIdTokenVerifier(

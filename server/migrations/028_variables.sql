@@ -93,10 +93,15 @@ END $$;
 -- variable's own formula) or stream_id (a stream field, an event field
 -- with event_id, or an override with event_id + override_date). A
 -- transfer is indexed on its debit row only. variable_id has no cascade:
--- a variable in use cannot be deleted (the API answers 409 first).
+-- a variable in use cannot be deleted (the API answers 409 first). The
+-- check is deferred to commit: a user deletion cascades variables and
+-- (via streams -> events) their refs in nested statements whose order
+-- Postgres doesn't guarantee, and a NO ACTION check runs after each
+-- nested statement, not after the outer one.
 CREATE TABLE IF NOT EXISTS variable_refs (
   id BIGSERIAL PRIMARY KEY,
-  variable_id UUID NOT NULL REFERENCES variables (id),
+  variable_id UUID NOT NULL REFERENCES variables (id)
+    DEFERRABLE INITIALLY DEFERRED,
   from_variable_id UUID REFERENCES variables (id) ON DELETE CASCADE,
   stream_id UUID REFERENCES streams (id) ON DELETE CASCADE,
   event_id UUID REFERENCES events (id) ON DELETE CASCADE,

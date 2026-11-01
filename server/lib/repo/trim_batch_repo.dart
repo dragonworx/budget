@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../domain/enums.dart';
 import '../domain/models.dart';
+import '../domain/variable_service.dart';
 import '../engine/occurrence_gen.dart';
 import 'event_repo.dart';
 
@@ -222,7 +223,8 @@ class TrimBatchRepo {
     );
     final overrides = await _conn.execute(
       Sql.named("SELECT event_id::text, to_char(date, 'YYYY-MM-DD'), "
-          'amount::text, direction FROM occurrence_overrides '
+          'amount::text, direction, amount_expr, expr_error::text '
+          'FROM occurrence_overrides '
           'WHERE event_id = ANY (@ids::uuid[])'),
       parameters: {'ids': ids},
     );
@@ -241,7 +243,15 @@ class TrimBatchRepo {
       ],
       'overrides': [
         for (final r in overrides)
-          {'event': r[0], 'date': r[1], 'amount': r[2], 'direction': r[3]},
+          {
+            'event': r[0],
+            'date': r[1],
+            'amount': r[2],
+            'direction': r[3],
+            // Formula overrides only (spec 010): plain snapshots unchanged.
+            if (r[4] != null) 'amountExpr': r[4],
+            if (r[5] != null) 'exprError': jsonDecode(r[5] as String),
+          },
       ],
       'orders': {
         for (final r in orders) r[0] as String: (r[1] as List).cast<String>(),
@@ -322,8 +332,10 @@ class TrimBatchRepo {
     for (final o in (snap['overrides'] as List).cast<Map<String, dynamic>>()) {
       await _conn.execute(
         Sql.named('''
-          INSERT INTO occurrence_overrides (event_id, date, amount, direction)
-          SELECT @t::uuid, @d::date, @amount::numeric, @dir
+          INSERT INTO occurrence_overrides
+            (event_id, date, amount, direction, amount_expr, expr_error)
+          SELECT @t::uuid, @d::date, @amount::numeric, @dir, @ae,
+            @ee::jsonb
           WHERE EXISTS (SELECT 1 FROM events WHERE id = @t::uuid)
         '''),
         parameters: {
@@ -331,6 +343,9 @@ class TrimBatchRepo {
           'd': o['date'],
           'amount': o['amount'],
           'dir': o['direction'],
+          // Older batches have neither key: restored as plain.
+          'ae': o['amountExpr'],
+          'ee': o['exprError'] == null ? null : jsonEncode(o['exprError']),
         },
       );
     }
@@ -371,6 +386,9 @@ class TrimBatchRepo {
         parameters: {'a': sid, 'o': next},
       );
     }
+    // Spec 010: restored formulas re-resolve against the current variables
+    // (unknown names keep their numbers, flagged, D9) and get their refs.
+    await VariableService(_conn).afterEventWrite(ids);
     return (restored: ids);
   }
 

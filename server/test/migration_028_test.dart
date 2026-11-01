@@ -15,6 +15,8 @@ const _scratch = 'budget_mig028_test';
 const _o = '00000000-0000-0000-0000-0000000028a1';
 const _s1 = '00000000-0000-0000-0000-0000000028b1';
 const _e1 = '00000000-0000-0000-0000-0000000028c1';
+const _s2 = '00000000-0000-0000-0000-0000000028b2';
+const _e2 = '00000000-0000-0000-0000-0000000028c2';
 
 void main() {
   Connection? admin;
@@ -179,7 +181,17 @@ void main() {
     await c.execute("DELETE FROM variables WHERE id = '$weekly'");
     expect((await c.execute('SELECT count(*) FROM variable_refs')).first[0], 2);
 
-    // Deleting the user cascades through streams, events, variables, refs.
+    // Deleting the user cascades through streams, events, variables, refs,
+    // whatever order Postgres runs the cascades in: a second stream created
+    // after the variables (later cascade) holds a referencing event too.
+    await c.execute("INSERT INTO streams (id, name, seed_balance, seed_date, "
+        "owner_id) VALUES ('$_s2', 'S2', 0, '2026-01-01', '$_o')");
+    await c
+        .execute('INSERT INTO events (id, stream_id, name, direction, amount, '
+            'start_date, recurrence_mode, end_mode) '
+            "VALUES ('$_e2', '$_s2', 'E2', 'debit', 1, '2026-01-01', 'once', "
+            "'never')");
+    await ref(', stream_id, event_id', ", '$_s2', '$_e2'");
     await c.execute("DELETE FROM users WHERE id = '$_o'");
     for (final t in ['variables', 'variable_refs', 'streams', 'events']) {
       expect((await c.execute('SELECT count(*) FROM $t')).first[0], 0,
