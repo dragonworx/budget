@@ -5,6 +5,7 @@ import 'package:budget_formula/budget_formula.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 
+import '../boot/boot_loader.dart';
 import '../theme/app_theme.dart';
 import '../widgets/formula/formula_field.dart';
 
@@ -28,7 +29,11 @@ final VariableScope demoScope = VariableScope(
   },
 );
 
-void main() => runApp(const FormulaDemoApp());
+void main() {
+  runApp(const FormulaDemoApp());
+  // The page's boot overlay (web/index.html) waits for this.
+  BootLoader.finishWhenReady(authReady: Future.value(false));
+}
 
 class FormulaDemoApp extends StatelessWidget {
   const FormulaDemoApp({super.key});
@@ -87,7 +92,11 @@ class _FormulaDemoPageState extends State<FormulaDemoPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  // The status doubles as the page title so browser tests can read it.
+  Widget build(BuildContext context) =>
+      Title(title: _status, color: Colors.black, child: _page());
+
+  Widget _page() => Scaffold(
     appBar: AppBar(title: const Text('FormulaField demo')),
     body: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
