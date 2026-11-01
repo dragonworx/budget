@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:budget_formula/budget_formula.dart' show fieldSpecs;
+import 'package:budget_formula/budget_formula.dart'
+    show fieldSpecs, parseLegacyDecimalRaw, parseLegacyInt;
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -186,12 +187,12 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
   /// variables); a plain number parses as today.
   Decimal? _parseMoney(FormulaEditingController c) {
     if (c.showsFormula) return c.formula.isValid ? c.formula.value : null;
-    return Decimal.tryParse(c.text.trim());
+    return parseLegacyDecimalRaw(c.text);
   }
 
   int? _parseInt(FormulaEditingController c) {
     if (c.showsFormula) return c.formula.isValid ? c.formula.intValue : null;
-    return int.tryParse(c.text.trim());
+    return parseLegacyInt(c.text);
   }
 
   /// A formula with an error, or one still waiting for variables: the
@@ -204,7 +205,7 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
     if (c.showsFormula) return null;
     final raw = c.text.trim();
     if (raw.isEmpty) return null;
-    final v = Decimal.tryParse(raw);
+    final v = parseLegacyDecimalRaw(raw);
     if (v == null) return 'Invalid amount';
     if (v <= Decimal.zero) return 'Must be > 0';
     return null;
@@ -214,7 +215,7 @@ class SolveSheetState extends ConsumerState<SolveSheet> {
     if (c.showsFormula) return null;
     final raw = c.text.trim();
     if (raw.isEmpty) return null;
-    final v = int.tryParse(raw);
+    final v = parseLegacyInt(raw);
     if (v == null || v < 1) return 'Whole number ≥ 1';
     return null;
   }

@@ -1,4 +1,5 @@
-import 'package:budget_formula/budget_formula.dart' show FieldSpec;
+import 'package:budget_formula/budget_formula.dart'
+    show FieldSpec, parseLegacyInt;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -90,7 +91,7 @@ class RecurrenceIntervalField extends StatelessWidget {
   bool get _formula => _formulaController?.showsFormula ?? false;
 
   int? get _typed =>
-      _formulaController?.typedInt ?? int.tryParse(controller.text.trim());
+      _formulaController?.typedInt ?? parseLegacyInt(controller.text);
 
   /// The most a formula box may take (48..180): the row less "Every",
   /// − / +, the clear button and the unit dropdown's longest word.
@@ -222,7 +223,7 @@ class RecurrenceIntervalField extends StatelessWidget {
                     (value) {
                       final raw = (value ?? '').trim();
                       if (raw.isEmpty && allowBlank) return null;
-                      final v = int.tryParse(raw);
+                      final v = parseLegacyInt(raw);
                       return v == null || v < 1 || v > maxRecurrenceInterval
                           ? '1–$maxRecurrenceInterval'
                           : null;
