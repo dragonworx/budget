@@ -28,21 +28,24 @@ Widget legacyAmountField({
   onFieldSubmitted: (_) {},
   onChanged: (_) {},
   autovalidateMode: AutovalidateMode.onUserInteraction,
-  validator: (value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Enter an amount';
-    }
-    final amount = parseLegacyMoney(value);
-    if (amount == null) {
-      return 'Enter a number, e.g. 1250 or 1,250.50';
-    }
-    if (amount == Decimal.zero) return 'Enter an amount above zero';
-    if (amount < Decimal.zero) {
-      return 'Use Money out instead of a negative amount';
-    }
-    return null;
-  },
+  validator: legacyAmountMessage,
 );
+
+/// Today's amount validator (event_editor.dart L982-994), verbatim.
+String? legacyAmountMessage(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return 'Enter an amount';
+  }
+  final amount = parseLegacyMoney(value);
+  if (amount == null) {
+    return 'Enter a number, e.g. 1250 or 1,250.50';
+  }
+  if (amount == Decimal.zero) return 'Enter an amount above zero';
+  if (amount < Decimal.zero) {
+    return 'Use Money out instead of a negative amount';
+  }
+  return null;
+}
 
 /// The app theme, built once in a zone that swallows google_fonts' failed
 /// fetches (no network in tests; text falls back to the test font).
