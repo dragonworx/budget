@@ -26,10 +26,15 @@ class OccurrenceGenerator {
     final out = <Occurrence>[];
     for (final event in events) {
       if (!event.active) continue;
+      // Calendar-day keys of the skipped dates: the same test as comparing
+      // date parts ([CalendarMath.compare] == 0), in O(1) per occurrence.
+      final skipSet = skipped[event.id];
+      final skipDays = skipSet == null || skipSet.isEmpty
+          ? const <int>{}
+          : {for (final d in skipSet) dayKey(d)};
       for (final date in datesForEvent(event, windowStart, windowEnd)) {
-        final skipSet = skipped[event.id] ?? const <DateTime>{};
         final isSkipped =
-            skipSet.any((d) => CalendarMath.compare(d, date) == 0);
+            skipDays.isNotEmpty && skipDays.contains(dayKey(date));
         out.add(
           Occurrence(
             eventId: event.id,
@@ -43,6 +48,10 @@ class OccurrenceGenerator {
     }
     return out;
   }
+
+  /// A calendar day as an int: equal exactly when the year, month and day
+  /// are (what [CalendarMath.compare] compares).
+  static int dayKey(DateTime d) => (d.year * 13 + d.month) * 32 + d.day;
 
   /// Occurrence calendar dates for [event] in `[from, to]` inclusive: the
   /// days its structured rule fires (shared engine, budget_recurrence).
