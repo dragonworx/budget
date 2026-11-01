@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:budget_formula/budget_formula.dart'
+    show decimalOfDouble, fieldSpecs, parseLegacyDoubleRaw, parseLegacyInt;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +10,8 @@ import '../../data/api_client.dart';
 import '../../data/frequency.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
+import '../../widgets/formula/formula_field.dart';
+import '../../widgets/formula/formula_style.dart' show formatFieldValue;
 import '../../widgets/money_text.dart';
 import '../../widgets/recurrence_interval_field.dart';
 import '../timeline/duration_format.dart';
@@ -61,19 +65,20 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   int _interval = 1;
   DateTime? _startDate;
   DateTime? _endDate;
-  final _money = <GoalVar, TextEditingController>{
-    GoalVar.startBalance: TextEditingController(),
-    GoalVar.targetBalance: TextEditingController(),
-    GoalVar.amount: TextEditingController(),
-    GoalVar.oneOff: TextEditingController(),
-    GoalVar.rate: TextEditingController(),
-  };
-  final _count = TextEditingController();
+  // Formulas (spec 013 D11): worked out here against the stream owner's
+  // variables; the goal solve gets numbers, a saved scenario also keeps
+  // the formulas (`request.exprs`).
+  late final Map<GoalVar, FormulaEditingController> _money;
+  late final FormulaEditingController _count;
 
   /// The plan's name: its events get a new category with this name.
   final _name = TextEditingController();
   String? _nameTaken;
-  final _intervalText = TextEditingController(text: '1');
+  late final FormulaEditingController _intervalText;
+
+  /// The numbers a loaded scenario stored for its formulas: used until
+  /// the formula is edited or "Use new value" is tapped (D11).
+  final _saved = <GoalVar, double>{};
 
   Timer? _debounce;
   int _seq = 0;
@@ -85,6 +90,30 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   @override
   void initState() {
     super.initState();
+    final on = ServerFeatures.variables;
+    FormulaEditingController field(String spec, {String text = ''}) {
+      final c = FormulaEditingController(
+        text: text,
+        spec: fieldSpecs[spec]!,
+        formulasEnabled: on,
+      );
+      // Variables arriving (or changing) re-resolve a formula: solve again.
+      if (on) c.addListener(_formulaMaybeChanged);
+      return c;
+    }
+
+    _money = {
+      for (final v in const [
+        GoalVar.startBalance,
+        GoalVar.targetBalance,
+        GoalVar.amount,
+        GoalVar.oneOff,
+        GoalVar.rate,
+      ])
+        v: field('goal.${v.name}'),
+    };
+    _count = field('goal.count');
+    _intervalText = field('goal.interval', text: '1');
     load(widget.initial ?? const GoalRequest(solveFor: GoalVar.amount));
     _name.text = freeCategoryName(
       'Goal',
@@ -116,6 +145,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
 
   /// Replaces every field with [r] (prefill, scenario load) and solves.
   void load(GoalRequest r) {
+    _saved.clear();
     _solveFor = r.solveFor;
     _mode = r.mode;
     _unit = r.unit;
@@ -130,6 +160,21 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     _money[GoalVar.oneOff]!.text = m(r.oneOff);
     _money[GoalVar.rate]!.text = m(r.rate);
     _count.text = r.count?.toString() ?? '';
+    // A saved scenario's formulas replace their numbers in the fields; the
+    // numbers stay in use until the formula is edited or "Use new value".
+    final exprs = ServerFeatures.variables ? r.exprs : null;
+    if (exprs != null) {
+      final stored = r.toJson(withExprs: false);
+      for (final e in exprs.entries) {
+        final v = GoalVar.values.where((g) => g.name == e.key).firstOrNull;
+        final c = v == null ? null : _ctl(v);
+        final n = stored[e.key];
+        if (c == null || v == _solveFor || n is! num) continue;
+        c.text = e.value;
+        _saved[v!] = n.toDouble();
+      }
+    }
+    _lastFormulaValues.clear();
     if (mounted) setState(() {});
     _schedule(immediate: true);
   }
@@ -141,6 +186,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     _money[GoalVar.targetBalance]!.text = _plain(
       (balance / 10).roundToDouble() * 10,
     );
+    _saved.remove(GoalVar.targetBalance);
     if (_solveFor == GoalVar.endDate || _solveFor == GoalVar.targetBalance) {
       _solveFor = GoalVar.amount;
     }
@@ -155,9 +201,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   /// What the user locked in the shared schedule fields (the solve slot and
   /// the default "every 1" are left blank).
   PlanSchedule get schedule {
-    final amount = _solveFor == GoalVar.amount
-        ? null
-        : double.tryParse(_money[GoalVar.amount]!.text.trim());
+    final amount = _solveFor == GoalVar.amount ? null : _dbl(GoalVar.amount);
     return PlanSchedule(
       startDate: _solveFor == GoalVar.startDate ? null : _startDate,
       endDate: _solveFor == GoalVar.endDate ? null : _endDate,
@@ -166,14 +210,16 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
           ? null
           : _interval,
       unit: _unit,
-      count: _solveFor == GoalVar.count
-          ? null
-          : int.tryParse(_count.text.trim()),
+      count: _solveFor == GoalVar.count ? null : _int(GoalVar.count),
     );
   }
 
   /// Takes the shared schedule from the other mode and solves.
   set schedule(PlanSchedule v) {
+    _saved
+      ..remove(GoalVar.amount)
+      ..remove(GoalVar.interval)
+      ..remove(GoalVar.count);
     _startDate = v.startDate;
     _endDate = v.endDate;
     _money[GoalVar.amount]!.text = v.amount == null
@@ -204,8 +250,115 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   static String _plain(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
-  double? _num(GoalVar v) =>
-      _solveFor == v ? null : double.tryParse(_money[v]!.text.trim());
+  double? _num(GoalVar v) => _solveFor == v ? null : _dbl(v);
+
+  /// The text field behind [v] (null for the dates).
+  FormulaEditingController? _ctl(GoalVar v) => switch (v) {
+    GoalVar.count => _count,
+    GoalVar.interval => _intervalText,
+    _ => _money[v],
+  };
+
+  /// [v]'s number: a loaded scenario's stored number while it stands, a
+  /// formula's value (null while it has an error or waits for
+  /// variables), else today's `double.tryParse` of the text.
+  double? _dbl(GoalVar v) {
+    final saved = _saved[v];
+    if (saved != null) return saved;
+    final c = _money[v]!;
+    if (c.showsFormula) {
+      return c.formula.isValid ? c.formula.value?.toDouble() : null;
+    }
+    return parseLegacyDoubleRaw(c.text)?.toDouble();
+  }
+
+  /// [_dbl] for the whole-number fields (count, interval).
+  int? _int(GoalVar v) {
+    final saved = _saved[v];
+    if (saved != null) return saved.toInt();
+    final c = _ctl(v)!;
+    if (c.showsFormula) return c.formula.isValid ? c.formula.intValue : null;
+    return parseLegacyInt(c.text);
+  }
+
+  /// A formula with an error (or waiting for variables) that isn't
+  /// covered by a stored number: the field says why; nothing is solved.
+  bool _formulaBlocked(GoalVar v) {
+    if (v == _solveFor || _saved.containsKey(v)) return false;
+    final c = _ctl(v);
+    return c != null && c.showsFormula && !c.formula.isValid;
+  }
+
+  /// The formulas behind the request's numbers, by [GoalVar.name].
+  Map<String, String>? _exprs() {
+    if (!ServerFeatures.variables) return null;
+    final out = <String, String>{};
+    for (final v in goalRows) {
+      final c = _ctl(v);
+      if (c == null || v == _solveFor || !c.showsFormula) continue;
+      if (!c.formula.isValid && !_saved.containsKey(v)) continue;
+      out[v.name] = c.formula.expr ?? c.text.trim();
+    }
+    return out.isEmpty ? null : out;
+  }
+
+  /// What each formula last resolved to, so only a real change re-solves.
+  final _lastFormulaValues = <FormulaEditingController, Object?>{};
+
+  void _formulaMaybeChanged() {
+    var changed = false;
+    for (final v in goalRows) {
+      final c = _ctl(v);
+      if (c == null) continue;
+      final f = c.formula;
+      final now = c.showsFormula ? (f.value, f.message, f.pending) : null;
+      if (_lastFormulaValues[c] != now) {
+        _lastFormulaValues[c] = now;
+        if (now != null) changed = true;
+      }
+    }
+    if (changed && mounted) _schedule();
+  }
+
+  /// "Values changed since saved: X → Y" for a loaded scenario's formula
+  /// that now works out differently; null otherwise.
+  (String, String)? _changedSinceSaved(GoalVar v) {
+    final saved = _saved[v];
+    final c = _ctl(v);
+    if (saved == null || c == null || !c.showsFormula) return null;
+    final f = c.formula;
+    if (!f.isValid || f.value == null) return null;
+    final was = decimalOfDouble(saved);
+    if (was == null) return null;
+    if (f.value == was) return null;
+    return (formatFieldValue(was, c.spec), formatFieldValue(f.value!, c.spec));
+  }
+
+  /// "Use new value": the formula's value replaces the stored number.
+  void _useNewValue(GoalVar v) {
+    _saved.remove(v);
+    if (v == GoalVar.interval) {
+      final n = _int(v);
+      if (n != null && n >= 1) _interval = n;
+    }
+    _changed();
+  }
+
+  /// Gives every field the current variables before the rows are built
+  /// (so the "changed since saved" lines see them), and solves again if
+  /// a formula now works out differently.
+  void _syncScope() {
+    if (!ServerFeatures.variables) return;
+    final scope = _scope();
+    for (final v in goalRows) {
+      _ctl(v)?.configure(scope: scope, notify: false);
+    }
+    _formulaMaybeChanged();
+  }
+
+  VariableScope _scope() => ServerFeatures.variables
+      ? scopeFor(ref, streamId: widget.stream.id)
+      : VariableScope.empty;
 
   GoalRequest _request() => GoalRequest(
     solveFor: _solveFor,
@@ -217,23 +370,26 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
     targetBalance: _num(GoalVar.targetBalance),
     amount: _num(GoalVar.amount),
     interval: _solveFor == GoalVar.interval ? null : _interval,
-    count: _solveFor == GoalVar.count ? null : int.tryParse(_count.text.trim()),
+    count: _solveFor == GoalVar.count ? null : _int(GoalVar.count),
     oneOff: _num(GoalVar.oneOff),
     rate: _num(GoalVar.rate),
+    exprs: _exprs(),
   );
 
+  /// Plain text only (a formula's errors show in its field).
   String? _fieldError(GoalVar v) {
     if (v == GoalVar.count) {
+      if (_count.showsFormula) return null;
       final t = _count.text.trim();
       if (t.isEmpty) return null;
-      final n = int.tryParse(t);
+      final n = parseLegacyInt(t);
       return n == null || n < 0 ? 'Whole number' : null;
     }
     final c = _money[v];
-    if (c == null) return null;
+    if (c == null || c.showsFormula) return null;
     final t = c.text.trim();
     if (t.isEmpty) return null;
-    return double.tryParse(t) == null ? 'Invalid number' : null;
+    return parseLegacyDoubleRaw(t) == null ? 'Invalid number' : null;
   }
 
   void _changed() {
@@ -251,7 +407,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
 
   Future<void> _solve() async {
     final seq = ++_seq;
-    if (goalRows.any((v) => _fieldError(v) != null)) {
+    if (goalRows.any((v) => _fieldError(v) != null || _formulaBlocked(v))) {
       setState(() {
         _result = null;
         _error = null;
@@ -293,6 +449,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   }
 
   void _setField(GoalVar v, Object value) {
+    _saved.remove(v);
     switch (v) {
       case GoalVar.startDate:
         _startDate = value as DateTime;
@@ -344,6 +501,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    _syncScope();
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
       child: Column(
@@ -558,26 +716,78 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   Widget _textField(
     BuildContext context,
     GoalVar v,
-    TextEditingController c, {
+    FormulaEditingController c, {
     bool number = false,
   }) {
-    return TextField(
+    final d = _decoration(
+      context,
+      v,
+      empty: c.text.isEmpty,
+      error: _fieldError(v),
+      onClear: () {
+        c.clear();
+        _saved.remove(v);
+        _changed();
+      },
+    );
+    final field = FormulaField(
       key: ValueKey('goal-field-${v.name}'),
+      spec: c.spec,
+      scope: _scope(),
       controller: c,
-      keyboardType: number
+      legacyKeyboardType: number
           ? TextInputType.number
           : const TextInputType.numberWithOptions(decimal: true, signed: true),
-      onChanged: (_) => _changed(),
-      decoration: _decoration(
-        context,
-        v,
-        empty: c.text.isEmpty,
-        error: _fieldError(v),
-        onClear: () {
-          c.clear();
-          _changed();
-        },
-      ),
+      allowEmpty: true,
+      plainErrors: false,
+      label: d.labelText,
+      hintText: d.hintText,
+      floatingLabelBehavior: d.floatingLabelBehavior,
+      helperText: d.helperText,
+      helperStyle: d.helperStyle,
+      errorText: d.errorText,
+      enabledBorder: d.enabledBorder,
+      trailing: d.suffixIcon,
+      onChanged: (_) {
+        _saved.remove(v);
+        _changed();
+      },
+    );
+    return _withChangedLine(context, v, field);
+  }
+
+  /// [field] with the "Values changed since saved" line under it, when a
+  /// loaded scenario's formula now works out differently.
+  Widget _withChangedLine(BuildContext context, GoalVar v, Widget field) {
+    final changed = _changedSinceSaved(v);
+    if (changed == null) return field;
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        field,
+        Padding(
+          padding: const EdgeInsets.only(left: 12, top: 2),
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 4,
+            children: [
+              Text(
+                'Values changed since saved: ${changed.$1} → ${changed.$2}',
+                key: ValueKey('goal-field-${v.name}-changed'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.tertiary,
+                ),
+              ),
+              TextButton(
+                key: ValueKey('goal-field-${v.name}-use-new'),
+                onPressed: () => _useNewValue(v),
+                child: const Text('Use new value'),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -636,20 +846,27 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
   }
 
   /// Every [− N +] [unit ▾] (shared with the event editor).
-  Widget _frequencyField(BuildContext context) => RecurrenceIntervalField(
-    keyPrefix: 'goal-field-interval',
-    caption: GoalVar.interval.label,
-    controller: _intervalText,
-    unit: _unit,
-    onChanged: () {
-      final n = int.tryParse(_intervalText.text.trim());
-      if (n != null && n >= 1) _interval = n;
-      _changed();
-    },
-    onUnitChanged: (u) {
-      _unit = u;
-      _changed();
-    },
+  Widget _frequencyField(BuildContext context) => _withChangedLine(
+    context,
+    GoalVar.interval,
+    RecurrenceIntervalField(
+      keyPrefix: 'goal-field-interval',
+      caption: GoalVar.interval.label,
+      controller: _intervalText,
+      spec: _intervalText.spec,
+      scope: _scope(),
+      unit: _unit,
+      onChanged: () {
+        _saved.remove(GoalVar.interval);
+        final n = _int(GoalVar.interval);
+        if (n != null && n >= 1) _interval = n;
+        _changed();
+      },
+      onUnitChanged: (u) {
+        _unit = u;
+        _changed();
+      },
+    ),
   );
 
   Widget _status(BuildContext context) {
