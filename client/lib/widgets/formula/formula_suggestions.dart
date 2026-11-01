@@ -23,6 +23,8 @@ class FormulaSuggestionList extends StatelessWidget {
     required this.onPick,
     required this.onHover,
     this.scrollController,
+    this.onManage,
+    this.onCreate,
   });
 
   final List<VariableValue> items;
@@ -34,6 +36,16 @@ class FormulaSuggestionList extends StatelessWidget {
   final ValueChanged<VariableValue> onPick;
   final ValueChanged<int> onHover;
   final ScrollController? scrollController;
+
+  /// Owner (012): "Manage variables…" under "No variables yet".
+  final VoidCallback? onManage;
+
+  /// Owner (012): 'Create "\$x"…' under 'No variable named "\$x"'.
+  final ValueChanged<String>? onCreate;
+
+  /// The empty state's action row, if any (label, key, run).
+  (String, String, IconData, VoidCallback)? get emptyAction =>
+      emptyActionFor(scope, prefix, onManage: onManage, onCreate: onCreate);
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +84,48 @@ class FormulaSuggestionList extends StatelessWidget {
   Widget _empty(ThemeData theme) {
     final none = scope.variables.isEmpty;
     final text = none ? 'No variables yet' : 'No variable named "\$$prefix"';
+    final action = emptyAction;
+    final line = _emptyLine(theme, text);
+    if (action == null) return line;
+    final (label, key, icon, run) = action;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        line,
+        const Divider(height: 1),
+        SizedBox(
+          height: rowHeight,
+          child: InkWell(
+            key: ValueKey(key),
+            onTap: run,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: AppTheme.accent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppTheme.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _emptyLine(ThemeData theme, String text) {
     return SizedBox(
       height: rowHeight,
       child: Padding(
@@ -189,17 +243,21 @@ class FormulaSuggestionList extends StatelessWidget {
 }
 
 /// Touch: the picker as a dialog with a search box. Returns the choice.
+/// [onManage] (owner, 012): after the dialog closes, open the manager
+/// (with a name to create, or null).
 Future<VariableValue?> showVariablePicker(
   BuildContext context, {
   required VariableScope scope,
+  ValueChanged<String?>? onManage,
 }) => showDialog<VariableValue>(
   context: context,
-  builder: (context) => _PickerDialog(scope: scope),
+  builder: (context) => _PickerDialog(scope: scope, onManage: onManage),
 );
 
 class _PickerDialog extends StatefulWidget {
-  const _PickerDialog({required this.scope});
+  const _PickerDialog({required this.scope, this.onManage});
   final VariableScope scope;
+  final ValueChanged<String?>? onManage;
 
   @override
   State<_PickerDialog> createState() => _PickerDialogState();
@@ -212,6 +270,11 @@ class _PickerDialogState extends State<_PickerDialog> {
   void dispose() {
     _search.dispose();
     super.dispose();
+  }
+
+  void _manage(String? name) {
+    Navigator.of(context).pop();
+    widget.onManage!(name);
   }
 
   @override
@@ -255,6 +318,8 @@ class _PickerDialogState extends State<_PickerDialog> {
               rowHeight: suggestionRowTouch,
               maxHeight: (h * 0.4).clamp(suggestionRowTouch, 6 * 48.0),
               onPick: (v) => Navigator.of(context).pop(v),
+              onManage: widget.onManage == null ? null : () => _manage(null),
+              onCreate: widget.onManage == null ? null : _manage,
               onHover: (_) {},
             ),
           ],
@@ -268,4 +333,34 @@ class _PickerDialogState extends State<_PickerDialog> {
       ],
     );
   }
+}
+
+/// The empty list's action (owner, 012): "Manage variables…" when there
+/// are none at all, else 'Create "\$[prefix]"…' for a valid new name.
+(String, String, IconData, VoidCallback)? emptyActionFor(
+  VariableScope scope,
+  String prefix, {
+  VoidCallback? onManage,
+  ValueChanged<String>? onCreate,
+}) {
+  if (scope.variables.isEmpty) {
+    if (onManage == null) return null;
+    return (
+      'Manage variables…',
+      'formula-manage-variables',
+      Icons.tune_rounded,
+      onManage,
+    );
+  }
+  if (onCreate == null ||
+      prefix.isEmpty ||
+      variableNameProblem(prefix, const []) != null) {
+    return null;
+  }
+  return (
+    'Create "\$$prefix"…',
+    'formula-create-variable',
+    Icons.add_rounded,
+    () => onCreate(prefix),
+  );
 }

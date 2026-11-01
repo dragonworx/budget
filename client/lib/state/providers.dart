@@ -38,6 +38,14 @@ final myVariablesProvider = FutureProvider<List<Variable>>(
   (ref) => ref.read(variableRepositoryProvider).listMine(),
 );
 
+/// `{items, count}`: fields of the owner's that need attention (spec 012);
+/// null = mine, else that stream's owner's (what I can see of them).
+final variableAttentionProvider =
+    FutureProvider.family<Map<String, dynamic>, String?>(
+      (ref, streamId) =>
+          ref.read(variableRepositoryProvider).attention(streamId: streamId),
+    );
+
 final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
   return CategoryRepository(ref.watch(apiClientProvider));
 });

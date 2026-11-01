@@ -121,7 +121,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/streams/:streamId/timeline',
         builder: (context, state) {
           final streamId = state.pathParameters['streamId']!;
-          return TimelinePage(streamId: streamId);
+          return TimelinePage(
+            streamId: streamId,
+            openEventId: state.uri.queryParameters['event'],
+          );
         },
       ),
     ],

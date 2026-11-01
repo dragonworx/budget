@@ -37,10 +37,18 @@ const formulaHelp = FormulaHelp(
 
 /// The `?` suffix button and its popover.
 class FormulaHelpButton extends StatelessWidget {
-  const FormulaHelpButton({super.key, this.onOpenChanged, this.buttonKey});
+  const FormulaHelpButton({
+    super.key,
+    this.onOpenChanged,
+    this.buttonKey,
+    this.onManage,
+  });
 
   final ValueChanged<bool>? onOpenChanged;
   final Key? buttonKey;
+
+  /// Owner (012): a "Manage variables…" link at the bottom.
+  final VoidCallback? onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +100,24 @@ class FormulaHelpButton extends StatelessWidget {
                 const SizedBox(height: 8),
                 for (final n in formulaHelp.notes)
                   Text(n, style: small?.copyWith(color: AppTheme.textMuted)),
+                if (onManage != null) ...[
+                  const SizedBox(height: 6),
+                  Builder(
+                    builder: (menuContext) => TextButton.icon(
+                      key: const ValueKey('formula-help-manage'),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () {
+                        MenuController.maybeOf(menuContext)?.close();
+                        onManage!();
+                      },
+                      icon: const Icon(Icons.tune_rounded, size: 16),
+                      label: const Text('Manage variables…'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

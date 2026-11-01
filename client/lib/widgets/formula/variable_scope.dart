@@ -1,9 +1,18 @@
 // Whose variables a formula field resolves against (spec 011, D1/D10).
 import 'package:budget_formula/budget_formula.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models.dart';
+import '../../features/variables/variables_manager.dart';
 import '../../state/providers.dart';
+
+/// Opens the variables manager (spec 012); [createName] prefills its add
+/// row. Resolves to the name of the last variable created there.
+typedef VariablesManagerOpener = Future<String?> Function(
+  BuildContext context, {
+  String? createName,
+});
 
 /// The variables one field can use. Shared viewers and editors see the
 /// stream owner's whole set for now (011).
@@ -12,6 +21,7 @@ class VariableScope extends VariableLookup {
     this.streamId,
     this.variables = const [],
     this.canManage = false,
+    this.manage,
     this.loading = false,
     this.descriptions = const {},
     this.displayDecimals = const {},
@@ -22,6 +32,7 @@ class VariableScope extends VariableLookup {
     List<Variable> list, {
     String? streamId,
     bool canManage = false,
+    VariablesManagerOpener? manage,
     bool loading = false,
   }) {
     final values = <VariableValue>[];
@@ -38,6 +49,7 @@ class VariableScope extends VariableLookup {
       streamId: streamId,
       variables: values,
       canManage: canManage,
+      manage: manage,
       loading: loading,
       descriptions: desc,
       displayDecimals: decimals,
@@ -52,6 +64,12 @@ class VariableScope extends VariableLookup {
 
   /// Owner: may offer "Create $x…" / "Manage variables…" (from 012).
   final bool canManage;
+
+  /// How the field opens the manager (set with [canManage]).
+  final VariablesManagerOpener? manage;
+
+  /// "Manage variables…" / 'Create "\$x"…' are offered.
+  bool get offersManage => canManage && manage != null;
   final bool loading;
 
   /// By lower-case name.
@@ -95,11 +113,22 @@ VariableScope scopeFor(WidgetRef ref, {String? streamId}) {
   final async = streamId == null
       ? ref.watch(myVariablesProvider)
       : ref.watch(variablesProvider(streamId));
+  // Only the owner changes variables (D3): my own set, or a stream I own.
+  final owner =
+      streamId == null ||
+      (ref.watch(streamProvider(streamId)).valueOrNull?.role.isOwner ?? false);
+  final can = owner && ServerFeatures.variables;
   return VariableScope.fromVariables(
     async.valueOrNull ?? const [],
     streamId: streamId,
-    // The manager arrives in 012; until then there is nothing to offer.
-    canManage: false,
+    canManage: can,
+    manage: can
+        ? (context, {createName}) => showVariablesManager(
+            context,
+            streamId: streamId,
+            createName: createName,
+          )
+        : null,
     loading: async.isLoading && !async.hasValue,
   );
 }

@@ -56,12 +56,16 @@ import 'saved_view.dart';
 import 'span_header.dart';
 import 'view_units.dart';
 import 'zoom_level.dart';
+import '../variables/variables_manager.dart';
 import 'occurrence_info.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
-  const TimelinePage({super.key, required this.streamId});
+  const TimelinePage({super.key, required this.streamId, this.openEventId});
 
   final String streamId;
+
+  /// `?event=<id>` (spec 012): opens that event's editor once it loads.
+  final String? openEventId;
 
   @override
   ConsumerState<TimelinePage> createState() => _TimelinePageState();
@@ -1276,6 +1280,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final events =
             ref.watch(eventsProvider(widget.streamId)).valueOrNull ??
             const <BudgetEvent>[];
+        _maybeOpenLinkedEvent(stream);
         // Loan streams (spec 003 §9–§14): lanes to the payoff, a "Paid off"
         // marker, no alerts, no planner.
         final loanStream = streamHasLoan(stream, events);
@@ -1775,6 +1780,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           title: Text('Edit categories'),
         ),
       ),
+      // The owner's variables (spec 012); read-only for editors and viewers.
+      if (ServerFeatures.variables)
+        const PopupMenuItem(
+          key: ValueKey('more-variables'),
+          value: 'variables',
+          child: ListTile(
+            leading: Icon(Icons.data_object),
+            title: Text('Edit variables'),
+          ),
+        ),
       const PopupMenuItem(
         key: ValueKey('shortcuts-help'),
         value: 'shortcuts',
@@ -1846,6 +1861,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                 streamId: widget.streamId,
                 canEdit: canEdit,
               );
+            case 'variables':
+              showVariablesManager(context, streamId: widget.streamId);
           }
         },
         itemBuilder: (context) => more,
@@ -2060,6 +2077,34 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     for (final o in _seriesCache?.occurrences ?? const <Occurrence>[])
       if (o.eventId == eventId && o.skipped) dateOnly(o.date),
   };
+
+  /// The `?event=` this page already opened (each link opens once).
+  String? _openedLink;
+
+  /// `?event=<id>` (spec 012, from a variable's usages): once the stream's
+  /// events have loaded, open that event (read-only without edit rights).
+  void _maybeOpenLinkedEvent(BudgetStream stream) {
+    final id = widget.openEventId;
+    if (id == null || id == _openedLink) return;
+    final events = ref.read(eventsProvider(widget.streamId)).valueOrNull;
+    if (events == null) return;
+    _openedLink = id;
+    final t = events.where((e) => e.id == id).firstOrNull;
+    if (t == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (stream.role.canEdit) {
+        _openEditor(context, stream, existing: t);
+      } else {
+        showEventEditor(
+          context,
+          streamId: widget.streamId,
+          existing: t,
+          readOnly: true,
+        );
+      }
+    });
+  }
 
   /// One place every create / edit path goes through, so the timeline
   /// always refreshes afterwards (skips can change even on cancel).

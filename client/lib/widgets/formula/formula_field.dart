@@ -344,11 +344,13 @@ class _FormulaFieldState extends State<FormulaField> {
 
   // --- editing ------------------------------------------------------------
 
-  void _insert(VariableValue v) {
+  void _insert(VariableValue v) => _insertName(v.name);
+
+  void _insertName(String name) {
     final ctx = _ctx;
     if (ctx == null) return;
     final t = _c.text;
-    final rep = '\$${v.name}';
+    final rep = '\$$name';
     final start = ctx.replaceStart.clamp(0, t.length);
     final end = ctx.replaceEnd.clamp(start, t.length);
     final next = t.replaceRange(start, end, rep);
@@ -378,6 +380,19 @@ class _FormulaFieldState extends State<FormulaField> {
     if (!_focus.hasFocus) _focus.requestFocus();
   }
 
+  /// Opens the manager (owner, 012); a variable created there replaces the
+  /// `$…` being typed ([createName] prefills its add row).
+  Future<void> _openManager({String? createName, CompletionContext? at}) async {
+    final open = _c.scope.manage;
+    if (open == null) return;
+    final ctx = at ?? _ctx;
+    _close(quiet: true);
+    final name = await open(context, createName: createName);
+    if (!mounted || name == null || ctx == null) return;
+    _ctx = ctx;
+    _insertName(name);
+  }
+
   Future<void> _openPicker() async {
     final t = _c.text;
     final sel = _c.selection.isValid
@@ -386,7 +401,13 @@ class _FormulaFieldState extends State<FormulaField> {
     final token = sel.isCollapsed ? completionAt(t, sel.baseOffset) : null;
     final ctx = token ?? CompletionContext(sel.start, sel.end, '');
     if (_touch) {
-      final v = await showVariablePicker(context, scope: _c.scope);
+      final v = await showVariablePicker(
+        context,
+        scope: _c.scope,
+        onManage: _c.scope.offersManage
+            ? (name) => _openManager(createName: name, at: ctx)
+            : null,
+      );
       if (!mounted || v == null) return;
       _ctx = ctx;
       _insert(v);
@@ -596,6 +617,9 @@ class _FormulaFieldState extends State<FormulaField> {
       if (showHelp)
         FormulaHelpButton(
           buttonKey: ValueKey('$_keyBase-help'),
+          onManage: _c.scope.offersManage && editable
+              ? () => _openManager()
+              : null,
           onOpenChanged: (open) => setState(() => _helpOpen = open),
         ),
     ];
@@ -718,7 +742,19 @@ class _FormulaFieldState extends State<FormulaField> {
     final origin = box.localToGlobal(Offset.zero);
     final size = box.size;
     final rowH = _touch ? suggestionRowTouch : suggestionRowDesktop;
-    final rows = math.max(1, math.min(_items.length, suggestionMaxRows));
+    final manage = _c.scope.offersManage;
+    final action =
+        _items.isEmpty &&
+        emptyActionFor(
+              _c.scope,
+              ctx.prefix,
+              onManage: manage ? () {} : null,
+              onCreate: manage ? (_) {} : null,
+            ) !=
+            null;
+    final rows = action
+        ? 2
+        : math.max(1, math.min(_items.length, suggestionMaxRows));
     final want = rows * rowH + 8;
     const gap = 4.0;
     final below =
@@ -759,6 +795,8 @@ class _FormulaFieldState extends State<FormulaField> {
               maxHeight: height,
               scrollController: _scroll,
               onPick: _insert,
+              onManage: manage ? () => _openManager() : null,
+              onCreate: manage ? (n) => _openManager(createName: n) : null,
               onHover: (i) {
                 if (i != _hi) setState(() => _hi = i);
               },

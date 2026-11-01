@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/auth_repository.dart';
+import '../data/models.dart' show ServerFeatures;
+import '../features/variables/variables_manager.dart';
 import '../state/auth_providers.dart';
 import '../state/realtime_providers.dart';
 import '../theme/app_theme.dart';
@@ -49,6 +51,7 @@ class UserMenu extends ConsumerWidget {
       onSelected: (v) {
         if (v == 'sign-out') ref.read(authProvider.notifier).signOut();
         if (v == 'admin') GoRouter.of(context).go('/admin');
+        if (v == 'variables') showVariablesManager(context);
       },
       itemBuilder: (context) => [
         PopupMenuItem<String>(
@@ -101,6 +104,19 @@ class UserMenu extends ConsumerWidget {
           ),
         ),
         const PopupMenuDivider(),
+        // My own variables (spec 012), shared by all my streams.
+        if (ServerFeatures.variables)
+          const PopupMenuItem<String>(
+            key: ValueKey('menu-variables'),
+            value: 'variables',
+            child: Row(
+              children: [
+                Icon(Icons.data_object, size: 18),
+                SizedBox(width: 10),
+                Text('Variables'),
+              ],
+            ),
+          ),
         if (user.isAdmin)
           const PopupMenuItem<String>(
             key: ValueKey('menu-admin'),

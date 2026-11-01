@@ -336,10 +336,12 @@ class VariableRepository {
         as Map,
   );
 
-  /// My fields and variables whose formulas no longer resolve.
-  Future<Map<String, dynamic>> attention() async => Map<String, dynamic>.from(
-    await _api.get('/api/variables/attention') as Map,
-  );
+  /// Fields and variables whose formulas no longer resolve: mine, or
+  /// (with [streamId]) the stream owner's that I can see.
+  Future<Map<String, dynamic>> attention({String? streamId}) async =>
+      Map<String, dynamic>.from(
+        await _api.get('${_base(streamId)}/attention') as Map,
+      );
 }
 
 /// A stream's categories (`/api/streams/:id/categories`).

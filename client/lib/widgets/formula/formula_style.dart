@@ -100,3 +100,20 @@ String _fixed(Decimal v, int decimals) => NumberFormat.decimalPatternDigits(
   locale: 'en_AU',
   decimalDigits: decimals,
 ).format(v.toDouble());
+
+/// [text] with its tokens styled like a formula field draws them
+/// (read-only lists: usages, attention, the manager's formula line).
+TextSpan styledFormula(
+  String text,
+  TextStyle? base,
+  bool Function(String lowerName) isKnown,
+) => TextSpan(
+  style: base,
+  children: [
+    for (final sp in highlight(text, isKnown))
+      TextSpan(
+        text: text.substring(sp.start, sp.end),
+        style: FormulaStyle.span(sp.style, base),
+      ),
+  ],
+);

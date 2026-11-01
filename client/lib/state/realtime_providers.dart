@@ -207,6 +207,7 @@ class RealtimeController {
       // Spec 010: one row per affected stream.
       case 'variable':
         if (aid != null) ref.invalidate(variablesProvider(aid));
+        ref.invalidate(variableAttentionProvider);
         if (e.subjectUserId != null && e.subjectUserId == _me) {
           ref.invalidate(myVariablesProvider);
         }
