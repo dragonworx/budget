@@ -130,7 +130,14 @@ class _VariableUsagesListState extends State<VariableUsagesList> {
           Row(
             children: [
               Expanded(
-                child: Text(widget.title, style: theme.textTheme.titleLarge),
+                // Its own node, naming the dialog: merged into the dialog's
+                // label, the web engine drops it and readers hear "Close".
+                child: Semantics(
+                  container: true,
+                  header: true,
+                  namesRoute: true,
+                  child: Text(widget.title, style: theme.textTheme.titleLarge),
+                ),
               ),
               IconButton(
                 key: const ValueKey('variable-usages-close'),
@@ -141,43 +148,49 @@ class _VariableUsagesListState extends State<VariableUsagesList> {
             ],
           ),
           if (widget.message != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 8, bottom: 10),
-              child: Text(
-                widget.message!,
-                key: const ValueKey('variable-usages-message'),
-                style: muted,
+            Semantics(
+              container: true,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8, bottom: 10),
+                child: Text(
+                  widget.message!,
+                  key: const ValueKey('variable-usages-message'),
+                  style: muted,
+                ),
               ),
             ),
           Flexible(
-            child: FutureBuilder<UsageRows>(
-              future: _future,
-              builder: (context, snap) {
-                if (snap.hasError) {
-                  return Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Couldn\'t load them: ${friendlyError(snap.error!)}',
+            child: Semantics(
+              container: true,
+              child: FutureBuilder<UsageRows>(
+                future: _future,
+                builder: (context, snap) {
+                  if (snap.hasError) {
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Couldn\'t load them: ${friendlyError(snap.error!)}',
+                          ),
                         ),
-                      ),
-                      TextButton(
-                        onPressed: () =>
-                            setState(() => _future = widget.load()),
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  );
-                }
-                final data = snap.data;
-                if (data == null) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                return _list(theme, data, muted);
-              },
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => _future = widget.load()),
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    );
+                  }
+                  final data = snap.data;
+                  if (data == null) {
+                    return const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  return _list(theme, data, muted);
+                },
+              ),
             ),
           ),
         ],

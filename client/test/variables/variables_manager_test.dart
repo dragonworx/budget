@@ -375,6 +375,32 @@ void main() {
       expect(h.vars.calls, isNot(contains('delete v1')));
     });
 
+    testWidgets('in use: title and message are their own nodes', (
+      tester,
+    ) async {
+      // Merged into the dialog's label, the web engine dropped them and
+      // screen readers announced the dialog as "Close".
+      final sem = tester.ensureSemantics();
+      await pumpManager(tester);
+      await tester.tap(k('variable-menu-v1'));
+      await tester.pumpAndSettle();
+      await tester.tap(k('variable-menu-delete'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSemantics(find.text(r'$rent is in use')),
+        containsSemantics(
+          label: r'$rent is in use',
+          isHeader: true,
+          namesRoute: true,
+        ),
+      );
+      expect(
+        tester.getSemantics(k('variable-usages-message')),
+        containsSemantics(label: 'Change these fields first, then delete it.'),
+      );
+      sem.dispose();
+    });
+
     testWidgets('unused: confirm, delete, undo re-creates', (tester) async {
       final h = await pumpManager(tester);
       await tester.tap(k('variable-menu-v2'));
