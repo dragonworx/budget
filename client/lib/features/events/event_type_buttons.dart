@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_theme.dart';
 
 /// One button of an [EventTypeButtons] row.
 class TypeButton<T> {
@@ -86,7 +85,7 @@ class EventTypeButtons<T> extends StatelessWidget {
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(10),
       side: BorderSide(
-        color: on ? c : c.withValues(alpha: 0.35),
+        color: on ? c : c.withValues(alpha: 0.55),
         width: on ? 1.5 : 1,
       ),
     );
@@ -95,7 +94,9 @@ class EventTypeButtons<T> extends StatelessWidget {
       maxLines: 1,
       softWrap: false,
       style: Theme.of(context).textTheme.labelLarge?.copyWith(
-        color: on ? c : AppTheme.textMuted,
+        // Every label wears its type colour (as the list icons do); the
+        // selected one is filled, fully outlined and bold.
+        color: c,
         fontWeight: on ? FontWeight.w700 : FontWeight.w500,
       ),
     );
