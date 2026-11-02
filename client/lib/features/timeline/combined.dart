@@ -113,6 +113,13 @@ BalanceSeries combineSeries(CombinedPart current, List<CombinedPart> others) {
         for (final o in p.series.occurrences)
           o.tagged(streamId: p.streamId, netted: netted(o)),
     ],
+    syncOccurrences: [
+      ...current.series.syncOccurrences,
+      for (final p in others)
+        for (final o in p.series.syncOccurrences)
+          o.tagged(streamId: p.streamId),
+    ],
+    syncs: {for (final p in parts) ...p.series.syncs},
   );
 }
 

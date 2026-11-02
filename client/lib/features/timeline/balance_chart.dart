@@ -27,6 +27,8 @@ import 'tap_menu.dart';
 import 'trim.dart';
 import 'alert_fill.dart';
 import 'lod.dart';
+import 'sync_markers.dart';
+import '../events/sync_format.dart';
 import 'clusters.dart';
 import 'group_breakdown_sheet.dart';
 import 'zoom_level.dart';
@@ -2671,7 +2673,8 @@ class _BalanceChartState extends State<BalanceChart>
     // on release.
     final stats = pickDayStats(day);
     final bubbleW = widget.onTrimDay == null ? 256.0 : 292.0;
-    final bubbleH = stats.balance == null ? 64.0 : 84.0;
+    final bubbleH =
+        (stats.balance == null ? 64.0 : 84.0) + (stats.sync == null ? 0 : 18);
     // Above the finger on touch so it stays visible; just above the cursor
     // otherwise. Clamped inside the chart.
     final lift = _pickTouch ? 84.0 : 56.0;
@@ -2755,7 +2758,28 @@ class _BalanceChartState extends State<BalanceChart>
         break;
       }
     }
-    return PickDayStats(gains: gains, losses: losses, balance: balance);
+    String? sync;
+    final marks = syncMarksOf(widget.series.syncOccurrences);
+    if (marks.isNotEmpty) {
+      final di =
+          DateTime.utc(d.year, d.month, d.day).millisecondsSinceEpoch ~/
+          86400000;
+      final (a, b) = syncMarkRange(marks, di, di);
+      if (a < b) {
+        final m = marks[a];
+        final drift = m.drift;
+        sync = syncDayTotalText(
+          formatSyncBalance(m.balance),
+          drift == null ? null : formatDrift(drift),
+        );
+      }
+    }
+    return PickDayStats(
+      gains: gains,
+      losses: losses,
+      balance: balance,
+      sync: sync,
+    );
   }
 
   /// The pick's bubble: date, the day's money in / out and closing balance
@@ -2834,6 +2858,17 @@ class _BalanceChartState extends State<BalanceChart>
                         ],
                       ),
                     ),
+                    if (stats.sync != null)
+                      Text(
+                        stats.sync!,
+                        key: const ValueKey('pick-day-sync'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: small.copyWith(
+                          color: AppTheme.syncColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     if (balance != null)
                       Text.rich(
                         key: const ValueKey('pick-day-balance'),
@@ -5454,6 +5489,7 @@ class _BalanceChartPainter extends CustomPainter {
     perfFinish();
     perfStart('chart.overlays');
     if (_laneOccurrences) _paintStepDots(canvas, layout, scale);
+    _paintSyncMarkers(canvas, layout, scale, seed);
     // Axis values float over the plot: drawn after the line and dots.
     for (final (y, text) in gridLabels) {
       _paintYText(canvas, layout, y, text, labelStyle);
@@ -7562,6 +7598,138 @@ class _BalanceChartPainter extends CustomPainter {
     debugExactMarkers?.call(marks);
   }
 
+  /// Spec 015: every sync in view as an exact marker on the balance line
+  /// (a teal ring with ⟳), at every zoom and in the lanes view; never
+  /// grouped or hidden. Syncs in one pixel column share a ring with a
+  /// "×N" badge. Labels ("Sync \$X" / "+\$Y drift") go where they don't
+  /// meet another sync's label; the ring always draws.
+  void _paintSyncMarkers(
+    Canvas canvas,
+    ChartLayout layout,
+    _YScale scale,
+    DateTime seed,
+  ) {
+    final marks = syncMarksOf(series.syncOccurrences);
+    if (marks.isEmpty) return;
+    final plot = layout.plot;
+    final viewEnd = addDays(viewStart, visibleDays);
+    int idx(DateTime d) =>
+        DateTime.utc(d.year, d.month, d.day).millisecondsSinceEpoch ~/ 86400000;
+    final (m0, m1) = syncMarkRange(marks, idx(viewStart) - 1, idx(viewEnd) + 1);
+    if (m0 >= m1) {
+      debugSyncMarkers?.call(const []);
+      return;
+    }
+    final closes = pointIndexOf(series.points).closeByDayMs;
+    double xOf(SyncMark m) =>
+        layout.xOf(_stepAt(m.day), viewStart, visibleDays);
+    final columns = syncColumns(marks.sublist(m0, m1), xOf);
+    final bg = Paint()..color = _plotBg;
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = AppTheme.syncColor;
+    final glyphStyle = labelStyle.copyWith(
+      fontSize: textScaler.scale(8),
+      height: 1.0,
+      fontWeight: FontWeight.w800,
+      color: AppTheme.syncColor,
+    );
+    final badgeStyle = labelStyle.copyWith(
+      fontSize: textScaler.scale(9),
+      height: 1.0,
+      fontWeight: FontWeight.w700,
+      color: AppTheme.text,
+    );
+    final line1Style = labelStyle.copyWith(
+      color: AppTheme.syncColor,
+      fontWeight: FontWeight.w700,
+    );
+    final line2Style = labelStyle.copyWith(color: AppTheme.textMuted);
+    const r = 5.5;
+    final drawn = <(DateTime, Offset, int)>[];
+    // Labels keep clear of the other labels, and take at most one per
+    // global tile of visibleDays / K (the label budget), so a dense run
+    // of syncs doesn't bury the chart.
+    final placed = <Rect>[for (final h in labelHits) h.rect];
+    final k = math.max(1, groupLabelBudget(plot.width));
+    final tile = math.max(visibleDays / k, 1.0);
+    final tilesUsed = <int>{};
+    canvas.save();
+    canvas.clipRect(plot.inflate(1));
+    for (final col in columns) {
+      final m = col.last;
+      if (m.day.isBefore(seed)) continue;
+      final y = closes[m.day.millisecondsSinceEpoch] ?? m.balance.toDouble();
+      final c = Offset(xOf(m), scale.yOf(y));
+      final n = col.fold(0, (a, x) => a + x.count);
+      canvas.drawCircle(c, r + 1, bg);
+      canvas.drawCircle(c, r, ring);
+      final g = _axisText.get('⟳', glyphStyle, maxLines: 1);
+      g.paint(canvas, c - Offset(g.width / 2, g.height / 2));
+      if (col.length > 1 || n > 1) {
+        final tp = _axisText.get('×$n', badgeStyle, maxLines: 1);
+        final badge = Rect.fromLTWH(
+          c.dx + r - 1,
+          c.dy - r - tp.height - 1,
+          tp.width + 4,
+          tp.height + 2,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(badge, const Radius.circular(3)),
+          bg,
+        );
+        tp.paint(canvas, badge.topLeft + const Offset(2, 1));
+      }
+      drawn.add((m.day, c, n));
+      // The label: above the ring, else below; skipped where it would
+      // meet another label, or its tile already has one.
+      final t = (m.dayIndex / tile).floor();
+      if (tilesUsed.contains(t)) continue;
+      final drift = m.drift;
+      final s1 = col.length > 1 ? '${col.length} syncs' : syncLabel(m.balance);
+      final s2 = col.length > 1 || drift == null ? null : driftLabel(drift);
+      final t1 = _axisText.get(s1, line1Style, maxLines: 1);
+      final t2 = s2 == null ? null : _axisText.get(s2, line2Style, maxLines: 1);
+      final w = math.max(t1.width, t2?.width ?? 0) + 8;
+      final h = t1.height + (t2?.height ?? 0) + 4;
+      Rect at(double top) => Rect.fromLTWH(
+        (c.dx - w / 2).clamp(plot.left, math.max(plot.left, plot.right - w)),
+        top,
+        w,
+        h,
+      );
+      final above = at(c.dy - r - 4 - h), below = at(c.dy + r + 4);
+      Rect? rect;
+      for (final cand in [above, below]) {
+        if (cand.top < plot.top || cand.bottom > plot.bottom) continue;
+        if (placed.any((p) => p.overlaps(cand))) continue;
+        rect = cand;
+        break;
+      }
+      if (rect == null) continue;
+      placed.add(rect);
+      tilesUsed.add(t);
+      final rr = RRect.fromRectAndRadius(rect, const Radius.circular(4));
+      canvas.drawRRect(
+        rr,
+        Paint()..color = AppTheme.raised.withValues(alpha: 0.94),
+      );
+      canvas.drawRRect(
+        rr,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = AppTheme.syncColor.withValues(alpha: 0.5),
+      );
+      t1.paint(canvas, Offset(rect.left + 4, rect.top + 2));
+      t2?.paint(canvas, Offset(rect.left + 4, rect.top + 2 + t1.height));
+      debugSyncLabel?.call(s1, s2, rect);
+    }
+    canvas.restore();
+    debugSyncMarkers?.call(drawn);
+  }
+
   /// Opening-balance vertex: a hollow accent diamond, unlike the round
   /// event dots.
   void _paintSeedVertex(Canvas canvas, Offset c, double r) {
@@ -8678,11 +8846,19 @@ class _GuideLinePainter extends CustomPainter {
 
 /// A footer day's totals: [gains] and [losses] are positive magnitudes.
 class PickDayStats {
-  const PickDayStats({required this.gains, required this.losses, this.balance});
+  const PickDayStats({
+    required this.gains,
+    required this.losses,
+    this.balance,
+    this.sync,
+  });
 
   final double gains;
   final double losses;
   final double? balance;
+
+  /// Spec 015: "Sync to \$X (+\$Y)" when a sync applies that day.
+  final String? sync;
 }
 
 /// The off-range chip under the plot: only when balances in view go below
@@ -8826,6 +9002,12 @@ int debugGroupGlyphs = 0;
 /// series layer alone).
 @visibleForTesting
 bool debugExactMarkersDisabled = false;
+
+/// Tests: the sync rings drawn last paint (day, centre, syncs in it).
+void Function(List<(DateTime, Offset, int)> marks)? debugSyncMarkers;
+
+/// Tests: a sync label painted (its two lines and rect).
+void Function(String line1, String? line2, Rect rect)? debugSyncLabel;
 @visibleForTesting
 int debugGroupLabelCandidates = 0;
 @visibleForTesting

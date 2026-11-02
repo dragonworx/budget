@@ -489,13 +489,17 @@ class BudgetEvent {
   /// Linked to an offset account (visible or not).
   bool get hasOffset => offsetStreamIds.isNotEmpty || offsetHidden;
 
-  /// "standard" or "loan" (spec 002).
+  /// "standard", "loan" (spec 002) or "sync" (spec 015).
   final String kind;
 
   /// The loan terms JSON as sent by the server (see `LoanDraft.fromEvent`).
   final Map<String, dynamic>? loan;
 
   bool get isLoan => kind == 'loan';
+
+  /// Spec 015: a once-off that sets the stream's balance to [amount]
+  /// (signed) after the day's other moves.
+  bool get isSync => kind == 'sync';
 
   /// The event's category (every saved event has one). [name] is the
   /// category's name and [color] its colour, kept in sync by the server.
@@ -713,7 +717,7 @@ class BudgetEvent {
     'color': color,
     'categoryId': categoryId,
     'categoryHidden': categoryHidden,
-    if (isLoan) 'kind': kind,
+    if (isLoan || isSync) 'kind': kind,
     if (isLoan) 'loan': loan,
     if (isLoan) 'offsetStreamIds': offsetStreamIds,
     if (offsetHidden) 'offsetHidden': true,
@@ -723,7 +727,20 @@ class BudgetEvent {
     if (exprErrors != null) 'exprErrors': exprErrors,
   };
 
-  Map<String, dynamic> toCreateJson() => {
+  Map<String, dynamic> toCreateJson() => isSync ? toSyncJson() : _createJson();
+
+  /// A sync's body (create, preview or PATCH): only its date, balance (or
+  /// formula) and enabled flag; the server fixes the rest (spec 015 S9).
+  Map<String, dynamic> toSyncJson() => {
+    'kind': 'sync',
+    'amount': moneyToJson(amount),
+    'startDate': formatDate(startDate),
+    'enabled': enabled,
+    if (ServerFeatures.variables && amountExpr != null)
+      'amountExpr': amountExpr,
+  };
+
+  Map<String, dynamic> _createJson() => {
     'name': name,
     'direction': direction.toJson(),
     'amount': moneyToJson(amount),
@@ -961,6 +978,9 @@ class Occurrence {
     this.derived = false,
     this.payout = false,
     this.flat = false,
+    this.syncBalance,
+    this.calculated,
+    this.superseded = false,
   });
 
   final String eventId;
@@ -981,6 +1001,24 @@ class Occurrence {
   /// A flat-rate loan's interest instalment.
   final bool flat;
 
+  /// Spec 015: a sync's pin ([signedDelta] is its drift, 0 when
+  /// [superseded]).
+  bool get isSync => component == 'sync';
+
+  /// A sync's actual balance (what the day closes at when it wins).
+  final Decimal? syncBalance;
+
+  /// A sync's day close before the pin.
+  final Decimal? calculated;
+
+  /// A later sync on the same day applies instead.
+  final bool superseded;
+
+  /// A sync's drift: actual − calculated.
+  Decimal? get drift => syncBalance == null || calculated == null
+      ? null
+      : syncBalance! - calculated!;
+
   /// Combined view: the other stream this occurrence belongs to (null: the
   /// stream being viewed).
   final String? streamId;
@@ -1000,6 +1038,9 @@ class Occurrence {
     derived: derived,
     payout: payout,
     flat: flat,
+    syncBalance: syncBalance,
+    calculated: calculated,
+    superseded: superseded,
   );
 
   factory Occurrence.fromJson(Map<String, dynamic> json) {
@@ -1014,15 +1055,86 @@ class Occurrence {
       derived: json['derived'] == true,
       payout: json['payout'] == true,
       flat: json['flat'] == true,
+      syncBalance: json['syncBalance'] == null
+          ? null
+          : parseMoney(json['syncBalance']),
+      calculated: json['calculated'] == null
+          ? null
+          : parseMoney(json['calculated']),
+      superseded: json['superseded'] == true,
     );
   }
 }
 
+/// Spec 015: one sync's outcome from `/balance` or `/project` (`syncs`).
+class SyncRecord {
+  const SyncRecord({
+    required this.eventId,
+    required this.date,
+    required this.balance,
+    this.calculated,
+    this.superseded = false,
+    this.beforeSeed = false,
+  });
+
+  final String eventId;
+  final DateTime date;
+  final Decimal balance;
+
+  /// The day's close before the pin; null before the seed.
+  final Decimal? calculated;
+
+  /// A later sync on the same day applies instead.
+  final bool superseded;
+
+  /// Dated before the stream's start: no effect.
+  final bool beforeSeed;
+
+  Decimal? get drift => calculated == null ? null : balance - calculated!;
+
+  factory SyncRecord.fromJson(Map<String, dynamic> json) => SyncRecord(
+    eventId: json['eventId'] as String,
+    date: parseDate(json['date']),
+    balance: parseMoney(json['balance']),
+    calculated: json['calculated'] == null
+        ? null
+        : parseMoney(json['calculated']),
+    superseded: json['superseded'] == true,
+    beforeSeed: json['beforeSeed'] == true,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'eventId': eventId,
+    'date': formatDate(date),
+    'balance': moneyToJson(balance),
+    'calculated': calculated == null ? null : moneyToJson(calculated!),
+    'drift': drift == null ? null : moneyToJson(drift!),
+    'superseded': superseded,
+    'beforeSeed': beforeSeed,
+  };
+}
+
 class BalanceSeries {
-  const BalanceSeries({required this.points, this.occurrences = const []});
+  const BalanceSeries({
+    required this.points,
+    this.occurrences = const [],
+    this.syncOccurrences = const [],
+    this.syncs = const {},
+  });
 
   final List<BalancePoint> points;
+
+  /// Every occurrence but the syncs' pins (spec 015): those are
+  /// [syncOccurrences], drawn as exact markers and never counted as money
+  /// in / out, grouped or laned.
   final List<Occurrence> occurrences;
+
+  /// The syncs' pins in the window, by date (winners and superseded).
+  final List<Occurrence> syncOccurrences;
+
+  /// Every sync's outcome by event id (also before-window and before-seed
+  /// ones).
+  final Map<String, SyncRecord> syncs;
 
   factory BalanceSeries.fromJson(dynamic data) {
     if (data is List) {
@@ -1037,15 +1149,35 @@ class BalanceSeries {
       final pointsRaw =
           data['points'] ?? data['balances'] ?? data['data'] ?? const [];
       final occRaw = data['occurrences'] ?? const [];
+      final all = (occRaw as List)
+          .cast<Map<String, dynamic>>()
+          .map(Occurrence.fromJson)
+          .toList();
+      final hasSync = all.any((o) => o.isSync);
+      final syncsRaw = data['syncs'];
       return BalanceSeries(
         points: (pointsRaw as List)
             .cast<Map<String, dynamic>>()
             .map(BalancePoint.fromJson)
             .toList(),
-        occurrences: (occRaw as List)
-            .cast<Map<String, dynamic>>()
-            .map(Occurrence.fromJson)
-            .toList(),
+        occurrences: hasSync
+            ? [
+                for (final o in all)
+                  if (!o.isSync) o,
+              ]
+            : all,
+        syncOccurrences: hasSync
+            ? [
+                for (final o in all)
+                  if (o.isSync) o,
+              ]
+            : const [],
+        syncs: syncsRaw is List
+            ? {
+                for (final r in syncsRaw.cast<Map<String, dynamic>>())
+                  r['eventId'] as String: SyncRecord.fromJson(r),
+              }
+            : const {},
       );
     }
     throw FormatException('Unexpected balance response shape');

@@ -32,6 +32,7 @@ import '../categories/categories_manager.dart';
 import '../loans/loan_form.dart';
 import '../loans/loan_models.dart';
 import '../loans/loan_summary_panel.dart';
+import 'sync_format.dart';
 import '../timeline/stack_lanes.dart';
 
 enum EditorAction {
@@ -176,6 +177,21 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   /// Editing a saved loan (spec 003): its kind is locked.
   bool get _isLoan => widget.existing?.isLoan ?? false;
 
+  /// Editing a saved sync (spec 015): its kind is locked too.
+  bool get _isSync => widget.existing?.isSync ?? false;
+
+  /// The Sync kind is picked: one "Actual balance" field and a date.
+  late bool _syncMode;
+
+  /// The sync's balance (signed spec `event.syncBalance`).
+  late final FormulaEditingController _balance;
+
+  /// The draft's `/project` outcome on its day (with the day's other
+  /// syncs); null until loaded.
+  List<SyncRecord>? _syncPreview;
+  Timer? _syncPreviewTimer;
+  int _syncPreviewSeq = 0;
+
   /// Viewer access: fields disabled and no Save.
   bool get _readOnly => widget.readOnly;
 
@@ -260,9 +276,18 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       spec: fieldSpecs['event.amount']!,
       formulasEnabled: ServerFeatures.variables,
     );
+    _syncMode = existing?.isSync ?? false;
+    _balance = FormulaEditingController(
+      text: _syncMode ? (expr ?? existing!.amount.toString()) : '',
+      spec: fieldSpecs['event.syncBalance']!,
+      formulasEnabled: ServerFeatures.variables,
+    );
     final broken = existing?.exprErrors?['amount'];
     if (expr != null && broken is Map && broken['message'] is String) {
-      _amount.flag(broken['message'] as String, existing!.amount);
+      (_syncMode ? _balance : _amount).flag(
+        broken['message'] as String,
+        existing!.amount,
+      );
     }
     final savedFreq = existing?.frequency;
     final on = ServerFeatures.variables;
@@ -334,6 +359,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     _skipped = {for (final d in widget.skippedDates) _day(d)};
     _skippedInitially = {..._skipped};
     _initialSignature = _signature();
+    if (_syncMode) _scheduleSyncPreview(immediate: true);
     // Take focus even when swapped in place of another widget, so Esc and
     // Ctrl+Enter reach this editor's shortcuts.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -415,7 +441,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
 
   void _focusAmount() {
     if (_readOnly) return;
-    (_loanMode ? _principalFocus : _amountFocus).requestFocus();
+    (_loanMode && !_syncMode ? _principalFocus : _amountFocus).requestFocus();
   }
 
   /// Everything the form would save, to detect unsaved edits.
@@ -434,6 +460,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       d.enabled,
       d.transfer?.peerStreamId,
       if (_loanMode) jsonEncode(d.loan),
+      if (_syncMode) 'sync:${_balance.text.trim()}',
     ].join('|');
   }
 
@@ -467,6 +494,8 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   @override
   void dispose() {
     _amount.dispose();
+    _balance.dispose();
+    _syncPreviewTimer?.cancel();
     _interval.dispose();
     _count.dispose();
     _scope.dispose();
@@ -524,7 +553,61 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       ref.read(streamProvider(widget.streamId)).valueOrNull?.role.isOwner ??
       false;
 
+  /// A sync's draft (spec 015): a once-off credit holding the signed
+  /// balance; the server fixes its name and category.
+  BudgetEvent _syncDraft() => BudgetEvent(
+    id: widget.existing?.id ?? 'preview',
+    streamId: widget.streamId,
+    name: 'Sync',
+    categoryId: widget.existing?.categoryId,
+    direction: EventDirection.credit,
+    amount: _balance.formula.value ?? Decimal.zero,
+    amountExpr: _balance.formula.expr,
+    startDate: _startDate,
+    recurrenceMode: RecurrenceMode.once,
+    endMode: EndMode.never,
+    enabled: _enabled,
+    color: widget.existing?.color ?? '#5AA9A3',
+    kind: 'sync',
+    version: widget.existing?.version,
+  );
+
+  /// Reloads the Calculated / Drift line (debounced while typing).
+  void _scheduleSyncPreview({bool immediate = false}) {
+    _syncPreviewTimer?.cancel();
+    if (!_syncMode) return;
+    _syncPreviewTimer = Timer(
+      immediate ? Duration.zero : const Duration(milliseconds: 350),
+      _loadSyncPreview,
+    );
+  }
+
+  Future<void> _loadSyncPreview() async {
+    if (!mounted || !_syncMode) return;
+    // Half-typed ("-", "1e"): no preview until it parses.
+    if (!_balance.formula.isValid) return;
+    final seq = ++_syncPreviewSeq;
+    try {
+      final records = await ref
+          .read(streamRepositoryProvider)
+          .previewSync(
+            widget.streamId,
+            _syncDraft(),
+            replacesEventId: _isSync ? widget.existing!.id : null,
+          );
+      if (!mounted || seq != _syncPreviewSeq) return;
+      setState(() => _syncPreview = records);
+    } catch (_) {
+      // The line stays as it was; saving reports real problems.
+    }
+  }
+
+  /// The draft's own record in [_syncPreview].
+  SyncRecord? get _syncSelf =>
+      _syncPreview?.where((r) => r.eventId.startsWith('preview-')).firstOrNull;
+
   BudgetEvent _draft({Decimal? amount, int? count, DateTime? endDate}) {
+    if (_syncMode) return _syncDraft();
     final loan = _loanDraft;
     if (_loanMode && loan != null) {
       // A loan: a once-off debit drawdown of the principal (spec 002).
@@ -580,7 +663,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     );
   }
 
-  _Kind get _kind => _loanMode
+  _Kind get _kind => _syncMode
+      ? _Kind.sync
+      : _loanMode
       ? _Kind.loan
       : _transferMode
       ? _Kind.transfer
@@ -767,7 +852,10 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                     children: [
                       ?_remoteBanner(theme),
                       // A loan has no per-date skip / override (spec 003).
-                      if (widget.focusDate != null && !_isNew && !_isLoan) ...[
+                      if (widget.focusDate != null &&
+                          !_isNew &&
+                          !_isLoan &&
+                          !_isSync) ...[
                         _focusBanner(theme),
                         const SizedBox(height: 12),
                       ],
@@ -777,7 +865,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                       ],
                       _ro(_detailsSection(theme)),
                       const SizedBox(height: 12),
-                      if (_loanMode)
+                      if (_syncMode)
+                        _ro(_syncSection(theme))
+                      else if (_loanMode)
                         _loanSections(theme)
                       else
                         _ro(_scheduleSection(theme)),
@@ -873,11 +963,23 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                 color: laneAmountPillColor,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: DirectionBadge(
-                credit: _direction == EventDirection.credit,
-                muted: !_enabled,
-                size: 36,
-              ),
+              child: _syncMode
+                  ? SizedBox.square(
+                      key: const ValueKey('editor-sync-badge'),
+                      dimension: 36,
+                      child: Icon(
+                        Icons.sync,
+                        size: 20,
+                        color: _enabled
+                            ? AppTheme.syncColor
+                            : AppTheme.textFaint,
+                      ),
+                    )
+                  : DirectionBadge(
+                      credit: _direction == EventDirection.credit,
+                      muted: !_enabled,
+                      size: 36,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -885,7 +987,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _isNew ? 'NEW' : 'EVENT SERIES',
+                    _isNew ? 'NEW' : (_isSync ? 'ONCE-OFF' : 'EVENT SERIES'),
                     style: theme.textTheme.labelSmall?.copyWith(
                       letterSpacing: 1,
                       color: fg,
@@ -1019,7 +1121,29 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!_loanMode) ...[
+          if (_syncMode) ...[
+            FormulaField(
+              key: const ValueKey('editor-sync-balance'),
+              spec: fieldSpecs['event.syncBalance']!,
+              scope: _amountScope(),
+              controller: _balance,
+              focusNode: _amountFocus,
+              autofocus: !_readOnly && widget.existing == null,
+              label: 'Actual balance',
+              prefixText: symbol.isEmpty ? null : '$symbol ',
+              hintText: '0.00',
+              helperText: syncBalanceHint,
+              formulasEnabled: ServerFeatures.variables,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _save(),
+              onChanged: (_) {
+                setState(() {});
+                _scheduleSyncPreview();
+              },
+            ),
+            ?_calculatedLine(theme),
+            const SizedBox(height: 12),
+          ] else if (!_loanMode) ...[
             FormulaField(
               key: const ValueKey('editor-amount'),
               spec: fieldSpecs['event.amount']!,
@@ -1045,59 +1169,122 @@ class _EventEditorState extends ConsumerState<EventEditor> {
           LayoutBuilder(
             builder: (context, c) {
               // Icons only when every label still fits beside one.
-              final icons = c.maxWidth >= 420;
+              // Spec 015: five types below 360px: icons with tooltips.
+              final syncShown = _isNew || _isSync;
+              final icons =
+                  c.maxWidth >= (syncShown && loanAllowed ? 640 : 420);
+              final iconOnly =
+                  syncShown &&
+                  loanAllowed &&
+                  MediaQuery.sizeOf(context).width < 360;
               Widget label(String text, {Key? key}) => FittedBox(
                 // Never clipped: a label shrinks a little rather than cut.
                 fit: BoxFit.scaleDown,
                 child: Text(text, key: key, maxLines: 1, softWrap: false),
               );
+              Widget? labelOrNull(String text, {Key? key}) =>
+                  iconOnly ? null : label(text, key: key);
               return SegmentedButton<_Kind>(
                 key: const ValueKey('editor-kind'),
                 showSelectedIcon: false,
                 segments: [
                   ButtonSegment(
                     value: _Kind.credit,
-                    label: label('Money in'),
-                    icon: icons
+                    label: labelOrNull('Money in'),
+                    tooltip: iconOnly ? 'Money in' : null,
+                    icon: icons || iconOnly
                         ? const Icon(Icons.south_west_rounded, size: 18)
                         : null,
                   ),
                   ButtonSegment(
                     value: _Kind.debit,
-                    label: label('Money out'),
-                    icon: icons
+                    label: labelOrNull('Money out'),
+                    tooltip: iconOnly ? 'Money out' : null,
+                    icon: icons || iconOnly
                         ? const Icon(Icons.north_east_rounded, size: 18)
                         : null,
                   ),
                   ButtonSegment(
                     value: _Kind.transfer,
-                    label: label(
+                    label: labelOrNull(
                       'Transfer',
                       key: const ValueKey('editor-kind-transfer'),
                     ),
-                    icon: icons
-                        ? const Icon(Icons.swap_horiz_rounded, size: 18)
+                    tooltip: iconOnly ? 'Transfer' : null,
+                    icon: icons || iconOnly
+                        ? Icon(
+                            Icons.swap_horiz_rounded,
+                            size: 18,
+                            key: iconOnly
+                                ? const ValueKey('editor-kind-transfer')
+                                : null,
+                          )
                         : null,
                   ),
                   if (loanAllowed)
                     ButtonSegment(
                       value: _Kind.loan,
-                      label: label(
+                      label: labelOrNull(
                         'Loan',
                         key: const ValueKey('editor-kind-loan'),
                       ),
-                      icon: icons
-                          ? const Icon(Icons.account_balance_outlined, size: 18)
+                      tooltip: iconOnly ? 'Loan' : null,
+                      icon: icons || iconOnly
+                          ? Icon(
+                              Icons.account_balance_outlined,
+                              size: 18,
+                              key: iconOnly
+                                  ? const ValueKey('editor-kind-loan')
+                                  : null,
+                            )
+                          : null,
+                    ),
+                  if (syncShown)
+                    ButtonSegment(
+                      value: _Kind.sync,
+                      label: labelOrNull(
+                        'Sync',
+                        key: const ValueKey('editor-kind-sync'),
+                      ),
+                      tooltip: iconOnly ? 'Sync' : null,
+                      icon: icons || iconOnly
+                          ? Icon(
+                              Icons.sync,
+                              size: 18,
+                              key: iconOnly
+                                  ? const ValueKey('editor-kind-sync')
+                                  : null,
+                            )
                           : null,
                     ),
                 ],
                 selected: {_kind},
-                // A saved loan's kind is locked (spec 003 §5).
-                onSelectionChanged: _isLoan
+                // A saved loan's or sync's kind is locked (spec 003 §5,
+                // spec 015).
+                onSelectionChanged: _isLoan || _isSync
                     ? null
                     : (value) => setState(() {
+                        final wasSync = _syncMode;
                         _loanMode = value.first == _Kind.loan;
+                        _syncMode = value.first == _Kind.sync;
+                        if (_syncMode && !wasSync) {
+                          // The typed figure carries over (sign kept).
+                          if (_balance.text.trim().isEmpty) {
+                            _balance.text = _amount.text.trim();
+                          }
+                          _scheduleSyncPreview(immediate: true);
+                        } else if (!_syncMode && wasSync) {
+                          if (_amount.text.trim().isEmpty) {
+                            _amount.text = _balance.text.trim().replaceFirst(
+                              '-',
+                              '',
+                            );
+                          }
+                        }
                         switch (value.first) {
+                          case _Kind.sync:
+                            _transferMode = false;
+                            _direction = EventDirection.credit;
                           case _Kind.loan:
                             _transferMode = false;
                             _direction = EventDirection.debit;
@@ -1134,6 +1321,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                       _Kind.debit => AppTheme.debitColor,
                       _Kind.transfer => AppTheme.transferColor,
                       _Kind.loan => AppTheme.debitColor,
+                      _Kind.sync => AppTheme.syncColor,
                     };
                   }),
                   backgroundColor: WidgetStateProperty.resolveWith((states) {
@@ -1145,28 +1333,141 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                       _Kind.debit => AppTheme.debitSoft,
                       _Kind.transfer => AppTheme.transferSoft,
                       _Kind.loan => AppTheme.debitSoft,
+                      _Kind.sync => AppTheme.syncSoft,
                     };
                   }),
                 ),
               );
             },
           ),
-          if (_transferMode && !_loanMode) ...[
+          if (_transferMode && !_loanMode && !_syncMode) ...[
             const SizedBox(height: 12),
             _transferField(theme),
           ],
-          const SizedBox(height: 14),
-          CategoryPicker(
-            streamId: widget.streamId,
-            selectedId: _category?.id,
-            enabled: !_readOnly,
-            errorText: _categoryError,
-            onManage: _manageCategories,
-            onSelected: (c) => setState(() {
-              _categoryId = c.id;
-              _categoryError = null;
-            }),
+          if (!_syncMode) ...[
+            const SizedBox(height: 14),
+            CategoryPicker(
+              streamId: widget.streamId,
+              selectedId: _category?.id,
+              enabled: !_readOnly,
+              errorText: _categoryError,
+              onManage: _manageCategories,
+              onSelected: (c) => setState(() {
+                _categoryId = c.id;
+                _categoryError = null;
+              }),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// "Calculated: \$1,222.22 · Drift +\$12.34" and a "Use calculated" chip
+  /// (spec 015), from the draft's `/project` preview.
+  Widget? _calculatedLine(ThemeData theme) {
+    final self = _syncSelf;
+    final calculated = self?.calculated;
+    if (self == null || calculated == null) return null;
+    final balance = _balance.formula.value;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          Text(
+            balance == null
+                ? 'Calculated: ${formatSyncBalance(calculated)}'
+                : calculatedLine(calculated, balance),
+            key: const ValueKey('editor-sync-calculated'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppTheme.textMuted,
+            ),
           ),
+          if (!_readOnly)
+            ActionChip(
+              key: const ValueKey('editor-sync-use-calculated'),
+              visualDensity: VisualDensity.compact,
+              label: const Text('Use calculated'),
+              onPressed: () {
+                setState(() => _balance.text = calculated.toString());
+                _scheduleSyncPreview();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// A sync's schedule (spec 015): just its date (from the stream's
+  /// start), the future hint and the same-day warning.
+  Widget _syncSection(ThemeData theme) {
+    final seed = ref
+        .watch(streamProvider(widget.streamId))
+        .valueOrNull
+        ?.seedDate;
+    final first = seed == null ? null : _day(seed);
+    final today = _day(DateTime.now());
+    final self = _syncSelf;
+    final note = self == null
+        ? null
+        : sameDaySyncNote(self, _syncPreview ?? const []);
+    Widget hint(String text, IconData icon, Color color, Key key) => Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        key: key,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: AppTheme.panel(
+          color: color.withValues(alpha: 0.10),
+          edge: color.withValues(alpha: 0.4),
+          r: 10,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 8),
+            Expanded(child: Text(text, style: theme.textTheme.bodySmall)),
+          ],
+        ),
+      ),
+    );
+    return SectionCard(
+      title: 'Date',
+      icon: Icons.event_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _dateField(
+            key: const ValueKey('editor-start'),
+            label: 'Date',
+            value: _startDate,
+            first: first,
+            error: _endDateError,
+            onPicked: (d) {
+              setState(() {
+                _startDate = d;
+                _endDateError = null;
+              });
+              _scheduleSyncPreview(immediate: true);
+            },
+          ),
+          if (_startDate.isAfter(today))
+            hint(
+              futureSyncHint,
+              Icons.schedule_rounded,
+              AppTheme.textMuted,
+              const ValueKey('editor-sync-future'),
+            ),
+          if (note != null)
+            hint(
+              note,
+              Icons.sync_problem_rounded,
+              AppTheme.warning,
+              const ValueKey('editor-sync-same-day'),
+            ),
         ],
       ),
     );
@@ -1857,6 +2158,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   BudgetEvent? _validatedDraft() {
     setState(() => _endDateError = null);
     if (!_formKey.currentState!.validate()) return null;
+    if (_syncMode) return _validatedSync();
     if (_loanMode) return _validatedLoan();
     // A formula still waiting for its variables: nothing to save yet
     // (its field shows "…"); try again in a moment.
@@ -1899,6 +2201,28 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       startDate: _startDate,
       enabled: _enabled,
       version: widget.existing?.version,
+    );
+  }
+
+  /// A sync's save body, or null with the problem shown (spec 015 S7).
+  BudgetEvent? _validatedSync() {
+    if (_balance.formula.pending) return null;
+    if (_balance.formula.value == null) return null;
+    final seed = ref
+        .read(streamProvider(widget.streamId))
+        .valueOrNull
+        ?.seedDate;
+    if (seed != null && _startDate.isBefore(_day(seed))) {
+      setState(
+        () => _endDateError =
+            "A sync must be on or after the stream's start date "
+            '(${formatOccurrenceDate(_day(seed))})',
+      );
+      return null;
+    }
+    return _syncDraft().copyWith(
+      id: widget.existing?.id ?? const Uuid().v4(),
+      amountExpr: _balance.formula.expr,
     );
   }
 
@@ -1988,7 +2312,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   }
 }
 
-enum _Kind { credit, debit, transfer, loan }
+enum _Kind { credit, debit, transfer, loan, sync }
 
 class _ViewOnlyNote extends StatelessWidget {
   const _ViewOnlyNote();

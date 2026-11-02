@@ -1,3 +1,5 @@
+import '../../theme/app_theme.dart';
+
 import 'dart:async';
 
 import 'package:budget_formula/budget_formula.dart'
@@ -549,6 +551,23 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
             const SizedBox(height: 12),
           ] else
             const SizedBox(height: 6),
+          if (_result?.syncNotice case final notice?) ...[
+            Row(
+              key: const ValueKey('goal-sync-notice'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.sync, size: 16, color: AppTheme.syncColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    notice,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
           if (widget.stream.role.canEdit) ...[
             TextField(
               key: const ValueKey('goal-name'),

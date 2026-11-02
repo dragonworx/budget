@@ -259,6 +259,7 @@ class GoalResult {
     this.paymentCount = 0,
     this.affordability,
     this.note,
+    this.syncNotice,
   });
 
   final GoalVar solveFor;
@@ -274,6 +275,9 @@ class GoalResult {
   final int paymentCount;
   final Affordability? affordability;
   final String? note;
+
+  /// Spec 015: a sync in the plan window pins the balance there.
+  final String? syncNotice;
 
   bool get isComplete => values != null;
 
@@ -306,6 +310,7 @@ class GoalResult {
           ? Affordability.fromJson(j['affordability'])
           : null,
       note: j['note'] as String?,
+      syncNotice: j['syncNotice'] as String?,
     );
   }
 

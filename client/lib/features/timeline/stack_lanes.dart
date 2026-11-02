@@ -149,7 +149,9 @@ LaneSet buildLaneSet({
   // every other lane its own colour (the rest re-stack without a gap).
   var slot = 0;
   void add(String id, BudgetEvent? t, {required bool other}) {
-    if (t == null || !seen.add(id)) return;
+    // Spec 015: a sync gets no lane (nor a colour slot): it is a ring on
+    // the balance line.
+    if (t == null || t.isSync || !seen.add(id)) return;
     final colorIndex = slot++;
     if (!t.active) return;
     // A loan's lane runs from its drawdown to its payoff (or term end).

@@ -24,6 +24,7 @@ import '../timeline/stack_lanes.dart';
 import '../timeline/zoom_level.dart';
 import 'editor_outcome.dart';
 import 'event_editor.dart';
+import 'sync_format.dart';
 
 enum TxFilter { all, credit, debit, disabled }
 
@@ -39,8 +40,10 @@ List<BudgetEvent> filterEvents(
       if ((category == null || t.categoryId == category) &&
           switch (filter) {
             TxFilter.all => true,
-            TxFilter.credit => t.direction == EventDirection.credit,
-            TxFilter.debit => t.direction == EventDirection.debit,
+            // Spec 015: a sync is neither money in nor out.
+            TxFilter.credit =>
+              t.direction == EventDirection.credit && !t.isSync,
+            TxFilter.debit => t.direction == EventDirection.debit && !t.isSync,
             TxFilter.disabled => !t.enabled,
           })
         t,
@@ -745,6 +748,13 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
             ),
             // Below the list (not beside the filters) so hiding the first
             // event never shifts the rows under the pointer mid-drag.
+            if (_syncOrderHint(async.valueOrNull) case final hint?) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
+                child: hint,
+              ),
+            ],
             if (_showHiddenChip(async.valueOrNull) case final chip?) ...[
               const Divider(height: 1),
               Padding(
@@ -788,6 +798,26 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
 
   /// "Show N hidden": shows (and counts) every hidden event again in one
   /// batch (null: none hidden, or view only).
+  /// Spec 015: with two syncs on one day, the list order decides which
+  /// applies (shown while the list can be reordered).
+  Widget? _syncOrderHint(List<BudgetEvent>? items) {
+    if (_readOnly || _filter != TxFilter.all || _activeCategory() != null) {
+      return null;
+    }
+    final days = <DateTime>{};
+    var clash = false;
+    for (final t in items ?? const <BudgetEvent>[]) {
+      if (t.isSync && !days.add(dateOnly(t.startDate))) clash = true;
+    }
+    if (!clash) return null;
+    return Text(
+      'Drag to reorder. Order decides which sync wins on the same day.',
+      key: const ValueKey('events-sync-order-hint'),
+      style: Theme.of(context).textTheme.bodySmall
+          ?.copyWith(color: AppTheme.textMuted),
+    );
+  }
+
   Widget? _showHiddenChip(List<BudgetEvent>? items) {
     if (_readOnly) return null;
     final ids = [
@@ -864,8 +894,10 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
           (i == null ? AppTheme.textFaint : lanes.lanes[i].color);
     }
 
+    final syncs = ref.watch(syncRecordsProvider(widget.stream.id));
     Widget row(int index, BudgetEvent t) => _TxRow(
       key: ValueKey(t.id),
+      sync: t.isSync ? syncs[t.id] : null,
       onHover: (inside) => _hover(
         _included.containsKey(t.id) ? t.copyWith(enabled: _included[t.id]) : t,
         inside,
@@ -962,9 +994,13 @@ class _TxRow extends StatelessWidget {
     this.highlightKey,
     this.readOnly = false,
     this.onHover,
+    this.sync,
   });
 
   final bool readOnly;
+
+  /// A sync row's outcome (spec 015): drift, overridden, before the start.
+  final SyncRecord? sync;
 
   /// The mouse entered (true) / left (false) the row. Not while a button
   /// is down (an eye paint-drag sweeping across rows), and never for touch.
@@ -1083,14 +1119,18 @@ class _TxRow extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Tooltip(
-                        message: t.isTransfer
+                        message: t.isSync
+                            ? 'Sync: sets the balance'
+                            : t.isTransfer
                             ? 'Transfer · ${transferPhrase(t)}'
                             : credit
                             ? 'Money in'
                             : 'Money out',
                         waitDuration: const Duration(milliseconds: 600),
                         excludeFromSemantics: true,
-                        child: t.isTransfer
+                        child: t.isSync
+                            ? _SyncBadge(muted: !t.active)
+                            : t.isTransfer
                             ? _TransferBadge(muted: !t.active)
                             : DirectionBadge(
                                 credit: credit,
@@ -1162,6 +1202,7 @@ class _TxRow extends StatelessWidget {
     bool credit,
   ) {
     final theme = Theme.of(context);
+    if (t.isSync) return _syncLines(context, t);
     final d = rowDetail(t);
     final muted = !t.active;
     final detail = theme.textTheme.bodySmall?.copyWith(
@@ -1312,6 +1353,116 @@ class _TxRow extends StatelessWidget {
     );
   }
 
+  /// A sync's two lines (spec 015): "Sync" and its balance in the neutral
+  /// sync colour, then "3 Mar 2027 · Actual balance" with a drift chip, or
+  /// why it has no effect.
+  Widget _syncLines(BuildContext context, BudgetEvent t) {
+    final theme = Theme.of(context);
+    final r = sync;
+    final muted = !t.active;
+    final superseded = r?.superseded ?? false;
+    final beforeSeed = r?.beforeSeed ?? false;
+    final drift = r?.drift;
+    final date = formatOccurrenceDate(t.startDate);
+    final balance = formatSyncBalance(t.amount);
+    final line2 = syncRowDetail(date, r);
+    final detail = theme.textTheme.bodySmall?.copyWith(
+      color: muted ? AppTheme.textFaint : AppTheme.textMuted,
+      height: 1.25,
+    );
+    final showDrift = drift != null && !superseded && !beforeSeed && t.active;
+    final label = [
+      'Sync',
+      balance,
+      if (beforeSeed || superseded) '$date, $line2' else line2,
+      if (showDrift) driftLabel(drift),
+      if (muted) 'hidden and excluded from balance',
+    ].join(', ');
+    return Semantics(
+      label: label,
+      child: ExcludeSemantics(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              key: ValueKey('row-line1-${t.id}'),
+              children: [
+                Expanded(
+                  child: Text(
+                    'Sync',
+                    maxLines: 1,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: muted ? AppTheme.textFaint : null,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      balance,
+                      key: ValueKey('row-amount-${t.id}'),
+                      maxLines: 1,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        height: 1.25,
+                        color: muted || superseded || beforeSeed
+                            ? AppTheme.textFaint
+                            : AppTheme.syncColor,
+                        decoration: superseded || beforeSeed
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    line2,
+                    key: ValueKey('row-line2-${t.id}'),
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: detail,
+                  ),
+                ),
+                if (showDrift) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    key: ValueKey('row-drift-${t.id}'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppTheme.syncSoft,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      driftLabel(drift),
+                      maxLines: 1,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: AppTheme.syncColor,
+                        height: 1.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Show / hide: one compact eye toggle per row (eye: shown on the
   /// timeline and counted in the balance; eye-off: hidden from the timeline
   /// and excluded from the balance: the event's `enabled` flag). Pressing
@@ -1376,6 +1527,28 @@ class _Editing {
 }
 
 /// List badge for one side of a transfer (⇄ instead of in/out arrow).
+/// A sync row's badge: the ⟳ in the neutral sync colour (spec 015).
+class _SyncBadge extends StatelessWidget {
+  const _SyncBadge({this.muted = false});
+
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = muted ? AppTheme.textFaint : AppTheme.syncColor;
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: c.withValues(alpha: 0.16),
+        border: Border.all(color: c, width: 1.5),
+      ),
+      child: Icon(Icons.sync, size: 16, color: c),
+    );
+  }
+}
+
 class _TransferBadge extends StatelessWidget {
   const _TransferBadge({this.muted = false});
 

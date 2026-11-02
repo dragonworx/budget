@@ -968,6 +968,18 @@ void main() {
       await tester.pumpAndSettle();
       void check() {
         final kind = tester.getRect(find.byKey(const ValueKey('editor-kind')));
+        // Spec 015: five types below 360px are icons with tooltips.
+        if (size.width < 360) {
+          for (final t in ['Money in', 'Money out', 'Transfer', 'Sync']) {
+            final tip = find.byTooltip(t);
+            expect(tip, findsOneWidget, reason: t);
+            final r = tester.getRect(tip);
+            expect(r.left, greaterThanOrEqualTo(kind.left));
+            expect(r.right, lessThanOrEqualTo(kind.right));
+          }
+          expect(tester.takeException(), isNull);
+          return;
+        }
         for (final t in ['Money in', 'Money out', 'Transfer']) {
           final f = find.descendant(
             of: find.byKey(const ValueKey('editor-kind')),

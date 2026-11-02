@@ -236,6 +236,34 @@ class StreamRepository {
     return s is Map<String, dynamic> ? LoanSummary.fromJson(s) : null;
   }
 
+  /// Spec 015: an unsaved sync [draft]'s outcome on its day (and the other
+  /// syncs that day), standing in for the saved [replacesEventId]:
+  /// `POST /project` over that one day. The draft's record has an id
+  /// starting "preview-".
+  Future<List<SyncRecord>> previewSync(
+    String streamId,
+    BudgetEvent draft, {
+    String? replacesEventId,
+  }) async {
+    final day = formatDate(draft.startDate);
+    final data = await _api.post(
+      '/api/streams/$streamId/project',
+      body: {
+        'from': day,
+        'to': day,
+        'events': [
+          {...draft.toSyncJson(), 'replacesEventId': ?replacesEventId},
+        ],
+      },
+    );
+    final raw = (data as Map)['syncs'];
+    if (raw is! List) return const [];
+    return [
+      for (final r in raw.cast<Map<String, dynamic>>())
+        if (r['date'] == day) SyncRecord.fromJson(r),
+    ];
+  }
+
   Future<SolveResult> solve(String streamId, SolveRequest request) async {
     final data = await _api.post(
       '/api/streams/$streamId/solve',
@@ -463,17 +491,24 @@ class EventRepository {
   Future<BudgetEvent> update(BudgetEvent event, {bool force = false}) async {
     final data = await _api.patch(
       '/api/events/${event.id}',
-      body: {
-        ...event.toCreateJson(),
-        // A patch keeps omitted fields: send the schedule's unset ones as
-        // null so switching end mode (count ↔ date ↔ never) or to once
-        // clears the other field instead of failing validation.
-        'interval': event.interval,
-        'unit': event.unit?.toJson(),
-        'endDate': event.endDate == null ? null : formatDate(event.endDate!),
-        'occurrenceCount': event.occurrenceCount,
-        if (!force && event.version != null) 'version': event.version,
-      },
+      body: event.isSync
+          ? {
+              ...event.toSyncJson()..remove('kind'),
+              if (!force && event.version != null) 'version': event.version,
+            }
+          : {
+              ...event.toCreateJson(),
+              // A patch keeps omitted fields: send the schedule's unset ones as
+              // null so switching end mode (count ↔ date ↔ never) or to once
+              // clears the other field instead of failing validation.
+              'interval': event.interval,
+              'unit': event.unit?.toJson(),
+              'endDate': event.endDate == null
+                  ? null
+                  : formatDate(event.endDate!),
+              'occurrenceCount': event.occurrenceCount,
+              if (!force && event.version != null) 'version': event.version,
+            },
     );
     return BudgetEvent.fromJson(data as Map<String, dynamic>);
   }

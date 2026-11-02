@@ -128,6 +128,28 @@ class FakeLoanStreamRepository extends FakeStreamRepository {
     return s == null ? null : LoanSummary.fromJson(s);
   }
 
+  /// Spec 015: sync previews sent, and what they answer.
+  final syncPreviews = <BudgetEvent>[];
+  List<SyncRecord> Function(BudgetEvent draft)? syncAnswer;
+
+  @override
+  Future<List<SyncRecord>> previewSync(
+    String streamId,
+    BudgetEvent draft, {
+    String? replacesEventId,
+  }) async {
+    syncPreviews.add(draft);
+    return syncAnswer?.call(draft) ??
+        [
+          SyncRecord(
+            eventId: 'preview-0',
+            date: draft.startDate,
+            balance: draft.amount,
+            calculated: Decimal.fromInt(1000),
+          ),
+        ];
+  }
+
   @override
   Future<LoanSummary?> loanSummary(String streamId, {DateTime? from}) async {
     final s = summary;

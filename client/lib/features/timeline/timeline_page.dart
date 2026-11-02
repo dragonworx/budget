@@ -1261,6 +1261,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final balanceAsync = ref.watch(balanceProvider(_query));
         final liveSeries = balanceAsync.asData?.value;
         if (liveSeries != null) {
+          if (!identical(liveSeries.syncs, _seriesCache?.syncs)) {
+            _publishSyncs(liveSeries.syncs);
+          }
           _seriesCache = liveSeries;
           _seriesCacheQuery = _query;
         }
@@ -2423,6 +2426,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         close: () => Navigator.of(panelContext).pop(),
       ),
     );
+  }
+
+  /// Spec 015: hands the window's sync outcomes to the events list (after
+  /// the frame: providers can't change during build).
+  void _publishSyncs(Map<String, SyncRecord> syncs) {
+    final id = widget.streamId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final n = ref.read(syncRecordsProvider(id).notifier);
+      if (n.state.isEmpty && syncs.isEmpty) return;
+      n.state = syncs;
+    });
   }
 
   Widget _eventsPanel(

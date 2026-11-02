@@ -65,6 +65,10 @@ class AppTheme {
   static const Color transferColor = violet;
   static Color transferSoft = violet.withValues(alpha: 0.14);
 
+  /// Syncs (spec 015): a neutral teal, neither income nor spend.
+  static const Color syncColor = Color(0xFF5AA9A3);
+  static Color syncSoft = syncColor.withValues(alpha: 0.16);
+
   static const double radius = 12;
   static BorderRadius get radiusAll => BorderRadius.circular(radius);
 

@@ -74,6 +74,14 @@ final lastCategoryProvider = StateProvider.family<String?, String>(
   (ref, streamId) => null,
 );
 
+/// Spec 015: the latest syncs' outcomes (drift, overridden, before the
+/// start) per stream, published by the timeline from its balance window
+/// for the events list.
+final syncRecordsProvider =
+    StateProvider.family<Map<String, SyncRecord>, String>(
+      (ref, streamId) => const {},
+    );
+
 class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
   @override
   Future<List<Category>> build(String streamId) {

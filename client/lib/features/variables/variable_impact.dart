@@ -27,12 +27,14 @@ class VariableUsage {
     this.oldValue,
     this.newValue,
     this.error,
+    this.eventKind,
   });
 
   factory VariableUsage.fromJson(Map<String, dynamic> j) => VariableUsage(
     entity: '${j['entity'] ?? ''}',
     entityId: '${j['entityId'] ?? ''}',
     field: '${j['field'] ?? ''}',
+    eventKind: j['eventKind'] as String?,
     streamId: j['streamId'] as String?,
     streamName: j['streamName'] as String?,
     eventName: j['eventName'] as String?,
@@ -44,6 +46,9 @@ class VariableUsage {
     newValue: _str(j['newValue']),
     error: _message(j['error']),
   );
+
+  /// `sync` for a sync event's usage (spec 015), else null.
+  final String? eventKind;
 
   /// `event`, `override`, `stream` or `variable`.
   final String entity;
@@ -128,6 +133,10 @@ String usageLabel(VariableUsage u) {
       return '$e · Override ${_date(u.date)}';
     default:
       final e = u.eventName ?? 'Event';
+      // Spec 015: a sync's amount is its actual balance.
+      if (u.eventKind == 'sync' && u.field == VariableFieldKey.amount) {
+        return '$e · Actual balance';
+      }
       final f = fieldLabel(u.field);
       return f.isEmpty ? e : '$e · $f';
   }
