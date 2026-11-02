@@ -28,6 +28,7 @@ import 'scenarios.dart';
 import 'solve.dart';
 import 'events.dart' show parseEventBody;
 import 'loan_fields.dart';
+import 'sync_fields.dart';
 import 'loan_summary.dart';
 import 'offset_link.dart';
 import '../domain/enums.dart' show EventKind;
@@ -106,10 +107,13 @@ Router buildStreamsApi(Session conn) {
 
       final body = await readJsonObject(request);
       final prep = await prepareEventFormulas(conn, body,
-          streamId: streamId, isLoan: body['kind'] == 'loan');
+          streamId: streamId, kind: kindOfBody(body));
       final loanKind = parseCreateKind(body);
       final parsed = parseEventBody(body);
       final loanTerms = loanKind.terms(parsed);
+      if (loanKind.kind == EventKind.sync) {
+        checkSyncDate(parsed.startDate, stream.seedDate);
+      }
       if (loanKind.kind == EventKind.loan && stream.hasLoan) {
         return jsonError(409, streamHasLoan);
       }
@@ -218,6 +222,17 @@ Router buildStreamsApi(Session conn) {
           vars: raw.contains('amountExpr')
               ? await VariableRepo(conn).lookup(stream.ownerId)
               : null);
+      // S7: sync rows on or after the seed date.
+      final early = [
+        for (final i in items)
+          if (i.kind == EventKind.sync && i.startDate.isBefore(stream.seedDate))
+            ImportIssue(
+                i.index,
+                'startOffset',
+                "A sync must be on or after the stream's start date "
+                    '(${dayMonthYear(stream.seedDate)})'),
+      ];
+      if (early.isNotEmpty) throw ImportValidationException(early);
       if (dryRun) {
         final existing =
             (await events.listByStream(streamId)).map((t) => t.id).toSet();

@@ -4,6 +4,7 @@ import 'package:decimal/decimal.dart';
 import '../domain/enums.dart';
 import '../domain/models.dart';
 import 'events.dart';
+import 'sync_fields.dart';
 
 /// The 400 message for event operations a loan does not support.
 const loanNotSupported = 'not supported for a loan';
@@ -27,9 +28,13 @@ LoanTerms parseLoanTerms(Object? raw, DateTime start) {
     Map<String, dynamic> body) {
   final rawKind = body['kind'];
   if (rawKind != null && rawKind is! String) {
-    throw const FormatException('kind must be standard or loan');
+    throw const FormatException('kind must be standard, loan or sync');
   }
   final kind = EventKind.parse((rawKind as String?) ?? 'standard');
+  if (kind == EventKind.sync) {
+    prepareSyncCreate(body);
+    return (kind: kind, terms: (_) => null);
+  }
   if (kind == EventKind.standard) {
     if (body['loan'] != null) {
       throw const FormatException('loan terms need kind "loan"');
@@ -73,6 +78,10 @@ void checkLoanShape(Direction direction, RecurrenceMode mode, Decimal amount) {
 LoanTerms? parsePatchLoan(Map<String, dynamic> body, BudgetEvent existing) {
   if (body.containsKey('kind') && body['kind'] != existing.kind.name) {
     throw const FormatException('kind cannot change');
+  }
+  if (existing.isSync) {
+    checkSyncPatch(body);
+    return null;
   }
   if (!existing.isLoan) {
     if (body['loan'] != null) {

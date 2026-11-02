@@ -108,6 +108,15 @@ final Map<String, FieldSpec> fieldSpecs = {
       FieldMessage.zero: 'Enter an amount above zero',
       FieldMessage.negative: 'Enter an amount above zero',
     }),
+    // Spec 015: a Sync's actual balance (signed, zero allowed).
+    _money('event.syncBalance',
+        legacy: parseLegacyMoney,
+        signed: true,
+        messages: const {
+          FieldMessage.empty: 'Enter the actual balance, e.g. 2500 or -120.50',
+          FieldMessage.invalid:
+              'Enter the actual balance, e.g. 2500 or -120.50',
+        }),
     // widgets/stream_dialog.dart L288-L293.
     _money('stream.seed',
         legacy: parseLegacyMoney,

@@ -25,7 +25,8 @@ class OccurrenceGenerator {
 
     final out = <Occurrence>[];
     for (final event in events) {
-      if (!event.active) continue;
+      // A sync is no occurrence: the balance walk pins it (spec 015).
+      if (!event.active || event.isSync) continue;
       // Calendar-day keys of the skipped dates: the same test as comparing
       // date parts ([CalendarMath.compare] == 0), in O(1) per occurrence.
       final skipSet = skipped[event.id];

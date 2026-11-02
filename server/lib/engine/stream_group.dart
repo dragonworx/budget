@@ -92,12 +92,13 @@ class LoanGroup {
     required DateTime from,
     required DateTime to,
     Map<String, Set<DateTime>> skipped = const {},
+    List<String>? eventOrder,
   }) =>
       BalanceEngine.compute(
         seedBalance: stream.seedBalance,
         seedDate: stream.seedDate,
         events: events,
-        eventOrder: stream.eventOrder,
+        eventOrder: eventOrder ?? stream.eventOrder,
         from: from,
         to: to,
         skipped: skipped,

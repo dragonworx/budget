@@ -12,6 +12,7 @@ import 'formula_body.dart';
 import 'json_helpers.dart';
 import 'events.dart' show parseEventBody;
 import 'loan_fields.dart';
+import 'sync_fields.dart';
 import 'loan_summary.dart' show loanSummary, redactOffset;
 import 'offset_link.dart';
 import '../domain/enums.dart' show EventKind;
@@ -72,6 +73,9 @@ void attachBalanceRoutes(Router router, Session conn) {
       return jsonOk({
         'points': series.points.map((p) => p.toJson()).toList(),
         'occurrences': series.occurrences.map((o) => o.toJson()).toList(),
+        // Spec 015: only when the stream has syncs (S11).
+        if (series.syncs.isNotEmpty)
+          'syncs': series.syncs.map((s) => s.toJson()).toList(),
       });
     } on FormatException catch (e) {
       return jsonError(400, e.message);
@@ -102,6 +106,8 @@ void attachBalanceRoutes(Router router, Session conn) {
       // Saved events an item stands in for (`replacesEventId`, e.g. the
       // loan being edited in a live preview): left out of the walk.
       final replaced = <String>{};
+      // S12: an edited sync's preview takes the replaced sync's rank.
+      final rankOf = <String, String>{};
       for (var i = 0; i < raw.length; i++) {
         final item = raw[i];
         if (item is! Map<String, dynamic>) {
@@ -119,8 +125,13 @@ void attachBalanceRoutes(Router router, Session conn) {
         body.remove('offsetStreamIds');
         // Formula fields (spec 010) resolve like a create; nothing stored.
         await prepareEventFormulas(conn, body,
-            streamId: id, isLoan: body['kind'] == 'loan');
+            streamId: id, kind: kindOfBody(body));
         final kind = parseCreateKind(body);
+        if (kind.kind == EventKind.sync && rep != null) {
+          for (final e in saved) {
+            if (e.id == rep && e.isSync) rankOf[rep] = 'preview-$i';
+          }
+        }
         if (kind.kind == EventKind.loan) {
           final savedIds = [
             for (final e in saved)
@@ -180,12 +191,17 @@ void attachBalanceRoutes(Router router, Session conn) {
         from: from,
         to: to,
         skipped: skipped,
+        eventOrder: rankOf.isEmpty
+            ? null
+            : [for (final e in stream.eventOrder) rankOf[e] ?? e],
       );
       // Spec 003: the loan editor's live summary of unsaved terms. Opt-in
       // (`loanSummaryFrom`, the summary's "today"); null without a loan.
       final summaryFrom = body['loanSummaryFrom'];
       return jsonOk({
         'points': series.points.map((p) => p.toJson()).toList(),
+        if (series.syncs.isNotEmpty)
+          'syncs': series.syncs.map((s) => s.toJson()).toList(),
         if (summaryFrom != null)
           'loanSummary': await redactOffset(
             conn,

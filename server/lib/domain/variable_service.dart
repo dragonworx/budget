@@ -11,6 +11,7 @@ import 'package:postgres/postgres.dart';
 import '../repo/event_repo.dart';
 import '../repo/variable_ref_repo.dart';
 import '../repo/variable_repo.dart';
+import 'enums.dart';
 import 'formulas.dart';
 
 /// A variable request that can't be honoured: [status] with `{error,
@@ -210,7 +211,7 @@ class VariableService {
     for (final r in rows) {
       final id = r[0] as String, stream = r[1] as String;
       final owner = r[2] as String, isTransfer = r[3] as bool;
-      final isLoan = r[4] == 'loan';
+      final kind = EventKind.parse(r[4] as String);
       final amountExpr = r[9] as String?, intervalExpr = r[10] as String?;
       final countExpr = r[11] as String?;
       final loan = _jsonOrNull(r[8]);
@@ -257,8 +258,7 @@ class VariableService {
       // amount
       String? newAmount;
       if (amountExpr != null) {
-        final res = resolveStoredText(amountExpr,
-            fieldSpecs[isLoan ? 'loan.principal' : 'event.amount']!, vars);
+        final res = resolveStoredText(amountExpr, amountSpecFor(kind), vars);
         if (res.error != null) {
           fail(FormulaField.amount, res.error!, amountExpr);
         } else if (res.value != Decimal.parse(r[5] as String)) {

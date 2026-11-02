@@ -129,6 +129,10 @@ class BudgetEvent {
 
   bool get isLoan => kind == EventKind.loan;
 
+  /// [EventKind.sync]: pins the closing balance of its day to [amount]
+  /// (signed) after everything else that day (spec 015).
+  bool get isSync => kind == EventKind.sync;
+
   /// The event's category (every stored event has one; previews have none).
   /// [name] is the category's name and [color] its colour.
   final String? categoryId;
@@ -417,6 +421,9 @@ class Occurrence {
     this.derived = false,
     this.payout = false,
     this.flat = false,
+    this.syncBalance,
+    this.calculated,
+    this.superseded = false,
   });
 
   final String eventId;
@@ -436,6 +443,14 @@ class Occurrence {
   /// A flat-rate loan's interest instalment.
   final bool flat;
 
+  /// A sync occurrence (component `"sync"`): the target balance and the
+  /// close calculated before the pin (spec 015).
+  final Decimal? syncBalance;
+  final Decimal? calculated;
+
+  /// A sync overridden by a later-ranked sync on the same day (no effect).
+  final bool superseded;
+
   /// The optional keys appear only when set, so non-loan JSON is unchanged.
   Map<String, Object?> toJson() => {
         'eventId': eventId,
@@ -446,6 +461,9 @@ class Occurrence {
         if (derived) 'derived': true,
         if (payout) 'payout': true,
         if (flat) 'flat': true,
+        if (syncBalance != null) 'syncBalance': syncBalance.toString(),
+        if (calculated != null) 'calculated': calculated.toString(),
+        if (superseded) 'superseded': true,
       };
 }
 

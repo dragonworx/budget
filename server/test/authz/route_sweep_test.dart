@@ -247,5 +247,82 @@ void main() {
       expect((await h.call('GET', '/api/streams/${s.a}', as: 'rowner')).status,
           200);
     });
+
+    test(
+        'sync events (spec 015): create needs editor, the sync-only 400 '
+        'paths sit behind the same policies, viewers read drift', () async {
+      if (!h.ok) return markTestSkipped('no test DB');
+      final s = await h.seed('sowner', 'SyncSweep');
+      await h.login('sviewer');
+      await h.login('seditor');
+      await h.login('soutsider');
+      await h.call('POST', '/api/streams/${s.a}/invites',
+          as: 'sowner', body: {'email': h.email('sviewer')});
+      await h.call('POST', '/api/streams/${s.a}/invites',
+          as: 'sowner', body: {'email': h.email('seditor'), 'role': 'editor'});
+      final body = {
+        'kind': 'sync',
+        'amount': '-5',
+        'startDate': '2026-01-02',
+      };
+      final events = '/api/streams/${s.a}/events';
+      expect((await h.call('POST', events, body: body)).status, 401);
+      expect((await h.call('POST', events, as: 'soutsider', body: body)).status,
+          404);
+      expect((await h.call('POST', events, as: 'sviewer', body: body)).status,
+          403);
+      final created = await h.call('POST', events, as: 'seditor', body: body);
+      expect(created.status, 201, reason: '${created.json}');
+      final id = created.json['id'] as String;
+      final paths = [
+        ('PATCH', '/api/events/$id', <String, Object?>{'amount': '7'}),
+        ('PUT', '/api/events/$id/skips/2026-01-02', {'skipped': true}),
+        (
+          'PUT',
+          '/api/events/$id/overrides/2026-01-02',
+          {'amount': '1', 'direction': 'credit'}
+        ),
+        ('DELETE', '/api/events/$id/overrides/2026-01-02', null),
+        ('DELETE', '/api/events/$id/overrides', null),
+        (
+          'POST',
+          '/api/events/$id/split',
+          {'date': '2026-01-02', 'amount': '1', 'direction': 'credit'}
+        ),
+        ('DELETE', '/api/events/$id', null),
+      ];
+      for (final (m, path, b) in paths) {
+        expect((await h.call(m, path, body: b)).status, 401, reason: path);
+        expect((await h.call(m, path, as: 'soutsider', body: b)).status, 404,
+            reason: path);
+        expect((await h.call(m, path, as: 'sviewer', body: b)).status, 403,
+            reason: path);
+      }
+      for (final (m, path, b) in paths.sublist(1, 6)) {
+        final r = await h.call(m, path, as: 'seditor', body: b);
+        expect(r.status, 400, reason: '$m $path');
+        expect(r.json['error'], 'Not available for a sync');
+      }
+      final patched = await h.call('PATCH', '/api/events/$id',
+          as: 'seditor', body: {'amount': '7'});
+      expect(patched.status, 200, reason: '${patched.json}');
+      final bal = await h.call(
+          'GET', '/api/streams/${s.a}/balance?from=2026-01-01&to=2026-01-03',
+          as: 'sviewer');
+      expect(bal.status, 200);
+      expect(bal.json['syncs'], [
+        {
+          'eventId': id,
+          'date': '2026-01-02',
+          'balance': '7',
+          'calculated': '-10',
+          'drift': '17',
+          'superseded': false,
+          'beforeSeed': false,
+        }
+      ]);
+      expect((await h.call('DELETE', '/api/events/$id', as: 'seditor')).status,
+          204);
+    });
   });
 }

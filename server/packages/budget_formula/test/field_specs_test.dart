@@ -11,6 +11,7 @@ void main() {
     expect(fieldSpecs.keys.toSet(), {
       'event.amount',
       'loan.principal',
+      'event.syncBalance',
       'stream.seed',
       'stream.threshold',
       'loan.ratePct',

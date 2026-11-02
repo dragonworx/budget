@@ -6,6 +6,7 @@ import 'package:budget_formula/budget_formula.dart';
 import 'package:decimal/decimal.dart';
 import 'package:postgres/postgres.dart';
 
+import '../domain/enums.dart';
 import '../domain/formulas.dart';
 import '../domain/models.dart';
 import '../domain/variable_service.dart';
@@ -71,7 +72,7 @@ bool _differs(Object? sent, Decimal value) {
 /// Throws [FormulaFieldException] or [FormatException].
 EventFormulaPrep prepareEventBody(
     Map<String, dynamic> body, VariableLookup vars,
-    {required bool isLoan}) {
+    {required EventKind kind}) {
   final columns = <String, String?>{};
   final clear = <String>[];
   var differs = false;
@@ -80,11 +81,8 @@ EventFormulaPrep prepareEventBody(
   if (body.containsKey('amountExpr')) {
     final raw = body.remove('amountExpr');
     if (raw != null) {
-      final r = resolveRequestText(
-          raw,
-          fieldSpecs[isLoan ? 'loan.principal' : 'event.amount']!,
-          vars,
-          'amountExpr');
+      final r =
+          resolveRequestText(raw, amountSpecFor(kind), vars, 'amountExpr');
       differs |= _differs(body['amount'], r.value);
       body['amount'] = r.value.toString();
       columns['amount_expr'] = r.expr;
@@ -325,7 +323,7 @@ Future<EventFormulaPrep> prepareEventFormulas(
     Session db, Map<String, dynamic> body,
     {required String streamId,
     BudgetEvent? existing,
-    required bool isLoan}) async {
+    required EventKind kind}) async {
   VariableLookup vars = const MapVariableLookup.empty();
   if (bodyHasFormulas(body)) {
     final direction =
@@ -338,7 +336,7 @@ Future<EventFormulaPrep> prepareEventFormulas(
     vars = await VariableRepo(db).lookupForStream(streamId,
         preferStreamId: direction == 'credit' ? peerStream : null);
   }
-  return prepareEventBody(body, vars, isLoan: isLoan);
+  return prepareEventBody(body, vars, kind: kind);
 }
 
 /// An override body's `amountExpr` (resolved like the event's amount).

@@ -10,6 +10,7 @@ import '../repo/category_repo.dart';
 import '../repo/event_repo.dart';
 import 'categories.dart';
 import 'loan_fields.dart';
+import 'sync_fields.dart';
 import 'offset_link.dart';
 import '../repo/stream_repo.dart';
 import 'json_helpers.dart';
@@ -33,9 +34,7 @@ Router eventsRouter(Session conn) {
       if (existing == null) return jsonError(404, 'event not found');
       // Formula fields (spec 010): resolved into the plain keys first.
       final prep = await prepareEventFormulas(conn, body,
-          streamId: existing.streamId,
-          existing: existing,
-          isLoan: existing.isLoan);
+          streamId: existing.streamId, existing: existing, kind: existing.kind);
       // A direction flip or new peer can move the resolving owner (D10).
       final ownerBefore = body.containsKey('direction') ||
               body.containsKey('transferToStreamId')
@@ -44,6 +43,10 @@ Router eventsRouter(Session conn) {
       final loanTerms = parsePatchLoan(body, existing);
       final loanStream = await StreamRepo(conn).get(existing.streamId);
       if (loanStream == null) return jsonError(404, 'event not found');
+      if (existing.isSync && body['startDate'] != null) {
+        checkSyncDate(
+            parseDate(body['startDate'].toString()), loanStream.seedDate);
+      }
       final offsetIds = await checkOffsetLink(
         conn: conn,
         request: request,
@@ -183,6 +186,7 @@ Router eventsRouter(Session conn) {
       final event = await events.get(id);
       if (event == null) return jsonError(404, 'event not found');
       if (event.isLoan) return jsonError(400, loanNotSupported);
+      if (event.isSync) return jsonError(400, syncNotAvailable);
       final body = await readJsonObject(request);
       final skipped = body['skipped'];
       if (skipped is! bool) {
@@ -212,6 +216,7 @@ Router eventsRouter(Session conn) {
       final target = await events.get(id);
       if (target == null) return jsonError(404, 'event not found');
       if (target.isLoan) return jsonError(400, loanNotSupported);
+      if (target.isSync) return jsonError(400, syncNotAvailable);
       final body = await readJsonObject(request);
       final prep = await prepareOverrideFormula(conn, id, body);
       final amount = parseDecimal(body['amount']);
@@ -237,6 +242,7 @@ Router eventsRouter(Session conn) {
       final target = await events.get(id);
       if (target == null) return jsonError(404, 'event not found');
       if (target.isLoan) return jsonError(400, loanNotSupported);
+      if (target.isSync) return jsonError(400, syncNotAvailable);
       final d = parseDate(date);
       final t = await txOf(conn).runTx((tx) async {
         final repo = EventRepo(tx);
@@ -254,6 +260,7 @@ Router eventsRouter(Session conn) {
     final target = await events.get(id);
     if (target == null) return jsonError(404, 'event not found');
     if (target.isLoan) return jsonError(400, loanNotSupported);
+    if (target.isSync) return jsonError(400, syncNotAvailable);
     final (t, removed) = await txOf(conn).runTx((tx) async {
       final repo = EventRepo(tx);
       final n = await repo.clearOverrides(id);
@@ -270,9 +277,12 @@ Router eventsRouter(Session conn) {
         return jsonError(404, 'event not found');
       }
       if (existing.isLoan) return jsonError(400, loanNotSupported);
+      if (existing.isSync) return jsonError(400, syncNotAvailable);
       final body = await readJsonObject(request);
       final prep = await prepareEventFormulas(conn, body,
-          streamId: existing.streamId, existing: existing, isLoan: false);
+          streamId: existing.streamId,
+          existing: existing,
+          kind: EventKind.standard);
       final date = parseDate(requireString(body, 'date'));
       var unit = body['unit'] == null
           ? null

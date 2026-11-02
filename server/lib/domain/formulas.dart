@@ -5,6 +5,8 @@
 import 'package:budget_formula/budget_formula.dart';
 import 'package:decimal/decimal.dart';
 
+import 'enums.dart';
+
 /// Largest exponent a plain number may carry. Some legacy parsers (loan
 /// principal, goal numbers) accept `1e5`; `1e999999999` would build a huge
 /// number before any range check, so it is refused first.
@@ -174,3 +176,11 @@ Set<String> namesIn(String text) {
     return const {};
   }
 }
+
+/// The amount field's spec for an event of [kind]: a loan's principal, a
+/// sync's signed actual balance (spec 015), or a plain event amount.
+FieldSpec amountSpecFor(EventKind kind) => fieldSpecs[switch (kind) {
+      EventKind.loan => 'loan.principal',
+      EventKind.sync => 'event.syncBalance',
+      EventKind.standard => 'event.amount',
+    }]!;

@@ -5,6 +5,7 @@ import '../domain/models.dart';
 import 'balance_engine.dart';
 import 'calendar_math.dart';
 import 'occurrence_gen.dart';
+import 'sync_plan.dart';
 
 /// One derived interest charge of a loan walk.
 class LoanCharge {
@@ -126,6 +127,9 @@ class LoanWalk {
         CalendarMath.dateOnly(p.from),
     };
     final isFlat = loan.loan!.isFlat;
+    // Syncs (spec 015): step 6a pins the close after steps 1–5.
+    final syncPlan = SyncPlan.build(events, eventOrder, seed);
+    final syncRecords = syncPlan.beforeSeedRecords();
     final points = <BalancePoint>[];
     final out = <Occurrence>[];
     final charges = <LoanCharge>[];
@@ -180,6 +184,12 @@ class LoanWalk {
       // 5. Payout interest when the fixed occurrences cleared the loan.
       final c3 = accrual.payout(cursor, owed);
       if (c3 != null) charge(c3, payout: true);
+      // 6a. Sync: the day's close is the winning sync's balance (the
+      // drift absorbs today's charges; accrued interest carries on).
+      if (!syncPlan.isEmpty) {
+        balance = syncPlan.pin(cursor, balance,
+            occurrences: inWindow ? out : null, records: syncRecords);
+      }
       // 6. Record.
       if (cursor.isAfter(start)) {
         if (balance >= Decimal.zero) {
@@ -200,7 +210,8 @@ class LoanWalk {
     }
 
     return LoanWalkResult(
-      series: BalanceSeries(points: points, occurrences: out),
+      series:
+          BalanceSeries(points: points, occurrences: out, syncs: syncRecords),
       loan: loan,
       charges: charges,
       payoffDate: payoff,

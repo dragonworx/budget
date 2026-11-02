@@ -4,15 +4,21 @@ import '../domain/models.dart';
 import 'calendar_math.dart';
 import 'loan_walk.dart';
 import 'occurrence_gen.dart';
+import 'sync_plan.dart';
 
 class BalanceSeries {
   BalanceSeries({
     required this.points,
     required this.occurrences,
+    this.syncs = const [],
   });
 
   final List<BalancePoint> points;
   final List<Occurrence> occurrences;
+
+  /// Every sync's outcome from the seed through `to` (spec 015), before-
+  /// seed ones first; empty for a stream without syncs.
+  final List<SyncRecord> syncs;
 }
 
 /// Pure daily closing-balance series (§3).
@@ -99,6 +105,12 @@ class BalanceEngine {
       byDate.putIfAbsent(o.date, () => []).add(o);
     }
 
+    // Syncs (spec 015) pin a day's close after its occurrences. With none,
+    // the walk below is the plain walk.
+    final syncPlan = SyncPlan.build(events, eventOrder, seed);
+    final syncRecords = syncPlan.beforeSeedRecords();
+    final syncOcc = <Occurrence>[];
+
     // Walk from seed to rangeEnd so opening balances stay correct even when
     // the requested window starts after seedDate.
     var balance = seedBalance;
@@ -111,18 +123,40 @@ class BalanceEngine {
           balance += o.signedDelta;
         }
       }
+      if (!syncPlan.isEmpty) {
+        final inWindow = CalendarMath.compare(cursor, rangeStart) >= 0;
+        final before = syncOcc.length;
+        balance = syncPlan.pin(cursor, balance,
+            occurrences: inWindow ? syncOcc : null, records: syncRecords);
+        if (syncOcc.length > before) {
+          // The day's sync occurrences follow its others.
+          (byDate[cursor] ??= []).addAll(syncOcc.sublist(before));
+        }
+      }
       if (CalendarMath.compare(cursor, rangeStart) >= 0) {
         points.add(BalancePoint(date: cursor, closingBalance: balance));
       }
       cursor = cursor.add(const Duration(days: 1));
     }
 
+    if (syncOcc.isNotEmpty) {
+      // Merge the sync occurrences in: each after its day's others.
+      return BalanceSeries(
+        points: points,
+        occurrences: [
+          for (final d in byDate.keys.toList()..sort())
+            if (CalendarMath.compare(d, rangeStart) >= 0) ...byDate[d]!,
+        ],
+        syncs: syncRecords,
+      );
+    }
     return BalanceSeries(
       points: points,
       occurrences: [
         for (final o in occurrences)
           if (CalendarMath.compare(o.date, rangeStart) >= 0) o,
       ],
+      syncs: syncRecords,
     );
   }
 

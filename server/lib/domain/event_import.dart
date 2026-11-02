@@ -81,7 +81,11 @@ class ImportItem {
     this.color,
     this.days = const [],
     this.amountExpr,
+    this.kind = EventKind.standard,
   });
+
+  /// [EventKind.sync] for a sync row (spec 015); standard otherwise.
+  final EventKind kind;
 
   /// Formula text for the amount (spec 010), canonical; null when plain.
   final String? amountExpr;
@@ -137,6 +141,7 @@ class ImportItem {
         if (amountExpr != null) 'amountExpr': amountExpr,
         'skippedOffsets': skippedOffsets,
         'color': color,
+        if (kind == EventKind.sync) 'kind': kind.name,
       };
 }
 
@@ -235,6 +240,11 @@ List<ImportItem> parseImport(String raw,
       continue;
     }
     final m = raw.cast<String, Object?>();
+    if (m['kind'] == 'sync') {
+      final item = _parseSyncItem(i, m, root, vars, bad, seenIds);
+      if (item != null && issues.length == before) items.add(item);
+      continue;
+    }
 
     const known = {
       'id',
@@ -567,4 +577,105 @@ List<ImportItem> parseImport(String raw,
   }
   if (issues.isNotEmpty) throw ImportValidationException(issues);
   return items;
+}
+
+/// A sync row (spec 015): `{"kind": "sync", "amount": "-120.50",
+/// "startOffset": N}` (or `amountExpr`; optional `id`, `enabled`). The
+/// amount is the signed actual balance; a sync has no name, direction,
+/// recurrence, end, skips or colour. The seed-date rule is checked by the
+/// route (it knows the stream).
+ImportItem? _parseSyncItem(
+    int i,
+    Map<String, Object?> m,
+    DateTime root,
+    VariableLookup? vars,
+    void Function(String? field, String msg) bad,
+    Map<String, int> seenIds) {
+  const known = {
+    'id',
+    'kind',
+    'amount',
+    'amountExpr',
+    'startOffset',
+    'enabled'
+  };
+  for (final k in m.keys) {
+    if (k == 'startDate') {
+      bad(
+          k,
+          'absolute dates are not accepted; use startOffset '
+          '(whole days from the selected day)');
+    } else if (!known.contains(k)) {
+      bad(k, 'not available for a sync');
+    }
+  }
+  String? id;
+  if (m['id'] != null) {
+    if (m['id'] is! String || !_uuid.hasMatch(m['id'] as String)) {
+      bad('id', 'must be a UUID string');
+    } else {
+      id = (m['id'] as String).toLowerCase();
+      final dup = seenIds[id];
+      if (dup != null) bad('id', 'duplicate of item [$dup]');
+      seenIds[id] = i;
+    }
+  }
+  Decimal? amount;
+  String? amountExpr;
+  final amtRaw = m['amount'];
+  if (m['amountExpr'] != null) {
+    try {
+      final r = resolveRequestText(
+          m['amountExpr'],
+          amountSpecFor(EventKind.sync),
+          vars ?? const MapVariableLookup.empty(),
+          'amountExpr');
+      amount = r.value;
+      amountExpr = r.expr;
+    } on FormulaFieldException catch (e) {
+      bad('amountExpr', e.error.message);
+    } on FormatException catch (e) {
+      bad('amountExpr', e.message);
+    }
+  } else if (amtRaw is num || amtRaw is String) {
+    amount = Decimal.tryParse(amtRaw.toString().trim());
+    if (amount == null) bad('amount', 'must be a number or numeric string');
+  } else {
+    bad('amount',
+        amtRaw == null ? 'is required' : 'must be a number or numeric string');
+  }
+  final startOffset = _offset(m['startOffset']);
+  DateTime? startDate;
+  if (startOffset == null) {
+    bad(
+        'startOffset',
+        m['startOffset'] == null
+            ? 'is required (whole days from the selected day; 0 = that day)'
+            : _offsetProblem(m['startOffset']));
+  } else if (startOffset.abs() > maxImportOffset) {
+    bad('startOffset', 'is too far from the selected day');
+  } else {
+    startDate = resolveOffset(root, startOffset);
+  }
+  final enabledRaw = m['enabled'];
+  if (enabledRaw != null && enabledRaw is! bool) {
+    bad('enabled', 'must be true or false');
+  }
+  if (amount == null || startDate == null) return null;
+  return ImportItem(
+    index: i,
+    id: id,
+    kind: EventKind.sync,
+    name: 'Sync',
+    direction: Direction.credit,
+    amount: amount,
+    startDate: startDate,
+    recurrenceMode: RecurrenceMode.once,
+    endMode: EndMode.never,
+    enabled: enabledRaw as bool? ?? true,
+    skippedDates: const [],
+    startOffset: startOffset!,
+    color: '#5AA9A3',
+    amountExpr: amountExpr,
+  );
 }

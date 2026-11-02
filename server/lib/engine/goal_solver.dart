@@ -127,11 +127,16 @@ class GoalBaseline {
     required this.from,
     required this.opening,
     required this.closes,
+    this.pins = const {},
   });
 
   final DateTime from;
   final double opening;
   final List<double> closes;
+
+  /// Day index -> the balance a winning sync pins that day to (spec 015):
+  /// the projection resets there after the day's plan payments.
+  final Map<int, double> pins;
 
   int indexOf(DateTime d) =>
       CalendarMath.daysBetween(from, CalendarMath.dateOnly(d));
@@ -323,6 +328,7 @@ class GoalSolver {
       b = b * (1 + daily) + baseline.deltaAt(i0 + k);
       if (k == 0) b += p.oneOff;
       if (pay.contains(k)) b += p.amount;
+      if (baseline.pins.isNotEmpty) b = baseline.pins[i0 + k] ?? b;
       out[k] = b;
     }
     return out;

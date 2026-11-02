@@ -395,6 +395,7 @@ class EventRepo {
       endDate: endDate,
       occurrenceCount: occurrenceCount,
       amount: amount,
+      signed: kind == EventKind.sync,
     );
 
     final id = _uuid.v4();
@@ -505,6 +506,7 @@ class EventRepo {
       endDate: nextEndDate,
       occurrenceCount: nextCount,
       amount: nextAmount,
+      signed: existing.isSync,
     );
 
     await _conn.execute(
@@ -660,6 +662,7 @@ class EventRepo {
         endDate: item.endDate,
         occurrenceCount: item.occurrenceCount,
         amount: item.amount,
+        signed: item.kind == EventKind.sync,
       );
       final id = item.id ?? _uuid.v4();
       await _conn.execute(
@@ -668,12 +671,13 @@ class EventRepo {
             id, stream_id, name, direction, amount, start_date,
             recurrence_mode, interval, unit, end_mode, end_date,
             occurrence_count, enabled, color,
-            freq_rule, freq_interval, freq_days, amount_expr
+            freq_rule, freq_interval, freq_days, amount_expr, kind
           ) VALUES (
             @id, @streamId, @name, @direction, @amount, @startDate,
             @recurrenceMode, @interval, @unit, @endMode, @endDate,
             @occurrenceCount, @enabled, @color,
-            @freqRule, @freqInterval, @freqDays::int[]::smallint[], @amountExpr
+            @freqRule, @freqInterval, @freqDays::int[]::smallint[], @amountExpr,
+            @kind
           )
         '''),
         parameters: {
@@ -690,6 +694,7 @@ class EventRepo {
           'enabled': item.enabled,
           'color': item.color,
           'amountExpr': item.amountExpr,
+          'kind': item.kind.name,
         },
       );
       for (final d in item.skippedDates) {
@@ -788,8 +793,10 @@ class EventRepo {
     required DateTime? endDate,
     required int? occurrenceCount,
     required Decimal amount,
+    bool signed = false,
   }) {
-    if (amount < Decimal.zero) {
+    // A sync's amount is a signed balance (spec 015).
+    if (!signed && amount < Decimal.zero) {
       throw FormatException('amount must be >= 0');
     }
     if (recurrenceMode == RecurrenceMode.once) {

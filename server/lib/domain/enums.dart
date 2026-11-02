@@ -73,15 +73,19 @@ enum RoundingMode {
 }
 
 /// An event's kind (migration 026): a standard event, or a stream's loan
-/// (a once-off debit drawdown whose `loan` terms accrue interest).
+/// (a once-off debit drawdown whose `loan` terms accrue interest), or a
+/// sync (migration 030, spec 015: pins the day's closing balance to its
+/// signed `amount`).
 enum EventKind {
   standard,
-  loan;
+  loan,
+  sync;
 
   static EventKind parse(String value) {
     return EventKind.values.firstWhere(
       (e) => e.name == value,
-      orElse: () => throw FormatException('kind must be standard or loan'),
+      orElse: () =>
+          throw FormatException('kind must be standard, loan or sync'),
     );
   }
 }

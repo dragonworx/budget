@@ -86,7 +86,27 @@ GoalBaseline goalBaseline({
     last = byDay[d] ?? last;
     return last;
   });
-  return GoalBaseline(from: from, opening: opening, closes: closes);
+  // Spec 015: winning syncs in the window pin the projection.
+  final pins = <int, double>{
+    for (final s in series.syncs)
+      if (!s.superseded &&
+          !s.beforeSeed &&
+          CalendarMath.compare(s.date, from) >= 0 &&
+          CalendarMath.compare(s.date, end) <= 0)
+        CalendarMath.daysBetween(from, s.date): s.balance.toDouble(),
+  };
+  return GoalBaseline(from: from, opening: opening, closes: closes, pins: pins);
+}
+
+/// The planner notice when a sync pins the goal window (spec 015).
+String? syncPinNotice(GoalBaseline b) {
+  if (b.pins.isEmpty) return null;
+  final first = b.dateAt(b.pins.keys.reduce((a, c) => a < c ? a : c));
+  return 'A sync on ${first.day} ${const [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ][first.month - 1]} sets the balance; planned changes before it are reset '
+      'there.';
 }
 
 /// Registers `POST /<streamId>/goal` on [router].
@@ -116,7 +136,11 @@ void attachGoalRoutes(Router router, Session conn) {
         threshold: stream.lossThreshold.toDouble(),
         today: today,
       ).solve(goal);
-      return jsonOk(result.toJson());
+      final notice = syncPinNotice(baseline);
+      return jsonOk({
+        ...result.toJson(),
+        if (notice != null) 'syncNotice': notice,
+      });
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     } on SolverException catch (e) {
