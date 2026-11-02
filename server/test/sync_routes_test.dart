@@ -149,6 +149,8 @@ void main() {
       'direction': 'credit',
       'recurrenceMode': 'once',
       'endMode': 'never',
+      'transferToStreamId': null,
+      'version': r.json['version'],
     });
     expect(p.status, 200, reason: '${p.json}');
     expect((p.json['startDate'], p.json['amount'], p.json['enabled']),
@@ -200,6 +202,12 @@ void main() {
     final e = await h.call('GET', '/api/events/${r.json['id']}', as: 'fowner');
     expect(e.json['amount'], '-320.5');
     expect(e.json['exprErrors'], isNull);
+    // The usage names the sync (client label "Actual balance").
+    final u = await h.call('GET', '/api/variables/${v.json['id']}/usages',
+        as: 'fowner');
+    expect(u.status, 200, reason: '${u.json}');
+    final usage = (u.json['usages'] as List).cast<Map>().single;
+    expect((usage['eventKind'], usage['field']), ('sync', 'amount'));
   });
 
   test('import sync rows + undo; trim + undo', () async {

@@ -72,7 +72,14 @@ void checkSyncDate(DateTime date, DateTime seed) {
 
 /// Keys a sync PATCH may carry. Others are refused unless they restate
 /// the sync's fixed shape (an editor sending its full form).
-const _syncPatchKeys = {'startDate', 'amount', 'amountExpr', 'enabled', 'kind'};
+const _syncPatchKeys = {
+  'startDate',
+  'amount',
+  'amountExpr',
+  'enabled',
+  'kind',
+  'version',
+};
 
 /// A sync PATCH (S9, S13): only the date, amount (or its formula) and
 /// enabled change. Throws [FormatException] (a 400).
@@ -85,7 +92,12 @@ void checkSyncPatch(Map<String, dynamic> body) {
       'recurrenceMode' => value == 'once',
       'endMode' => value == 'never',
       'frequency' => value is Map && (value['rule'] ?? 'once') == 'once',
-      'endDate' || 'occurrenceCount' || 'interval' || 'unit' => value == null,
+      'endDate' ||
+      'occurrenceCount' ||
+      'interval' ||
+      'unit' ||
+      'transferToStreamId' =>
+        value == null,
       'days' ||
       'offsetStreamIds' =>
         value == null || value is List && value.isEmpty,

@@ -46,7 +46,7 @@ Future<Map<String, Object?>> variableUsages(
              e.expr_errors, o.amount::text, o.amount_expr, o.expr_error,
              s.seed_balance::text, s.loss_threshold::text,
              s.seed_balance_expr, s.loss_threshold_expr, s.expr_errors,
-             fv.name, fv.expr, fv.value::text, fv.problem
+             fv.name, fv.expr, fv.value::text, fv.problem, e.kind
       FROM variable_refs r
       LEFT JOIN streams s ON s.id = r.stream_id
       LEFT JOIN events e ON e.id = r.event_id
@@ -123,6 +123,7 @@ Future<Map<String, Object?>> variableUsages(
       'entity': 'event',
       'entityId': r[2],
       'eventName': r[6],
+      if (r[27] == 'sync') 'eventKind': 'sync',
       'field': field,
       'expr': expr,
       'value': value is num || value is String ? '$value' : value,
