@@ -32,6 +32,7 @@ import '../categories/categories_manager.dart';
 import '../loans/loan_form.dart';
 import '../loans/loan_models.dart';
 import '../loans/loan_summary_panel.dart';
+import 'event_types.dart';
 import 'sync_format.dart';
 import '../timeline/stack_lanes.dart';
 
@@ -1190,30 +1191,30 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                 segments: [
                   ButtonSegment(
                     value: _Kind.credit,
-                    label: labelOrNull('Money in'),
-                    tooltip: iconOnly ? 'Money in' : null,
+                    label: labelOrNull(EventType.credit.label),
+                    tooltip: iconOnly ? EventType.credit.label : null,
                     icon: icons || iconOnly
-                        ? const Icon(Icons.south_west_rounded, size: 18)
+                        ? Icon(EventType.credit.icon, size: 18)
                         : null,
                   ),
                   ButtonSegment(
                     value: _Kind.debit,
-                    label: labelOrNull('Money out'),
-                    tooltip: iconOnly ? 'Money out' : null,
+                    label: labelOrNull(EventType.debit.label),
+                    tooltip: iconOnly ? EventType.debit.label : null,
                     icon: icons || iconOnly
-                        ? const Icon(Icons.north_east_rounded, size: 18)
+                        ? Icon(EventType.debit.icon, size: 18)
                         : null,
                   ),
                   ButtonSegment(
                     value: _Kind.transfer,
                     label: labelOrNull(
-                      'Transfer',
+                      EventType.transfer.label,
                       key: const ValueKey('editor-kind-transfer'),
                     ),
-                    tooltip: iconOnly ? 'Transfer' : null,
+                    tooltip: iconOnly ? EventType.transfer.label : null,
                     icon: icons || iconOnly
                         ? Icon(
-                            Icons.swap_horiz_rounded,
+                            EventType.transfer.icon,
                             size: 18,
                             key: iconOnly
                                 ? const ValueKey('editor-kind-transfer')
@@ -1243,13 +1244,13 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                     ButtonSegment(
                       value: _Kind.sync,
                       label: labelOrNull(
-                        'Sync',
+                        EventType.sync.label,
                         key: const ValueKey('editor-kind-sync'),
                       ),
-                      tooltip: iconOnly ? 'Sync' : null,
+                      tooltip: iconOnly ? EventType.sync.label : null,
                       icon: icons || iconOnly
                           ? Icon(
-                              Icons.sync,
+                              EventType.sync.icon,
                               size: 18,
                               key: iconOnly
                                   ? const ValueKey('editor-kind-sync')

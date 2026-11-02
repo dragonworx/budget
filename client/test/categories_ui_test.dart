@@ -883,6 +883,88 @@ void main() {
 
   for (final (label, size) in const [
     ('desktop', Size(1440, 900)),
+    ('phone 390', Size(390, 844)),
+    ('phone 320', Size(320, 640)),
+  ]) {
+    testWidgets('$label: type filter is Credit, Debit, Transfer, Sync (no '
+        'All), all selected by default; the last one stays selected; the '
+        'editor offers the same types in the same order', (tester) async {
+      await _pump(tester, size: size);
+      tester.platformDispatcher.textScaleFactorTestValue = 1;
+      await tester.tap(find.byKey(const ValueKey('open-events')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('filter-all')), findsNothing);
+      expect(find.byKey(const ValueKey('filter-disabled')), findsNothing);
+      FilterChip chip(String n) =>
+          tester.widget<FilterChip>(find.byKey(ValueKey('filter-$n')));
+      final names = ['credit', 'debit', 'transfer', 'sync'];
+      expect(
+        [for (final n in names) (chip(n).label as Text).data],
+        ['Credit', 'Debit', 'Transfer', 'Sync'],
+      );
+      expect(
+        [for (final n in names) chip(n).selected],
+        [true, true, true, true],
+      );
+      // Chips fit the panel (no overflow at 320px).
+      final panel = tester.getRect(
+        find.byKey(const ValueKey('events-panel-body')),
+      );
+      for (final n in names) {
+        final r = tester.getRect(find.byKey(ValueKey('filter-$n')));
+        expect(r.right, lessThanOrEqualTo(panel.right));
+      }
+      bool row(String id) =>
+          find.byKey(ValueKey('dismiss-$id')).evaluate().isNotEmpty ||
+          find.byKey(ValueKey('row-delete-$id')).evaluate().isNotEmpty;
+      expect(row('wages') && row('rent'), isTrue);
+      Future<void> tap(String n) async {
+        await tester.tap(find.byKey(ValueKey('filter-$n')));
+        await tester.pumpAndSettle();
+      }
+
+      for (final n in ['credit', 'transfer', 'sync']) {
+        await tap(n);
+      }
+      expect(chip('credit').selected, isFalse);
+      expect(row('wages') && row('rent'), isTrue);
+      // Debit is the last one selected: tapping it keeps it on.
+      await tap('debit');
+      expect(chip('debit').selected, isTrue);
+      expect(row('rent'), isTrue);
+      // With Credit back on, Debit can go: every (debit) row leaves.
+      await tap('credit');
+      await tap('debit');
+      expect(chip('debit').selected, isFalse);
+      expect(row('wages') || row('rent'), isFalse);
+      expect(find.byKey(const ValueKey('events-no-matches')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('events-clear-filters')));
+      await tester.pumpAndSettle();
+      expect(
+        [for (final n in names) chip(n).selected],
+        [true, true, true, true],
+      );
+      expect(row('wages') && row('rent'), isTrue);
+      // The new event screen: same labels, same order (Loan after
+      // Transfer where offered).
+      await tester.tap(find.byKey(const ValueKey('panel-new-event')));
+      await tester.pumpAndSettle();
+      final seg = tester.widget<SegmentedButton<Object?>>(
+        find.byKey(const ValueKey('editor-kind')),
+      );
+      String? name(ButtonSegment<Object?> b) =>
+          b.tooltip ?? ((b.label as FittedBox?)?.child as Text?)?.data;
+      final shown = [for (final b in seg.segments) name(b)]
+          .where((n) => n != 'Loan')
+          .toList();
+      expect(shown, ['Credit', 'Debit', 'Transfer', 'Sync']);
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 2));
+    });
+  }
+
+  for (final (label, size) in const [
+    ('desktop', Size(1440, 900)),
     ('phone', Size(390, 844)),
   ]) {
     testWidgets('$label: a full-width category dropdown (no text search) '
@@ -933,9 +1015,9 @@ void main() {
       await pick('filter-category-$_rent');
       expect(row('rent'), isTrue);
       expect(row('g1') || row('wages'), isFalse);
-      // With the direction filter: nothing matches; the empty state names
-      // the category and Clear filters resets both.
-      await tester.tap(find.byKey(const ValueKey('filter-credit')));
+      // Without Debit: nothing matches; the empty state names the
+      // category and Clear filters resets both.
+      await tester.tap(find.byKey(const ValueKey('filter-debit')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('events-no-matches')), findsOneWidget);
       expect(find.textContaining('category Rent'), findsOneWidget);
@@ -970,7 +1052,7 @@ void main() {
         final kind = tester.getRect(find.byKey(const ValueKey('editor-kind')));
         // Spec 015: five types below 360px are icons with tooltips.
         if (size.width < 360) {
-          for (final t in ['Money in', 'Money out', 'Transfer', 'Sync']) {
+          for (final t in ['Credit', 'Debit', 'Transfer', 'Sync']) {
             final tip = find.byTooltip(t);
             expect(tip, findsOneWidget, reason: t);
             final r = tester.getRect(tip);
@@ -980,7 +1062,7 @@ void main() {
           expect(tester.takeException(), isNull);
           return;
         }
-        for (final t in ['Money in', 'Money out', 'Transfer']) {
+        for (final t in ['Credit', 'Debit', 'Transfer']) {
           final f = find.descendant(
             of: find.byKey(const ValueKey('editor-kind')),
             matching: find.text(t),

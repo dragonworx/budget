@@ -24,28 +24,20 @@ import '../timeline/stack_lanes.dart';
 import '../timeline/zoom_level.dart';
 import 'editor_outcome.dart';
 import 'event_editor.dart';
+import 'event_types.dart';
 import 'sync_format.dart';
 
-enum TxFilter { all, credit, debit, disabled }
-
-/// Filters [items] by [filter] and [category] (an id; null: every
-/// category).
+/// Filters [items] to the event [types] shown and [category] (an id;
+/// null: every category). See [eventTypeOf] (a loan counts by direction).
 List<BudgetEvent> filterEvents(
   List<BudgetEvent> items,
-  TxFilter filter, {
+  Set<EventType> types, {
   String? category,
 }) {
   return [
     for (final t in items)
       if ((category == null || t.categoryId == category) &&
-          switch (filter) {
-            TxFilter.all => true,
-            // Spec 015: a sync is neither money in nor out.
-            TxFilter.credit =>
-              t.direction == EventDirection.credit && !t.isSync,
-            TxFilter.debit => t.direction == EventDirection.debit && !t.isSync,
-            TxFilter.disabled => !t.enabled,
-          })
+          types.contains(eventTypeOf(t)))
         t,
   ];
 }
@@ -271,7 +263,11 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     );
   }
 
-  TxFilter _filter = TxFilter.all;
+  /// The event types shown: all four by default; never empty (the last
+  /// selected type can't be turned off).
+  Set<EventType> _types = allEventTypes;
+
+  bool get _allTypes => _types.length == allEventTypes.length;
 
   /// The category filter (an id; null: all categories).
   String? _catFilter;
@@ -722,18 +718,25 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
               child: Wrap(
                 spacing: 6,
+                runSpacing: 6,
                 children: [
-                  for (final f in TxFilter.values)
-                    ChoiceChip(
+                  for (final f in EventType.values)
+                    FilterChip(
                       key: ValueKey('filter-${f.name}'),
-                      label: Text(switch (f) {
-                        TxFilter.all => 'All',
-                        TxFilter.credit => 'Money in',
-                        TxFilter.debit => 'Money out',
-                        TxFilter.disabled => 'Hidden',
+                      showCheckmark: false,
+                      avatar: Icon(f.icon, size: 18),
+                      label: Text(f.label),
+                      tooltip: _types.length == 1 && _types.contains(f)
+                          ? 'At least one type stays selected'
+                          : null,
+                      selected: _types.contains(f),
+                      onSelected: (on) => setState(() {
+                        if (!on && _types.length == 1) return;
+                        _types = {
+                          for (final t in EventType.values)
+                            if (t == f ? on : _types.contains(t)) t,
+                        };
                       }),
-                      selected: _filter == f,
-                      onSelected: (_) => setState(() => _filter = f),
                     ),
                 ],
               ),
@@ -801,7 +804,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   /// Spec 015: with two syncs on one day, the list order decides which
   /// applies (shown while the list can be reordered).
   Widget? _syncOrderHint(List<BudgetEvent>? items) {
-    if (_readOnly || _filter != TxFilter.all || _activeCategory() != null) {
+    if (_readOnly || !_allTypes || _activeCategory() != null) {
       return null;
     }
     final days = <DateTime>{};
@@ -860,8 +863,8 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     }
     final ordered = _ordered(items);
     final cat = _activeCategory();
-    final shown = filterEvents(ordered, _filter, category: cat?.id);
-    final canReorder = !_readOnly && _filter == TxFilter.all && cat == null;
+    final shown = filterEvents(ordered, _types, category: cat?.id);
+    final canReorder = !_readOnly && _allTypes && cat == null;
     if (shown.isEmpty) {
       return EmptyState(
         key: const ValueKey('events-no-matches'),
@@ -873,7 +876,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
         action: TextButton(
           key: const ValueKey('events-clear-filters'),
           onPressed: () => setState(() {
-            _filter = TxFilter.all;
+            _types = allEventTypes;
             _catFilter = null;
           }),
           child: Text(cat == null ? 'Clear filter' : 'Clear filters'),
@@ -1124,8 +1127,8 @@ class _TxRow extends StatelessWidget {
                             : t.isTransfer
                             ? 'Transfer · ${transferPhrase(t)}'
                             : credit
-                            ? 'Money in'
-                            : 'Money out',
+                            ? EventType.credit.label
+                            : EventType.debit.label,
                         waitDuration: const Duration(milliseconds: 600),
                         excludeFromSemantics: true,
                         child: t.isSync

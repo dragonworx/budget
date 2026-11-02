@@ -2,6 +2,7 @@
 // editor's Sync mode, events-list texts and filters, chart markers at
 // every zoom (never grouped or hidden), day totals and lanes.
 import 'package:budget_client/data/models.dart';
+import 'package:budget_client/features/events/event_types.dart';
 import 'package:budget_client/features/events/events_panel.dart';
 import 'package:budget_client/features/events/sync_format.dart';
 import 'package:budget_client/features/timeline/balance_chart.dart';
@@ -222,9 +223,9 @@ void main() {
 
     test('credit / debit filters leave syncs out', () {
       final s = _sync('s', _seed, '-10');
-      expect(filterEvents([s], TxFilter.all), [s]);
-      expect(filterEvents([s], TxFilter.credit), isEmpty);
-      expect(filterEvents([s], TxFilter.debit), isEmpty);
+      expect(filterEvents([s], allEventTypes), [s]);
+      expect(filterEvents([s], {EventType.sync}), [s]);
+      expect(filterEvents([s], {EventType.credit, EventType.debit}), isEmpty);
     });
 
     test('a sync usage reads "Actual balance"', () {
@@ -415,7 +416,7 @@ void main() {
         existing: _sync('s1', DateTime(2027, 2, 15), '10').copyWith(version: 1),
       );
       expect(find.byKey(const ValueKey('editor-sync-balance')), findsOneWidget);
-      await tester.tap(find.text('Money in'), warnIfMissed: false);
+      await tester.tap(find.text('Credit'), warnIfMissed: false);
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('editor-sync-balance')), findsOneWidget);
     });

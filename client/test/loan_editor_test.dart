@@ -143,7 +143,7 @@ void main() {
   ) async {
     await pumpEditor(tester, inStream: [loanEvent()]);
     expect(find.byKey(const ValueKey('editor-kind-loan')), findsNothing);
-    expect(find.text('Money out'), findsOneWidget);
+    expect(find.text('Debit'), findsOneWidget);
   });
 
   testWidgets('a saved loan opens editable, kind locked, preview replaces it', (
@@ -164,7 +164,7 @@ void main() {
     );
     expect(principal.controller!.text, '600000');
     // Locked kind: tapping another kind does nothing.
-    await tester.tap(find.text('Money out'));
+    await tester.tap(find.text('Debit'));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('loan-form')), findsOneWidget);
 

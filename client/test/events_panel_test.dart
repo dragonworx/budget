@@ -1,4 +1,5 @@
 import 'package:budget_client/data/models.dart';
+import 'package:budget_client/features/events/event_types.dart';
 import 'package:budget_client/features/events/events_panel.dart';
 import 'package:budget_client/widgets/ui.dart';
 import 'package:decimal/decimal.dart';
@@ -36,21 +37,43 @@ void main() {
     final withCats = [
       for (final t in items) t.copyWith(categoryId: 'cat-${t.name}'),
     ];
-    expect(filterEvents(withCats, TxFilter.all), hasLength(3));
+    expect(filterEvents(withCats, allEventTypes), hasLength(3));
     expect(
-      filterEvents(withCats, TxFilter.all, category: 'cat-Rent').single.name,
+      filterEvents(withCats, allEventTypes, category: 'cat-Rent').single.name,
       'Rent',
     );
     expect(
-      filterEvents(withCats, TxFilter.credit, category: 'cat-Rent'),
+      filterEvents(withCats, {EventType.credit}, category: 'cat-Rent'),
       isEmpty,
     );
   });
 
-  test('filters by direction and enabled', () {
-    expect(filterEvents(items, TxFilter.credit).single.name, 'Salary');
-    expect(filterEvents(items, TxFilter.debit), hasLength(2));
-    expect(filterEvents(items, TxFilter.disabled).single.name, 'Gym');
+  test('filters by type; hidden events stay in their type', () {
+    expect(filterEvents(items, {EventType.credit}).single.name, 'Salary');
+    expect(filterEvents(items, {EventType.debit}), hasLength(2));
+    expect(filterEvents(items, {EventType.transfer, EventType.sync}), isEmpty);
+    expect(filterEvents(items, allEventTypes), hasLength(3));
+  });
+
+  test('a transfer is only Transfer; a loan counts by its direction', () {
+    final xfer = tx('Save')
+        .copyWith(transfer: const TransferLink(peerStreamId: 'b'));
+    final loan = tx('Mortgage').copyWith(kind: 'loan');
+    expect(eventTypeOf(xfer), EventType.transfer);
+    expect(filterEvents([xfer], {EventType.debit}), isEmpty);
+    expect(filterEvents([xfer], {EventType.transfer}), [xfer]);
+    expect(eventTypeOf(loan), EventType.debit);
+    expect(filterEvents([loan], allEventTypes), [loan]);
+  });
+
+  test('the four types: labels, order and icons', () {
+    expect(EventType.values.map((t) => t.label), [
+      'Credit',
+      'Debit',
+      'Transfer',
+      'Sync',
+    ]);
+    expect(allEventTypes, EventType.values.toSet());
   });
 
   test('next occurrence is anchored and on/after today', () {
