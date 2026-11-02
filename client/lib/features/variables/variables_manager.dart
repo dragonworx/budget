@@ -252,14 +252,11 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
   /// After my own write: this list now, the other views when they next
   /// look (values may have moved in events, balances and other streams).
   Future<void> _refresh({bool values = false}) async {
-    ref.invalidate(variableAttentionProvider);
+    // Every stream of mine lists the same set (not just this one).
+    invalidateVariables(ref.invalidate);
     if (widget.streamId == null) {
-      ref.invalidate(variablesProvider);
-      ref.invalidate(myVariablesProvider);
       await ref.read(myVariablesProvider.future);
     } else {
-      ref.invalidate(myVariablesProvider);
-      ref.invalidate(variablesProvider(widget.streamId!));
       await ref.read(variablesProvider(widget.streamId!).future);
     }
     if (values) {

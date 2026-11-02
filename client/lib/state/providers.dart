@@ -46,6 +46,16 @@ final variableAttentionProvider =
           ref.read(variableRepositoryProvider).attention(streamId: streamId),
     );
 
+/// Variables belong to an owner, and every stream of that owner lists the
+/// same set: after any change (mine or live, from any stream or none),
+/// every cached list goes stale, so refresh them all (only the ones being
+/// watched refetch).
+void invalidateVariables(void Function(ProviderOrFamily) invalidate) {
+  invalidate(variablesProvider);
+  invalidate(myVariablesProvider);
+  invalidate(variableAttentionProvider);
+}
+
 final categoryRepositoryProvider = Provider<CategoryRepository>((ref) {
   return CategoryRepository(ref.watch(apiClientProvider));
 });

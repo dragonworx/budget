@@ -1,5 +1,6 @@
 // The `$` autocomplete list (and the touch picker dialog) for FormulaField.
 import 'package:budget_formula/budget_formula.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
@@ -245,13 +246,22 @@ class FormulaSuggestionList extends StatelessWidget {
 /// Touch: the picker as a dialog with a search box. Returns the choice.
 /// [onManage] (owner, 012): after the dialog closes, open the manager
 /// (with a name to create, or null).
+/// [live] keeps the list current while the dialog is open (variables
+/// that finish loading or are created meanwhile show up at once).
 Future<VariableValue?> showVariablePicker(
   BuildContext context, {
   required VariableScope scope,
+  ValueListenable<VariableScope>? live,
   ValueChanged<String?>? onManage,
 }) => showDialog<VariableValue>(
   context: context,
-  builder: (context) => _PickerDialog(scope: scope, onManage: onManage),
+  builder: (context) => live == null
+      ? _PickerDialog(scope: scope, onManage: onManage)
+      : ValueListenableBuilder<VariableScope>(
+          valueListenable: live,
+          builder: (context, s, _) =>
+              _PickerDialog(scope: s, onManage: onManage),
+        ),
 );
 
 class _PickerDialog extends StatefulWidget {

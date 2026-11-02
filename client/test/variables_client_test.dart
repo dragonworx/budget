@@ -246,7 +246,8 @@ void main() {
     await c.read(variablesProvider('a1').future);
     await c.read(myVariablesProvider.future);
     expect(vars.lists, ['a1', 'a1']);
-    expect(vars.mine, 1);
+    // Owner-wide: any variable change refreshes every cached list (picker sync).
+    expect(vars.mine, 2);
     ctl.handle(
       ChangeEvent(
         id: 2,
@@ -258,6 +259,6 @@ void main() {
     await c.read(variablesProvider('a1').future);
     await c.read(myVariablesProvider.future);
     expect(vars.lists, ['a1', 'a1', 'a1']);
-    expect(vars.mine, 2);
+    expect(vars.mine, 3);
   });
 }

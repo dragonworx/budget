@@ -132,6 +132,7 @@ class RealtimeController {
     _balances();
     ref.invalidate(loanSummaryProvider);
     ref.invalidate(scenariosProvider);
+    invalidateVariables(ref.invalidate);
     ref.invalidate(myInvitesProvider);
     ref.invalidate(streamPeopleProvider);
     ref.invalidate(adminUsersProvider);
@@ -206,11 +207,10 @@ class RealtimeController {
         if (peer != null) _stream(peer);
       // Spec 010: one row per affected stream.
       case 'variable':
-        if (aid != null) ref.invalidate(variablesProvider(aid));
-        ref.invalidate(variableAttentionProvider);
-        if (e.subjectUserId != null && e.subjectUserId == _me) {
-          ref.invalidate(myVariablesProvider);
-        }
+        // One owner's set is every one of their streams' set: a change
+        // with no stream (my own manager) or in one stream makes all the
+        // cached lists stale, not just that stream's.
+        invalidateVariables(ref.invalidate);
         // New values (or texts) landed in this stream's rows.
         if (aid != null &&
             (e.action == 'variable.values_changed' ||

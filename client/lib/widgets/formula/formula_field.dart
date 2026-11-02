@@ -166,6 +166,9 @@ class _FormulaFieldState extends State<FormulaField> {
   final _formKey = GlobalKey<FormFieldState<FormulaValue>>();
   final _scroll = ScrollController();
 
+  /// The controller's scope for an open touch picker (kept current).
+  final _liveScope = ValueNotifier<VariableScope>(VariableScope.empty);
+
   CompletionContext? _ctx;
   List<VariableValue> _items = const [];
   int _hi = 0;
@@ -313,6 +316,12 @@ class _FormulaFieldState extends State<FormulaField> {
       // New variables (live hint): refresh the list after this frame.
       SchedulerBinding.instance.addPostFrameCallback((_) => _sync());
     }
+    if (!identical(_liveScope.value, _c.scope)) {
+      // Another route (the touch picker) listens: not during this build.
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _liveScope.value = _c.scope;
+      });
+    }
   }
 
   @override
@@ -322,6 +331,7 @@ class _FormulaFieldState extends State<FormulaField> {
     _ownController?.dispose();
     _ownFocus?.dispose();
     _scroll.dispose();
+    _liveScope.dispose();
     _swallowSubmit?.cancel();
     _escGuard?.cancel();
     _hideList();
@@ -493,9 +503,11 @@ class _FormulaFieldState extends State<FormulaField> {
     final token = sel.isCollapsed ? completionAt(t, sel.baseOffset) : null;
     final ctx = token ?? CompletionContext(sel.start, sel.end, '');
     if (_touch) {
+      _liveScope.value = _c.scope;
       final v = await showVariablePicker(
         context,
         scope: _c.scope,
+        live: _liveScope,
         onManage: _c.scope.offersManage
             ? (name) => _openManager(createName: name, at: ctx)
             : null,
