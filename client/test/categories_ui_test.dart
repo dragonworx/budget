@@ -9,6 +9,8 @@ import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/categories/categories_manager.dart';
+import 'package:budget_client/features/events/event_type_buttons.dart';
+import 'package:budget_client/features/events/event_types.dart';
 import 'package:budget_client/features/events/solve_sheet.dart';
 import 'package:budget_client/features/timeline/stack_lanes.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
@@ -895,25 +897,29 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('filter-all')), findsNothing);
       expect(find.byKey(const ValueKey('filter-disabled')), findsNothing);
-      FilterChip chip(String n) =>
-          tester.widget<FilterChip>(find.byKey(ValueKey('filter-$n')));
+      EventTypeButtons<EventType> bar() =>
+          tester.widget<EventTypeButtons<EventType>>(
+            find.byKey(const ValueKey('events-type-filter')),
+          );
       final names = ['credit', 'debit', 'transfer', 'sync'];
+      bool selected(String n) =>
+          bar().selected.contains(EventType.values.byName(n));
       expect(
-        [for (final n in names) (chip(n).label as Text).data],
+        [for (final b in bar().buttons) b.label],
         ['Credit', 'Debit', 'Transfer', 'Sync'],
       );
-      expect(
-        [for (final n in names) chip(n).selected],
-        [true, true, true, true],
-      );
-      // Chips fit the panel (no overflow at 320px).
+      expect([for (final n in names) selected(n)], [true, true, true, true]);
+      // One row inside the panel (no wrap, no overflow at 320px).
       final panel = tester.getRect(
         find.byKey(const ValueKey('events-panel-body')),
       );
+      final tops = <double>{};
       for (final n in names) {
         final r = tester.getRect(find.byKey(ValueKey('filter-$n')));
         expect(r.right, lessThanOrEqualTo(panel.right));
+        tops.add(r.top);
       }
+      expect(tops, hasLength(1));
       bool row(String id) =>
           find.byKey(ValueKey('dismiss-$id')).evaluate().isNotEmpty ||
           find.byKey(ValueKey('row-delete-$id')).evaluate().isNotEmpty;
@@ -926,38 +932,38 @@ void main() {
       for (final n in ['credit', 'transfer', 'sync']) {
         await tap(n);
       }
-      expect(chip('credit').selected, isFalse);
+      expect(selected('credit'), isFalse);
       expect(row('wages') && row('rent'), isTrue);
       // Debit is the last one selected: tapping it keeps it on.
       await tap('debit');
-      expect(chip('debit').selected, isTrue);
+      expect(selected('debit'), isTrue);
       expect(row('rent'), isTrue);
       // With Credit back on, Debit can go: every (debit) row leaves.
       await tap('credit');
       await tap('debit');
-      expect(chip('debit').selected, isFalse);
+      expect(selected('debit'), isFalse);
       expect(row('wages') || row('rent'), isFalse);
       expect(find.byKey(const ValueKey('events-no-matches')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('events-clear-filters')));
       await tester.pumpAndSettle();
-      expect(
-        [for (final n in names) chip(n).selected],
-        [true, true, true, true],
-      );
+      expect([for (final n in names) selected(n)], [true, true, true, true]);
       expect(row('wages') && row('rent'), isTrue);
       // The new event screen: same labels, same order (Loan after
       // Transfer where offered).
       await tester.tap(find.byKey(const ValueKey('panel-new-event')));
       await tester.pumpAndSettle();
-      final seg = tester.widget<SegmentedButton<Object?>>(
+      final seg = tester.widget<EventTypeButtons<Object?>>(
         find.byKey(const ValueKey('editor-kind')),
       );
-      String? name(ButtonSegment<Object?> b) =>
-          b.tooltip ?? ((b.label as FittedBox?)?.child as Text?)?.data;
-      final shown = [for (final b in seg.segments) name(b)]
-          .where((n) => n != 'Loan')
-          .toList();
-      expect(shown, ['Credit', 'Debit', 'Transfer', 'Sync']);
+      expect(
+        [for (final b in seg.buttons) b.label],
+        ['Credit', 'Debit', 'Transfer', 'Loan', 'Sync'],
+      );
+      // The same colours and icons as the filter (and the list's badges).
+      for (final (i, t) in EventType.values.indexed) {
+        final b = seg.buttons[i < 3 ? i : 4];
+        expect((b.color, b.icon), (t.color, t.icon), reason: t.label);
+      }
       expect(tester.takeException(), isNull);
       await tester.pump(const Duration(seconds: 2));
     });
@@ -1050,33 +1056,54 @@ void main() {
       await tester.pumpAndSettle();
       void check() {
         final kind = tester.getRect(find.byKey(const ValueKey('editor-kind')));
-        // Spec 015: five types below 360px are icons with tooltips.
-        if (size.width < 360) {
-          for (final t in ['Credit', 'Debit', 'Transfer', 'Sync']) {
-            final tip = find.byTooltip(t);
-            expect(tip, findsOneWidget, reason: t);
-            final r = tester.getRect(tip);
-            expect(r.left, greaterThanOrEqualTo(kind.left));
-            expect(r.right, lessThanOrEqualTo(kind.right));
+        final tops = <double>{};
+        for (final (k, t) in const [
+          ('credit', 'Credit'),
+          ('debit', 'Debit'),
+          ('transfer', 'Transfer'),
+          ('loan', 'Loan'),
+          ('sync', 'Sync'),
+        ]) {
+          final btn = find.byKey(ValueKey('editor-kind-$k'));
+          final r = tester.getRect(btn);
+          tops.add(r.top);
+          expect(r.left, greaterThanOrEqualTo(kind.left - 0.5), reason: t);
+          expect(r.right, lessThanOrEqualTo(kind.right + 0.5), reason: t);
+          final f = find.descendant(of: btn, matching: find.text(t));
+          if (f.evaluate().isEmpty) {
+            // Icon only: the label is its tooltip.
+            expect(
+              find.descendant(of: btn, matching: find.byType(Tooltip)),
+              findsOneWidget,
+              reason: t,
+            );
+            expect(
+              tester
+                  .widget<Tooltip>(
+                    find.descendant(of: btn, matching: find.byType(Tooltip)),
+                  )
+                  .message,
+              startsWith(t),
+            );
+            continue;
           }
-          expect(tester.takeException(), isNull);
-          return;
-        }
-        for (final t in ['Credit', 'Debit', 'Transfer']) {
-          final f = find.descendant(
-            of: find.byKey(const ValueKey('editor-kind')),
-            matching: find.text(t),
-          );
           final p = tester.renderObject<RenderParagraph>(f);
           expect(
             p.textSize.width,
             lessThanOrEqualTo(p.size.width + 0.5),
             reason: '$t is cut',
           );
-          final r = tester.getRect(f);
-          expect(r.left, greaterThanOrEqualTo(kind.left));
-          expect(r.right, lessThanOrEqualTo(kind.right));
+          // Readable: never shrunk much to fit. (The test font draws every
+          // glyph a full em wide, ~1.5x real text, so this bound is loose;
+          // real widths are checked in the browser.)
+          expect(
+            tester.getRect(f).width / p.size.width,
+            greaterThan(0.65),
+            reason: '$t is tiny',
+          );
         }
+        // One row.
+        expect(tops, hasLength(1), reason: '$tops');
         expect(tester.takeException(), isNull);
       }
 

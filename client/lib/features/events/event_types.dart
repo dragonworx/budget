@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models.dart';
+import '../../theme/app_theme.dart';
 
 /// The four event types the Events list filters by and the editor offers,
 /// in this order, with these labels and icons (the editor adds Loan where
@@ -40,3 +41,18 @@ EventType eventTypeOf(BudgetEvent t) {
       ? EventType.credit
       : EventType.debit;
 }
+
+/// Each type's colour: the same AppTheme colour its badge wears on an
+/// Events list row (DirectionBadge, the transfer and sync badges).
+extension EventTypeColour on EventType {
+  Color get color => switch (this) {
+    EventType.credit => AppTheme.creditColor,
+    EventType.debit => AppTheme.debitColor,
+    EventType.transfer => AppTheme.transferColor,
+    EventType.sync => AppTheme.syncColor,
+  };
+}
+
+/// A loan's list row wears the debit badge, so its button does too.
+Color get loanTypeColor => AppTheme.debitColor;
+const IconData loanTypeIcon = Icons.account_balance_outlined;

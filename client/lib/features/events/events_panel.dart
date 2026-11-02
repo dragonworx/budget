@@ -24,6 +24,7 @@ import '../timeline/stack_lanes.dart';
 import '../timeline/zoom_level.dart';
 import 'editor_outcome.dart';
 import 'event_editor.dart';
+import 'event_type_buttons.dart';
 import 'event_types.dart';
 import 'sync_format.dart';
 
@@ -716,29 +717,30 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
+              child: EventTypeButtons<EventType>(
+                key: const ValueKey('events-type-filter'),
+                buttons: [
                   for (final f in EventType.values)
-                    FilterChip(
+                    TypeButton(
+                      value: f,
+                      label: f.label,
+                      icon: f.icon,
+                      color: f.color,
                       key: ValueKey('filter-${f.name}'),
-                      showCheckmark: false,
-                      avatar: Icon(f.icon, size: 18),
-                      label: Text(f.label),
-                      tooltip: _types.length == 1 && _types.contains(f)
+                      note: _types.length == 1 && _types.contains(f)
                           ? 'At least one type stays selected'
                           : null,
-                      selected: _types.contains(f),
-                      onSelected: (on) => setState(() {
-                        if (!on && _types.length == 1) return;
-                        _types = {
-                          for (final t in EventType.values)
-                            if (t == f ? on : _types.contains(t)) t,
-                        };
-                      }),
                     ),
                 ],
+                selected: _types,
+                onTap: (f) => setState(() {
+                  final on = !_types.contains(f);
+                  if (!on && _types.length == 1) return;
+                  _types = {
+                    for (final t in EventType.values)
+                      if (t == f ? on : _types.contains(t)) t,
+                  };
+                }),
               ),
             ),
             const Divider(height: 1),

@@ -32,6 +32,7 @@ import '../categories/categories_manager.dart';
 import '../loans/loan_form.dart';
 import '../loans/loan_models.dart';
 import '../loans/loan_summary_panel.dart';
+import 'event_type_buttons.dart';
 import 'event_types.dart';
 import 'sync_format.dart';
 import '../timeline/stack_lanes.dart';
@@ -1113,6 +1114,100 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     );
   }
 
+  /// The type buttons (spec 015 + type colours): the same five, in the
+  /// same style, in a new and a saved event; ones that can't be chosen
+  /// here are shown but not tappable (their tooltip says why).
+  Widget _kindButtons(bool loanAllowed) {
+    final locked = _isLoan || _isSync;
+    String? why(_Kind k) {
+      if (_readOnly || k == _kind) return null;
+      if (_isLoan) return 'A saved loan keeps its type';
+      if (_isSync) return 'A saved sync keeps its type';
+      return switch (k) {
+        _Kind.loan when !_isNew => 'A saved event can\'t become a loan',
+        _Kind.loan when !loanAllowed => 'This stream already has a loan',
+        _Kind.sync when !_isNew => 'A saved event can\'t become a sync',
+        _ => null,
+      };
+    }
+
+    TypeButton<_Kind> b(_Kind k, String label, IconData icon, Color color) =>
+        TypeButton(
+          value: k,
+          label: label,
+          icon: icon,
+          color: color,
+          key: ValueKey('editor-kind-${k.name}'),
+          enabled: why(k) == null,
+          note: why(k),
+        );
+    return EventTypeButtons<_Kind>(
+      key: const ValueKey('editor-kind'),
+      buttons: [
+        for (final (k, t) in const [
+          (_Kind.credit, EventType.credit),
+          (_Kind.debit, EventType.debit),
+          (_Kind.transfer, EventType.transfer),
+        ])
+          b(k, t.label, t.icon, t.color),
+        b(_Kind.loan, 'Loan', loanTypeIcon, loanTypeColor),
+        b(
+          _Kind.sync,
+          EventType.sync.label,
+          EventType.sync.icon,
+          EventType.sync.color,
+        ),
+      ],
+      selected: {_kind},
+      onTap: _readOnly || locked ? null : _selectKind,
+    );
+  }
+
+  void _selectKind(_Kind k) {
+    if (k == _kind) return;
+    setState(() {
+      final wasSync = _syncMode;
+      _loanMode = k == _Kind.loan;
+      _syncMode = k == _Kind.sync;
+      if (_syncMode && !wasSync) {
+        // The typed figure carries over (sign kept).
+        if (_balance.text.trim().isEmpty) {
+          _balance.text = _amount.text.trim();
+        }
+        _scheduleSyncPreview(immediate: true);
+      } else if (!_syncMode && wasSync) {
+        if (_amount.text.trim().isEmpty) {
+          _amount.text = _balance.text.trim().replaceFirst('-', '');
+        }
+      }
+      switch (k) {
+        case _Kind.sync:
+          _transferMode = false;
+          _direction = EventDirection.credit;
+        case _Kind.loan:
+          _transferMode = false;
+          _direction = EventDirection.debit;
+          _loanDraft ??= LoanDraft.initial(_startDate)
+            ..principal = _amount.text.trim();
+          _loanErrors = const {};
+        case _Kind.credit:
+          _transferMode = false;
+          _direction = EventDirection.credit;
+        case _Kind.debit:
+          _transferMode = false;
+          _direction = EventDirection.debit;
+        case _Kind.transfer:
+          _transferMode = true;
+          // A new transfer sends money out of this stream; an
+          // existing receiving side keeps its direction.
+          if (widget.existing?.transfer == null) {
+            _direction = EventDirection.debit;
+          }
+      }
+      _transferError = null;
+    });
+  }
+
   Widget _detailsSection(ThemeData theme) {
     const symbol = moneySymbol;
     final loanAllowed = _loanAllowed;
@@ -1166,181 +1261,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
             ),
             const SizedBox(height: 12),
           ],
-          // Narrow (docked list, small phones): labels only, one line.
-          LayoutBuilder(
-            builder: (context, c) {
-              // Icons only when every label still fits beside one.
-              // Spec 015: five types below 360px: icons with tooltips.
-              final syncShown = _isNew || _isSync;
-              final icons =
-                  c.maxWidth >= (syncShown && loanAllowed ? 640 : 420);
-              final iconOnly =
-                  syncShown &&
-                  loanAllowed &&
-                  MediaQuery.sizeOf(context).width < 360;
-              Widget label(String text, {Key? key}) => FittedBox(
-                // Never clipped: a label shrinks a little rather than cut.
-                fit: BoxFit.scaleDown,
-                child: Text(text, key: key, maxLines: 1, softWrap: false),
-              );
-              Widget? labelOrNull(String text, {Key? key}) =>
-                  iconOnly ? null : label(text, key: key);
-              return SegmentedButton<_Kind>(
-                key: const ValueKey('editor-kind'),
-                showSelectedIcon: false,
-                segments: [
-                  ButtonSegment(
-                    value: _Kind.credit,
-                    label: labelOrNull(EventType.credit.label),
-                    tooltip: iconOnly ? EventType.credit.label : null,
-                    icon: icons || iconOnly
-                        ? Icon(EventType.credit.icon, size: 18)
-                        : null,
-                  ),
-                  ButtonSegment(
-                    value: _Kind.debit,
-                    label: labelOrNull(EventType.debit.label),
-                    tooltip: iconOnly ? EventType.debit.label : null,
-                    icon: icons || iconOnly
-                        ? Icon(EventType.debit.icon, size: 18)
-                        : null,
-                  ),
-                  ButtonSegment(
-                    value: _Kind.transfer,
-                    label: labelOrNull(
-                      EventType.transfer.label,
-                      key: const ValueKey('editor-kind-transfer'),
-                    ),
-                    tooltip: iconOnly ? EventType.transfer.label : null,
-                    icon: icons || iconOnly
-                        ? Icon(
-                            EventType.transfer.icon,
-                            size: 18,
-                            key: iconOnly
-                                ? const ValueKey('editor-kind-transfer')
-                                : null,
-                          )
-                        : null,
-                  ),
-                  if (loanAllowed)
-                    ButtonSegment(
-                      value: _Kind.loan,
-                      label: labelOrNull(
-                        'Loan',
-                        key: const ValueKey('editor-kind-loan'),
-                      ),
-                      tooltip: iconOnly ? 'Loan' : null,
-                      icon: icons || iconOnly
-                          ? Icon(
-                              Icons.account_balance_outlined,
-                              size: 18,
-                              key: iconOnly
-                                  ? const ValueKey('editor-kind-loan')
-                                  : null,
-                            )
-                          : null,
-                    ),
-                  if (syncShown)
-                    ButtonSegment(
-                      value: _Kind.sync,
-                      label: labelOrNull(
-                        EventType.sync.label,
-                        key: const ValueKey('editor-kind-sync'),
-                      ),
-                      tooltip: iconOnly ? EventType.sync.label : null,
-                      icon: icons || iconOnly
-                          ? Icon(
-                              EventType.sync.icon,
-                              size: 18,
-                              key: iconOnly
-                                  ? const ValueKey('editor-kind-sync')
-                                  : null,
-                            )
-                          : null,
-                    ),
-                ],
-                selected: {_kind},
-                // A saved loan's or sync's kind is locked (spec 003 §5,
-                // spec 015).
-                onSelectionChanged: _isLoan || _isSync
-                    ? null
-                    : (value) => setState(() {
-                        final wasSync = _syncMode;
-                        _loanMode = value.first == _Kind.loan;
-                        _syncMode = value.first == _Kind.sync;
-                        if (_syncMode && !wasSync) {
-                          // The typed figure carries over (sign kept).
-                          if (_balance.text.trim().isEmpty) {
-                            _balance.text = _amount.text.trim();
-                          }
-                          _scheduleSyncPreview(immediate: true);
-                        } else if (!_syncMode && wasSync) {
-                          if (_amount.text.trim().isEmpty) {
-                            _amount.text = _balance.text.trim().replaceFirst(
-                              '-',
-                              '',
-                            );
-                          }
-                        }
-                        switch (value.first) {
-                          case _Kind.sync:
-                            _transferMode = false;
-                            _direction = EventDirection.credit;
-                          case _Kind.loan:
-                            _transferMode = false;
-                            _direction = EventDirection.debit;
-                            _loanDraft ??= LoanDraft.initial(_startDate)
-                              ..principal = _amount.text.trim();
-                            _loanErrors = const {};
-                          case _Kind.credit:
-                            _transferMode = false;
-                            _direction = EventDirection.credit;
-                          case _Kind.debit:
-                            _transferMode = false;
-                            _direction = EventDirection.debit;
-                          case _Kind.transfer:
-                            _transferMode = true;
-                            // A new transfer sends money out of this stream; an
-                            // existing receiving side keeps its direction.
-                            if (widget.existing?.transfer == null) {
-                              _direction = EventDirection.debit;
-                            }
-                        }
-                        _transferError = null;
-                      }),
-                style: ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  padding: const WidgetStatePropertyAll(
-                    EdgeInsets.symmetric(horizontal: 6),
-                  ),
-                  foregroundColor: WidgetStateProperty.resolveWith((states) {
-                    if (!states.contains(WidgetState.selected)) {
-                      return AppTheme.textMuted;
-                    }
-                    return switch (_kind) {
-                      _Kind.credit => AppTheme.creditColor,
-                      _Kind.debit => AppTheme.debitColor,
-                      _Kind.transfer => AppTheme.transferColor,
-                      _Kind.loan => AppTheme.debitColor,
-                      _Kind.sync => AppTheme.syncColor,
-                    };
-                  }),
-                  backgroundColor: WidgetStateProperty.resolveWith((states) {
-                    if (!states.contains(WidgetState.selected)) {
-                      return AppTheme.surface;
-                    }
-                    return switch (_kind) {
-                      _Kind.credit => AppTheme.creditSoft,
-                      _Kind.debit => AppTheme.debitSoft,
-                      _Kind.transfer => AppTheme.transferSoft,
-                      _Kind.loan => AppTheme.debitSoft,
-                      _Kind.sync => AppTheme.syncSoft,
-                    };
-                  }),
-                ),
-              );
-            },
-          ),
+          _kindButtons(loanAllowed),
           if (_transferMode && !_loanMode && !_syncMode) ...[
             const SizedBox(height: 12),
             _transferField(theme),

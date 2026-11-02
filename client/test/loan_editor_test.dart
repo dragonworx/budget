@@ -142,8 +142,15 @@ void main() {
     tester,
   ) async {
     await pumpEditor(tester, inStream: [loanEvent()]);
-    expect(find.byKey(const ValueKey('editor-kind-loan')), findsNothing);
+    // Shown like the others (the row looks the same everywhere), but not
+    // tappable; a tap explains why.
+    expect(find.byKey(const ValueKey('editor-kind-loan')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('editor-kind-loan')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('loan-form')), findsNothing);
+    expect(find.text('This stream already has a loan'), findsOneWidget);
     expect(find.text('Debit'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
   });
 
   testWidgets('a saved loan opens editable, kind locked, preview replaces it', (
