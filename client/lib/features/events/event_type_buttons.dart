@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-
 /// One button of an [EventTypeButtons] row.
 class TypeButton<T> {
   const TypeButton({

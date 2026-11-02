@@ -2,7 +2,7 @@ import 'package:decimal/decimal.dart';
 
 import '../../data/models.dart';
 
-/// Spec 015: syncs on the chart are exact markers — a teal ring with ⟳ on
+/// Spec 015: syncs on the chart are exact markers — a teal ring with a tick on
 /// the balance line at the day's close, never merged into a group nor
 /// hidden at any zoom. One [SyncMark] per day with a sync.
 class SyncMark {

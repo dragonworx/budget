@@ -970,7 +970,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                       key: const ValueKey('editor-sync-badge'),
                       dimension: 36,
                       child: Icon(
-                        Icons.sync,
+                        syncTypeIcon,
                         size: 20,
                         color: _enabled
                             ? AppTheme.syncColor

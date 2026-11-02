@@ -20,9 +20,13 @@ extension EventTypeLook on EventType {
     EventType.credit => Icons.south_west_rounded,
     EventType.debit => Icons.north_east_rounded,
     EventType.transfer => Icons.swap_horiz_rounded,
-    EventType.sync => Icons.sync,
+    EventType.sync => syncTypeIcon,
   };
 }
+
+/// The Sync type's icon, everywhere a sync shows its type: a tick (the
+/// balance is confirmed against the bank).
+const IconData syncTypeIcon = Icons.check_rounded;
 
 /// Every type: the Events list's default filter.
 const Set<EventType> allEventTypes = {

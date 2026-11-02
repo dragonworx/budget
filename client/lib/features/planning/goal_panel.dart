@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import '../../data/api_client.dart';
 import '../../data/frequency.dart';
 import '../../data/models.dart';
+import '../events/event_types.dart';
 import '../../state/providers.dart';
 import '../../widgets/formula/formula_field.dart';
 import '../../widgets/formula/formula_style.dart' show formatFieldValue;
@@ -556,7 +557,7 @@ class GoalPanelState extends ConsumerState<GoalPanel> {
               key: const ValueKey('goal-sync-notice'),
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.sync, size: 16, color: AppTheme.syncColor),
+                const Icon(syncTypeIcon, size: 16, color: AppTheme.syncColor),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(

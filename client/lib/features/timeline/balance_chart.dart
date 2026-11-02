@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' hide TextDirection;
 
+import '../events/event_types.dart';
 import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/eye_icons.dart';
@@ -7599,7 +7600,7 @@ class _BalanceChartPainter extends CustomPainter {
   }
 
   /// Spec 015: every sync in view as an exact marker on the balance line
-  /// (a teal ring with ⟳), at every zoom and in the lanes view; never
+  /// (a teal ring with the Sync tick), at every zoom and in the lanes view; never
   /// grouped or hidden. Syncs in one pixel column share a ring with a
   /// "×N" badge. Labels ("Sync \$X" / "+\$Y drift") go where they don't
   /// meet another sync's label; the ring always draws.
@@ -7629,10 +7630,12 @@ class _BalanceChartPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2
       ..color = AppTheme.syncColor;
+    // The Sync type's own icon, drawn as its font glyph.
     final glyphStyle = labelStyle.copyWith(
+      fontFamily: syncTypeIcon.fontFamily,
+      package: syncTypeIcon.fontPackage,
       fontSize: textScaler.scale(8),
       height: 1.0,
-      fontWeight: FontWeight.w800,
       color: AppTheme.syncColor,
     );
     final badgeStyle = labelStyle.copyWith(
@@ -7665,7 +7668,11 @@ class _BalanceChartPainter extends CustomPainter {
       final n = col.fold(0, (a, x) => a + x.count);
       canvas.drawCircle(c, r + 1, bg);
       canvas.drawCircle(c, r, ring);
-      final g = _axisText.get('⟳', glyphStyle, maxLines: 1);
+      final g = _axisText.get(
+        String.fromCharCode(syncTypeIcon.codePoint),
+        glyphStyle,
+        maxLines: 1,
+      );
       g.paint(canvas, c - Offset(g.width / 2, g.height / 2));
       if (col.length > 1 || n > 1) {
         final tp = _axisText.get('×$n', badgeStyle, maxLines: 1);

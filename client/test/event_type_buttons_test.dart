@@ -38,6 +38,36 @@ void main() {
     expect(loanTypeColor, AppTheme.debitColor);
   });
 
+  test('Sync wears a tick, from one shared icon', () {
+    expect(syncTypeIcon, Icons.check_rounded);
+    expect(EventType.sync.icon, syncTypeIcon);
+  });
+
+  testWidgets('a saved sync: tick in the header badge and the selector', (
+    tester,
+  ) async {
+    await pumpEditor(
+      tester,
+      existing: _std('s', EventDirection.credit).copyWith(kind: 'sync'),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('editor-sync-badge')),
+        matching: find.byIcon(syncTypeIcon),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('editor-kind-sync')),
+        matching: find.byIcon(syncTypeIcon),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.sync), findsNothing);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
   test('one fit rule for a row', () {
     expect(typeButtonFit(560, 5), TypeButtonFit.iconAndLabel);
     expect(typeButtonFit(360, 5), TypeButtonFit.label);

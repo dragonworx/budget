@@ -1532,7 +1532,7 @@ class _Editing {
 }
 
 /// List badge for one side of a transfer (⇄ instead of in/out arrow).
-/// A sync row's badge: the ⟳ in the neutral sync colour (spec 015).
+/// A sync row's badge: the tick in the neutral sync colour (spec 015).
 class _SyncBadge extends StatelessWidget {
   const _SyncBadge({this.muted = false});
 
@@ -1549,7 +1549,7 @@ class _SyncBadge extends StatelessWidget {
         color: c.withValues(alpha: 0.16),
         border: Border.all(color: c, width: 1.5),
       ),
-      child: Icon(Icons.sync, size: 16, color: c),
+      child: Icon(syncTypeIcon, size: 16, color: c),
     );
   }
 }
