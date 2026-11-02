@@ -8,7 +8,7 @@ String tree(String s) => prettyPrintTree(parseFormula(s).expr!);
 /// Fully bracketed form, to check precedence.
 String prettyPrintTree(Expr e) => switch (e) {
       NumberLit(:final lexeme) => lexeme,
-      VarRef(:final name) => '\$$name',
+      VarRef(:final name) => name,
       Unary(:final op, :final operand) =>
         '(${op == UnaryOp.minus ? '-' : '+'}${prettyPrintTree(operand)})',
       Binary(:final op, :final left, :final right) =>
@@ -27,15 +27,15 @@ void main() {
     expect(tree('-3 * 2'), '((-3) multiply 2)');
     expect(tree('2 * -3'), '(2 multiply (-3))');
     expect(tree('--5'), '(-(-5))');
-    expect(tree(r'-$a * $b + 1'), r'(((-$a) multiply $b) add 1)');
+    expect(tree(r'-a * b + 1'), r'(((-a) multiply b) add 1)');
     expect(tree('(1 + 2) * 3'), '([(1 add 2)] multiply 3)');
   });
 
   test('spans', () {
-    final e = parseFormula(r' $rent * (2 + 3) ').expr! as Binary;
-    expect([e.start, e.end, e.opStart], [1, 16, 7]);
-    expect([e.left.start, e.left.end], [1, 6]);
-    expect([e.right.start, e.right.end], [9, 16]);
+    final e = parseFormula(r' rent * (2 + 3) ').expr! as Binary;
+    expect([e.start, e.end, e.opStart], [1, 15, 6]);
+    expect([e.left.start, e.left.end], [1, 5]);
+    expect([e.right.start, e.right.end], [8, 15]);
     final u = parseFormula('- 5').expr! as Unary;
     expect([u.start, u.end, u.opStart], [0, 3, 0]);
   });
@@ -68,7 +68,7 @@ void main() {
     final d = FormulaDialect(functions: {
       'max': FormulaFunction(1, 9, (a) => a.reduce((x, y) => x > y ? x : y)),
     });
-    final p = parseFormula(r'max(1, $a * 2, 3)', dialect: d);
+    final p = parseFormula(r'max(1, a * 2, 3)', dialect: d);
     expect(p.error, isNull);
     final r = evaluate(
         p.expr!,

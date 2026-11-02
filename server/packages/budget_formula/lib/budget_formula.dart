@@ -1,5 +1,5 @@
 /// Formula grammar v1 (see /workspace/specs/variables-plan-review.md,
-/// "Grammar reference"): `$rent * 12 / 52`, `(1200 + 50) * 2`, `-$x + 5`.
+/// "Grammar reference"): `rent * 12 / 52`, `(1200 + 50) * 2`, `-x + 5`.
 library;
 
 export 'src/ast.dart';

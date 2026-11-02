@@ -64,13 +64,13 @@ class VariableScope extends VariableLookup {
   final String? streamId;
   final List<VariableValue> variables;
 
-  /// Owner: may offer "Create $x…" / "Manage variables…" (from 012).
+  /// Owner: may offer "Create x…" / "Manage variables…" (from 012).
   final bool canManage;
 
   /// How the field opens the manager (set with [canManage]).
   final VariablesManagerOpener? manage;
 
-  /// "Manage variables…" / 'Create "\$x"…' are offered.
+  /// "Manage variables…" / 'Create "x"…' are offered.
   bool get offersManage => canManage && manage != null;
   final bool loading;
 

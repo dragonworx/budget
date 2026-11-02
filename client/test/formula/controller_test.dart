@@ -62,29 +62,29 @@ void main() {
     await withContext(tester);
     TextSpan build(FormulaEditingController c) =>
         c.buildTextSpan(context: ctx, withComposing: true);
-    expect(kinds(build(ctl(r'$rent / 4'))), [
-      (r'$rent', 'known'),
+    expect(kinds(build(ctl('rent / 4'))), [
+      ('rent', 'known'),
       (' ', 'plain'),
       ('/', 'muted'),
       (' ', 'plain'),
       ('4', 'plain'),
     ]);
-    expect(kinds(build(ctl(r'($rent+50)*2'))), [
+    expect(kinds(build(ctl('(rent+50)*2'))), [
       ('(', 'muted'),
-      (r'$rent', 'known'),
+      ('rent', 'known'),
       ('+', 'muted'),
       ('50', 'plain'),
       (')', 'muted'),
       ('*', 'muted'),
       ('2', 'plain'),
     ]);
-    expect(kinds(build(ctl(r'$rnet * 2'))).first, (r'$rnet', 'unknown'));
+    expect(kinds(build(ctl('rnet * 2'))).first, ('rnet', 'unknown'));
     expect(kinds(build(ctl(r'$5 + 1'))).first, (r'$', 'muted'));
     // A parse error is underlined; the text colour stays.
     expect(kinds(build(ctl('2 + '))).last.$2, 'error');
     // While loading, unknown names are not flagged.
-    expect(kinds(build(ctl(r'$later * 2', loading: true))).first, (
-      r'$later',
+    expect(kinds(build(ctl('later * 2', loading: true))).first, (
+      'later',
       'plain',
     ));
   });
@@ -97,7 +97,7 @@ void main() {
       expect(s.text, t);
     }
     final off = FormulaEditingController(
-      text: r'$rent / 4',
+      text: 'rent / 4',
       spec: amountSpec,
       scope: sampleScope(),
       formulasEnabled: false,
@@ -110,7 +110,7 @@ void main() {
 
   testWidgets('composing text is not styled', (tester) async {
     await withContext(tester);
-    final c = ctl(r'$rent / 4');
+    final c = ctl('rent / 4');
     c.value = c.value.copyWith(composing: const TextRange(start: 0, end: 5));
     final s = c.buildTextSpan(context: ctx, withComposing: true);
     expect(kinds(s).where((k) => k.$2 == 'known'), isEmpty);
@@ -161,7 +161,7 @@ void main() {
   });
 
   testWidgets('caret positions match an unstyled field', (tester) async {
-    const text = r'$rent * 2 + $weeks - $nope';
+    const text = 'rent * 2 + weeks - nope';
     final styled = ctl(text);
     final plain = TextEditingController(text: text);
     addTearDown(styled.dispose);
@@ -234,10 +234,10 @@ void main() {
   });
 
   test('values and expr', () {
-    final f = ctl(r'$rent / 4').formula;
+    final f = ctl('rent / 4').formula;
     expect(f.isFormula, isTrue);
     expect(f.value.toString(), '300');
-    expect(f.expr, r'$rent / 4');
+    expect(f.expr, 'rent / 4');
     expect(f.isValid, isTrue);
     final p = ctl('1,250.50').formula;
     expect(p.isPlain, isTrue);

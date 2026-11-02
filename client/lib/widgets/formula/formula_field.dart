@@ -1,6 +1,6 @@
 // FormulaField (spec 011): the numeric input every amount, rate and count
 // will use. Plain numbers behave exactly as today; formulas (grammar v1)
-// are styled, previewed and validated live, with `$` autocomplete.
+// are styled, previewed and validated live, with variable-name autocomplete.
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -159,7 +159,7 @@ class _FormulaFieldState extends State<FormulaField> {
   /// The suggestion list. An [OverlayEntry], not an [OverlayPortal]: on
   /// web with the accessibility tree on, showing an OverlayPortal child
   /// regroups the route's semantics nodes (traversal parent/child), which
-  /// moves the focused input's DOM subtree and blurs it on the first `$`.
+  /// moves the focused input's DOM subtree and blurs it on the first suggestion.
   OverlayEntry? _entry;
   bool _entryDirty = false;
   final _targetKey = GlobalKey();
@@ -401,6 +401,15 @@ class _FormulaFieldState extends State<FormulaField> {
       return;
     }
     final items = rankCompletions(ctx.prefix, _c.scope.variables);
+    // Typing a word nothing matches: only worth a popup when it can offer
+    // 'Create "x"…' (owner); otherwise the line under the field says
+    // "Unknown variable".
+    if (items.isEmpty &&
+        !_picker &&
+        (_c.scope.variables.isEmpty || !_c.scope.offersManage)) {
+      _close();
+      return;
+    }
     final moved =
         _ctx?.prefix != ctx.prefix || _ctx?.replaceStart != ctx.replaceStart;
     setState(() {
@@ -452,9 +461,11 @@ class _FormulaFieldState extends State<FormulaField> {
     final ctx = _ctx;
     if (ctx == null) return;
     final t = _c.text;
-    final rep = '\$$name';
     final start = ctx.replaceStart.clamp(0, t.length);
     final end = ctx.replaceEnd.clamp(start, t.length);
+    // Bare name, replacing the partial word; a space only where it would
+    // otherwise glue to a neighbouring number or word.
+    final rep = insertionFor(t, start, end, name);
     final next = t.replaceRange(start, end, rep);
     final caret = start + rep.length;
     _picker = false;
@@ -483,7 +494,7 @@ class _FormulaFieldState extends State<FormulaField> {
   }
 
   /// Opens the manager (owner, 012); a variable created there replaces the
-  /// `$…` being typed ([createName] prefills its add row).
+  /// word being typed ([createName] prefills its add row).
   Future<void> _openManager({String? createName, CompletionContext? at}) async {
     final open = _c.scope.manage;
     if (open == null) return;
@@ -572,6 +583,17 @@ class _FormulaFieldState extends State<FormulaField> {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
     final k = e.logicalKey;
     if (!_open) {
+      // Ctrl/Alt+Space: the full list (desktop "show all").
+      if (k == LogicalKeyboardKey.space &&
+          e is KeyDownEvent &&
+          (HardwareKeyboard.instance.isControlPressed ||
+              HardwareKeyboard.instance.isAltPressed) &&
+          _formulas &&
+          widget.enabled &&
+          !widget.readOnly) {
+        _openPicker();
+        return KeyEventResult.handled;
+      }
       // Key repeat right after Esc closed the list: don't close the dialog.
       if (k == LogicalKeyboardKey.escape && _escGuard != null) {
         return KeyEventResult.handled;
@@ -665,17 +687,17 @@ class _FormulaFieldState extends State<FormulaField> {
     final showPicker =
         on && editable && (scope.variables.isNotEmpty || scope.canManage);
     // Dense / side-by-side boxes (spec 013 rule 6): no picker button in
-    // the box (the `$` key on touch, autocomplete on desktop), the help
+    // the box (the keys row's picker on touch, autocomplete on desktop), the help
     // only while focused, the value in the ✦ tooltip.
     final compact = widget.previewInTooltip;
     final showHelp =
         on &&
         editable &&
         (focused || _helpOpen || (!compact && !_touch && _c.showsFormula));
-    // While a name is being completed ("$r" with the list open) the
+    // While a name is being completed ("r" with the list open) the
     // "no variable" error would flash under the list: it shows once the
     // list closes. The value stays invalid either way.
-    final errorText = _open && f.isFormula && f.message != null
+    final errorText = _open && f.message != null
         ? null
         : widget.errorText ?? field.errorText;
     final preview = on && _c.showsFormula && errorText == null

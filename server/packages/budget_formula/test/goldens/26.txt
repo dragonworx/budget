@@ -1,4 +1,4 @@
 text: $
-error: FormulaError(expected_operand [0,1) "Type a variable name after $")
+error: FormulaError(unexpected_character [0,1) "Put a number right after $ (like $5)")
 highlight:
   invalid         [0,1) $

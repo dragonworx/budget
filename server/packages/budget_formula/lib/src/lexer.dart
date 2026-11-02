@@ -1,3 +1,4 @@
+import 'names.dart';
 import 'token.dart';
 
 bool _isDigit(int c) => c >= 0x30 && c <= 0x39;
@@ -48,14 +49,13 @@ List<FormulaToken> tokenize(String text) {
         add(TokenKind.currencySigil, i, i + 1);
         i++;
       } else {
+        // The retired `$name` form (or a lone `$`): one reserved token, so
+        // the parser can say "write rent, not $rent".
         var e = i + 1;
-        if (e < n && _isNameStart(text.codeUnitAt(e))) {
+        while (e < n && _isNamePart(text.codeUnitAt(e))) {
           e++;
-          while (e < n && _isNamePart(text.codeUnitAt(e))) {
-            e++;
-          }
         }
-        add(TokenKind.variable, i, e, name: text.substring(i + 1, e));
+        add(TokenKind.identifier, i, e, name: text.substring(i + 1, e));
         i = e;
       }
     } else if (_isNameStart(c)) {
@@ -63,7 +63,12 @@ List<FormulaToken> tokenize(String text) {
       while (e < n && _isNamePart(text.codeUnitAt(e))) {
         e++;
       }
-      add(TokenKind.identifier, i, e);
+      final lexeme = text.substring(i, e);
+      if (c == 0x5F || isReservedName(lexeme)) {
+        add(TokenKind.identifier, i, e);
+      } else {
+        add(TokenKind.variable, i, e, name: lexeme);
+      }
       i = e;
     } else {
       final kind = switch (c) {

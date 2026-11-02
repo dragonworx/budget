@@ -62,12 +62,12 @@ void main() {
     expect(r('loan.principal', '500,000').value, dec('500000'));
     expect(
         r('loan.principal', '0').error!.message, 'Enter an amount above zero');
-    expect(r('loan.principal', r'$rent * 400').value, dec('480000'));
+    expect(r('loan.principal', r'rent * 400').value, dec('480000'));
   });
 
   test('stream.seed / threshold are signed', () {
     expect(r('stream.seed', '-120.50').value, dec('-120.5'));
-    expect(r('stream.seed', r'-$rent').value, dec('-1200'));
+    expect(r('stream.seed', r'-rent').value, dec('-1200'));
     expect(r('stream.threshold', '').value, dec('0'));
     expect(r('stream.threshold', '').isPlain, isTrue);
     expect(r('stream.threshold', '-200').value, dec('-200'));
@@ -100,7 +100,7 @@ void main() {
     expect(r('loan.chargeDay', '32').error!.message, 'A day from 1 to 31');
     expect(r('loan.chargeDay', '0').error!.message, 'A day from 1 to 31');
     expect(r('loan.termYears', '0').value, dec('0'));
-    expect(r('loan.termYears', r'$weeks / 2').value, dec('26'));
+    expect(r('loan.termYears', r'weeks / 2').value, dec('26'));
     expect(r('event.interval', '99').value, dec('99'));
     expect(r('event.interval', '100').error!.message, '1–99');
     expect(resolveField('1', intervalSpec(2), stdVars).error!.message, '2–99');
@@ -126,7 +126,7 @@ void main() {
         reason: 'Decimal.tryParse rejects commas today');
     expect(
         r('solve.total', '1,000').error!.code, FormulaErrorCode.reservedSyntax);
-    expect(r('solve.amount', r'$rent / 2').value, dec('600'));
+    expect(r('solve.amount', r'rent / 2').value, dec('600'));
   });
 
   test('variable.value', () {
@@ -152,13 +152,13 @@ void main() {
   });
 
   test('resolution details', () {
-    final x = r('event.amount', r'  $RENT×2 + $weeks ');
+    final x = r('event.amount', r'  RENT×2 + weeks ');
     expect(x.isFormula, isTrue);
-    expect(x.canonicalText, r'$rent*2 + $weeks');
+    expect(x.canonicalText, r'rent*2 + weeks');
     expect(x.referencedLower, {'rent', 'weeks'});
     expect(x.value, dec('2452'));
-    final bad = r('event.amount', r'$nope * 2');
-    expect(bad.canonicalText, r'$nope * 2');
+    final bad = r('event.amount', r'nope * 2');
+    expect(bad.canonicalText, r'nope * 2');
     expect(bad.referencedLower, {'nope'});
     expect(bad.value, isNull);
     final plain = r('event.amount', ' 1,250 ');
@@ -168,13 +168,13 @@ void main() {
   });
 
   test('hint messages', () {
-    final h = r('event.amount', r'$rate * 100').hints.single;
+    final h = r('event.amount', r'rate * 100').hints.single;
     expect(h.message,
-        r'$rate is a percentage (5.5). In an amount it counts as 5.5; write $rate / 100 for 5.5%');
-    expect([h.start, h.end], [0, 5]);
-    expect(r('loan.ratePct', r'$rent / 1000').hints.single.codeName,
+        r'rate is a percentage (5.5). In an amount it counts as 5.5; write rate / 100 for 5.5%');
+    expect([h.start, h.end], [0, 4]);
+    expect(r('loan.ratePct', r'rent / 1000').hints.single.codeName,
         'money_in_rate');
-    expect(r('loan.ratePct', r'$rate').hints, isEmpty);
+    expect(r('loan.ratePct', r'rate').hints, isEmpty);
   });
 
   test('format', () {
@@ -182,5 +182,22 @@ void main() {
         fieldSpecs['event.amount']!.format(dec('1234567.5')), r'$1,234,567.5');
     expect(fieldSpecs['loan.ratePct']!.format(dec('100')), '100%');
     expect(fieldSpecs['event.count']!.format(dec('-1000')), '-1,000');
+  });
+
+  test('a known variable on its own beats the legacy letter prefix', () {
+    final vars = MapVariableLookup([
+      VariableValue('q1', dec('300'), VariableUnit.money),
+      VariableValue('abc12', dec('7'), VariableUnit.money),
+    ]);
+    FieldResolution rv(String id, String t) =>
+        resolveField(t, fieldSpecs[id]!, vars);
+    expect(rv('event.amount', 'q1').value, dec('300'));
+    expect(rv('event.amount', 'q1').isFormula, isTrue);
+    expect(rv('event.amount', 'Q1').canonicalText, 'q1');
+    expect(rv('stream.seed', '-abc12').value, dec('-7'));
+    // Unknown: today's parser still reads it (plain, unchanged).
+    expect(rv('event.amount', 'q2').isPlain, isTrue);
+    expect(rv('event.amount', 'q2').value, dec('2'));
+    expect(rv('event.amount', 'AUD1250').value, dec('1250'));
   });
 }

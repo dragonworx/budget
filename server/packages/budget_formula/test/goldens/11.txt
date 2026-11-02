@@ -1,12 +1,12 @@
-text: $nope * 2
-Binary multiply [0,9)
-  Var $nope [0,5)
-  Number 2 [8,9)
-pretty: $nope * 2
-error: FormulaError(unknown_variable [0,5) "There is no variable $nope")
+text: nope * 2
+Binary multiply [0,8)
+  Var nope [0,4)
+  Number 2 [7,8)
+pretty: nope * 2
+error: FormulaError(unknown_variable [0,4) "Unknown variable nope")
 highlight:
-  invalid         [0,5) $nope
-  whitespace      [5,6)  
-  operator        [6,7) *
-  whitespace      [7,8)  
-  number          [8,9) 2
+  invalid         [0,4) nope
+  whitespace      [4,5)  
+  operator        [5,6) *
+  whitespace      [6,7)  
+  number          [7,8) 2

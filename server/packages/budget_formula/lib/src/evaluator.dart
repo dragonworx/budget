@@ -12,7 +12,7 @@ import 'rounding.dart';
 enum VariableUnit { money, percent, number }
 
 class VariableValue {
-  /// Canonical case, without `$`.
+  /// Canonical case.
   final String name;
   final Decimal value;
   final VariableUnit unit;
@@ -22,7 +22,7 @@ class VariableValue {
   late final Rational rational = value.toRational();
 
   @override
-  String toString() => '\$$name=$value(${unit.name})';
+  String toString() => '$name=$value(${unit.name})';
 }
 
 /// Resolves variable names. Implement [lookup]; override [values] to get
@@ -30,7 +30,7 @@ class VariableValue {
 abstract class VariableLookup {
   const VariableLookup();
 
-  /// [lowerName] is lower-case, without `$`.
+  /// [lowerName] is lower-case.
   VariableValue? lookup(String lowerName);
 
   /// Every known variable (for hints); empty by default.
@@ -132,9 +132,14 @@ class _Eval {
         if (v == null) {
           final close =
               closestName(e.name, [for (final x in vars.values) x.name]);
-          fail(FormulaErrorCode.unknownVariable,
-              'There is no variable \$${e.name}', e.start, e.end,
-              hint: close == null ? null : 'Did you mean \$$close?');
+          fail(
+              FormulaErrorCode.unknownVariable,
+              close == null
+                  ? 'Unknown variable ${e.name}'
+                  : 'Unknown variable ${e.name} (did you mean $close?)',
+              e.start,
+              e.end,
+              hint: close == null ? null : 'Did you mean $close?');
         }
         used.add(e.lowerName);
         return check(_Q.of(v.rational), e);
@@ -163,7 +168,7 @@ class _Eval {
                   FormulaErrorCode.divisionByZero,
                   name == null
                       ? 'Division by zero'
-                      : 'Division by zero: \$$name is 0',
+                      : 'Division by zero: $name is 0',
                   opStart,
                   opStart + 1);
             }

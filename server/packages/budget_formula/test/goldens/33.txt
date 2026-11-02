@@ -1,0 +1,8 @@
+text: _x + 1
+error: FormulaError(reserved_syntax [0,2) "Variable names start with a letter")
+highlight:
+  invalid         [0,2) _x
+  whitespace      [2,3)  
+  operator        [3,4) +
+  whitespace      [4,5)  
+  number          [5,6) 1

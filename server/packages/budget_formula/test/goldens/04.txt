@@ -1,18 +1,18 @@
-text: -$rent + --5
-Binary add [0,12)
-  Unary minus [0,6)
-    Var $rent [1,6)
-  Unary minus [9,12)
-    Unary minus [10,12)
-      Number 5 [11,12)
-pretty: -$rent + --5
+text: -rent + --5
+Binary add [0,11)
+  Unary minus [0,5)
+    Var rent [1,5)
+  Unary minus [8,11)
+    Unary minus [9,11)
+      Number 5 [10,11)
+pretty: -rent + --5
 value: -1195
 highlight:
   operator        [0,1) -
-  variableKnown   [1,6) $rent
-  whitespace      [6,7)  
-  operator        [7,8) +
-  whitespace      [8,9)  
+  variableKnown   [1,5) rent
+  whitespace      [5,6)  
+  operator        [6,7) +
+  whitespace      [7,8)  
+  operator        [8,9) -
   operator        [9,10) -
-  operator        [10,11) -
-  number          [11,12) 5
+  number          [10,11) 5

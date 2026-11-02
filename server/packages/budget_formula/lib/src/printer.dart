@@ -5,7 +5,7 @@ import 'ast.dart';
 String prettyPrint(Expr e) => switch (e) {
       NumberLit(:final lexeme, :final currency) =>
         currency ? '\$$lexeme' : lexeme,
-      VarRef(:final name) => '\$$name',
+      VarRef(:final name) => name,
       Unary(:final op, :final operand) =>
         '${op == UnaryOp.minus ? '-' : '+'}${prettyPrint(operand)}',
       Binary(:final op, :final left, :final right) =>
@@ -29,7 +29,7 @@ String dumpAst(Expr e, [String indent = '']) {
   final head = switch (e) {
     NumberLit(:final value, :final currency) =>
       'Number $value${currency ? ' (currency)' : ''}',
-    VarRef(:final name) => 'Var \$$name',
+    VarRef(:final name) => 'Var $name',
     Unary(:final op) => 'Unary ${op.name}',
     Binary(:final op) => 'Binary ${op.name}',
     Group() => 'Group',

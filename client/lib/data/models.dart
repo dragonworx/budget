@@ -1451,7 +1451,8 @@ class ServerFeatures {
 Map<String, dynamic>? _jsonMap(Object? v) =>
     v is Map ? v.cast<String, dynamic>() : null;
 
-/// An owner-level variable (spec 010): `$name` in formula fields.
+/// An owner-level variable (spec 010): written by its bare name in formula
+/// fields.
 class Variable {
   const Variable({
     required this.id,
@@ -1468,7 +1469,7 @@ class Variable {
 
   final String id;
 
-  /// Canonical case, without `$`.
+  /// Canonical case.
   final String name;
 
   /// `money`, `percent` or `number`.

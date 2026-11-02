@@ -29,7 +29,7 @@ void main() {
       expect(textOf(tester, 'variable-value-v1'), r'$1,200.00');
       expect(textOf(tester, 'variable-value-v2'), '5.5%');
       expect(textOf(tester, 'variable-value-v3'), '48');
-      expect(textOf(tester, 'variable-expr-v3'), r'$months * 4');
+      expect(textOf(tester, 'variable-expr-v3'), 'months * 4');
       expect(k('variable-expr-v1'), findsNothing);
       expect(textOf(tester, 'variable-description-v1'), 'Weekly rent');
       expect(h.vars.reads, contains('mine'));
@@ -98,10 +98,10 @@ void main() {
     testWidgets('formula value', (tester) async {
       final h = await pumpManager(tester);
       await enter(tester, 'variable-new-name', 'yearly');
-      await enter(tester, 'variable-new-value', r'$rent * 52');
+      await enter(tester, 'variable-new-value', 'rent * 52');
       await tester.tap(k('variable-new-add'));
       await tester.pumpAndSettle();
-      expect(h.vars.calls.last, startsWith(r'create yearly=$rent'));
+      expect(h.vars.calls.last, startsWith('create yearly=rent'));
     });
 
     testWidgets('invalid and duplicate names show inline, no request', (
@@ -111,8 +111,26 @@ void main() {
       await enter(tester, 'variable-new-name', '9x');
       expect(
         textOf(tester, 'variable-new-error'),
-        'Use letters, digits and _; start with a letter or _',
+        'Start the name with a letter',
       );
+      await enter(tester, 'variable-new-name', '_x');
+      expect(
+        textOf(tester, 'variable-new-error'),
+        'Start the name with a letter',
+      );
+      await enter(tester, 'variable-new-name', 'my rent');
+      expect(
+        textOf(tester, 'variable-new-error'),
+        'Use only letters, digits and _ (no spaces)',
+      );
+      // No `$` any more: rejected, not stripped.
+      await enter(tester, 'variable-new-name', r'$fresh');
+      expect(
+        textOf(tester, 'variable-new-error'),
+        r'Leave out the $: a variable is written as just its name',
+      );
+      await enter(tester, 'variable-new-name', 'round');
+      expect(textOf(tester, 'variable-new-error'), contains('reserved'));
       await enter(tester, 'variable-new-name', 'RENT');
       expect(textOf(tester, 'variable-new-error'), contains('already exists'));
       await tester.tap(k('variable-new-add'));
@@ -133,16 +151,16 @@ void main() {
       await tester.tap(k('variable-new-add'));
       await tester.pumpAndSettle();
       expect(textOf(tester, 'variable-new-error'), 'That name is taken');
-      h.vars.failNext = apiError(400, r'Circular reference: $a → $b → $a', {
+      h.vars.failNext = apiError(400, 'Circular reference: a → b → a', {
         'code': 'cycle',
         'field': 'expr',
-        'path': r'$a → $b → $a',
+        'path': 'a → b → a',
       });
       await tester.tap(k('variable-new-add'));
       await tester.pumpAndSettle();
       expect(
         textOf(tester, 'variable-new-error'),
-        r'These variables depend on each other: $a → $b → $a',
+        'These variables depend on each other: a → b → a',
       );
     });
 
@@ -173,7 +191,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(h.vars.calls, contains('update v2 name=interest'));
       expect(k('variable-name-field-v2'), findsNothing);
-      expect(find.text(r'Renamed $rate to $interest'), findsOneWidget);
+      expect(find.text('Renamed rate to interest'), findsOneWidget);
       await tester.tap(k('variable-undo-button'));
       await tester.pumpAndSettle();
       expect(h.vars.calls.last, 'update v2 name=rate');
@@ -208,7 +226,7 @@ void main() {
       await enter(tester, 'variable-name-field-v2', 'rent');
       await tester.tap(k('variable-name-save-v2'));
       await tester.pumpAndSettle();
-      expect(find.text(r'A variable named "$rent" already exists'), findsOne);
+      expect(find.text('A variable named "rent" already exists'), findsOne);
       expect(k('variable-name-field-v2'), findsOneWidget);
       await enter(tester, 'variable-name-field-v2', 'apr');
       // Focus elsewhere: the add row's name.
@@ -273,7 +291,7 @@ void main() {
             'streamName': 'Everyday',
             'eventName': 'Rent',
             'field': 'amount',
-            'expr': r'$rent',
+            'expr': 'rent',
             'value': '1200',
           },
         ],
@@ -286,7 +304,7 @@ void main() {
             'entityId': 'e1',
             'streamId': 's1',
             'field': 'amount',
-            'expr': r'$rent',
+            'expr': 'rent',
             'oldValue': '1200',
             'newValue': '1300',
           },
@@ -298,7 +316,7 @@ void main() {
       await enter(tester, 'variable-value-field-v1', '1300');
       await tester.tap(k('variable-value-save-v1'));
       await tester.pumpAndSettle();
-      expect(find.text(r'Update $rent?'), findsOneWidget);
+      expect(find.text('Update rent?'), findsOneWidget);
       expect(find.textContaining('Changes 1 field in 1 stream'), findsOne);
       expect(find.textContaining('Rent'), findsWidgets);
       // Cancel: nothing saved, the edit closes.
@@ -327,9 +345,9 @@ void main() {
           vr(
             'v5',
             'broken',
-            r'$gone * 2',
+            'gone * 2',
             value: '10',
-            problem: {'code': 'unknown_variable', 'message': r'No $gone'},
+            problem: {'code': 'unknown_variable', 'message': 'No gone'},
           ),
         ],
       );
@@ -340,8 +358,8 @@ void main() {
             'entityId': 'v5',
             'variableName': 'broken',
             'field': 'value',
-            'expr': r'$gone * 2',
-            'error': {'code': 'unknown_variable', 'message': r'No $gone'},
+            'expr': 'gone * 2',
+            'error': {'code': 'unknown_variable', 'message': 'No gone'},
           },
         ],
         'count': 1,
@@ -367,7 +385,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(k('variable-menu-delete'));
       await tester.pumpAndSettle();
-      expect(find.text(r'$rent is in use'), findsOneWidget);
+      expect(find.text('rent is in use'), findsOneWidget);
       expect(
         textOf(tester, 'variable-usages-message'),
         'Change these fields first, then delete it.',
@@ -387,12 +405,8 @@ void main() {
       await tester.tap(k('variable-menu-delete'));
       await tester.pumpAndSettle();
       expect(
-        tester.getSemantics(find.text(r'$rent is in use')),
-        isSemantics(
-          label: r'$rent is in use',
-          isHeader: true,
-          namesRoute: true,
-        ),
+        tester.getSemantics(find.text('rent is in use')),
+        isSemantics(label: 'rent is in use', isHeader: true, namesRoute: true),
       );
       expect(
         tester.getSemantics(k('variable-usages-message')),
@@ -407,7 +421,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(k('variable-menu-delete'));
       await tester.pumpAndSettle();
-      expect(find.text(r'Delete $rate?'), findsOneWidget);
+      expect(find.text('Delete rate?'), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
       await tester.pumpAndSettle();
       expect(h.vars.calls, contains('delete v2'));
@@ -473,7 +487,7 @@ void main() {
           'entityId': 'v3',
           'variableName': 'weeks',
           'field': 'value',
-          'expr': r'$months * 4',
+          'expr': 'months * 4',
           'value': '48',
         },
       ],
@@ -481,7 +495,7 @@ void main() {
     };
     await tester.tap(k('variable-uses-v4'));
     await tester.pumpAndSettle();
-    expect(find.text(r'Where $months is used'), findsOneWidget);
+    expect(find.text('Where months is used'), findsOneWidget);
     expect(find.text("+2 in streams you can't see"), findsOneWidget);
     await tester.tap(k('variable-usage-0'));
     await tester.pumpAndSettle();

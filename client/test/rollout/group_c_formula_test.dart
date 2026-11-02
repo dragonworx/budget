@@ -158,7 +158,7 @@ void main() {
     expect(_step(tester, 'plus').onPressed, isNotNull);
     expect(_k('editor-interval-wide'), findsNothing);
 
-    await _type(tester, 'editor-interval', r'$months / 6');
+    await _type(tester, 'editor-interval', 'months / 6');
     expect(_step(tester, 'plus').onPressed, isNull);
     expect(_step(tester, 'minus').onPressed, isNull);
     expect(_step(tester, 'plus').tooltip, 'Clear the formula to use − / +');
@@ -171,9 +171,9 @@ void main() {
     await _save(tester);
     final e = txs.saved.single;
     expect(e.frequency.interval, 2);
-    expect(e.intervalExpr, r'$months / 6');
+    expect(e.intervalExpr, 'months / 6');
     final json = e.toCreateJson();
-    expect((json['frequency'] as Map)['intervalExpr'], r'$months / 6');
+    expect((json['frequency'] as Map)['intervalExpr'], 'months / 6');
     expect((json['frequency'] as Map)['interval'], 2);
   });
 
@@ -184,7 +184,7 @@ void main() {
       tester,
       existing: _series(3, RecurrenceUnit.months),
     );
-    await _type(tester, 'editor-interval', r'$months / 6');
+    await _type(tester, 'editor-interval', 'months / 6');
     await _type(tester, 'editor-interval', '4');
     expect(_k('editor-interval-wide'), findsNothing);
     expect(_step(tester, 'plus').tooltip, 'More');
@@ -207,11 +207,11 @@ void main() {
       tester,
       existing: _series(3, RecurrenceUnit.months),
     );
-    await _type(tester, 'editor-interval', r'$months / 5');
+    await _type(tester, 'editor-interval', 'months / 5');
     expect(_error(tester, 'editor-interval'), contains('whole number'));
-    await _type(tester, 'editor-interval', r'$months * 10');
+    await _type(tester, 'editor-interval', 'months * 10');
     expect(_error(tester, 'editor-interval'), '2–99');
-    await _type(tester, 'editor-interval', r'$nope + 1');
+    await _type(tester, 'editor-interval', 'nope + 1');
     expect(_error(tester, 'editor-interval'), contains('nope'));
     await _save(tester);
     expect(txs.saved, isEmpty);
@@ -224,10 +224,10 @@ void main() {
     await tester.ensureVisible(_k('editor-freq-every_n_months'));
     await tester.tap(_k('editor-freq-every_n_months'));
     await tester.pumpAndSettle();
-    await _type(tester, 'editor-interval', r'$months / 12');
+    await _type(tester, 'editor-interval', 'months / 12');
     await tester.tap(_k('editor-freq-every_n_weeks'));
     await tester.pumpAndSettle();
-    expect(_text(tester, 'editor-interval'), r'$months / 12');
+    expect(_text(tester, 'editor-interval'), 'months / 12');
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     expect(_error(tester, 'editor-interval'), '2–99');
@@ -238,13 +238,13 @@ void main() {
       tester,
       existing: _series(1, RecurrenceUnit.weeks, count: 6),
     );
-    await _type(tester, 'editor-count', r'$months / 2');
+    await _type(tester, 'editor-count', 'months / 2');
     expect(_error(tester, 'editor-count'), isNull);
     await _save(tester);
     final e = txs.saved.single;
     expect(e.occurrenceCount, 6);
-    expect(e.occurrenceCountExpr, r'$months / 2');
-    expect(e.toCreateJson()['occurrenceCountExpr'], r'$months / 2');
+    expect(e.occurrenceCountExpr, 'months / 2');
+    expect(e.toCreateJson()['occurrenceCountExpr'], 'months / 2');
   });
 
   testWidgets('count errors: "At least 1" unchanged, formula errors', (
@@ -256,9 +256,9 @@ void main() {
     );
     await _type(tester, 'editor-count', '0');
     expect(_error(tester, 'editor-count'), 'At least 1');
-    await _type(tester, 'editor-count', r'$months - 12');
+    await _type(tester, 'editor-count', 'months - 12');
     expect(_error(tester, 'editor-count'), isNotNull);
-    await _type(tester, 'editor-count', r'$months / 5');
+    await _type(tester, 'editor-count', 'months / 5');
     expect(_error(tester, 'editor-count'), contains('whole number'));
     await _save(tester);
     expect(txs.saved, isEmpty);
@@ -272,7 +272,7 @@ void main() {
     );
     await _type(tester, 'editor-interval', r'$4');
     expect(_text(tester, 'editor-interval'), '4');
-    await _type(tester, 'editor-count', r'$months');
+    await _type(tester, 'editor-count', 'months');
     expect(_error(tester, 'editor-count'), 'At least 1');
     await _type(tester, 'editor-count', '8');
     await _save(tester);
@@ -287,15 +287,15 @@ void main() {
         3,
         RecurrenceUnit.months,
         count: 6,
-        intervalExpr: r'$gone + 1',
-        countExpr: r'$months / 2',
+        intervalExpr: 'gone + 1',
+        countExpr: 'months / 2',
         exprErrors: {
           'interval': {'message': 'Unknown variable: gone'},
         },
       ),
     );
-    expect(_text(tester, 'editor-interval'), r'$gone + 1');
-    expect(_text(tester, 'editor-count'), r'$months / 2');
+    expect(_text(tester, 'editor-interval'), 'gone + 1');
+    expect(_text(tester, 'editor-count'), 'months / 2');
     expect(_error(tester, 'editor-interval'), contains('no longer works'));
     expect(_step(tester, 'plus').onPressed, isNull);
   });
@@ -309,7 +309,7 @@ void main() {
     );
     await tester.ensureVisible(_k('editor-interval'));
     // enterText focuses the box (touch: the keys row shows) and keeps it.
-    await tester.enterText(_input('editor-interval'), r'$months / 6');
+    await tester.enterText(_input('editor-interval'), 'months / 6');
     await tester.pumpAndSettle();
     expect(_k('editor-interval-keys'), findsOneWidget);
     final box = tester.getRect(_input('editor-interval'));
@@ -335,7 +335,7 @@ void main() {
         existing: _series(3, RecurrenceUnit.months),
         size: size,
       );
-      await _type(tester, 'editor-interval', r'$months / 6');
+      await _type(tester, 'editor-interval', 'months / 6');
       await expectLater(
         _k('editor-freq'),
         matchesGoldenFile(

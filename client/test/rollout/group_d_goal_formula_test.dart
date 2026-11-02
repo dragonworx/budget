@@ -55,9 +55,9 @@ const _scenario = GoalRequest(
   interval: 2,
   count: 6,
   exprs: {
-    'amount': r'$rent * 2',
-    'interval': r'$months / 6',
-    'count': r'$months / 2',
+    'amount': 'rent * 2',
+    'interval': 'months / 6',
+    'count': 'months / 2',
   },
 );
 
@@ -75,12 +75,12 @@ void main() {
         overrides: _vars,
         initial: const GoalRequest(solveFor: GoalVar.endDate),
       );
-      await _type(tester, 'goal-field-amount', r'$rent / 4');
-      await _type(tester, 'goal-field-targetBalance', r'$rent * 10');
-      await _type(tester, 'goal-field-rate', r'$rate + 1');
-      await _type(tester, 'goal-field-count', r'$months / 3');
-      await _type(tester, 'goal-field-startBalance', r'-$rent');
-      await _type(tester, 'goal-field-interval-interval', r'$months / 6');
+      await _type(tester, 'goal-field-amount', 'rent / 4');
+      await _type(tester, 'goal-field-targetBalance', 'rent * 10');
+      await _type(tester, 'goal-field-rate', 'rate + 1');
+      await _type(tester, 'goal-field-count', 'months / 3');
+      await _type(tester, 'goal-field-startBalance', '-rent');
+      await _type(tester, 'goal-field-interval-interval', 'months / 6');
       final r = repo.goals.last;
       expect(r.amount, 300);
       expect(r.targetBalance, 12000);
@@ -93,12 +93,12 @@ void main() {
       // …and a saved scenario keeps the formulas.
       final saved = key.currentState!.request;
       expect(saved.exprs, {
-        'startBalance': r'-$rent',
-        'targetBalance': r'$rent * 10',
-        'amount': r'$rent / 4',
-        'interval': r'$months / 6',
-        'count': r'$months / 3',
-        'rate': r'$rate + 1',
+        'startBalance': '-rent',
+        'targetBalance': 'rent * 10',
+        'amount': 'rent / 4',
+        'interval': 'months / 6',
+        'count': 'months / 3',
+        'rate': 'rate + 1',
       });
       final back = GoalRequest.fromJson(
         jsonDecode(jsonEncode(saved.toJson())) as Map<String, dynamic>,
@@ -116,11 +116,11 @@ void main() {
       );
       await _type(tester, 'goal-field-amount', '100');
       final before = repo.goals.length;
-      await _type(tester, 'goal-field-amount', r'$nope * 2');
+      await _type(tester, 'goal-field-amount', 'nope * 2');
       expect(_error(tester, 'goal-field-amount'), contains('nope'));
-      await _type(tester, 'goal-field-count', r'$months / 5');
+      await _type(tester, 'goal-field-count', 'months / 5');
       expect(_error(tester, 'goal-field-count'), contains('whole number'));
-      await _type(tester, 'goal-field-rate', r'$rent');
+      await _type(tester, 'goal-field-rate', 'rent');
       expect(_error(tester, 'goal-field-rate'), isNotNull);
       expect(repo.goals.length, before);
       await _type(tester, 'goal-field-amount', '100');
@@ -142,7 +142,7 @@ void main() {
         GoalRequest.fromJson({..._scenario.toJson(), 'amount': 2400}),
       );
       await _debounce(tester);
-      expect(_text(tester, 'goal-field-amount'), r'$rent * 2');
+      expect(_text(tester, 'goal-field-amount'), 'rent * 2');
       expect(k('goal-field-amount-changed'), findsNothing);
       expect(repo.goals.last.amount, 2400);
     });
@@ -157,7 +157,7 @@ void main() {
         initial: _scenario,
       );
       await _debounce(tester);
-      expect(_text(tester, 'goal-field-amount'), r'$rent * 2');
+      expect(_text(tester, 'goal-field-amount'), 'rent * 2');
       expect(
         tester.widget<Text>(k('goal-field-amount-changed')).data,
         r'Values changed since saved: $2,000.00 → $2,400.00',
@@ -166,7 +166,7 @@ void main() {
       expect(k('goal-field-interval-changed'), findsNothing);
       expect(k('goal-field-count-changed'), findsNothing);
       expect(repo.goals.last.amount, 2000);
-      expect(key.currentState!.request.exprs!['amount'], r'$rent * 2');
+      expect(key.currentState!.request.exprs!['amount'], 'rent * 2');
 
       await tester.tap(k('goal-field-amount-use-new'));
       await tester.pump(const Duration(milliseconds: 400));
@@ -185,7 +185,7 @@ void main() {
         initial: _scenario,
       );
       await _debounce(tester);
-      await _type(tester, 'goal-field-amount', r'$rent');
+      await _type(tester, 'goal-field-amount', 'rent');
       expect(k('goal-field-amount-changed'), findsNothing);
       expect(repo.goals.last.amount, 1200);
     });
@@ -198,7 +198,7 @@ void main() {
     expect(_text(tester, 'goal-field-amount'), '2000');
     expect(k('goal-field-amount-changed'), findsNothing);
     expect(key.currentState!.request.exprs, isNull);
-    await _type(tester, 'goal-field-amount', r'$rent');
+    await _type(tester, 'goal-field-amount', 'rent');
     expect(_error(tester, 'goal-field-amount'), 'Invalid number');
     expect(repo.goals.last.amount, 2000);
     expect(find.text('✦'), findsNothing);

@@ -7,7 +7,6 @@ import '../../theme/app_theme.dart';
 
 /// (label, inserted text).
 const formulaKeys = [
-  (r'$', r'$'),
   ('(', '('),
   (')', ')'),
   ('+', '+'),
@@ -274,7 +273,6 @@ class _RenderKeys extends RenderBox
 }
 
 const _spoken = {
-  r'$': 'Dollar sign, variable',
   '(': 'Open bracket',
   ')': 'Close bracket',
   '+': 'Plus',

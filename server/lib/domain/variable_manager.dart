@@ -27,7 +27,7 @@ class VariableInput {
     final n = body['name'];
     if (n != null) {
       if (n is! String) throw const FormatException('name must be a string');
-      i.name = n.trim().startsWith(r'$') ? n.trim().substring(1) : n.trim();
+      i.name = n.trim();
     }
     final e = body['expr'] ?? body['value'];
     if (e != null) {
@@ -142,7 +142,7 @@ class VariableManager {
       if (!identical(v, self) && v.lower == lower) {
         throw VariableException(
             409,
-            'A variable named "\$${v.name}" already exists',
+            'A variable named "${v.name}" already exists',
             {'code': 'variable_name_taken'});
       }
     }
@@ -169,7 +169,7 @@ class VariableManager {
       throw VariableException(
           400,
           'Too many variables in a chain (at most $maxVariableChain): '
-          '\$$deep',
+          '$deep',
           {'code': 'too_deep', 'field': 'expr', 'variable': deep});
     }
     final byLower = {for (final v in all) v.lower: v};
@@ -636,7 +636,7 @@ class VariableManager {
     if (fields > 0) {
       throw VariableException(
           409,
-          '\$${v.name} is used by $fields '
+          '${v.name} is used by $fields '
           '${fields == 1 ? 'field' : 'fields'}',
           {'code': 'variable_in_use', 'fields': fields, 'streams': streams});
     }

@@ -1,12 +1,12 @@
-text: $rent / $zero
-Binary divide [0,13)
-  Var $rent [0,5)
-  Var $zero [8,13)
-pretty: $rent / $zero
-error: FormulaError(division_by_zero [6,7) "Division by zero: $zero is 0")
+text: rent / zero
+Binary divide [0,11)
+  Var rent [0,4)
+  Var zero [7,11)
+pretty: rent / zero
+error: FormulaError(division_by_zero [5,6) "Division by zero: zero is 0")
 highlight:
-  variableKnown   [0,5) $rent
-  whitespace      [5,6)  
-  invalid         [6,7) /
-  whitespace      [7,8)  
-  variableKnown   [8,13) $zero
+  variableKnown   [0,4) rent
+  whitespace      [4,5)  
+  invalid         [5,6) /
+  whitespace      [6,7)  
+  variableKnown   [7,11) zero

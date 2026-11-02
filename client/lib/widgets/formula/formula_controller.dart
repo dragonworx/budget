@@ -63,21 +63,34 @@ class FormulaValue {
       ' value=$value expr=$expr message=$message pending=$pending)';
 }
 
-/// True when [text] has nothing that only a formula has (no `$name`,
-/// operator or bracket): such text is validated exactly as today.
-bool looksPlain(String text) {
+/// True when [text] has nothing that only a formula has: such text is
+/// validated exactly as today. Operators and brackets make a formula; so
+/// does a `$name` (to say "write name"), a known variable name, or a lone
+/// word close to one ("Unknown variable rnet (did you mean rent?)"). Any
+/// other lone word (`abc`, `12abc`) keeps today's plain message.
+bool looksPlain(String text, [VariableLookup? scope]) {
+  final words = <String>[];
   for (final t in tokenize(text)) {
     switch (t.kind) {
-      case TokenKind.variable ||
-          TokenKind.plus ||
+      case TokenKind.plus ||
           TokenKind.minus ||
           TokenKind.star ||
           TokenKind.slash ||
           TokenKind.lparen ||
           TokenKind.rparen:
         return false;
+      case TokenKind.identifier when (t.name ?? '').isNotEmpty:
+        return false;
+      case TokenKind.variable:
+        words.add(t.name ?? t.lexeme);
       default:
     }
+  }
+  if (words.isEmpty || scope == null) return true;
+  final names = [for (final v in scope.values) v.name];
+  for (final w in words) {
+    if (scope.lookup(w.toLowerCase()) != null) return false;
+    if (closestName(w, names) != null) return false;
   }
   return true;
 }
@@ -189,7 +202,7 @@ class FormulaEditingController extends TextEditingController {
       _flagMessage = null;
     }
     final empty = t.trim().isEmpty;
-    if (!_enabled || looksPlain(t)) {
+    if (!_enabled || looksPlain(t, _scope)) {
       // Today's validation, word for word.
       if (!empty && s.legacyParse(t) == null) {
         final m = s.messages[FieldMessage.invalid] ?? 'Enter a number';

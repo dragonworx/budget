@@ -1,12 +1,12 @@
-text: $rnt * 2
-Binary multiply [0,8)
-  Var $rnt [0,4)
-  Number 2 [7,8)
-pretty: $rnt * 2
-error: FormulaError(unknown_variable [0,4) "There is no variable $rnt" hint "Did you mean $rent?")
+text: rnt * 2
+Binary multiply [0,7)
+  Var rnt [0,3)
+  Number 2 [6,7)
+pretty: rnt * 2
+error: FormulaError(unknown_variable [0,3) "Unknown variable rnt (did you mean rent?)" hint "Did you mean rent?")
 highlight:
-  invalid         [0,4) $rnt
-  whitespace      [4,5)  
-  operator        [5,6) *
-  whitespace      [6,7)  
-  number          [7,8) 2
+  invalid         [0,3) rnt
+  whitespace      [3,4)  
+  operator        [4,5) *
+  whitespace      [5,6)  
+  number          [6,7) 2

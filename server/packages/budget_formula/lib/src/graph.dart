@@ -1,4 +1,4 @@
-/// Variable dependency graphs: `deps[a]` = the lower-case names `$a`'s
+/// Variable dependency graphs: `deps[a]` = the lower-case names `a`'s
 /// formula uses. Names that aren't keys are leaves (plain values or
 /// unknown names reported elsewhere).
 library;
@@ -13,8 +13,8 @@ class FormulaCycleException implements Exception {
   String toString() => 'Cycle: ${formatCycle(cycle)}';
 }
 
-/// `$a → $b → $a`.
-String formatCycle(List<String> cycle) => cycle.map((n) => '\$$n').join(' → ');
+/// `a → b → a`.
+String formatCycle(List<String> cycle) => cycle.join(' → ');
 
 /// A cycle as a path that starts and ends at the same name
 /// (`['a', 'b', 'a']`, `['a', 'a']` for a self-reference), or null.

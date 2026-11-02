@@ -1,4 +1,4 @@
-// The `$` autocomplete list (and the touch picker dialog) for FormulaField.
+// The variable-name autocomplete list (and the touch picker dialog) for FormulaField.
 import 'package:budget_formula/budget_formula.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +11,7 @@ const double suggestionRowDesktop = 40;
 const double suggestionRowTouch = 48;
 const int suggestionMaxRows = 6;
 
-/// The list itself: rows of `$name`, description, value and unit badge.
+/// The list itself: rows of names, description, value and unit badge.
 class FormulaSuggestionList extends StatelessWidget {
   const FormulaSuggestionList({
     super.key,
@@ -41,7 +41,7 @@ class FormulaSuggestionList extends StatelessWidget {
   /// Owner (012): "Manage variables…" under "No variables yet".
   final VoidCallback? onManage;
 
-  /// Owner (012): 'Create "\$x"…' under 'No variable named "\$x"'.
+  /// Owner (012): 'Create "x"…' under 'No variable named "x"'.
   final ValueChanged<String>? onCreate;
 
   /// The empty state's action row, if any (label, key, run).
@@ -84,7 +84,7 @@ class FormulaSuggestionList extends StatelessWidget {
 
   Widget _empty(ThemeData theme) {
     final none = scope.variables.isEmpty;
-    final text = none ? 'No variables yet' : 'No variable named "\$$prefix"';
+    final text = none ? 'No variables yet' : 'No variable named "$prefix"';
     final action = emptyAction;
     final line = _emptyLine(theme, text);
     if (action == null) return line;
@@ -161,7 +161,7 @@ class FormulaSuggestionList extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: '\$${v.name}, ${spokenVariableValue(v)}, $unitName',
+      label: '${v.name}, ${spokenVariableValue(v)}, $unitName',
       excludeSemantics: true,
       child: MouseRegion(
         onEnter: (_) => onHover(i),
@@ -223,7 +223,7 @@ class FormulaSuggestionList extends StatelessWidget {
     );
   }
 
-  /// `$name` with the typed part in bold.
+  /// The name with the typed part in bold.
   TextSpan _name(String name, TextStyle? base) {
     final style = base?.copyWith(color: AppTheme.accent);
     final bold =
@@ -231,11 +231,11 @@ class FormulaSuggestionList extends StatelessWidget {
         const TextStyle(fontWeight: FontWeight.w700);
     final p = prefix.toLowerCase();
     final at = p.isEmpty ? -1 : name.toLowerCase().indexOf(p);
-    if (at < 0) return TextSpan(text: '\$$name', style: style);
+    if (at < 0) return TextSpan(text: name, style: style);
     return TextSpan(
       style: style,
       children: [
-        TextSpan(text: '\$${name.substring(0, at)}'),
+        TextSpan(text: name.substring(0, at)),
         TextSpan(text: name.substring(at, at + p.length), style: bold),
         TextSpan(text: name.substring(at + p.length)),
       ],
@@ -346,7 +346,7 @@ class _PickerDialogState extends State<_PickerDialog> {
 }
 
 /// The empty list's action (owner, 012): "Manage variables…" when there
-/// are none at all, else 'Create "\$[prefix]"…' for a valid new name.
+/// are none at all, else 'Create "[prefix]"…' for a valid new name.
 (String, String, IconData, VoidCallback)? emptyActionFor(
   VariableScope scope,
   String prefix, {
@@ -368,7 +368,7 @@ class _PickerDialogState extends State<_PickerDialog> {
     return null;
   }
   return (
-    'Create "\$$prefix"…',
+    'Create "$prefix"…',
     'formula-create-variable',
     Icons.add_rounded,
     () => onCreate(prefix),

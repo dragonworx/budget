@@ -1,0 +1,6 @@
+text: 3 weeks
+error: FormulaError(reserved_syntax [2,7) "Units like weeks aren't supported; use just the number, or * to multiply")
+highlight:
+  number          [0,1) 3
+  whitespace      [1,2)  
+  invalid         [2,7) weeks

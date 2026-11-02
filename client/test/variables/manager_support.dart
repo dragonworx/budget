@@ -196,7 +196,7 @@ class FakeStreams extends StreamRepository {
 List<Variable> baseVars() => [
   vr('v1', 'rent', '1200', uses: 2, description: 'Weekly rent'),
   vr('v2', 'rate', '5.5', unit: 'percent'),
-  vr('v3', 'weeks', r'$months * 4', unit: 'number', value: '48'),
+  vr('v3', 'weeks', 'months * 4', unit: 'number', value: '48'),
   vr('v4', 'months', '12', unit: 'number', uses: 1),
 ];
 

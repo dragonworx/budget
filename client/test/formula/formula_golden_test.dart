@@ -16,7 +16,7 @@ void main() {
 
     testWidgets('valid with preview at $w', (tester) async {
       await pumpFormula(tester, width: width, height: 300, autofocus: false);
-      await typeText(tester, r'$rent / 4');
+      await typeText(tester, 'rent / 4');
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
       await shot(tester, 'valid_preview_$w');
@@ -24,7 +24,7 @@ void main() {
 
     testWidgets('unknown variable at $w', (tester) async {
       await pumpFormula(tester, width: width, height: 300, autofocus: false);
-      await typeText(tester, r'$rnt * 2');
+      await typeText(tester, 'rnt * 2');
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
       await shot(tester, 'unknown_$w');
@@ -32,7 +32,7 @@ void main() {
 
     testWidgets('error underline at $w', (tester) async {
       await pumpFormula(tester, width: width, height: 300, autofocus: false);
-      await typeText(tester, r'$rent * (2');
+      await typeText(tester, 'rent * (2');
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pumpAndSettle();
       await shot(tester, 'error_$w');
@@ -40,7 +40,7 @@ void main() {
 
     testWidgets('autocomplete open at $w', (tester) async {
       await pumpFormula(tester, width: width, height: 420);
-      await typeText(tester, r'$r');
+      await typeText(tester, 'r');
       await tester.pumpAndSettle();
       expect(suggestions, findsOneWidget);
       await shot(tester, 'autocomplete_$w');
@@ -48,7 +48,7 @@ void main() {
 
     testWidgets('touch operator row at $w', (tester) async {
       await pumpFormula(tester, width: width, height: 300, touch: true);
-      await typeText(tester, r'$rent + 10');
+      await typeText(tester, 'rent + 10');
       await tester.pumpAndSettle();
       await shot(tester, 'touch_keys_$w');
     });

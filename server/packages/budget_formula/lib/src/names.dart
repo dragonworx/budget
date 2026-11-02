@@ -1,29 +1,46 @@
-/// Variable names: `[A-Za-z_][A-Za-z0-9_]{0,39}`, unique case-insensitively.
-final RegExp variableNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]{0,39}$');
+/// Variable names: a letter, then letters, digits or `_` (at most 40),
+/// unique case-insensitively. Formulas reference them by the bare name
+/// (`rent * 12`), so a name can't be a [reservedNames] word.
+final RegExp variableNamePattern = RegExp(r'^[A-Za-z][A-Za-z0-9_]{0,39}$');
 
 const int maxVariableNameLength = 40;
 
+/// Words a formula keeps for functions and future syntax (lower case);
+/// the lexer reads them as reserved identifiers, never as variables.
+const Set<String> reservedNames = {
+  'round', 'floor', 'ceil', 'min', 'max', 'abs', 'sum', 'avg', //
+  'if', 'and', 'or', 'not', 'true', 'false',
+};
+
+/// Whether [name] (any case) is a [reservedNames] word.
+bool isReservedName(String name) => reservedNames.contains(name.toLowerCase());
+
 /// Why [name] can't be a variable's name among [existingNames] (null when
 /// it can). [self] is the variable's current name when renaming, so
-/// keeping (or re-casing) its own name is fine. A typed leading `$` is
-/// ignored.
+/// keeping (or re-casing) its own name is fine.
 String? variableNameProblem(String name, Iterable<String> existingNames,
     {String? self}) {
-  var n = name.trim();
-  if (n.startsWith(r'$')) n = n.substring(1);
+  final n = name.trim();
   if (n.isEmpty) return 'Enter a name';
-  if (!RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(n)) {
-    return 'Use letters, digits and _; start with a letter or _';
+  if (n.startsWith(r'$')) {
+    return r'Leave out the $: a variable is written as just its name';
+  }
+  if (!RegExp(r'^[A-Za-z]').hasMatch(n)) return 'Start the name with a letter';
+  if (!RegExp(r'^[A-Za-z0-9_]*$').hasMatch(n)) {
+    return 'Use only letters, digits and _ (no spaces)';
   }
   if (n.length > maxVariableNameLength) {
     return 'At most $maxVariableNameLength characters';
+  }
+  if (isReservedName(n)) {
+    return '"${n.toLowerCase()}" is reserved for formulas; choose another name';
   }
   final lower = n.toLowerCase();
   final selfLower = self?.toLowerCase();
   for (final e in existingNames) {
     final el = e.toLowerCase();
     if (el == lower && el != selfLower) {
-      return 'A variable named "\$$e" already exists';
+      return 'A variable named "$e" already exists';
     }
   }
   return null;

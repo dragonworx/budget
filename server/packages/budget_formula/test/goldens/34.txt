@@ -1,0 +1,5 @@
+text: 2rent
+error: FormulaError(missing_operator [1,5) "Add an operator between 2 and rent")
+highlight:
+  number          [0,1) 2
+  invalid         [1,5) rent

@@ -24,13 +24,13 @@ const formulaHelp = FormulaHelp(
   title: 'Formulas',
   intro: 'Use numbers, variables and + − × ÷ ( ).',
   examples: [
-    (r'$rent / 4', 'A quarter of your rent'),
-    (r'($rent + 50) * 2', 'Rent plus 50, doubled'),
-    (r'$salary * 12 / 52', 'Monthly salary as a weekly amount'),
-    (r'-$fee', 'The fee, negated'),
+    ('rent / 4', 'A quarter of your rent'),
+    ('(rent + 50) * 2', 'Rent plus 50, doubled'),
+    ('salary * 12 / 52', 'Monthly salary as a weekly amount'),
+    ('-fee', 'The fee, negated'),
   ],
   notes: [
-    r'Type $ to pick a variable.',
+    'Type a variable\'s name to pick it from the list.',
     'Results are rounded to cents at the end.',
     'Not yet: % signs and functions like round().',
   ],

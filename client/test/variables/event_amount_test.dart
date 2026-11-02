@@ -20,7 +20,7 @@ import 'manager_support.dart';
 final _start = DateTime(2026, 10, 5);
 final _focus = DateTime(2026, 10, 19);
 
-BudgetEvent _rent({String? expr = r'$rent', Map<String, dynamic>? errors}) =>
+BudgetEvent _rent({String? expr = 'rent', Map<String, dynamic>? errors}) =>
     BudgetEvent(
       id: 't',
       streamId: 'acc',
@@ -180,11 +180,11 @@ void main() {
     expect(field.focusNode.hasFocus, isTrue);
     expect(field.controller, isA<FormulaEditingController>());
     await pickCategory(tester, fakeCategoryId('Groceries'));
-    await _type(tester, r'$rent * 2');
+    await _type(tester, 'rent * 2');
     await _save(tester);
     expect(repo.calls, ['create']);
     expect(repo.sent.single['amount'], '2400');
-    expect(repo.sent.single['amountExpr'], r'$rent * 2');
+    expect(repo.sent.single['amountExpr'], 'rent * 2');
   });
 
   testWidgets('a plain number sends no formula', (tester) async {
@@ -200,7 +200,7 @@ void main() {
     tester,
   ) async {
     await _pump(tester, existing: _rent());
-    expect(_text(tester), r'$rent');
+    expect(_text(tester), 'rent');
     expect(find.text('1200'), findsNothing);
   });
 
@@ -214,7 +214,7 @@ void main() {
     await pickCategory(tester, fakeCategoryId('Groceries'));
     await _save(tester);
     expect(repo.calls, ['update']);
-    expect(repo.sent.single['amountExpr'], r'$rent');
+    expect(repo.sent.single['amountExpr'], 'rent');
     expect(repo.sent.single['amount'], '1200');
   });
 
@@ -231,7 +231,7 @@ void main() {
   ) async {
     final repo = await _pump(tester, existing: _rent());
     repo.resolveDifferently = true;
-    await _type(tester, r'$rent + 1');
+    await _type(tester, 'rent + 1');
     await _save(tester);
     expect(k('editor-resolved-differently'), findsOneWidget);
     expect(
@@ -244,13 +244,13 @@ void main() {
     final repo = await _pump(
       tester,
       existing: _rent(
-        expr: r'$gone',
+        expr: 'gone',
         errors: {
-          'amount': {'code': 'unknown', 'message': 'Unknown variable \$gone'},
+          'amount': {'code': 'unknown', 'message': 'Unknown variable gone'},
         },
       ),
     );
-    expect(_text(tester), r'$gone');
+    expect(_text(tester), 'gone');
     await _save(tester);
     expect(repo.calls, isEmpty);
     expect(find.textContaining('Unknown variable'), findsWidgets);
@@ -258,29 +258,29 @@ void main() {
 
   testWidgets('once-off and From now on send the formula', (tester) async {
     var repo = await _pump(tester, existing: _rent(expr: null), focus: _focus);
-    await _type(tester, r'$rent + 50');
+    await _type(tester, 'rent + 50');
     await tester.tap(k('editor-save-menu'));
     await tester.pumpAndSettle();
     await tester.tap(k('save-option-once'));
     await tester.pumpAndSettle();
-    expect(repo.calls, [r'override 2026-10-19 1250 $rent + 50']);
+    expect(repo.calls, ['override 2026-10-19 1250 rent + 50']);
 
     repo = await _pump(tester, existing: _rent(expr: null), focus: _focus);
-    await _type(tester, r'$rent + 50');
+    await _type(tester, 'rent + 50');
     await tester.tap(k('editor-save-menu'));
     await tester.pumpAndSettle();
     await tester.tap(k('save-option-forward'));
     await tester.pumpAndSettle();
-    expect(repo.calls, [r'split 2026-10-19 1250 $rent + 50']);
+    expect(repo.calls, ['split 2026-10-19 1250 rent + 50']);
   });
 
   testWidgets(r'$ suggests the stream variables; a new name offers Create', (
     tester,
   ) async {
     await _pump(tester);
-    await typeText(tester, r'$re');
+    await typeText(tester, 're');
     expect(suggestion('rent'), findsOneWidget);
-    await typeText(tester, r'$parking');
+    await typeText(tester, 'parking');
     expect(k('formula-create-variable'), findsOneWidget);
     await tester.tap(k('formula-create-variable'));
     await tester.pumpAndSettle();

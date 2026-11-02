@@ -89,7 +89,12 @@ FieldResolution resolveField(String text, FieldSpec spec, VariableLookup vars) {
             spec.messages[FieldMessage.empty] ?? 'Enter a value', 0, 0));
   }
 
-  final legacy = spec.legacyParse(text);
+  // A known variable on its own (`q1`, `-abc12`) is a formula, even where
+  // today's money parser would strip a letter prefix and read a number.
+  final sole = _soleName.firstMatch(t);
+  final legacy = sole != null && vars.lookup(sole[1]!.toLowerCase()) != null
+      ? null
+      : spec.legacyParse(text);
   if (legacy != null) {
     FormulaError? err;
     if (spec.unit == FieldUnit.number && legacy.scale > spec.scale) {
@@ -191,16 +196,18 @@ List<FormulaHint> _hints(Expr root, FieldSpec spec, VariableLookup vars) {
       final where = spec.unit == FieldUnit.money ? 'In an amount' : 'Here';
       out.add(FormulaHint(
           FormulaHintCode.percentInAmount,
-          '\$${v.name} is a percentage (${v.value}). $where it counts as '
-          '${v.value}; write \$${v.name} / 100 for ${v.value}%',
+          '${v.name} is a percentage (${v.value}). $where it counts as '
+          '${v.value}; write ${v.name} / 100 for ${v.value}%',
           e.start,
           e.end));
     } else if (v.unit == VariableUnit.money && spec.unit == FieldUnit.percent) {
       out.add(FormulaHint(FormulaHintCode.moneyInRate,
-          '\$${v.name} is an amount, not a percentage', e.start, e.end));
+          '${v.name} is an amount, not a percentage', e.start, e.end));
     }
   }
   return out;
 }
+
+final RegExp _soleName = RegExp(r'^[-+]?\s*([A-Za-z][A-Za-z0-9_]*)$');
 
 Expr _bare(Expr e) => e is Group ? _bare(e.inner) : e;

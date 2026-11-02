@@ -8,7 +8,7 @@ List<String> kinds(String s) => [
 
 void main() {
   test('basic kinds', () {
-    expect(kinds(r'$rent * (12 + 3) / 4 - 1'), [
+    expect(kinds(r'rent * (12 + 3) / 4 - 1'), [
       'variable',
       'whitespace',
       'star',
@@ -43,18 +43,26 @@ void main() {
   });
 
   test('x is not an operator', () {
-    expect(kinds('5x2'), ['number', 'identifier']);
+    expect(kinds('5x2'), ['number', 'variable']);
   });
 
   test('currency sigil vs variable', () {
     expect(kinds(r'$5'), ['currencySigil', 'number']);
     expect(kinds(r'$.5'), ['currencySigil', 'number']);
-    expect(kinds(r'$rent'), ['variable']);
-    expect(kinds(r'$_a1'), ['variable']);
-    expect(kinds(r'$'), ['variable']);
+    expect(kinds(r'rent'), ['variable']);
+    expect(tokenize(r'Rent2')[0].name, 'Rent2');
+    expect(kinds(r'a1_b'), ['variable']);
+    expect(kinds(r'_a1'), ['identifier']);
+    expect(kinds(r'round'), ['identifier']);
+    expect(kinds(r'Round'), ['identifier']);
+    expect(kinds(r'rounding'), ['variable']);
+    expect(kinds(r'12abc'), ['number', 'variable']);
+    // The retired form: one identifier token carrying the bare name.
+    expect(kinds(r'$rent'), ['identifier']);
+    expect(tokenize(r'$rent')[0].name, 'rent');
+    expect(kinds(r'$'), ['identifier']);
     expect(tokenize(r'$')[0].name, '');
-    expect(kinds(r'$ 5'), ['variable', 'whitespace', 'number']);
-    expect(tokenize(r'$Rent2')[0].name, 'Rent2');
+    expect(kinds(r'$ 5'), ['identifier', 'whitespace', 'number']);
   });
 
   test('reserved tokens', () {

@@ -1,5 +1,5 @@
 // What a variable change does (spec 012): labels for the fields that use a
-// variable, their values, and the "Update $rent?" impact confirm.
+// variable, their values, and the "Update rent?" impact confirm.
 import 'package:budget_formula/budget_formula.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
@@ -120,7 +120,7 @@ String fieldLabel(String field) => switch (field) {
 String usageLabel(VariableUsage u) {
   switch (u.entity) {
     case 'variable':
-      return 'Variable \$${u.variableName ?? ''}';
+      return 'Variable ${u.variableName ?? ''}';
     case 'stream':
       return fieldLabel(u.field);
     case 'override':
@@ -214,7 +214,7 @@ String impactMessage(
 
 String _count(int n, String noun) => '$n ${n == 1 ? noun : '${noun}s'}';
 
-/// "Update $rent?" with [impactMessage]; true = Update.
+/// "Update rent?" with [impactMessage]; true = Update.
 Future<bool> confirmVariableImpact(
   BuildContext context, {
   required Variable variable,
@@ -228,7 +228,7 @@ Future<bool> confirmVariableImpact(
       changes.where((c) => c.error != null).length;
   return showConfirmDialog(
     context,
-    title: 'Update \$${variable.name}?',
+    title: 'Update ${variable.name}?',
     message: impactMessage(
       changes,
       invalid,

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:postgres/postgres.dart';
 
+import 'repo/bare_variable_names.dart';
 import 'repo/currency_scale_backfill.dart';
 
 import 'config.dart';
@@ -110,7 +111,9 @@ Future<void> applyMigrations(
     );
     if (done.isNotEmpty) continue;
     await conn.runTx((session) async {
-      await entry.value(session);
+      // False: its prerequisites aren't there yet (not recorded, so it
+      // runs once they are).
+      if (!await entry.value(session)) return;
       await session.execute(
         Sql.named('INSERT INTO schema_migrations (id) VALUES (@id) '
             'ON CONFLICT DO NOTHING'),
@@ -120,8 +123,12 @@ Future<void> applyMigrations(
   }
 }
 
-final _dataMigrations = <String, Future<void> Function(Session)>{
-  '006_currency_scale_backfill': backfillCurrencyScales,
+final _dataMigrations = <String, Future<bool> Function(Session)>{
+  '006_currency_scale_backfill': (s) async {
+    await backfillCurrencyScales(s);
+    return true;
+  },
+  '029_bare_variable_names': (s) => migrateBareVariableNames(s),
 };
 
 /// Splits a SQL file into statements on `;`, keeping `$$ ... $$` bodies

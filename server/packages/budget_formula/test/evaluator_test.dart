@@ -19,16 +19,16 @@ void main() {
   });
 
   test('variables are case-insensitive and recorded lower-case', () {
-    final r = evaluate(parseFormula(r'$RENT + $Weeks * $rent').expr!, stdVars)
-        as EvalOk;
+    final r =
+        evaluate(parseFormula(r'RENT + Weeks * rent').expr!, stdVars) as EvalOk;
     expect(r.value, rat('63600'));
     expect(r.usedLower, {'rent', 'weeks'});
   });
 
   test('division by zero names a bare variable, at the operator', () {
-    expect(err(r'$rent / $zero').message, r'Division by zero: $zero is 0');
-    expect(err(r'$rent / ($zero)').message, r'Division by zero: $zero is 0');
-    expect(err(r'$rent / ($zero * 2)').message, 'Division by zero');
+    expect(err(r'rent / zero').message, r'Division by zero: zero is 0');
+    expect(err(r'rent / (zero)').message, r'Division by zero: zero is 0');
+    expect(err(r'rent / (zero * 2)').message, 'Division by zero');
     final e = err(r'5 / (1 - 1)');
     expect([e.start, e.end], [2, 3]);
   });
@@ -45,8 +45,8 @@ void main() {
   test('a huge variable overflows where it is used', () {
     final v = MapVariableLookup(
         [VariableValue('big', dec('2000000000000000'), VariableUnit.number)]);
-    final e = (evaluate(parseFormula(r'1 + $big').expr!, v) as EvalErr).error;
-    expect([e.code, e.start, e.end], [FormulaErrorCode.overflow, 4, 8]);
+    final e = (evaluate(parseFormula(r'1 + big').expr!, v) as EvalErr).error;
+    expect([e.code, e.start, e.end], [FormulaErrorCode.overflow, 4, 7]);
   });
 
   test('bit-size guard rounds to 30 dp', () {
@@ -65,13 +65,15 @@ void main() {
   });
 
   test('unknown variable hint (edit distance <= 2)', () {
-    expect(err(r'$rnt').hint, r'Did you mean $rent?');
-    expect(err(r'$weeksss').hint, r'Did you mean $weeks?');
-    expect(err(r'$qqqqq').hint, isNull);
+    expect(err(r'rnt').hint, r'Did you mean rent?');
+    expect(err(r'rnt').message, r'Unknown variable rnt (did you mean rent?)');
+    expect(err(r'weeksss').hint, r'Did you mean weeks?');
+    expect(err(r'qqqqq').hint, isNull);
+    expect(err(r'qqqqq').message, 'Unknown variable qqqqq');
   });
 
   test('first error wins, left to right', () {
-    expect(err(r'$nope / $zero').code, FormulaErrorCode.unknownVariable);
-    expect(err(r'1 / $zero + $nope').code, FormulaErrorCode.divisionByZero);
+    expect(err(r'nope / zero').code, FormulaErrorCode.unknownVariable);
+    expect(err(r'1 / zero + nope').code, FormulaErrorCode.divisionByZero);
   });
 }

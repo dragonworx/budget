@@ -45,31 +45,33 @@ void main() {
     expect(rent.json['value'], '1200');
     final rentId = rent.json['id'] as String;
 
-    // Names: unique ignoring case, `$` stripped, validated.
-    final dup = await variable('owner', a, r'$RENT', 1);
+    // Names: unique ignoring case, bare (no `$`), validated.
+    final dup = await variable('owner', a, 'RENT', 1);
     expect(dup.status, 409);
     expect(dup.json['details']['code'], 'variable_name_taken');
     expect((await variable('owner', a, '1bad', 1)).status, 400);
+    expect((await variable('owner', a, r'$fresh', 1)).status, 400);
+    expect((await variable('owner', a, 'round', 1)).status, 400);
 
     // Event amount from a formula.
     final e = await h.call('POST', '/api/streams/$a/events',
-        as: 'owner', body: ev('Rent share', {'amountExpr': r'$rent / 4'}));
+        as: 'owner', body: ev('Rent share', {'amountExpr': 'rent / 4'}));
     expect(e.status, 201, reason: '${e.json}');
     expect(e.json['amount'], '300');
-    expect(e.json['amountExpr'], r'$rent / 4');
+    expect(e.json['amountExpr'], 'rent / 4');
     expect(e.json.containsKey('formulaResolvedDifferently'), isFalse);
     final eid = e.json['id'] as String;
 
     // Rule 2: formula wins over a differing plain amount, flagged.
     final both = await h.call('POST', '/api/streams/$a/events',
         as: 'owner',
-        body: ev('Both', {'amount': '5', 'amountExpr': r'$rent / 2'}));
+        body: ev('Both', {'amount': '5', 'amountExpr': 'rent / 2'}));
     expect(both.json['amount'], '600');
     expect(both.json['formulaResolvedDifferently'], true);
 
     // Unknown name: 400 with field details, nothing stored.
     final bad = await h.call('POST', '/api/streams/$a/events',
-        as: 'owner', body: ev('Bad', {'amountExpr': r'$nope * 2'}));
+        as: 'owner', body: ev('Bad', {'amountExpr': 'nope * 2'}));
     expect(bad.status, 400);
     expect(bad.json['details']['field'], 'amountExpr');
 
@@ -125,21 +127,21 @@ void main() {
         as: 'owner', body: {'name': 'housing', 'version': ver});
     expect(ren.status, 200, reason: '${ren.json}');
     var got = await getEvent(eid);
-    expect(got['amountExpr'], r'$housing / 4');
+    expect(got['amountExpr'], 'housing / 4');
     expect(got['amount'], '400');
     ver = ren.json['version'];
     final back = await h.call('PATCH', '/api/variables/$rentId',
         as: 'owner', body: {'name': 'rent', 'version': ver});
     expect(back.status, 200);
-    expect((await getEvent(eid))['amountExpr'], r'$rent / 4');
+    expect((await getEvent(eid))['amountExpr'], 'rent / 4');
 
     // Dependent variables and cycles.
-    final half = await variable('owner', a, 'half', r'$rent / 2');
+    final half = await variable('owner', a, 'half', 'rent / 2');
     expect(half.status, 201, reason: '${half.json}');
     expect(half.json['value'], '800');
     final cyc = await h.call('PATCH', '/api/variables/$rentId',
         as: 'owner',
-        body: {'expr': r'$half * 2', 'version': back.json['version']});
+        body: {'expr': 'half * 2', 'version': back.json['version']});
     expect(cyc.status, 400);
     expect(cyc.json['details']['code'], 'cycle');
 
@@ -201,7 +203,7 @@ void main() {
     final t = await h.call('POST', '/api/streams/$a/events',
         as: 'towner',
         body: ev('Move', {
-          'amountExpr': r'$pay * 2',
+          'amountExpr': 'pay * 2',
           'transferToStreamId': b,
           'recurrenceMode': 'every',
           'interval': 1,
@@ -217,7 +219,7 @@ void main() {
     // Formula override.
     final o = await h.call(
         'PUT', '/api/events/${t.json['id']}/overrides/2026-03-01',
-        as: 'towner', body: {'amountExpr': r'$pay + 1', 'direction': 'debit'});
+        as: 'towner', body: {'amountExpr': 'pay + 1', 'direction': 'debit'});
     expect(o.status, 200, reason: '${o.json}');
 
     final vs = (await h.call('GET', '/api/variables', as: 'towner'))
@@ -236,18 +238,18 @@ void main() {
         .call('POST', '/api/events/${t.json['id']}/split', as: 'towner', body: {
       'date': '2026-06-01',
       'direction': 'debit',
-      'amountExpr': r'$pay / 3',
+      'amountExpr': 'pay / 3',
     });
     expect(s.status, 200, reason: '${s.json}');
     expect(s.json['created']['amount'], '50');
-    expect(s.json['created']['amountExpr'], r'$pay / 3');
+    expect(s.json['created']['amountExpr'], 'pay / 3');
 
     // Stream fields.
     final sp = await h.call('PATCH', '/api/streams/$b',
-        as: 'towner', body: {'seedBalanceExpr': r'$pay * 10'});
+        as: 'towner', body: {'seedBalanceExpr': 'pay * 10'});
     expect(sp.status, 200, reason: '${sp.json}');
     expect(sp.json['seedBalance'], '1500');
-    expect(sp.json['seedBalanceExpr'], r'$pay * 10');
+    expect(sp.json['seedBalanceExpr'], 'pay * 10');
 
     // A loan whose rate is a variable.
     final c = await stream('towner', 'Loan');
@@ -272,7 +274,7 @@ void main() {
           {
             'from': '2027-01-15',
             'ratePct': '1',
-            'ratePctExpr': r'$rate',
+            'ratePctExpr': 'rate',
             'type': 'fixed',
             'interestOnly': false,
             'offsetApplies': false
@@ -294,7 +296,7 @@ void main() {
     final x = await variable('uowner', a, 'x', 40);
     final e = await h.call('POST', '/api/streams/$a/events',
         as: 'uowner',
-        body: ev('X', {'amountExpr': r'$x + 2', 'startDate': '2026-03-01'}));
+        body: ev('X', {'amountExpr': 'x + 2', 'startDate': '2026-03-01'}));
     final eid = e.json['id'] as String;
     final trim = await h
         .call('POST', '/api/streams/$a/events/trim', as: 'uowner', body: {
@@ -314,7 +316,7 @@ void main() {
     final got =
         (await h.call('GET', '/api/events/$eid', as: 'uowner')).json as Map;
     expect(got['amount'], '42');
-    expect(got['amountExpr'], r'$x + 2');
+    expect(got['amountExpr'], 'x + 2');
     expect(got['exprErrors']['amount']['code'], 'unknown_variable');
     expect(await verifyVariables(h.conn!), isEmpty);
   });
@@ -326,7 +328,7 @@ void main() {
     final item = {
       'name': 'I',
       'direction': 'debit',
-      'amountExpr': r'$k * 3',
+      'amountExpr': 'k * 3',
       'startOffset': 0,
       'recurrence': {'mode': 'once'},
     };
@@ -337,12 +339,12 @@ void main() {
     final id = (ok.json['createdIds'] as List).single;
     final got = (await h.call('GET', '/api/events/$id', as: 'iowner')).json;
     expect(got['amount'], '30');
-    expect(got['amountExpr'], r'$k * 3');
+    expect(got['amountExpr'], 'k * 3');
     final bad = await h.call(
         'POST', '/api/streams/$a/events/import?root=2026-01-01',
         as: 'iowner',
         body: [
-          {...item, 'amountExpr': r'$missing'}
+          {...item, 'amountExpr': 'missing'}
         ]);
     expect(bad.status, 400);
     expect((bad.json['details'] as List).single['field'], 'amountExpr');
@@ -352,17 +354,17 @@ void main() {
       'name': 'S',
       'request': {
         'solveFor': 'amount',
-        'exprs': {'amount': r'$k * 2'}
+        'exprs': {'amount': 'k * 2'}
       }
     });
     expect(sc.status, lessThan(300), reason: '${sc.json}');
-    expect(sc.json['request']['exprs'], {'amount': r'$k * 2'});
+    expect(sc.json['request']['exprs'], {'amount': 'k * 2'});
     final scBad =
         await h.call('POST', '/api/streams/$a/scenarios', as: 'iowner', body: {
       'name': 'S2',
       'request': {
         'solveFor': 'amount',
-        'exprs': {'amount': r'$k * (2'}
+        'exprs': {'amount': 'k * (2'}
       }
     });
     expect(scBad.status, 400);

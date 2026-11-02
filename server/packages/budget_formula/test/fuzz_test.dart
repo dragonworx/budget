@@ -147,7 +147,7 @@ class Gen {
 
   String show(G g) => switch (g) {
         GNum(:final text) => text,
-        GVar(:final name) => '\$$name',
+        GVar(:final name) => name,
         GNeg(:final e, :final plus) =>
           '${plus ? '+' : opText('-')}${sp()}${prec(e) < 30 ? '(${show(e)})' : show(e)}',
         GParen(:final e) => '(${sp()}${show(e)}${sp()})',
@@ -240,10 +240,8 @@ void main() {
             reason: pp);
         // rename round-trip.
         final there = renameVariable(text, 'rent', 'zz_tmp');
-        expect(
-            renameVariable(there, 'zz_tmp', 'rent'),
-            text.replaceAll(
-                RegExp(r'\$rent\b', caseSensitive: false), r'$rent'));
+        expect(renameVariable(there, 'zz_tmp', 'rent'),
+            text.replaceAll(RegExp(r'\brent\b', caseSensitive: false), 'rent'));
         // canonical text means the same thing.
         final c = parseFormula(canonicalise(text, stdVars));
         expect(evaluate(c.expr!, stdVars).toString(), r.toString(),
@@ -287,7 +285,7 @@ void main() {
         for (var c = 0; c <= text.length; c++) {
           final ctx = completionAt(text, c);
           if (ctx != null) {
-            expect(text[ctx.replaceStart], r'$');
+            expect(text[ctx.replaceStart], matches(RegExp('[A-Za-z]')));
             expect(ctx.replaceEnd, greaterThanOrEqualTo(c));
           }
         }

@@ -30,14 +30,14 @@ Future<List<String>> verifyVariables(Connection db) async {
       final r = resolveStoredText(v.expr, spec, lookup);
       if (r.error != null) {
         if (v.problem == null) {
-          drift.add('variable ${v.id} \$${v.name}: "${v.expr}" fails '
+          drift.add('variable ${v.id} ${v.name}: "${v.expr}" fails '
               '(${r.error!.message}) but has no problem set');
         }
       } else if (v.problem != null) {
-        drift.add('variable ${v.id} \$${v.name}: resolves but is flagged '
+        drift.add('variable ${v.id} ${v.name}: resolves but is flagged '
             '${v.problem}');
       } else if (r.value != v.value) {
-        drift.add('variable ${v.id} \$${v.name}: stored ${v.value}, '
+        drift.add('variable ${v.id} ${v.name}: stored ${v.value}, '
             '"${v.expr}" gives ${r.value}');
       }
     }

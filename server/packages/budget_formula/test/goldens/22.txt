@@ -1,8 +1,12 @@
-text: rent * 2
-error: FormulaError(reserved_syntax [0,4) "Variable names start with $ (did you mean $rent?)" hint "Did you mean $rent?")
+text: rent2 * 2
+Binary multiply [0,9)
+  Var rent2 [0,5)
+  Number 2 [8,9)
+pretty: rent2 * 2
+error: FormulaError(unknown_variable [0,5) "Unknown variable rent2 (did you mean rent?)" hint "Did you mean rent?")
 highlight:
-  invalid         [0,4) rent
-  whitespace      [4,5)  
-  operator        [5,6) *
-  whitespace      [6,7)  
-  number          [7,8) 2
+  invalid         [0,5) rent2
+  whitespace      [5,6)  
+  operator        [6,7) *
+  whitespace      [7,8)  
+  number          [8,9) 2

@@ -11,7 +11,7 @@ import 'variable_impact.dart';
 
 typedef UsageRows = ({List<VariableUsage> rows, int hidden});
 
-/// "Where $rent is used" (or, with [title] / [message], "$rent is in
+/// "Where rent is used" (or, with [title] / [message], "rent is in
 /// use": change these first). Resolves to the row tapped, if any.
 Future<VariableUsage?> showVariableUsages(
   BuildContext context, {
@@ -26,7 +26,7 @@ Future<VariableUsage?> showVariableUsages(
 }) => _show(
   context,
   key: const ValueKey('variable-usages'),
-  title: title ?? 'Where \$$name is used',
+  title: title ?? 'Where $name is used',
   message: message,
   isKnown: isKnown,
   variableUnits: variableUnits,

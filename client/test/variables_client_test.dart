@@ -27,8 +27,8 @@ Map<String, dynamic> _event({bool exprs = true}) => {
   'endMode': 'never',
   'enabled': true,
   'version': 3,
-  if (exprs) 'amountExpr': r'$rent / 4',
-  if (exprs) 'intervalExpr': r'$weeks',
+  if (exprs) 'amountExpr': 'rent / 4',
+  if (exprs) 'intervalExpr': 'weeks',
   if (exprs)
     'exprErrors': {
       'interval': {'code': 'unknown_variable', 'message': 'x'},
@@ -38,7 +38,7 @@ Map<String, dynamic> _event({bool exprs = true}) => {
       'date': '2026-02-01',
       'direction': 'debit',
       'amount': '310.00',
-      if (exprs) 'amountExpr': r'$rent / 4 + 10',
+      if (exprs) 'amountExpr': 'rent / 4 + 10',
     },
   ],
 };
@@ -66,12 +66,12 @@ void main() {
   group('models', () {
     test('event, override and stream formula fields parse', () {
       final e = BudgetEvent.fromJson(_event());
-      expect(e.amountExpr, r'$rent / 4');
-      expect(e.intervalExpr, r'$weeks');
+      expect(e.amountExpr, 'rent / 4');
+      expect(e.intervalExpr, 'weeks');
       expect(e.occurrenceCountExpr, isNull);
       expect(e.exprErrors!['interval']['code'], 'unknown_variable');
       final o = e.overrides.values.single;
-      expect(o.amountExpr, r'$rent / 4 + 10');
+      expect(o.amountExpr, 'rent / 4 + 10');
       // Equality is by amount and direction only.
       expect(
         o,
@@ -85,12 +85,12 @@ void main() {
         'name': 'S',
         'seedBalance': '100.00',
         'seedDate': '2026-01-01',
-        'seedBalanceExpr': r'$seed',
+        'seedBalanceExpr': 'seed',
         'exprErrors': {
           'seedBalance': {'code': 'cycle', 'message': 'x'},
         },
       });
-      expect(s.seedBalanceExpr, r'$seed');
+      expect(s.seedBalanceExpr, 'seed');
       expect(s.lossThresholdExpr, isNull);
       expect(s.exprErrors!.keys, ['seedBalance']);
     });
@@ -121,7 +121,7 @@ void main() {
         'name': 'S',
         'seedBalance': '100.00',
         'seedDate': '2026-01-01',
-        'seedBalanceExpr': r'$seed',
+        'seedBalanceExpr': 'seed',
       });
       expect(s.toPatchJson().containsKey('seedBalanceExpr'), isFalse);
       expect(
@@ -133,22 +133,22 @@ void main() {
     test('an explicit formula is sent when the server supports it', () {
       ServerFeatures.variables = true;
       final e = BudgetEvent.fromJson(_event(exprs: false)).copyWith(
-        amountExpr: r'$rent / 4',
-        intervalExpr: r'$weeks',
+        amountExpr: 'rent / 4',
+        intervalExpr: 'weeks',
         occurrenceCountExpr: '12',
       );
       final j = e.toCreateJson();
-      expect(j['amountExpr'], r'$rent / 4');
+      expect(j['amountExpr'], 'rent / 4');
       expect(j['occurrenceCountExpr'], '12');
-      expect((j['frequency'] as Map)['intervalExpr'], r'$weeks');
+      expect((j['frequency'] as Map)['intervalExpr'], 'weeks');
       final s = BudgetStream.fromJson({
         'id': 'a1',
         'name': 'S',
         'seedBalance': '100.00',
         'seedDate': '2026-01-01',
-      }).copyWith(lossThresholdExpr: r'$floor');
-      expect(s.toCreateJson()['lossThresholdExpr'], r'$floor');
-      expect(s.toPatchJson()['lossThresholdExpr'], r'$floor');
+      }).copyWith(lossThresholdExpr: 'floor');
+      expect(s.toCreateJson()['lossThresholdExpr'], 'floor');
+      expect(s.toPatchJson()['lossThresholdExpr'], 'floor');
     });
 
     test('Variable and config features parse', () {

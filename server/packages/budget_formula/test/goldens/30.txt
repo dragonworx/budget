@@ -1,14 +1,14 @@
-text:  \t\u00a0$weeks\u00a0*\u00a07 
-Binary multiply [3,13)
-  Var $weeks [3,9)
-  Number 7 [12,13)
-pretty: $weeks * 7
+text:  \t\u00a0weeks\u00a0*\u00a07 
+Binary multiply [3,12)
+  Var weeks [3,8)
+  Number 7 [11,12)
+pretty: weeks * 7
 value: 364
 highlight:
   whitespace      [0,3)  \t\u00a0
-  variableKnown   [3,9) $weeks
-  whitespace      [9,10) \u00a0
-  operator        [10,11) *
-  whitespace      [11,12) \u00a0
-  number          [12,13) 7
-  whitespace      [13,14)  
+  variableKnown   [3,8) weeks
+  whitespace      [8,9) \u00a0
+  operator        [9,10) *
+  whitespace      [10,11) \u00a0
+  number          [11,12) 7
+  whitespace      [12,13)  

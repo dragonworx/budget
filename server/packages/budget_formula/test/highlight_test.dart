@@ -18,8 +18,10 @@ void tiles(String text, List<StyledSpan> spans) {
 
 void main() {
   test('styles', () {
-    expect(show(r'$rent*2 + $x'),
-        'variableKnown:\$rent|operator:*|number:2|whitespace: |operator:+|whitespace: |variableUnknown:\$x');
+    expect(show(r'rent*2 + x'),
+        'variableKnown:rent|operator:*|number:2|whitespace: |operator:+|whitespace: |variableUnknown:x');
+    expect(show(r'round + $rent + _a'),
+        'reserved:round|whitespace: |operator:+|whitespace: |reserved:\$rent|whitespace: |operator:+|whitespace: |reserved:_a');
     expect(show(r'($5)'), 'paren:(|currency:\$|number:5|paren:)');
     expect(show('5%'), 'number:5|reserved:%');
     expect(show('1😀'), 'number:1|invalid:😀');
@@ -46,7 +48,7 @@ void main() {
   });
 
   test('spans tile arbitrary text, with or without an error', () {
-    for (final s in [r'$rent * (2', '  ', r'$$a%^,;x1e3', '—×÷ ', '😀😀']) {
+    for (final s in [r'rent * (2', '  ', r'$$a%^,;x1e3', '—×÷ ', '😀😀']) {
       tiles(s, highlight(s, (_) => false));
       final e = parseFormula(s).error;
       tiles(s, highlight(s, (_) => false, error: e));

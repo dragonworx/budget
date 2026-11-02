@@ -133,12 +133,14 @@ class _Parser {
 
   /// [k] follows a complete operand but isn't an operator.
   Never infixProblem(FormulaToken k, Expr left) {
-    if (k.kind == TokenKind.identifier && k.lexeme.toLowerCase() == 'x') {
+    final word = k.kind == TokenKind.variable ||
+        (k.kind == TokenKind.identifier && k.name == null);
+    if (word && k.lexeme.toLowerCase() == 'x') {
       fail(FormulaErrorCode.missingOperator, 'Use * to multiply', k.start,
           k.end);
     }
     final prev = t[pos - 1];
-    if (k.kind == TokenKind.identifier &&
+    if (word &&
         prev.kind == TokenKind.number &&
         prev.end == k.start &&
         _exponentTail.hasMatch(k.lexeme)) {
@@ -146,6 +148,15 @@ class _Parser {
           FormulaErrorCode.badNumber,
           "Exponents like 1e3 aren't supported; write the number out",
           prev.start,
+          k.end);
+    }
+    if (word &&
+        prev.kind == TokenKind.number &&
+        _unitWords.contains(k.lexeme.toLowerCase())) {
+      fail(
+          FormulaErrorCode.reservedSyntax,
+          "Units like ${k.lexeme} aren't supported; use just the number, or * to multiply",
+          k.start,
           k.end);
     }
     reserved(k);
@@ -193,17 +204,32 @@ class _Parser {
         fail(FormulaErrorCode.reservedSyntax,
             "Semicolons can't be used inside a formula", k.start, k.end);
       case TokenKind.identifier:
+        if (k.name != null) {
+          // The retired `$name` form, or a `$` that isn't before a number.
+          if (k.name!.isEmpty) {
+            fail(FormulaErrorCode.unexpectedCharacter,
+                r'Put a number right after $ (like $5)', k.start, k.end);
+          }
+          final bare = k.name!;
+          fail(FormulaErrorCode.reservedSyntax,
+              "Variables don't use \$ any more: write $bare", k.start, k.end,
+              hint: 'Did you mean $bare?');
+        }
+        if (k.lexeme.startsWith('_')) {
+          fail(FormulaErrorCode.reservedSyntax,
+              'Variable names start with a letter', k.start, k.end);
+        }
         // [k] is t[pos] here (callers peek, or step back before calling).
-        if (t[pos + 1 < t.length ? pos + 1 : pos].kind == TokenKind.lparen) {
+        if (_functionWords.contains(k.lexeme.toLowerCase()) ||
+            t[pos + 1 < t.length ? pos + 1 : pos].kind == TokenKind.lparen) {
           fail(FormulaErrorCode.reservedSyntax,
               "Functions like round() aren't supported yet", k.start, k.end);
         }
         fail(
             FormulaErrorCode.reservedSyntax,
-            'Variable names start with \$ (did you mean \$${k.lexeme}?)',
+            "${k.lexeme} is a reserved word and can't be used in a formula",
             k.start,
-            k.end,
-            hint: 'Did you mean \$${k.lexeme}?');
+            k.end);
       default:
         return;
     }
@@ -219,10 +245,6 @@ class _Parser {
         if (n.kind != TokenKind.number) unexpectedChar(k);
         return number(n, k.start, currency: true);
       case TokenKind.variable:
-        if (k.name!.isEmpty) {
-          fail(FormulaErrorCode.expectedOperand,
-              r'Type a variable name after $', k.start, k.end);
-        }
         return VarRef(k.name!, k.start, k.end);
       case TokenKind.plus || TokenKind.minus:
         if (chain + 1 > maxUnaryChain) {
@@ -258,13 +280,13 @@ class _Parser {
         return call(k);
       case TokenKind.eof:
         fail(FormulaErrorCode.expectedOperand,
-            'Add a number or a \$variable here', k.start, k.end);
+            'Add a number or a variable here', k.start, k.end);
       case TokenKind.rparen:
         fail(FormulaErrorCode.expectedOperand,
-            'Add a number or a \$variable before )', k.start, k.end);
+            'Add a number or a variable before )', k.start, k.end);
       case TokenKind.star || TokenKind.slash:
         fail(FormulaErrorCode.unexpectedToken,
-            'Put a number or a \$variable before ${k.ascii}', k.start, k.end);
+            'Put a number or a variable before ${k.ascii}', k.start, k.end);
       case TokenKind.invalid:
         unexpectedChar(k);
       default:
@@ -352,6 +374,24 @@ class _Parser {
     return NumberLit(value, s, start, k.end, currency: currency);
   }
 }
+
+/// Words that read as units after a number (`3 weeks`), reserved for a
+/// future dialect: a clearer message than "add an operator".
+const Set<String> _unitWords = {
+  'day', 'days', 'week', 'weeks', 'fortnight', 'fortnights', 'month', //
+  'months', 'year', 'years', 'times', 'pa',
+};
+const Set<String> _functionWords = {
+  'round',
+  'floor',
+  'ceil',
+  'min',
+  'max',
+  'abs',
+  'sum',
+  'avg',
+  'if',
+};
 
 final RegExp _exponentTail = RegExp(r'^[eE]\d*$');
 final RegExp _numberShape = RegExp(r'^(\d(_?\d)*)?(\.\d(_?\d)*)?$');

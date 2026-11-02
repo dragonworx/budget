@@ -46,40 +46,40 @@ void main() {
 
   testWidgets('formula valid: preview with ✦, hints after it', (tester) async {
     final h = await pumpFormula(tester);
-    await typeText(tester, r'$rent / 4');
+    await typeText(tester, 'rent / 4');
     expect(lineUnder(tester), isNull);
     expect(previewText(tester), contains(r'= $300.00'));
     expect(find.byIcon(Icons.auto_awesome), findsOneWidget);
-    expect(h.controller.formula.expr, r'$rent / 4');
-    await typeText(tester, r'1000 * $rate');
+    expect(h.controller.formula.expr, 'rent / 4');
+    await typeText(tester, '1000 * rate');
     expect(previewText(tester), contains(r'= $5,500.00'));
-    expect(previewText(tester), contains(r'$rate is a percentage'));
+    expect(previewText(tester), contains('rate is a percentage'));
   });
 
   testWidgets('formula invalid: message + hint, no preview', (tester) async {
     await pumpFormula(tester);
-    await typeText(tester, r'$rnet * 2');
+    await typeText(tester, 'rnet * 2');
     expect(lineUnder(tester), contains('rnet'));
-    expect(lineUnder(tester), contains(r'$rent'));
+    expect(lineUnder(tester), contains('rent'));
     expect(previewText(tester), isNull);
     await typeText(tester, '2 +');
     expect(lineUnder(tester), isNotNull);
-    await typeText(tester, r'$rent - 2000');
+    await typeText(tester, 'rent - 2000');
     expect(lineUnder(tester), 'Use Money out instead of a negative amount');
   });
 
   testWidgets('server flagged: error until the text changes', (tester) async {
     final h = await pumpFormula(tester);
-    await typeText(tester, r'$gone * 2');
-    h.controller.flag('Unknown variable \$gone', Decimal.parse('2400'));
-    await typeText(tester, r'$gone * 2');
+    await typeText(tester, 'gone * 2');
+    h.controller.flag('Unknown variable gone', Decimal.parse('2400'));
+    await typeText(tester, 'gone * 2');
     expect(
       lineUnder(tester),
-      r'This formula no longer works: Unknown variable $gone. '
+      'This formula no longer works: Unknown variable gone. '
       r'Saved value: $2,400.00.',
     );
     expect(h.controller.formula.isValid, isFalse);
-    await typeText(tester, r'$rent * 2');
+    await typeText(tester, 'rent * 2');
     expect(lineUnder(tester), isNull);
     expect(previewText(tester), contains(r'$2,400.00'));
   });
@@ -88,7 +88,7 @@ void main() {
     tester,
   ) async {
     final h = await pumpFormula(tester, scope: sampleScope(loading: true));
-    await typeText(tester, r'$later * 2');
+    await typeText(tester, 'later * 2');
     expect(lineUnder(tester), isNull);
     expect(previewText(tester), contains('…'));
     expect(h.controller.formula.pending, isTrue);
@@ -99,7 +99,7 @@ void main() {
     tester,
   ) async {
     await pumpFormula(tester, formulas: false);
-    await typeText(tester, r'$rent / 4');
+    await typeText(tester, 'rent / 4');
     expect(lineUnder(tester), 'Enter a number, e.g. 1250 or 1,250.50');
     final tf = tester.widget<TextField>(
       find.descendant(of: amountField, matching: find.byType(TextField)),
@@ -139,13 +139,13 @@ void main() {
     tester,
   ) async {
     final h = await pumpFormula(tester);
-    await typeText(tester, r'$r');
+    await typeText(tester, 'r');
     expect(suggestions, findsOneWidget);
     expect(lineUnder(tester), isNull);
     expect(h.controller.formula.isValid, isFalse);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(lineUnder(tester), contains(r'$r'));
+    expect(lineUnder(tester), isNotNull);
   });
 
   testWidgets('extraValidator runs after resolution', (tester) async {
@@ -155,9 +155,9 @@ void main() {
           ? 'At most \$1,000 here'
           : null,
     );
-    await typeText(tester, r'$rent');
+    await typeText(tester, 'rent');
     expect(lineUnder(tester), r'At most $1,000 here');
-    await typeText(tester, r'$rent / 2');
+    await typeText(tester, 'rent / 2');
     expect(lineUnder(tester), isNull);
     await typeText(tester, 'abc'); // resolution errors come first
     expect(lineUnder(tester), 'Enter a number, e.g. 1250 or 1,250.50');
@@ -166,10 +166,10 @@ void main() {
   testWidgets('semantics label for a formula', (tester) async {
     final handle = tester.ensureSemantics();
     await pumpFormula(tester);
-    await typeText(tester, r'$rent / 4');
+    await typeText(tester, 'rent / 4');
     expect(
       find.bySemanticsLabel(
-        RegExp(r'Amount, formula \$rent / 4, equals \$300\.00'),
+        RegExp(r'Amount, formula rent / 4, equals \$300\.00'),
       ),
       findsOneWidget,
     );
@@ -180,7 +180,7 @@ void main() {
     tester,
   ) async {
     final h = await pumpFormula(tester);
-    await typeText(tester, r'$rent / 4');
+    await typeText(tester, 'rent / 4');
     expect(previewText(tester), contains(r'$300.00'));
     h.controller.scope = VariableScope(
       variables: [v('rent', '2000', VariableUnit.money)],
@@ -192,7 +192,7 @@ void main() {
   testWidgets('a new scope from the widget (provider rebuild) wins', (
     tester,
   ) async {
-    final c = FormulaEditingController(text: r'$rent / 4');
+    final c = FormulaEditingController(text: 'rent / 4');
     addTearDown(c.dispose);
     await tester.pumpWidget(
       MaterialApp(
@@ -219,7 +219,7 @@ void main() {
     await typeText(tester, '(');
     expect(lineUnder(tester), isNotNull); // error line, below the keys
     expect(tester.getTopLeft(keys).dy, y0);
-    await typeText(tester, r'($rate)');
+    await typeText(tester, '(rate)');
     expect(find.byKey(const ValueKey('editor-amount-preview')), findsOneWidget);
     expect(tester.getTopLeft(keys).dy, y0);
     expect(

@@ -21,7 +21,7 @@ void main() {
           'b': {'c'}
         }),
         ['a', 'b', 'c', 'a']);
-    expect(formatCycle(['a', 'b', 'a']), r'$a → $b → $a');
+    expect(formatCycle(['a', 'b', 'a']), 'a → b → a');
     expect(
         () => topoOrder({
               'a': {'a'}

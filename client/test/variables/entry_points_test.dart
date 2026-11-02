@@ -50,7 +50,7 @@ class _Events extends EventRepository {
       name: 'Rent',
       direction: EventDirection.debit,
       amount: Decimal.fromInt(1200),
-      amountExpr: r'$rent',
+      amountExpr: 'rent',
       startDate: _day.subtract(const Duration(days: 14)),
       recurrenceMode: RecurrenceMode.every,
       interval: 1,
@@ -212,13 +212,13 @@ void main() {
     ) async {
       final opened = <String?>[];
       final h = await pumpFormula(tester, scope: scope(opened));
-      await typeText(tester, r'2 * $gym');
+      await typeText(tester, '2 * gym');
       expect(k('formula-create-variable'), findsOneWidget);
-      expect(find.text(r'Create "$gym"…'), findsOneWidget);
+      expect(find.text('Create "gym"…'), findsOneWidget);
       await tester.tap(k('formula-create-variable'));
       await tester.pumpAndSettle();
       expect(opened, ['gym']);
-      expect(h.controller.text, r'2 * $gym');
+      expect(h.controller.text, '2 * gym');
       expect(suggestions, findsNothing);
     });
 
@@ -228,7 +228,7 @@ void main() {
       await typeText(tester, r'$9');
       // `$9` is currency-like: no list at all.
       expect(suggestions, findsNothing);
-      await typeText(tester, r'$zz9');
+      await typeText(tester, 'zz9');
       expect(k('formula-create-variable'), findsOneWidget);
     });
 
@@ -245,7 +245,12 @@ void main() {
           },
         ),
       );
-      await typeText(tester, r'$');
+      // Typing a word offers nothing (no variables to match); the picker
+      // shows the empty state with Manage.
+      await typeText(tester, 'r');
+      expect(k('formula-manage-variables'), findsNothing);
+      await tester.tap(k('editor-amount-var-picker'));
+      await tester.pumpAndSettle();
       expect(k('formula-manage-variables'), findsOneWidget);
       await tester.tap(k('formula-manage-variables'));
       await tester.pumpAndSettle();
@@ -266,7 +271,7 @@ void main() {
       tester,
     ) async {
       await pumpFormula(tester, scope: scope([], manage: false));
-      await typeText(tester, r'$gym');
+      await typeText(tester, 'gym');
       expect(k('formula-create-variable'), findsNothing);
       await tester.tap(k('editor-amount-help'));
       await tester.pumpAndSettle();

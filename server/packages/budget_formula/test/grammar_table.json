@@ -1,41 +1,41 @@
 [
  {
-  "text": "$some_var_name",
+  "text": "some_var_name",
   "field": "event.amount",
   "expect": {
    "value": "5"
   }
  },
  {
-  "text": "$some_var_name * $another_var_name",
+  "text": "some_var_name * another_var_name",
   "field": "event.amount",
   "expect": {
    "value": "15"
   }
  },
  {
-  "text": "$some_var_name * 3",
+  "text": "some_var_name * 3",
   "field": "event.amount",
   "expect": {
    "value": "15"
   }
  },
  {
-  "text": "$rent * 12 / $weeks",
+  "text": "rent * 12 / weeks",
   "field": "event.amount",
   "expect": {
    "value": "276.92"
   }
  },
  {
-  "text": "($rent + 50) * 2",
+  "text": "(rent + 50) * 2",
   "field": "event.amount",
   "expect": {
    "value": "2500"
   }
  },
  {
-  "text": "-$rent + 2000",
+  "text": "-rent + 2000",
   "field": "stream.seed",
   "expect": {
    "value": "800"
@@ -87,15 +87,15 @@
   }
  },
  {
-  "text": "$Rent / 4",
+  "text": "Rent / 4",
   "field": "event.amount",
   "expect": {
    "value": "300",
-   "canonical": "$rent / 4"
+   "canonical": "rent / 4"
   }
  },
  {
-  "text": "5 × 3 − 1",
+  "text": "5 \u00d7 3 \u2212 1",
   "field": "event.amount",
   "expect": {
    "value": "14",
@@ -103,70 +103,70 @@
   }
  },
  {
-  "text": "$100 + $rent",
+  "text": "$100 + rent",
   "field": "event.amount",
   "expect": {
    "value": "1300"
   }
  },
  {
-  "text": "$rate + 0.25",
+  "text": "rate + 0.25",
   "field": "loan.ratePct",
   "expect": {
    "value": "5.75"
   }
  },
  {
-  "text": "$rate * 20",
+  "text": "rate * 20",
   "field": "loan.ratePct",
   "expect": {
    "error": "out_of_range",
    "start": 0,
-   "end": 10
+   "end": 9
   }
  },
  {
-  "text": "$rate / 3",
+  "text": "rate / 3",
   "field": "loan.ratePct",
   "expect": {
    "value": "1.8333"
   }
  },
  {
-  "text": "$weeks / 4",
+  "text": "weeks / 4",
   "field": "event.count",
   "expect": {
    "value": "13"
   }
  },
  {
-  "text": "$weeks / 5",
+  "text": "weeks / 5",
   "field": "event.count",
   "expect": {
    "error": "not_whole",
    "start": 0,
-   "end": 10,
+   "end": 9,
    "message": "Must be a whole number; this works out to 10.4"
   }
  },
  {
-  "text": "$rent / $zero",
+  "text": "rent / zero",
   "field": "event.amount",
   "expect": {
    "error": "division_by_zero",
-   "start": 6,
-   "end": 7,
-   "message": "Division by zero: $zero is 0"
+   "start": 5,
+   "end": 6,
+   "message": "Division by zero: zero is 0"
   }
  },
  {
-  "text": "$rnt * 2",
+  "text": "rnt * 2",
   "field": "event.amount",
   "expect": {
    "error": "unknown_variable",
    "start": 0,
-   "end": 4,
-   "hint": "Did you mean $rent?"
+   "end": 3,
+   "hint": "Did you mean rent?"
   }
  },
  {
@@ -240,7 +240,7 @@
   }
  },
  {
-  "text": "round($rent / 7)",
+  "text": "round(rent / 7)",
   "field": "event.amount",
   "expect": {
    "error": "reserved_syntax",
@@ -488,14 +488,14 @@
   }
  },
  {
-  "text": "5 + 3",
+  "text": "5\u00a0+\u00a03",
   "field": null,
   "expect": {
    "value": "8"
   }
  },
  {
-  "text": "5 * 2",
+  "text": "5\u202f*\u202f2",
   "field": null,
   "expect": {
    "value": "10"
@@ -532,63 +532,63 @@
   }
  },
  {
-  "text": "5 − 2",
+  "text": "5 \u2212 2",
   "field": null,
   "expect": {
    "value": "3"
   }
  },
  {
-  "text": "5 – 2",
+  "text": "5 \u2013 2",
   "field": null,
   "expect": {
    "value": "3"
   }
  },
  {
-  "text": "5 — 2",
+  "text": "5 \u2014 2",
   "field": null,
   "expect": {
    "value": "3"
   }
  },
  {
-  "text": "3 × 4",
+  "text": "3 \u00d7 4",
   "field": null,
   "expect": {
    "value": "12"
   }
  },
  {
-  "text": "3 · 4",
+  "text": "3 \u00b7 4",
   "field": null,
   "expect": {
    "value": "12"
   }
  },
  {
-  "text": "8 ÷ 2",
+  "text": "8 \u00f7 2",
   "field": null,
   "expect": {
    "value": "4"
   }
  },
  {
-  "text": "−5",
+  "text": "\u22125",
   "field": null,
   "expect": {
    "value": "-5"
   }
  },
  {
-  "text": "6÷3×2",
+  "text": "6\u00f73\u00d72",
   "field": null,
   "expect": {
    "value": "4"
   }
  },
  {
-  "text": "—(2)",
+  "text": "\u2014(2)",
   "field": null,
   "expect": {
    "value": "-2"
@@ -915,7 +915,7 @@
   }
  },
  {
-  "text": "5 + \"",
+  "text": "5\u00a0+\u00a0\"",
   "field": null,
   "expect": {
    "error": "unexpected_character",
@@ -1035,18 +1035,20 @@
   "text": "$",
   "field": null,
   "expect": {
-   "error": "expected_operand",
+   "error": "unexpected_character",
    "start": 0,
-   "end": 1
+   "end": 1,
+   "message": "Put a number right after $ (like $5)"
   }
  },
  {
   "text": "$ + 1",
   "field": null,
   "expect": {
-   "error": "expected_operand",
+   "error": "unexpected_character",
    "start": 0,
-   "end": 1
+   "end": 1,
+   "message": "Put a number right after $ (like $5)"
   }
  },
  {
@@ -1086,12 +1088,12 @@
   }
  },
  {
-  "text": "2 $rent",
+  "text": "2 rent",
   "field": null,
   "expect": {
    "error": "missing_operator",
    "start": 2,
-   "end": 7
+   "end": 6
   }
  },
  {
@@ -1104,12 +1106,12 @@
   }
  },
  {
-  "text": "$rent $rent",
+  "text": "rent rent",
   "field": null,
   "expect": {
    "error": "missing_operator",
-   "start": 6,
-   "end": 11
+   "start": 5,
+   "end": 9
   }
  },
  {
@@ -1204,60 +1206,60 @@
   }
  },
  {
-  "text": "$nope",
-  "field": null,
-  "expect": {
-   "error": "unknown_variable",
-   "start": 0,
-   "end": 5,
-   "message": "There is no variable $nope"
-  }
- },
- {
-  "text": "$Rnt",
+  "text": "nope",
   "field": null,
   "expect": {
    "error": "unknown_variable",
    "start": 0,
    "end": 4,
-   "hint": "Did you mean $rent?"
+   "message": "Unknown variable nope"
   }
  },
  {
-  "text": "$rents",
+  "text": "Rnt",
   "field": null,
   "expect": {
    "error": "unknown_variable",
    "start": 0,
-   "end": 6,
-   "hint": "Did you mean $rent?"
+   "end": 3,
+   "hint": "Did you mean rent?"
   }
  },
  {
-  "text": "$xyz + $rent",
+  "text": "rents",
   "field": null,
   "expect": {
    "error": "unknown_variable",
    "start": 0,
-   "end": 4
+   "end": 5,
+   "hint": "Did you mean rent?"
   }
  },
  {
-  "text": "$rent + $nope",
-  "field": null,
-  "expect": {
-   "error": "unknown_variable",
-   "start": 8,
-   "end": 13
-  }
- },
- {
-  "text": "$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "text": "xyz + rent",
   "field": null,
   "expect": {
    "error": "unknown_variable",
    "start": 0,
-   "end": 42
+   "end": 3
+  }
+ },
+ {
+  "text": "rent + nope",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 7,
+   "end": 11
+  }
+ },
+ {
+  "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 41
   }
  },
  {
@@ -1281,13 +1283,14 @@
   }
  },
  {
-  "text": "rent * 2",
+  "text": "$rent * 2",
   "field": null,
   "expect": {
    "error": "reserved_syntax",
    "start": 0,
-   "end": 4,
-   "message": "Variable names start with $ (did you mean $rent?)"
+   "end": 5,
+   "message": "Variables don't use $ any more: write rent",
+   "hint": "Did you mean rent?"
   }
  },
  {
@@ -1356,12 +1359,12 @@
   }
  },
  {
-  "text": "$rent%",
+  "text": "rent%",
   "field": null,
   "expect": {
    "error": "reserved_syntax",
-   "start": 5,
-   "end": 6
+   "start": 4,
+   "end": 5
   }
  },
  {
@@ -1462,13 +1465,13 @@
   }
  },
  {
-  "text": "$rent/($zero)",
+  "text": "rent/(zero)",
   "field": null,
   "expect": {
    "error": "division_by_zero",
-   "start": 5,
-   "end": 6,
-   "message": "Division by zero: $zero is 0"
+   "start": 4,
+   "end": 5,
+   "message": "Division by zero: zero is 0"
   }
  },
  {
@@ -1481,7 +1484,7 @@
   }
  },
  {
-  "text": "1 / $zero * 2",
+  "text": "1 / zero * 2",
   "field": null,
   "expect": {
    "error": "division_by_zero",
@@ -1490,13 +1493,13 @@
   }
  },
  {
-  "text": "1 / $ZERO",
+  "text": "1 / ZERO",
   "field": null,
   "expect": {
    "error": "division_by_zero",
    "start": 2,
    "end": 3,
-   "message": "Division by zero: $zero is 0"
+   "message": "Division by zero: zero is 0"
   }
  },
  {
@@ -1587,17 +1590,17 @@
   }
  },
  {
-  "text": "$weeks - 20",
+  "text": "weeks - 20",
   "field": "loan.chargeDay",
   "expect": {
    "error": "out_of_range",
    "start": 0,
-   "end": 11,
+   "end": 10,
    "message": "A day from 1 to 31"
   }
  },
  {
-  "text": "$weeks - 21",
+  "text": "weeks - 21",
   "field": "loan.chargeDay",
   "expect": {
    "value": "31"
@@ -1613,12 +1616,12 @@
   }
  },
  {
-  "text": "$weeks / 10",
+  "text": "weeks / 10",
   "field": "event.interval",
   "expect": {
    "error": "not_whole",
    "start": 0,
-   "end": 11
+   "end": 10
   }
  },
  {
@@ -1704,14 +1707,14 @@
   }
  },
  {
-  "text": "-$rent / 7",
+  "text": "-rent / 7",
   "field": "variable.value",
   "expect": {
    "value": "-171.4285714286"
   }
  },
  {
-  "text": "5 + 😀",
+  "text": "5 + \ud83d\ude00",
   "field": null,
   "expect": {
    "error": "unexpected_character",
@@ -1720,7 +1723,7 @@
   }
  },
  {
-  "text": "😀",
+  "text": "\ud83d\ude00",
   "field": null,
   "expect": {
    "error": "unexpected_character",
@@ -1729,7 +1732,7 @@
   }
  },
  {
-  "text": "5😀",
+  "text": "5\ud83d\ude00",
   "field": null,
   "expect": {
    "error": "unexpected_character",
@@ -1738,12 +1741,12 @@
   }
  },
  {
-  "text": "$rent😀",
+  "text": "rent\ud83d\ude00",
   "field": null,
   "expect": {
    "error": "unexpected_character",
-   "start": 5,
-   "end": 7
+   "start": 4,
+   "end": 6
   }
  },
  {
@@ -1911,7 +1914,7 @@
   }
  },
  {
-  "text": "$rate * 3",
+  "text": "rate * 3",
   "field": "event.amount",
   "expect": {
    "value": "16.5",
@@ -1921,7 +1924,7 @@
   }
  },
  {
-  "text": "$rate / 100 * $rent",
+  "text": "rate / 100 * rent",
   "field": "event.amount",
   "expect": {
    "value": "66",
@@ -1929,7 +1932,7 @@
   }
  },
  {
-  "text": "($rate) / 100 * 1000",
+  "text": "(rate) / 100 * 1000",
   "field": "event.amount",
   "expect": {
    "value": "55",
@@ -1937,7 +1940,7 @@
   }
  },
  {
-  "text": "$rent / 100",
+  "text": "rent / 100",
   "field": "loan.ratePct",
   "expect": {
    "value": "12",
@@ -1947,7 +1950,7 @@
   }
  },
  {
-  "text": "$weeks * 2",
+  "text": "weeks * 2",
   "field": "event.count",
   "expect": {
    "value": "104",
@@ -1955,13 +1958,189 @@
   }
  },
  {
-  "text": "$rate * 2",
+  "text": "rate * 2",
   "field": "event.count",
   "expect": {
    "value": "11",
    "hints": [
     "percent_in_amount"
    ]
+  }
+ },
+ {
+  "text": "rent * 2",
+  "field": null,
+  "expect": {
+   "value": "2400"
+  }
+ },
+ {
+  "text": "RENT*2 + Weeks",
+  "field": "event.amount",
+  "expect": {
+   "value": "2452",
+   "canonical": "rent*2 + weeks"
+  }
+ },
+ {
+  "text": "rent2",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 5,
+   "hint": "Did you mean rent?"
+  }
+ },
+ {
+  "text": "rent_x + rent",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 6
+  }
+ },
+ {
+  "text": "_tmp * 2",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 0,
+   "end": 4,
+   "message": "Variable names start with a letter"
+  }
+ },
+ {
+  "text": "round * 2",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 0,
+   "end": 5,
+   "message": "Functions like round() aren't supported yet"
+  }
+ },
+ {
+  "text": "2 and 3",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 2,
+   "end": 5,
+   "message": "and is a reserved word and can't be used in a formula"
+  }
+ },
+ {
+  "text": "3 weeks",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 2,
+   "end": 7,
+   "message": "Units like weeks aren't supported; use just the number, or * to multiply"
+  }
+ },
+ {
+  "text": "12months",
+  "field": null,
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 2,
+   "end": 8
+  }
+ },
+ {
+  "text": "2rent",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 1,
+   "end": 5,
+   "message": "Add an operator between 2 and rent"
+  }
+ },
+ {
+  "text": "1e3 + rent",
+  "field": null,
+  "expect": {
+   "error": "bad_number",
+   "start": 0,
+   "end": 3
+  }
+ },
+ {
+  "text": "x * 2",
+  "field": null,
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 1
+  }
+ },
+ {
+  "text": "rent x 2",
+  "field": null,
+  "expect": {
+   "error": "missing_operator",
+   "start": 5,
+   "end": 6,
+   "message": "Use * to multiply"
+  }
+ },
+ {
+  "text": "$rent",
+  "field": "event.amount",
+  "expect": {
+   "error": "reserved_syntax",
+   "start": 0,
+   "end": 5,
+   "hint": "Did you mean rent?"
+  }
+ },
+ {
+  "text": "q1",
+  "field": "event.amount",
+  "expect": {
+   "plain": "1"
+  }
+ },
+ {
+  "text": "AUD1250",
+  "field": "event.amount",
+  "expect": {
+   "plain": "1250"
+  }
+ },
+ {
+  "text": "abc",
+  "field": "event.amount",
+  "expect": {
+   "error": "unknown_variable",
+   "start": 0,
+   "end": 3
+  }
+ },
+ {
+  "text": "rate",
+  "field": "loan.ratePct",
+  "expect": {
+   "value": "5.5",
+   "hints": []
+  }
+ },
+ {
+  "text": "-rent",
+  "field": "stream.seed",
+  "expect": {
+   "value": "-1200"
+  }
+ },
+ {
+  "text": "some_var_name*another_var_name",
+  "field": "event.amount",
+  "expect": {
+   "value": "15"
   }
  }
 ]

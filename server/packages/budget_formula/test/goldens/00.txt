@@ -1,12 +1,12 @@
-text: $rent * 3
-Binary multiply [0,9)
-  Var $rent [0,5)
-  Number 3 [8,9)
-pretty: $rent * 3
+text: rent * 3
+Binary multiply [0,8)
+  Var rent [0,4)
+  Number 3 [7,8)
+pretty: rent * 3
 value: 3600
 highlight:
-  variableKnown   [0,5) $rent
-  whitespace      [5,6)  
-  operator        [6,7) *
-  whitespace      [7,8)  
-  number          [8,9) 3
+  variableKnown   [0,4) rent
+  whitespace      [4,5)  
+  operator        [5,6) *
+  whitespace      [6,7)  
+  number          [7,8) 3

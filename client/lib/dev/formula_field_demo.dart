@@ -56,7 +56,7 @@ class FormulaDemoPage extends StatefulWidget {
 
 class _FormulaDemoPageState extends State<FormulaDemoPage> {
   final _top = FormulaEditingController();
-  final _bottom = FormulaEditingController(text: r'$rent / 2');
+  final _bottom = FormulaEditingController(text: 'rent / 2');
   final _plain = TextEditingController(text: '12.50');
   String _status = 'Nothing submitted';
   int _saves = 0;
@@ -77,7 +77,7 @@ class _FormulaDemoPageState extends State<FormulaDemoPage> {
   });
 
   Future<void> _openEditor() async {
-    final c = FormulaEditingController(text: r'($rent + 50) * 2');
+    final c = FormulaEditingController(text: '(rent + 50) * 2');
     final saved = await showDialog<FormulaValue>(
       context: context,
       builder: (context) => _EditorDialog(controller: c),

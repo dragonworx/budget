@@ -398,8 +398,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
     if (id == null || _busy) return;
     final v = _find(id);
     if (v == null) return _cancelEdit(because: 'This variable was deleted');
-    var name = _editName.text.trim();
-    if (name.startsWith(r'$')) name = name.substring(1);
+    final name = _editName.text.trim();
     if (name == v.name) return _cancelEdit();
     final problem = variableNameProblem(name, [
       for (final o in _list) o.name,
@@ -424,7 +423,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
       if (!mounted) return;
       _closeEdit();
       _revealRow(id);
-      _offerUndo('Renamed \$$old to \$$name', () async {
+      _offerUndo('Renamed $old to $name', () async {
         await _repo.update(
           id,
           streamId: widget.streamId,
@@ -513,7 +512,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
       await _refresh(values: v.usageCount > 0);
       if (!mounted) return;
       _closeEdit();
-      _offerUndo('Updated \$${v.name}', () async {
+      _offerUndo('Updated ${v.name}', () async {
         await _repo.update(
           id,
           streamId: widget.streamId,
@@ -538,8 +537,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
 
   Future<void> _create() async {
     if (_busy) return;
-    var name = _newName.text.trim();
-    if (name.startsWith(r'$')) name = name.substring(1);
+    final name = _newName.text.trim();
     final problem = variableNameProblem(name, _names);
     if (problem != null) {
       setState(() => _newError = problem);
@@ -620,7 +618,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
       variableId: v.id,
       name: v.name,
       streamId: widget.streamId,
-      title: blocking ? '\$${v.name} is in use' : null,
+      title: blocking ? '${v.name} is in use' : null,
       message: blocking ? 'Change these fields first, then delete it.' : null,
       isKnown: _isKnown,
       variableUnits: _unitsByName,
@@ -667,7 +665,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
     if (v.usageCount > 0) return _showUses(v, blocking: true);
     final ok = await showConfirmDialog(
       context,
-      title: 'Delete \$${v.name}?',
+      title: 'Delete ${v.name}?',
       message: 'No field uses it. You can undo this right after.',
     );
     if (!ok || !mounted) return;
@@ -686,7 +684,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
       }
       return;
     }
-    _offerUndo('Deleted \$${v.name}', () async {
+    _offerUndo('Deleted ${v.name}', () async {
       await _repo.create(
         streamId: widget.streamId,
         name: v.name,
@@ -750,7 +748,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
     final role = _role;
     if (role == null || role.isOwner) {
       return 'Shared by all your streams. Use them in any amount or number '
-          'field by typing \$name. Anyone you share a stream with can see '
+          'field by typing its name. Anyone you share a stream with can see '
           'these names and values.';
     }
     if (role.canEdit) {
@@ -1016,7 +1014,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
       borderRadius: BorderRadius.circular(4),
     ),
     child: Text(
-      '\$$name',
+      name,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: base?.copyWith(
@@ -1053,7 +1051,6 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
               decoration: InputDecoration(
                 isDense: true,
                 counterText: '',
-                prefixText: r'$',
                 errorText: _editError,
                 errorMaxLines: 3,
                 contentPadding: const EdgeInsets.symmetric(
@@ -1108,8 +1105,8 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
                   ),
                   child: Tooltip(
                     message: v.description == null
-                        ? '\$${v.name}'
-                        : '\$${v.name}: ${v.description}',
+                        ? v.name
+                        : '${v.name}: ${v.description}',
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1432,7 +1429,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
       ],
       builder: (context, controller, _) => IconButton(
         key: ValueKey('variable-menu-${v.id}'),
-        tooltip: 'More for \$${v.name}',
+        tooltip: 'More for ${v.name}',
         padding: EdgeInsets.zero,
         constraints: BoxConstraints.tightFor(
           width: _menuWidth,
@@ -1518,15 +1515,6 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
             children: [
               Row(
                 children: [
-                  SizedBox(
-                    width: 20,
-                    child: Center(
-                      child: Text(
-                        r'$',
-                        style: sign?.copyWith(color: AppTheme.accent),
-                      ),
-                    ),
-                  ),
                   Expanded(child: nameField),
                   SizedBox(
                     width: 24,
@@ -1538,7 +1526,6 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(width: 20),
                   Expanded(child: valueField),
                   top(unit),
                   top(add),
@@ -1549,18 +1536,6 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
         : Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              top(
-                SizedBox(
-                  width: 20,
-                  height: b,
-                  child: Center(
-                    child: Text(
-                      r'$',
-                      style: sign?.copyWith(color: AppTheme.accent),
-                    ),
-                  ),
-                ),
-              ),
               Expanded(flex: 2, child: top(nameField)),
               top(
                 SizedBox(
@@ -1623,7 +1598,7 @@ class _DescriptionDialogState extends State<_DescriptionDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text('Describe \$${widget.name}'),
+    title: Text('Describe ${widget.name}'),
     content: SizedBox(
       width: 360,
       child: TextField(

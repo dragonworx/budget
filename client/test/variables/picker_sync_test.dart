@@ -33,7 +33,7 @@ class _Events extends EventRepository {
 }
 
 /// The partial name that opens the autocomplete for [name].
-String _typed(String name) => '\$${name.substring(0, 3)}';
+String _typed(String name) => name.substring(0, 3);
 
 Future<void> _typeInAmount(WidgetTester tester, String text) async {
   await tester.showKeyboard(_amount);

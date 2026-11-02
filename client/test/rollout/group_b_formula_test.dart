@@ -113,10 +113,10 @@ void main() {
   testWidgets('principal formula: value and amountExpr', (tester) async {
     final d = _simple();
     await _form(tester, d);
-    await _type(tester, 'loan-principal', r'$rent * 100');
+    await _type(tester, 'loan-principal', 'rent * 100');
     await _blur(tester);
     expect(d.principalValue, Decimal.fromInt(120000));
-    expect(d.principalExpr, r'$rent * 100');
+    expect(d.principalExpr, 'rent * 100');
     expect(d.principalProblem, isNull);
     expect(d.formulaProblem, isNull);
     // The principal's formula is the event's, not the loan JSON's.
@@ -128,21 +128,21 @@ void main() {
   ) async {
     final d = _simple();
     await _form(tester, d);
-    await _type(tester, 'loan-rate-0', r'$rate + 1.5');
+    await _type(tester, 'loan-rate-0', 'rate + 1.5');
     await _blur(tester);
     final p = d.periods.first;
     expect(Decimal.parse(p.rate), Decimal.fromInt(7));
-    expect(p.rateExpr, r'$rate + 1.5');
+    expect(p.rateExpr, 'rate + 1.5');
     final json = d.toJson();
     final period = (json['ratePeriods'] as List).first as Map;
-    expect(period['ratePctExpr'], r'$rate + 1.5');
+    expect(period['ratePctExpr'], 'rate + 1.5');
     expect(Decimal.parse('${period['ratePct']}'), Decimal.fromInt(7));
   });
 
   testWidgets('a money variable in a rate shows the hint', (tester) async {
     final d = _simple();
     await _form(tester, d);
-    await _type(tester, 'loan-rate-0', r'$rent / 200');
+    await _type(tester, 'loan-rate-0', 'rent / 200');
     expect(
       find.textContaining('not a percentage', findRichText: true),
       findsWidgets,
@@ -154,25 +154,25 @@ void main() {
   ) async {
     final d = _simple();
     await _form(tester, d);
-    await _type(tester, 'loan-term-years', r'$months + 13');
+    await _type(tester, 'loan-term-years', 'months + 13');
     await _type(tester, 'loan-term-months', '6');
     await _blur(tester);
     expect(d.termMonths, 25 * 12 + 6);
-    expect(d.termYearsExpr, r'$months + 13');
+    expect(d.termYearsExpr, 'months + 13');
     expect(d.termMonthsExpr, '6');
     final json = d.toJson();
-    expect(json['termYearsExpr'], r'$months + 13');
+    expect(json['termYearsExpr'], 'months + 13');
     expect(json['termMonthsExpr'], '6');
     expect(d.formulaProblem, isNull);
 
     // Not a whole number.
-    await _type(tester, 'loan-term-years', r'$months / 5');
+    await _type(tester, 'loan-term-years', 'months / 5');
     await _blur(tester);
     expect(_error(tester, 'loan-term-years'), isNotNull);
     expect(d.formulaProblem, isNotNull);
 
     // Unknown variable.
-    await _type(tester, 'loan-term-years', r'$nope + 1');
+    await _type(tester, 'loan-term-years', 'nope + 1');
     await _blur(tester);
     expect(_error(tester, 'loan-term-years'), contains('nope'));
     expect(d.formulaProblem, isNotNull);
@@ -191,13 +191,13 @@ void main() {
   testWidgets('charge day formula: chargeDayExpr, 1..31', (tester) async {
     final d = _advanced();
     await _form(tester, d);
-    await _type(tester, 'loan-charge-day-number', r'$months + 3');
+    await _type(tester, 'loan-charge-day-number', 'months + 3');
     await _blur(tester);
     expect(d.chargeDay, const DayOfMonthChargeDay(15));
-    expect(d.chargeDayExpr, r'$months + 3');
-    expect(d.toJson()['chargeDayExpr'], r'$months + 3');
+    expect(d.chargeDayExpr, 'months + 3');
+    expect(d.toJson()['chargeDayExpr'], 'months + 3');
 
-    await _type(tester, 'loan-charge-day-number', r'$months * 3');
+    await _type(tester, 'loan-charge-day-number', 'months * 3');
     await _blur(tester);
     expect(_error(tester, 'loan-charge-day-number'), isNotNull);
     expect(d.formulaProblem, isNotNull);
@@ -210,17 +210,17 @@ void main() {
   ) async {
     final d = _advanced();
     await _form(tester, d, width: 320);
-    await _type(tester, 'loan-rate-1', r'$rate + 1');
+    await _type(tester, 'loan-rate-1', 'rate + 1');
     await _blur(tester);
     expect(tester.takeException(), isNull);
-    expect(d.periods[1].rateExpr, r'$rate + 1');
+    expect(d.periods[1].rateExpr, 'rate + 1');
     expect(Decimal.parse(d.periods[1].rate), Decimal.parse('6.5'));
     // Dense: the value is in the ✦ tooltip, no picker button in the box.
     expect(_k('loan-rate-1-preview'), findsOneWidget);
     expect(_k('loan-rate-1-var-picker'), findsNothing);
     final rows = (d.toJson()['ratePeriods'] as List).cast<Map>();
     expect(rows[0].containsKey('ratePctExpr'), isFalse);
-    expect(rows[1]['ratePctExpr'], r'$rate + 1');
+    expect(rows[1]['ratePctExpr'], 'rate + 1');
     await expectLater(
       find.byType(MaterialApp),
       matchesGoldenFile('../goldens/rollout_b_formula_rows_320.png'),
@@ -230,9 +230,9 @@ void main() {
   testWidgets('formulas off: legacy fields, no exprs', (tester) async {
     final d = _simple();
     await _form(tester, d, on: false);
-    await _type(tester, 'loan-term-years', r'$months');
+    await _type(tester, 'loan-term-years', 'months');
     expect(_text(tester, 'loan-term-years'), isNot(contains(r'$')));
-    await _type(tester, 'loan-rate-0', r'$rate');
+    await _type(tester, 'loan-rate-0', 'rate');
     expect(_text(tester, 'loan-rate-0'), isNot(contains(r'$')));
     expect(jsonEncode(d.toJson()), isNot(contains('Expr')));
   });
@@ -252,31 +252,31 @@ void main() {
   ) async {
     ServerFeatures.variables = true;
     final d = _advanced()
-      ..termYearsExpr = r'$months + 13'
+      ..termYearsExpr = 'months + 13'
       ..termMonthsExpr = '0'
-      ..chargeDayExpr = r'$months + 8'
-      ..principalExpr = r'$gone * 2';
-    d.periods[1].rateExpr = r'$rate + 1';
+      ..chargeDayExpr = 'months + 8'
+      ..principalExpr = 'gone * 2';
+    d.periods[1].rateExpr = 'rate + 1';
     d.periods[1].rate = '6.5';
     final json = d.toJson();
     final event = BudgetEvent.fromJson({
       ..._eventJson(json),
-      'amountExpr': r'$gone * 2',
+      'amountExpr': 'gone * 2',
       'exprErrors': {
         'amount': {'message': 'Unknown variable: gone'},
       },
     });
     final back = LoanDraft.fromEvent(event)!;
-    expect(back.termYearsExpr, r'$months + 13');
-    expect(back.chargeDayExpr, r'$months + 8');
-    expect(back.periods[1].rateExpr, r'$rate + 1');
-    expect(back.principalExpr, r'$gone * 2');
+    expect(back.termYearsExpr, 'months + 13');
+    expect(back.chargeDayExpr, 'months + 8');
+    expect(back.periods[1].rateExpr, 'rate + 1');
+    expect(back.principalExpr, 'gone * 2');
 
     await _form(tester, back);
-    expect(_text(tester, 'loan-term-years'), r'$months + 13');
-    expect(_text(tester, 'loan-rate-1'), r'$rate + 1');
-    expect(_text(tester, 'loan-charge-day-number'), r'$months + 8');
-    expect(_text(tester, 'loan-principal'), r'$gone * 2');
+    expect(_text(tester, 'loan-term-years'), 'months + 13');
+    expect(_text(tester, 'loan-rate-1'), 'rate + 1');
+    expect(_text(tester, 'loan-charge-day-number'), 'months + 8');
+    expect(_text(tester, 'loan-principal'), 'gone * 2');
     expect(_error(tester, 'loan-principal'), isNotNull);
     expect(back.formulaProblem, isNotNull);
   });

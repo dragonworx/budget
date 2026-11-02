@@ -119,17 +119,17 @@ void main() {
         isA<FormulaEditingController>(),
       );
       await _typeIn(tester, 'stream-name', 'Holiday');
-      await _typeIn(tester, 'stream-seed', r'$rent * 2');
-      await _typeIn(tester, 'stream-threshold', r'$rent / 4');
+      await _typeIn(tester, 'stream-seed', 'rent * 2');
+      await _typeIn(tester, 'stream-threshold', 'rent / 4');
       await _save(tester);
       final s = saved.single;
       expect(s.seedBalance, Decimal.fromInt(2400));
-      expect(s.seedBalanceExpr, r'$rent * 2');
+      expect(s.seedBalanceExpr, 'rent * 2');
       expect(s.lossThreshold, Decimal.fromInt(300));
-      expect(s.lossThresholdExpr, r'$rent / 4');
+      expect(s.lossThresholdExpr, 'rent / 4');
       final json = s.toJson();
-      expect(json['seedBalanceExpr'], r'$rent * 2');
-      expect(json['lossThresholdExpr'], r'$rent / 4');
+      expect(json['seedBalanceExpr'], 'rent * 2');
+      expect(json['lossThresholdExpr'], 'rent / 4');
     });
 
     testWidgets('plain numbers send no formula; empty threshold is 0', (
@@ -153,16 +153,16 @@ void main() {
     ) async {
       final saved = await _stream(tester);
       await _typeIn(tester, 'stream-name', 'Holiday');
-      await _typeIn(tester, 'stream-seed', r'$nope + 1');
+      await _typeIn(tester, 'stream-seed', 'nope + 1');
       // No error before Save (as today).
       expect(_error(tester, 'stream-seed'), isNull);
       await _save(tester);
       expect(saved, isEmpty);
       expect(_error(tester, 'stream-seed'), contains('nope'));
-      await _typeIn(tester, 'stream-seed', r'$rent');
+      await _typeIn(tester, 'stream-seed', 'rent');
       expect(_error(tester, 'stream-seed'), isNull);
       await _save(tester);
-      expect(saved.single.seedBalanceExpr, r'$rent');
+      expect(saved.single.seedBalanceExpr, 'rent');
     });
 
     testWidgets('editing shows the saved formula and its saved error', (
@@ -170,18 +170,18 @@ void main() {
     ) async {
       ServerFeatures.variables = true;
       final e = _existing(
-        seedExpr: r'$rent * 2',
-        lossExpr: r'$gone',
+        seedExpr: 'rent * 2',
+        lossExpr: 'gone',
         errors: {
           'lossThreshold': {
             'code': 'unknownVariable',
-            'message': r'No variable called $gone',
+            'message': 'No variable called gone',
           },
         },
       );
       final saved = await _stream(tester, existing: e);
-      expect(_input(tester, 'stream-seed').controller.text, r'$rent * 2');
-      expect(_input(tester, 'stream-threshold').controller.text, r'$gone');
+      expect(_input(tester, 'stream-seed').controller.text, 'rent * 2');
+      expect(_input(tester, 'stream-threshold').controller.text, 'gone');
       final c =
           _input(tester, 'stream-threshold').controller
               as FormulaEditingController;
@@ -190,16 +190,16 @@ void main() {
       await _save(tester);
       expect(saved.single.lossThreshold, Decimal.fromInt(100));
       expect(saved.single.lossThresholdExpr, isNull);
-      expect(saved.single.seedBalanceExpr, r'$rent * 2');
+      expect(saved.single.seedBalanceExpr, 'rent * 2');
     });
 
     testWidgets('formulas off: the stored number, today\'s messages', (
       tester,
     ) async {
-      final e = _existing(seedExpr: r'$rent * 2');
+      final e = _existing(seedExpr: 'rent * 2');
       final saved = await _stream(tester, existing: e, on: false);
       expect(_input(tester, 'stream-seed').controller.text, '2400');
-      await _typeIn(tester, 'stream-seed', r'$rent');
+      await _typeIn(tester, 'stream-seed', 'rent');
       await _save(tester);
       expect(saved, isEmpty);
       expect(
@@ -282,11 +282,11 @@ void main() {
 
     testWidgets('a formula repayment is created with its text', (tester) async {
       final events = await pump(tester, true);
-      await _typeIn(tester, 'loan-setup-amount', r'$rent * 3');
+      await _typeIn(tester, 'loan-setup-amount', 'rent * 3');
       expect(createEnabled(tester), isTrue);
       await create(tester);
       expect(events.created.single.amount, Decimal.fromInt(3600));
-      expect(events.createdJson.single['amountExpr'], r'$rent * 3');
+      expect(events.createdJson.single['amountExpr'], 'rent * 3');
     });
 
     testWidgets('a plain number creates no formula', (tester) async {
@@ -305,14 +305,14 @@ void main() {
       expect(createEnabled(tester), isFalse);
       expect(_error(tester, 'loan-setup-amount'), isNull);
       // A broken formula explains itself.
-      await _typeIn(tester, 'loan-setup-amount', r'$nope + 1');
+      await _typeIn(tester, 'loan-setup-amount', 'nope + 1');
       expect(createEnabled(tester), isFalse);
       expect(_error(tester, 'loan-setup-amount'), contains('nope'));
     });
 
     testWidgets('formulas off: a formula is just not a number', (tester) async {
       final events = await pump(tester, false);
-      await _typeIn(tester, 'loan-setup-amount', r'$rent');
+      await _typeIn(tester, 'loan-setup-amount', 'rent');
       expect(createEnabled(tester), isFalse);
       await _typeIn(tester, 'loan-setup-amount', '3000');
       await create(tester);

@@ -1,6 +1,8 @@
 /// Token kinds. Reserved kinds (`percent`, `caret`, `comma`, `semicolon`,
 /// `identifier`) are recognised so v1 can explain them and v2 can enable
-/// them without changing the lexer.
+/// them without changing the lexer. A bare name (`rent`) is a [variable];
+/// an [identifier] is a reserved word (`round`), a name starting with `_`,
+/// or the retired `$name` form (with [FormulaToken.name] set).
 enum TokenKind {
   number,
   variable,
@@ -30,8 +32,9 @@ class FormulaToken {
   /// The exact source text (an alias like `×` stays `×`).
   final String lexeme;
 
-  /// For [TokenKind.variable]: the name without `$`, as typed ('' for a
-  /// lone `$`).
+  /// For [TokenKind.variable]: the name as typed. For an identifier
+  /// written the retired way (`$rent`, or a lone `$`): the text after the
+  /// `$` ('' for a lone `$`).
   final String? name;
 
   const FormulaToken(this.kind, this.start, this.end, this.lexeme, {this.name});

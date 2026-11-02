@@ -28,7 +28,7 @@ class NumberLit extends Expr {
 }
 
 class VarRef extends Expr {
-  /// Without `$`, as typed.
+  /// As typed.
   final String name;
   @override
   final int start;

@@ -47,9 +47,9 @@ void main() {
     ) async {
       final repo = await pumpPlan(tester, width: 700, overrides: _vars);
       expect(k('plan-formula-note'), findsOneWidget);
-      await _type(tester, 'plan-amount', r'$rent / 16');
-      await _type(tester, 'plan-interval', r'$months / 6');
-      await _type(tester, 'plan-count', r'$months / 2');
+      await _type(tester, 'plan-amount', 'rent / 16');
+      await _type(tester, 'plan-interval', 'months / 6');
+      await _type(tester, 'plan-count', 'months / 2');
       final r = repo.solves.last;
       expect(r.amount, Decimal.parse('75'));
       expect(r.interval, 2);
@@ -62,7 +62,7 @@ void main() {
       tester,
     ) async {
       final repo = await pumpPlan(tester, width: 700, overrides: _vars);
-      await _type(tester, 'plan-total', r'$rent * 2');
+      await _type(tester, 'plan-total', 'rent * 2');
       final r = repo.solves.last;
       expect(r.targetTotal, Decimal.parse('2400'));
       expect(r.amount, isNull);
@@ -74,16 +74,16 @@ void main() {
       final repo = await pumpPlan(tester, width: 700, overrides: _vars);
       await _type(tester, 'plan-amount', '75');
       final before = repo.solves.length;
-      await _type(tester, 'plan-amount', r'$nope + 1');
+      await _type(tester, 'plan-amount', 'nope + 1');
       expect(_error(tester, 'plan-amount'), contains('nope'));
       expect(repo.solves.length, before);
-      await _type(tester, 'plan-count', r'$months - 12');
+      await _type(tester, 'plan-count', 'months - 12');
       expect(_error(tester, 'plan-count'), isNotNull);
-      await _type(tester, 'plan-interval', r'$months * 10');
+      await _type(tester, 'plan-interval', 'months * 10');
       expect(_error(tester, 'plan-interval'), '1–99');
       expect(repo.solves.length, before);
       // Fixing them solves again.
-      await _type(tester, 'plan-amount', r'$rent / 16');
+      await _type(tester, 'plan-amount', 'rent / 16');
       await _type(tester, 'plan-count', '6');
       await _type(tester, 'plan-interval', '1');
       expect(repo.solves.length, greaterThan(before));
@@ -103,7 +103,7 @@ void main() {
     expect(k('plan-formula-note'), findsNothing);
     await _type(tester, 'plan-amount', '75');
     final before = repo.solves.length;
-    await _type(tester, 'plan-amount', r'$rent');
+    await _type(tester, 'plan-amount', 'rent');
     expect(repo.solves.length, before);
     expect(_error(tester, 'plan-amount'), isNotNull);
     expect(find.text('✦'), findsNothing);

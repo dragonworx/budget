@@ -77,7 +77,7 @@ void main() {
     final narrow = tester.getSize(_k('plan-interval')).width;
     expect(narrow, 48);
 
-    await tester.enterText(_k('plan-interval'), r'$weeks / 26');
+    await tester.enterText(_k('plan-interval'), 'weeks / 26');
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -90,7 +90,7 @@ void main() {
   });
 
   testWidgets('a number again: steppers step it', (tester) async {
-    final c = await _pump(tester, text: r'$weeks / 26');
+    final c = await _pump(tester, text: 'weeks / 26');
     expect(_step(tester, 'plus').onPressed, isNull);
     await tester.enterText(_k('plan-interval'), '5');
     FocusManager.instance.primaryFocus?.unfocus();
@@ -103,7 +103,7 @@ void main() {
   });
 
   testWidgets('clear empties text and formula', (tester) async {
-    final c = await _pump(tester, text: r'$weeks / 26');
+    final c = await _pump(tester, text: 'weeks / 26');
     await tester.tap(_k('plan-interval-clear'));
     await tester.pumpAndSettle();
     expect(c.text, isEmpty);
@@ -117,7 +117,7 @@ void main() {
   ) async {
     await _pump(tester, text: '2', width: 320);
     final plainUnit = tester.getSize(_k('plan-unit')).width;
-    await tester.enterText(_k('plan-interval'), r'$weeks / 26 + 1');
+    await tester.enterText(_k('plan-interval'), 'weeks / 26 + 1');
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

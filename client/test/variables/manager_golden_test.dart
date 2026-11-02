@@ -41,9 +41,9 @@ void main() {
         vr(
           'v5',
           'broken',
-          r'$gone * 2',
+          'gone * 2',
           value: '10',
-          problem: {'code': 'unknown_variable', 'message': r'No $gone'},
+          problem: {'code': 'unknown_variable', 'message': 'No gone'},
         ),
       ],
     );
@@ -54,8 +54,8 @@ void main() {
           'entityId': 'v5',
           'variableName': 'broken',
           'field': 'value',
-          'expr': r'$gone * 2',
-          'error': {'code': 'unknown_variable', 'message': r'No $gone'},
+          'expr': 'gone * 2',
+          'error': {'code': 'unknown_variable', 'message': 'No gone'},
         },
       ],
       'count': 1,
