@@ -20,40 +20,47 @@ class SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // A fixed semantics node for the card: without it the card's node comes
+    // and goes as content elsewhere changes (the loan preview's progress
+    // bar), which moves a focused field's DOM node on the web and blurs it.
     // Material (not a decoration) so ListTiles inside keep their ink.
-    return Material(
-      color: AppTheme.raised,
-      shape: RoundedRectangleBorder(
-        borderRadius: AppTheme.radiusAll,
-        side: const BorderSide(color: AppTheme.border),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 16, color: AppTheme.textFaint),
-                  const SizedBox(width: 6),
-                ],
-                Expanded(
-                  child: Text(
-                    title.toUpperCase(),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      letterSpacing: 0.9,
-                      fontWeight: FontWeight.w700,
-                      color: AppTheme.textFaint,
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      child: Material(
+        color: AppTheme.raised,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppTheme.radiusAll,
+          side: const BorderSide(color: AppTheme.border),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 16, color: AppTheme.textFaint),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      title.toUpperCase(),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        letterSpacing: 0.9,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.textFaint,
+                      ),
                     ),
                   ),
-                ),
-                ?trailing,
-              ],
-            ),
-            const SizedBox(height: 12),
-            child,
-          ],
+                  ?trailing,
+                ],
+              ),
+              const SizedBox(height: 12),
+              child,
+            ],
+          ),
         ),
       ),
     );
