@@ -55,6 +55,26 @@ void main() {
     expect(filterEvents(items, allEventTypes), hasLength(3));
   });
 
+  test('none selected shows every event; a selection is a union', () {
+    expect(filterEvents(items, const {}), hasLength(3));
+    expect(
+      filterEvents(items, {EventType.credit, EventType.debit}),
+      hasLength(3),
+    );
+    final xfer = tx('Save')
+        .copyWith(transfer: const TransferLink(peerStreamId: 'b'));
+    final loan = tx('Mortgage').copyWith(kind: 'loan');
+    final all = [...items, xfer, loan];
+    expect(filterEvents(all, const {}), all);
+    expect(
+      filterEvents(all, {
+        EventType.credit,
+        EventType.transfer,
+      }).map((t) => t.name),
+      ['Salary', 'Save'],
+    );
+  });
+
   test('a transfer is only Transfer; a loan counts by its direction', () {
     final xfer = tx('Save')
         .copyWith(transfer: const TransferLink(peerStreamId: 'b'));

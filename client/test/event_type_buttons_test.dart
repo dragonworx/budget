@@ -169,6 +169,19 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox());
     await pumpEditor(tester);
+    // A new event starts as Debit.
+    expect(
+      [
+        for (final k
+            in tester
+                .widget<EventTypeButtons<Object?>>(
+                  find.byKey(const ValueKey('editor-kind')),
+                )
+                .selected)
+          (k as Enum).name,
+      ],
+      ['debit'],
+    );
     expect([for (final k in _kinds) enabled(k)], everyElement(isTrue));
     await tester.pumpWidget(const SizedBox());
     await pumpEditor(tester, inStream: [loanEvent()]);

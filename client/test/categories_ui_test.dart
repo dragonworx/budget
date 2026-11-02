@@ -889,8 +889,9 @@ void main() {
     ('phone 320', Size(320, 640)),
   ]) {
     testWidgets('$label: type filter is Credit, Debit, Transfer, Sync (no '
-        'All), all selected by default; the last one stays selected; the '
-        'editor offers the same types in the same order', (tester) async {
+        'All), none selected by default (shows all); a selection is a '
+        'union and any chip turns off; the editor offers the same types in '
+        'the same order, Debit first selected', (tester) async {
       await _pump(tester, size: size);
       tester.platformDispatcher.textScaleFactorTestValue = 1;
       await tester.tap(find.byKey(const ValueKey('open-events')));
@@ -908,7 +909,10 @@ void main() {
         [for (final b in bar().buttons) b.label],
         ['Credit', 'Debit', 'Transfer', 'Sync'],
       );
-      expect([for (final n in names) selected(n)], [true, true, true, true]);
+      expect(
+        [for (final n in names) selected(n)],
+        [false, false, false, false],
+      );
       // One row inside the panel (no wrap, no overflow at 320px).
       final panel = tester.getRect(
         find.byKey(const ValueKey('events-panel-body')),
@@ -929,24 +933,32 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      for (final n in ['credit', 'transfer', 'sync']) {
-        await tap(n);
-      }
-      expect(selected('credit'), isFalse);
-      expect(row('wages') && row('rent'), isTrue);
-      // Debit is the last one selected: tapping it keeps it on.
+      // Credit alone: the (debit) Rent row leaves.
+      await tap('credit');
+      expect(selected('credit'), isTrue);
+      expect(row('rent'), isFalse);
+      // Credit + Debit: the union, every row back.
       await tap('debit');
-      expect(selected('debit'), isTrue);
-      expect(row('rent'), isTrue);
-      // With Credit back on, Debit can go: every (debit) row leaves.
+      expect([for (final n in names) selected(n)], [true, true, false, false]);
+      expect(row('wages') && row('rent'), isTrue);
+      // Any chip turns off; none left shows everything again.
       await tap('credit');
       await tap('debit');
-      expect(selected('debit'), isFalse);
+      expect(
+        [for (final n in names) selected(n)],
+        [false, false, false, false],
+      );
+      expect(row('wages') && row('rent'), isTrue);
+      // Transfer alone matches nothing here; Clear filter goes back to none.
+      await tap('transfer');
       expect(row('wages') || row('rent'), isFalse);
       expect(find.byKey(const ValueKey('events-no-matches')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('events-clear-filters')));
       await tester.pumpAndSettle();
-      expect([for (final n in names) selected(n)], [true, true, true, true]);
+      expect(
+        [for (final n in names) selected(n)],
+        [false, false, false, false],
+      );
       expect(row('wages') && row('rent'), isTrue);
       // The new event screen: same labels, same order (Loan after
       // Transfer where offered).
@@ -964,6 +976,7 @@ void main() {
         final b = seg.buttons[i < 3 ? i : 4];
         expect((b.color, b.icon), (t.color, t.icon), reason: t.label);
       }
+      expect([for (final k in seg.selected) (k as Enum).name], ['debit']);
       expect(tester.takeException(), isNull);
       await tester.pump(const Duration(seconds: 2));
     });
@@ -1021,9 +1034,9 @@ void main() {
       await pick('filter-category-$_rent');
       expect(row('rent'), isTrue);
       expect(row('g1') || row('wages'), isFalse);
-      // Without Debit: nothing matches; the empty state names the
+      // Credit only: nothing in Rent matches; the empty state names the
       // category and Clear filters resets both.
-      await tester.tap(find.byKey(const ValueKey('filter-debit')));
+      await tester.tap(find.byKey(const ValueKey('filter-credit')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('events-no-matches')), findsOneWidget);
       expect(find.textContaining('category Rent'), findsOneWidget);

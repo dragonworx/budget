@@ -29,7 +29,9 @@ import 'event_types.dart';
 import 'sync_format.dart';
 
 /// Filters [items] to the event [types] shown and [category] (an id;
-/// null: every category). See [eventTypeOf] (a loan counts by direction).
+/// null: every category). [types] is a union: an event shows when its type
+/// is any of them; none selected shows every event. See [eventTypeOf] (a
+/// loan counts by direction).
 List<BudgetEvent> filterEvents(
   List<BudgetEvent> items,
   Set<EventType> types, {
@@ -38,7 +40,7 @@ List<BudgetEvent> filterEvents(
   return [
     for (final t in items)
       if ((category == null || t.categoryId == category) &&
-          types.contains(eventTypeOf(t)))
+          (types.isEmpty || types.contains(eventTypeOf(t))))
         t,
   ];
 }
@@ -264,11 +266,12 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     );
   }
 
-  /// The event types shown: all four by default; never empty (the last
-  /// selected type can't be turned off).
-  Set<EventType> _types = allEventTypes;
+  /// The selected type filter, a union: none by default, which (like all
+  /// four) shows every event. Kept in memory only, never saved.
+  Set<EventType> _types = const {};
 
-  bool get _allTypes => _types.length == allEventTypes.length;
+  /// The type filter hides nothing.
+  bool get _allTypes => _types.isEmpty || _types.length == allEventTypes.length;
 
   /// The category filter (an id; null: all categories).
   String? _catFilter;
@@ -717,30 +720,33 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
-              child: EventTypeButtons<EventType>(
-                key: const ValueKey('events-type-filter'),
-                buttons: [
-                  for (final f in EventType.values)
-                    TypeButton(
-                      value: f,
-                      label: f.label,
-                      icon: f.icon,
-                      color: f.color,
-                      key: ValueKey('filter-${f.name}'),
-                      note: _types.length == 1 && _types.contains(f)
-                          ? 'At least one type stays selected'
-                          : null,
-                    ),
-                ],
-                selected: _types,
-                onTap: (f) => setState(() {
-                  final on = !_types.contains(f);
-                  if (!on && _types.length == 1) return;
-                  _types = {
-                    for (final t in EventType.values)
-                      if (t == f ? on : _types.contains(t)) t,
-                  };
-                }),
+              child: Semantics(
+                container: true,
+                label: 'Event type filter',
+                hint: _types.isEmpty
+                    ? 'None selected: showing every event'
+                    : 'Showing any selected type',
+                child: EventTypeButtons<EventType>(
+                  key: const ValueKey('events-type-filter'),
+                  buttons: [
+                    for (final f in EventType.values)
+                      TypeButton(
+                        value: f,
+                        label: f.label,
+                        icon: f.icon,
+                        color: f.color,
+                        key: ValueKey('filter-${f.name}'),
+                      ),
+                  ],
+                  selected: _types,
+                  onTap: (f) => setState(() {
+                    final on = !_types.contains(f);
+                    _types = {
+                      for (final t in EventType.values)
+                        if (t == f ? on : _types.contains(t)) t,
+                    };
+                  }),
+                ),
               ),
             ),
             const Divider(height: 1),
@@ -878,7 +884,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
         action: TextButton(
           key: const ValueKey('events-clear-filters'),
           onPressed: () => setState(() {
-            _types = allEventTypes;
+            _types = const {};
             _catFilter = null;
           }),
           child: Text(cat == null ? 'Clear filter' : 'Clear filters'),
