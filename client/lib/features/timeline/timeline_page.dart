@@ -58,6 +58,7 @@ import 'view_units.dart';
 import 'zoom_level.dart';
 import '../variables/variables_manager.dart';
 import 'occurrence_info.dart';
+import '../../widgets/formula/variable_icon.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
   const TimelinePage({super.key, required this.streamId, this.openEventId});
@@ -1789,7 +1790,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           key: ValueKey('more-variables'),
           value: 'variables',
           child: ListTile(
-            leading: Icon(Icons.data_object),
+            leading: Icon(variableIcon),
             title: Text('Edit variables'),
           ),
         ),

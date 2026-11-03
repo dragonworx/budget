@@ -22,6 +22,7 @@ import '../../widgets/formula/formula_style.dart';
 import '../events/editor_outcome.dart' show undoTipDuration;
 import 'variable_impact.dart';
 import 'variable_usages_dialog.dart';
+import '../../widgets/formula/variable_icon.dart';
 
 /// Opens the variables manager: [streamId] null = my own variables, else
 /// that stream's owner's (read-only unless I own it). [createName]
@@ -777,7 +778,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
         children: [
           Row(
             children: [
-              const Icon(Icons.data_object, size: 20, color: AppTheme.accent),
+              const Icon(variableIcon, size: 20, color: AppTheme.accent),
               const SizedBox(width: 10),
               Expanded(
                 child: Text('Variables', style: theme.textTheme.titleLarge),

@@ -22,6 +22,7 @@ import 'formula_keys_row.dart';
 import 'formula_style.dart';
 import 'formula_suggestions.dart';
 import 'variable_scope.dart';
+import 'variable_icon.dart';
 
 export 'formula_controller.dart' show FormulaEditingController, FormulaValue;
 export 'variable_scope.dart';
@@ -762,8 +763,9 @@ class _FormulaFieldState extends State<FormulaField> {
           key: ValueKey('$_keyBase-var-picker'),
           tooltip: 'Insert a variable',
           constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-          iconSize: 18,
-          icon: const Icon(Icons.data_object),
+          iconSize: 20,
+          color: AppTheme.accent,
+          icon: const Icon(variableIcon),
           onPressed: _openPicker,
         ),
       if (showHelp)

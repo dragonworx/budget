@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
+import 'variable_icon.dart';
 
 /// (label, inserted text).
 const formulaKeys = [
@@ -87,8 +88,8 @@ class FormulaKeysRow extends StatelessWidget {
                     child: const SizedBox(
                       height: 40,
                       child: Icon(
-                        Icons.data_object,
-                        size: 18,
+                        variableIcon,
+                        size: 20,
                         color: AppTheme.accent,
                       ),
                     ),

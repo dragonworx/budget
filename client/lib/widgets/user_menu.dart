@@ -8,6 +8,7 @@ import '../features/variables/variables_manager.dart';
 import '../state/auth_providers.dart';
 import '../state/realtime_providers.dart';
 import '../theme/app_theme.dart';
+import 'formula/variable_icon.dart';
 
 class UserAvatar extends StatelessWidget {
   const UserAvatar({super.key, required this.user, this.radius = 15});
@@ -111,7 +112,7 @@ class UserMenu extends ConsumerWidget {
             value: 'variables',
             child: Row(
               children: [
-                Icon(Icons.data_object, size: 18),
+                Icon(variableIcon, size: 18),
                 SizedBox(width: 10),
                 Text('Variables'),
               ],

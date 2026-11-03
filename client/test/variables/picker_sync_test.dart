@@ -12,6 +12,9 @@ import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:budget_client/state/realtime_providers.dart';
 import 'package:budget_client/widgets/formula/formula_field.dart';
+import 'package:budget_client/widgets/formula/variable_icon.dart';
+import 'package:decimal/decimal.dart';
+import 'package:budget_client/theme/app_theme.dart';
 import 'package:budget_formula/budget_formula.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -52,6 +55,7 @@ Future<(FakeVars, ProviderContainer)> _pump(
   WidgetTester tester, {
   String? managerStream,
   TargetPlatform? platform,
+  BudgetEvent? existing,
 }) async {
   tester.view.physicalSize = const Size(1200, 1600);
   tester.view.devicePixelRatio = 1;
@@ -95,7 +99,11 @@ Future<(FakeVars, ProviderContainer)> _pump(
                   child: const Text('Manage'),
                 ),
                 Expanded(
-                  child: EventEditor(streamId: 'acc', onDone: (_) {}),
+                  child: EventEditor(
+                    streamId: 'acc',
+                    existing: existing,
+                    onDone: (_) {},
+                  ),
                 ),
               ],
             ),
@@ -124,6 +132,63 @@ Future<void> _createInManager(WidgetTester tester, String name) async {
 }
 
 void main() {
+  // It was Icons.data_object ("{ }"): at 18 px in the muted colour it read
+  // as an empty placeholder, not an icon.
+  test('variables share one icon, not the braces glyph', () {
+    expect(variableIcon, Icons.functions_rounded);
+  });
+
+  for (final saved in [false, true]) {
+    testWidgets(
+      '${saved ? 'edit' : 'new'}: the amount field\'s "Insert a variable" '
+      'button shows the variable icon in accent',
+      (tester) async {
+        await _pump(
+          tester,
+          existing: saved
+              ? BudgetEvent(
+                  id: 'e1',
+                  streamId: 'acc',
+                  name: 'Rent',
+                  direction: EventDirection.debit,
+                  amount: Decimal.fromInt(50),
+                  startDate: DateTime(2027, 1, 15),
+                  recurrenceMode: RecurrenceMode.every,
+                  interval: 1,
+                  unit: RecurrenceUnit.months,
+                  endMode: EndMode.never,
+                  enabled: true,
+                  version: 1,
+                )
+              : null,
+        );
+        final button = k('editor-amount-var-picker');
+        expect(button, findsOneWidget);
+        final icon = find.descendant(of: button, matching: find.byType(Icon));
+        expect(tester.widget<Icon>(icon).icon, variableIcon);
+        expect(tester.widget<IconButton>(button).color, AppTheme.accent);
+        expect(tester.getSize(icon).width, 20);
+        expect(find.byIcon(Icons.data_object), findsNothing);
+      },
+    );
+  }
+
+  testWidgets('touch: the keypad\'s variable key wears the same icon', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    await _pump(tester, platform: TargetPlatform.iOS);
+    await tester.showKeyboard(_amount);
+    await tester.pumpAndSettle();
+    final key = k('editor-amount-key-picker');
+    expect(key, findsOneWidget);
+    expect(
+      find.descendant(of: key, matching: find.byIcon(variableIcon)),
+      findsOneWidget,
+    );
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   tearDown(() => ServerFeatures.variables = false);
 
   for (final (label, stream) in [
