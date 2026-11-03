@@ -778,7 +778,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
         children: [
           Row(
             children: [
-              const Icon(variableIcon, size: 20, color: AppTheme.accent),
+              const VariableGlyph(size: 20, color: AppTheme.accent),
               const SizedBox(width: 10),
               Expanded(
                 child: Text('Variables', style: theme.textTheme.titleLarge),

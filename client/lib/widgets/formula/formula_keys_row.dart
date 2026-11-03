@@ -85,12 +85,14 @@ class FormulaKeysRow extends StatelessWidget {
                     canRequestFocus: false,
                     borderRadius: BorderRadius.circular(8),
                     onTap: onPicker,
-                    child: const SizedBox(
+                    child: SizedBox(
                       height: 40,
-                      child: Icon(
-                        variableIcon,
-                        size: 20,
-                        color: AppTheme.accent,
+                      child: Center(
+                        child: VariableGlyph(
+                          key: ValueKey('$keyPrefix-key-picker-glyph'),
+                          size: 22,
+                          color: AppTheme.accent,
+                        ),
                       ),
                     ),
                   ),

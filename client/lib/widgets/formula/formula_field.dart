@@ -765,7 +765,7 @@ class _FormulaFieldState extends State<FormulaField> {
           constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           iconSize: 20,
           color: AppTheme.accent,
-          icon: const Icon(variableIcon),
+          icon: const VariableGlyph(),
           onPressed: _openPicker,
         ),
       if (showHelp)

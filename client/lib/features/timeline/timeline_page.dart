@@ -1790,7 +1790,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           key: ValueKey('more-variables'),
           value: 'variables',
           child: ListTile(
-            leading: Icon(variableIcon),
+            leading: VariableGlyph(),
             title: Text('Edit variables'),
           ),
         ),

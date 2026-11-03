@@ -112,7 +112,7 @@ class UserMenu extends ConsumerWidget {
             value: 'variables',
             child: Row(
               children: [
-                Icon(variableIcon, size: 18),
+                VariableGlyph(size: 18),
                 SizedBox(width: 10),
                 Text('Variables'),
               ],

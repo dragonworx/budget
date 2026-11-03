@@ -18,6 +18,7 @@ import 'package:budget_client/theme/app_theme.dart';
 import 'package:budget_formula/budget_formula.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -132,16 +133,60 @@ Future<void> _createInManager(WidgetTester tester, String name) async {
 }
 
 void main() {
-  // It was Icons.data_object ("{ }"): at 18 px in the muted colour it read
-  // as an empty placeholder, not an icon.
-  test('variables share one icon, not the braces glyph', () {
-    expect(variableIcon, Icons.functions_rounded);
+  // The key showed as a blank green square on iPhone Safari: first
+  // Icons.data_object, then Icons.functions_rounded, came out of the icon
+  // font as nothing there. The glyph is now painted (no font to miss).
+  testWidgets('the painted Σ draws in its colour on the key background', (
+    tester,
+  ) async {
+    final boundary = GlobalKey();
+    await tester.pumpWidget(
+      Center(
+        child: RepaintBoundary(
+          key: boundary,
+          child: Container(
+            width: 40,
+            height: 40,
+            color: AppTheme.accentSoft,
+            alignment: Alignment.center,
+            child: const VariableGlyph(size: 22, color: AppTheme.accent),
+          ),
+        ),
+      ),
+    );
+    final bytes = await tester.runAsync(() async {
+      final ro =
+          boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      final image = await ro.toImage();
+      final data = await image.toByteData();
+      image.dispose();
+      return data!;
+    });
+    var ink = 0;
+    for (var i = 0; i < bytes!.lengthInBytes; i += 4) {
+      final c = Color.fromARGB(
+        255,
+        bytes.getUint8(i),
+        bytes.getUint8(i + 1),
+        bytes.getUint8(i + 2),
+      );
+      if ((c.computeLuminance() - AppTheme.accent.computeLuminance()).abs() <
+          0.05) {
+        ink++;
+      }
+    }
+    // A 22 px Σ draws ~45 solid accent px at 1x; a blank key draws 0.
+    expect(ink, greaterThan(30));
+    // Legible: the glyph is not the key's colour (WCAG contrast >= 4.5).
+    final l1 = AppTheme.accent.computeLuminance();
+    final l2 = AppTheme.accentSoft.computeLuminance();
+    expect((l1 + 0.05) / (l2 + 0.05), greaterThan(4.5));
   });
 
   for (final saved in [false, true]) {
     testWidgets(
       '${saved ? 'edit' : 'new'}: the amount field\'s "Insert a variable" '
-      'button shows the variable icon in accent',
+      'button shows the painted Σ in accent',
       (tester) async {
         await _pump(
           tester,
@@ -164,16 +209,22 @@ void main() {
         );
         final button = k('editor-amount-var-picker');
         expect(button, findsOneWidget);
-        final icon = find.descendant(of: button, matching: find.byType(Icon));
-        expect(tester.widget<Icon>(icon).icon, variableIcon);
+        final glyph = find.descendant(
+          of: button,
+          matching: find.byType(VariableGlyph),
+        );
+        expect(glyph, findsOneWidget);
+        expect(
+          find.descendant(of: button, matching: find.byType(Icon)),
+          findsNothing,
+        );
         expect(tester.widget<IconButton>(button).color, AppTheme.accent);
-        expect(tester.getSize(icon).width, 20);
-        expect(find.byIcon(Icons.data_object), findsNothing);
+        expect(tester.getSize(glyph).width, 20);
       },
     );
   }
 
-  testWidgets('touch: the keypad\'s variable key wears the same icon', (
+  testWidgets('touch: the keypad\'s variable key paints the same Σ', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -182,10 +233,19 @@ void main() {
     await tester.pumpAndSettle();
     final key = k('editor-amount-key-picker');
     expect(key, findsOneWidget);
-    expect(
-      find.descendant(of: key, matching: find.byIcon(variableIcon)),
-      findsOneWidget,
+    final glyph = find.descendant(
+      of: key,
+      matching: find.byType(VariableGlyph),
     );
+    expect(glyph, findsOneWidget);
+    expect(tester.widget<VariableGlyph>(glyph).color, AppTheme.accent);
+    expect(tester.getSize(glyph).width, 22);
+    expect(find.descendant(of: key, matching: find.byType(Icon)), findsNothing);
+    final fill = tester.widget<Material>(
+      find.ancestor(of: key, matching: find.byType(Material)).first,
+    );
+    expect(fill.color, AppTheme.accentSoft);
+    expect(fill.color, isNot(AppTheme.accent));
     debugDefaultTargetPlatformOverride = null;
   });
 
