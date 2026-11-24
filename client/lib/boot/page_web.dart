@@ -86,6 +86,9 @@ Timer? _handoffTimer;
 int _handoffTries = 0;
 bool _primerInstalled = false;
 bool _handoffDone = false;
+bool _focusPatched = false;
+bool _viewFocusBlocked = false;
+String? _armedKind;
 String? _variant;
 
 /// Flutter web's editing input is either a semantics text-field
@@ -98,14 +101,12 @@ const _flutterInputSelector =
 
 /// In-app strategy from `?kb=` (search or hash query). Default `a`.
 ///
-/// * a — prime on pointerdown/touchstart (before Flutter's
-///   preventDefault), skip the open animation, hand off to Flutter's
-///   field, re-assert proxy focus if something steals it.
-/// * b — same prime and instant open, but do not hand off (keeps the
-///   proxy focused; tests whether the handoff is what dismisses the
-///   keyboard).
-/// * c — previous approach: prime on touchend/click, instant open,
-///   hand off.
+/// * a — prime on touchend/click (what iOS honours), skip the open
+///   animation, block Flutter's Timer(0) view-focus steal so the
+///   proxy never blurs, then hand off to Flutter's field.
+/// * b — previous default: prime on pointerdown/touchstart and hand
+///   off (does not open the keyboard on a real iPhone).
+/// * c — touchend/click and hand off, but do not block the steal.
 /// * d — no proxy; just skip the open animation and requestFocus on
 ///   the first frame.
 String get softKeyboardVariant => _variant ??= _readKbParam() ?? 'a';
@@ -147,15 +148,10 @@ void _kbLog(String ev, [web.Element? el]) {
   root.setAttribute('data-kb', prev.isEmpty ? line : '$prev||$line');
 }
 
-/// Install capture-phase listeners so the proxy is focused inside the
-/// trusted gesture, *before* Flutter's Dart handler and (for `a`/`b`)
-/// before the engine's pointerdown preventDefault + Timer(0) view
-/// focus, which can void iOS's keyboard permission. Call once from
-/// main().
+/// Install capture-phase listeners. Call once from main().
 void installSoftKeyboardPrimer() {
   if (_primerInstalled) return;
   _primerInstalled = true;
-  // Force a read so the badge and listeners agree on the variant.
   final v = softKeyboardVariant;
   if (!_shouldPrimeKeyboard) return;
   void badge() => _showVariantBadge(v);
@@ -165,44 +161,156 @@ void installSoftKeyboardPrimer() {
     web.window.addEventListener('load', ((web.Event _) => badge()).toJS);
   }
   if (v == 'd') return;
-  void listen(String type, {bool reassert = false}) {
-    web.document.addEventListener(
-      type,
-      ((web.Event e) {
-        if (reassert) {
-          if (_keyboardPrimer != null && !_handoffDone) {
-            primeSoftKeyboard(via: '$type-capture');
-          }
-          return;
-        }
-        final kind = _kindFromEvent(e);
-        if (kind == null) return;
-        primeSoftKeyboard(decimal: kind == 'decimal', via: '$type-capture');
-      }).toJS,
-      true.toJS,
-    );
+  _installFocusPatch();
+
+  if (v == 'b') {
+    // Old default: focus on pointerdown/touchstart (fails on device).
+    _listen('pointerdown', prime: true);
+    _listen('touchstart', prime: true);
+    _listen('pointerup', reassert: true);
+    _listen('touchend', reassert: true);
+    return;
   }
 
-  if (v == 'c') {
-    listen('touchend');
-    listen('click');
-  } else {
-    // a, b: focus on the events that start the gesture, before the
-    // engine preventDefault's pointerdown on the Flutter view.
-    listen('pointerdown');
-    listen('touchstart');
-    // Re-assert in the same gesture if Timer(0) already ran between
-    // down and up (it usually has not; this is still a trusted event).
-    listen('pointerup', reassert: true);
-    listen('touchend', reassert: true);
-  }
+  // a and c: prime on touchend/click only. On pointerdown we only
+  // arm the view-focus block (variant a) so Flutter's Timer(0)
+  // requestViewFocusChange cannot steal focus after we prime.
+  _listen('pointerdown', armOnly: true);
+  _listen('touchend', prime: true);
+  _listen('click', prime: true);
+  // After touchend focus, a compatibility mousedown on the button can
+  // move focus to <body>. Cancel it while the proxy is held.
+  web.document.addEventListener(
+    'mousedown',
+    ((web.Event e) {
+      if (softKeyboardVariant != 'a') return;
+      if (_keyboardPrimer == null || _handoffDone || !_viewFocusBlocked) {
+        return;
+      }
+      if (e.cancelable) e.preventDefault();
+      _kbLog('block-mousedown');
+    }).toJS,
+    true.toJS,
+  );
+}
+
+void _listen(
+  String type, {
+  bool prime = false,
+  bool reassert = false,
+  bool armOnly = false,
+}) {
+  web.document.addEventListener(
+    type,
+    ((web.Event e) {
+      if (reassert) {
+        if (_keyboardPrimer != null && !_handoffDone) {
+          primeSoftKeyboard(via: '$type-capture');
+        }
+        return;
+      }
+      // Arming is only for the New-event / New-stream down itself, not a
+      // stale kind from a previous gesture.
+      final hit = _kindFromEvent(e);
+      final kind = hit ?? (prime ? _armedKind : null);
+      if (kind == null) return;
+      if (armOnly) {
+        if (softKeyboardVariant == 'a') {
+          _armViewFocusBlock();
+          _armedKind = kind;
+          _kbLog('arm-block via=$type');
+          // Same as kbtest 3a: suppress compatibility mouse events that
+          // would blur the proxy after the touchend focus.
+          if (e.cancelable) e.preventDefault();
+        } else {
+          _armedKind = kind;
+        }
+        return;
+      }
+      if (prime) {
+        if (softKeyboardVariant == 'a') _armViewFocusBlock();
+        _armedKind = kind;
+        primeSoftKeyboard(decimal: kind == 'decimal', via: '$type-capture');
+      }
+    }).toJS,
+    true.toJS,
+  );
+}
+
+/// Patch HTMLElement.focus / blur so Flutter's view-root focus
+/// (Timer(0) requestViewFocusChange, safeBlur) and a raw blur()
+/// cannot take focus off the proxy. A blur followed by refocus
+/// can dismiss the iOS keyboard, so we skip the steal rather than
+/// repairing it afterwards. Handoff sets data-kb-block to a value
+/// other than "1" so the real field can take focus.
+void _installFocusPatch() {
+  if (_focusPatched) return;
+  _focusPatched = true;
+  final script = web.document.createElement('script') as web.HTMLScriptElement;
+  script.text = [
+    '(function () {',
+    '  if (window.__kbFocusPatched) return;',
+    '  window.__kbFocusPatched = true;',
+    "  var attr = 'data-kb-block';",
+    "  var primerSel = '[data-kb-primer=\"1\"]';",
+    '  function blocked() {',
+    '    var root = document.documentElement;',
+    '    return root && root.getAttribute(attr) === "1";',
+    '  }',
+    '  function primer() { return document.querySelector(primerSel); }',
+    '  function allowed(el) {',
+    '    if (el === primer()) return true;',
+    '    var role = el.getAttribute && el.getAttribute("data-semantics-role");',
+    '    var cls = (el.className && String(el.className)) || "";',
+    '    if (role === "text-field") return true;',
+    '    if (cls.indexOf("flt-text-editing") !== -1) return true;',
+    '    if (el.closest && el.closest("flt-text-editing-host")) return true;',
+    '    return false;',
+    '  }',
+    '  function log(line) {',
+    '    var root = document.documentElement;',
+    '    if (!root) return;',
+    '    var prev = root.getAttribute("data-kb") || "";',
+    '    root.setAttribute("data-kb", prev ? prev + "||" + line : line);',
+    '  }',
+    '  var origFocus = HTMLElement.prototype.focus;',
+    '  HTMLElement.prototype.focus = function (opts) {',
+    '    if (blocked() && primer() && !allowed(this)) {',
+    '      log("block-view-focus tag=" + (this.tagName || "") + " type= mode= ph= role=");',
+    '      return;',
+    '    }',
+    '    return origFocus.call(this, opts);',
+    '  };',
+    '  var origBlur = HTMLElement.prototype.blur;',
+    '  HTMLElement.prototype.blur = function () {',
+    '    if (blocked() && this === primer()) {',
+    '      log("block-primer-blur tag=" + (this.tagName || "") + " type= mode= ph= role=");',
+    '      return;',
+    '    }',
+    '    return origBlur.call(this);',
+    '  };',
+    '})();',
+  ].join('\n');
+  (web.document.head ?? web.document.documentElement)?.append(script);
+}
+
+void _armViewFocusBlock() {
+  if (_viewFocusBlocked) return;
+  _viewFocusBlocked = true;
+  web.document.documentElement?.setAttribute('data-kb-block', '1');
+}
+
+void _disarmViewFocusBlock() {
+  _viewFocusBlocked = false;
+  _armedKind = null;
+  web.document.documentElement?.removeAttribute('data-kb-block');
 }
 
 void _showVariantBadge(String v) {
   const labels = {
-    'a': 'kb=a · pointerdown + handoff',
-    'b': 'kb=b · pointerdown, keep proxy',
-    'c': 'kb=c · touchend + handoff',
+    'a': 'kb=a · touchend + handoff',
+    'b': 'kb=b · pointerdown + handoff',
+    'c': 'kb=c · touchend, no steal-block',
     'd': 'kb=d · instant open, no proxy',
   };
   final existing = web.document.getElementById('kb-variant-badge');
@@ -267,17 +375,15 @@ String? _primeKindFromLabel(String raw) {
   return null;
 }
 
-/// Touch browsers (iOS Safari especially) only raise the soft keyboard
-/// for a focus() made inside the user's gesture. Flutter's text-editing
-/// input does not exist yet, so a proxy input is focused now; once
-/// Flutter has created its own, [handoffSoftKeyboard] moves focus to
-/// it (iOS keeps the keyboard open when focus moves input-to-input),
-/// unless variant `b` keeps the proxy.
+/// iOS Safari only raises the soft keyboard for a focus() made inside
+/// touchend/click (not pointerdown/touchstart). Flutter's field does
+/// not exist yet, so a proxy is focused in that gesture; once Flutter
+/// has created its own, [handoffSoftKeyboard] moves focus to it.
 ///
 /// The proxy is a real, in-viewport 16px field (not a 1x1 opacity-0
-/// node: iOS ignores those). It stays until the handoff, not until
-/// the first blur — dropping it before Flutter's input exists is
-/// what left a painted caret with no system keyboard.
+/// node: iOS ignores those). It stays until the handoff. We block
+/// engine view-focus steals so the proxy is not blurred (a blur then
+/// refocus can dismiss the keyboard).
 void primeSoftKeyboard({bool decimal = false, String? via}) {
   if (!_shouldPrimeKeyboard) return;
   if (softKeyboardVariant == 'd') return;
@@ -293,7 +399,6 @@ void primeSoftKeyboard({bool decimal = false, String? via}) {
     return;
   }
   existing?.remove();
-  web.document.documentElement?.setAttribute('data-kb', '');
   final input = web.document.createElement('input') as web.HTMLInputElement
     ..type = 'text'
     ..inputMode = decimal ? 'decimal' : 'text'
@@ -324,15 +429,24 @@ void _onPrimerBlur() {
   if (input == null || _handoffDone) return;
   final active = web.document.activeElement;
   if (active != null && _isFlutterField(active)) {
+    _kbLog('blur-to-field', active);
     if (softKeyboardVariant != 'b') {
-      _kbLog('blur-to-field', active);
       scheduleMicrotask(_dropPrimer);
     }
     return;
   }
-  // Engine Timer(0) requestViewFocusChange / safeBlur often moves
-  // focus to flutter-view. Pull it back so a keyboard that already
-  // opened stays up, and so later handoff is still input-to-input.
+  // _tryHandoff sets data-kb-block=handoff, then focuses the field.
+  // During that transition WebKit reports activeElement as <body>.
+  final block = web.document.documentElement?.getAttribute('data-kb-block');
+  if (block == 'handoff') {
+    _kbLog('blur-to-handoff', active);
+    return;
+  }
+  // A blur here, before handoff, is the failure mode on iOS.
+  _kbLog('primer-blur', active);
+  // Variant b is the old pointerdown path, which re-asserted focus.
+  // For a, we must not refocus: that can dismiss the keyboard.
+  if (softKeyboardVariant != 'b') return;
   scheduleMicrotask(() {
     if (_keyboardPrimer == null || _handoffDone) return;
     final now = web.document.activeElement;
@@ -346,10 +460,10 @@ void _onPrimerBlur() {
 
 /// Move focus from the proxy to Flutter's text-editing input, once
 /// that node exists. Safe to call on every requestFocus; it no-ops
-/// when nothing was primed (desktop, edit views, or variants b/d).
+/// when nothing was primed (desktop, edit views, or variant d).
 void handoffSoftKeyboard() {
   if (_keyboardPrimer == null) return;
-  if (softKeyboardVariant == 'b' || softKeyboardVariant == 'd') return;
+  if (softKeyboardVariant == 'd') return;
   if (_tryHandoff()) return;
   _handoffTimer?.cancel();
   _handoffTries = 0;
@@ -396,6 +510,7 @@ bool _tryHandoff() {
     _kbLog('handoff-wait');
     return false;
   }
+  web.document.documentElement?.setAttribute('data-kb-block', 'handoff');
   (next as web.HTMLElement).focus(web.FocusOptions(preventScroll: true));
   _kbLog('handoff', next);
   scheduleMicrotask(_dropPrimer);
@@ -406,6 +521,7 @@ void _dropPrimer() {
   _handoffTimer?.cancel();
   _handoffTimer = null;
   _handoffDone = true;
+  _disarmViewFocusBlock();
   final input = _keyboardPrimer;
   _keyboardPrimer = null;
   input?.remove();

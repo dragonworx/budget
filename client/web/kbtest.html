@@ -28,6 +28,10 @@
       background: #14b8a6; color: #042f2e; -webkit-appearance: none;
     }
     button.alt { background: #334155; color: #e8f1f0; }
+    button.fail {
+      background: #3f1d24; color: #fecdd3; border: 1px solid #9f1239;
+    }
+    .note { font-size: 12px; color: #f9a8d4; margin: -4px 0 10px; }
     input[type=text], input[type=tel] {
       width: 100%; font-size: 16px; padding: 12px; border-radius: 10px;
       border: 1px solid #2a9d8f; background: #0b141a; color: #fff;
@@ -61,7 +65,8 @@
     <p>Focus the field inside the event. If these fail, iOS is blocking more than Flutter.</p>
     <button data-t="click-focus">1a. Focus on click</button>
     <button data-t="touchend-focus">1b. Focus on touchend</button>
-    <button data-t="touchstart-focus">1c. Focus on touchstart / pointerdown</button>
+    <button class="fail" data-t="touchstart-focus">1c. Focus on touchstart / pointerdown (expected fail)</button>
+    <p class="note">Control: on Ali’s iPhone this did not open the keyboard.</p>
   </div>
 
   <div class="card">
@@ -77,16 +82,19 @@
     <p>Reproduces what the Flutter engine does on a tap.</p>
     <button data-t="prevent-then-touchend">3a. preventDefault on pointerdown, focus on touchend</button>
     <button data-t="capture-then-prevent">3b. Focus in capture pointerdown, then preventDefault</button>
-    <button data-t="steal-timer0">3c. Focus in pointerdown, then move focus to a div at 0 ms</button>
+    <button class="fail" data-t="steal-timer0">3c. Focus in pointerdown, then Timer(0) steal (expected fail)</button>
+    <p class="note">Control: a steal after focus dismisses the keyboard. This is what Flutter’s view-focus timer does.</p>
+    <button data-t="touchend-after-steal">3d. Timer(0) steal on pointerdown, then focus on touchend</button>
+    <p class="note">Mirrors the new in-app default: if the steal already ran, touchend focus still works; if it would run after touchend, it is blocked.</p>
   </div>
 
   <div class="card">
     <h2>In-app variants (after this page)</h2>
     <p>Sign in as usual, open a stream, then try New event and New stream. A green “kb=…” badge in the corner confirms which strategy is live.</p>
     <p>
-      <a href="/?kb=a">/?kb=a</a> — default: pointerdown + instant open + handoff<br>
-      <a href="/?kb=b">/?kb=b</a> — pointerdown + instant open, keep the proxy focused<br>
-      <a href="/?kb=c">/?kb=c</a> — previous: touchend + instant open + handoff<br>
+      <a href="/?kb=a">/?kb=a</a> — default: touchend + instant open + handoff, block view-focus steal<br>
+      <a href="/?kb=b">/?kb=b</a> — old default: pointerdown + handoff (did not open the keyboard)<br>
+      <a href="/?kb=c">/?kb=c</a> — touchend + handoff, without blocking the steal<br>
       <a href="/?kb=d">/?kb=d</a> — no proxy, just skip the open animation
     </p>
   </div>
@@ -207,6 +215,28 @@
       steal.focus();
       log('3c Timer(0) moved focus to #steal (flutter-view analogue)');
     }, 0);
+  }, true);
+
+  // 3d: Flutter-like pointerdown steal, then focus on touchend. After
+  // touchend the steal is skipped so a late Timer(0) cannot blur the field.
+  let locked3d = false;
+  bind('touchend-after-steal', 'pointerdown', () => {
+    locked3d = false;
+    log('3d pointerdown: scheduled Timer(0) steal');
+    setTimeout(() => {
+      if (locked3d) {
+        log('3d Timer(0) steal blocked (touchend already focused)');
+        return;
+      }
+      steal.focus();
+      log('3d Timer(0) steal to #steal already fired');
+    }, 0);
+  }, true);
+  bind('touchend-after-steal', 'touchend', () => {
+    locked3d = true;
+    dropProxy();
+    field.focus();
+    log('3d touchend focus #field');
   }, true);
 
   document.getElementById('clear').onclick = () => { logEl.textContent = ''; };
