@@ -130,9 +130,41 @@ void main() {
     TextField name() =>
         tester.widget<TextField>(find.byKey(const ValueKey('stream-name')));
     expect(name().focusNode?.hasFocus, isFalse);
-    await tester.pump(streamNameRefocusDelay);
-    expect(name().focusNode?.hasFocus, isTrue);
+    // Still mid-transition: Name is not snatched back on a timer.
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(name().focusNode?.hasFocus, isFalse);
     await tester.pumpAndSettle();
+    expect(name().focusNode?.hasFocus, isTrue);
+  });
+
+  testWidgets('New stream: a field the user focuses while it opens keeps it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showStreamDialog(context, onSave: (a) async => a),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    final seed = find.descendant(
+      of: find.byKey(const ValueKey('stream-seed')),
+      matching: find.byType(EditableText),
+    );
+    await tester.tap(seed);
+    await tester.pump();
+    await tester.pumpAndSettle();
+    final name = tester.widget<TextField>(
+      find.byKey(const ValueKey('stream-name')),
+    );
+    expect(name.focusNode?.hasFocus, isFalse);
+    expect(tester.widget<EditableText>(seed).focusNode.hasFocus, isTrue);
   });
 
   test('seedShiftDays counts calendar days', () {

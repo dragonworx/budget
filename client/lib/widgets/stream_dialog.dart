@@ -1,7 +1,5 @@
 import '../features/loans/loan_display.dart';
 
-import 'dart:async';
-
 import 'package:budget_formula/budget_formula.dart' show fieldSpecs;
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../boot/page_stub.dart'
     if (dart.library.js_interop) '../boot/page_web.dart';
 import '../data/models.dart';
+import 'after_transition.dart';
 import 'formula/formula_field.dart';
 import 'money_text.dart';
 import '../theme/app_theme.dart';
@@ -81,7 +80,6 @@ class _StreamDialogState extends State<StreamDialog> {
   /// Edit stream (Stream settings) offers the picker.
   late int _currencyScale;
   final _nameFocus = FocusNode(debugLabel: 'stream-name');
-  Timer? _refocus;
   String? _nameError;
   String? _balanceError;
   String? _lossError;
@@ -135,24 +133,34 @@ class _StreamDialogState extends State<StreamDialog> {
     _seedDate = existing?.seedDate ?? DateTime.now();
     _currencyScale =
         existing?.currencyScale ?? BudgetStream.defaultCurrencyScale;
-    // New: Name again once the dialog has animated in, unless focus has
-    // already moved inside it (a closing menu restores its own focus).
+    // New: Name on the first frame (still close to the opening tap, so
+    // iOS / Android web can raise the keyboard) and again once the
+    // dialog has actually finished opening, unless the user already
+    // moved focus inside it (a closing menu restores its own focus).
     if (existing == null) {
-      _refocus = Timer(streamNameRefocusDelay, () {
-        if (!mounted || _nameFocus.hasFocus) return;
-        final primary = FocusManager.instance.primaryFocus;
-        final ctx = primary?.context;
-        final inDialog =
-            ctx != null &&
-            ctx.findAncestorStateOfType<_StreamDialogState>() == this;
-        if (!inDialog) _nameFocus.requestFocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _nameFocus.requestFocus();
+        _openWait.schedule(context, _focusNameIfIdle);
       });
     }
   }
 
+  final _openWait = TransitionWait();
+
+  void _focusNameIfIdle() {
+    if (!mounted || _nameFocus.hasFocus) return;
+    final primary = FocusManager.instance.primaryFocus;
+    final ctx = primary?.context;
+    final inDialog =
+        ctx != null &&
+        ctx.findAncestorStateOfType<_StreamDialogState>() == this;
+    if (!inDialog) _nameFocus.requestFocus();
+  }
+
   @override
   void dispose() {
-    _refocus?.cancel();
+    _openWait.cancel();
     _nameFocus.dispose();
     _name.dispose();
     _seedBalance.dispose();
@@ -393,10 +401,6 @@ class _StreamDialogState extends State<StreamDialog> {
     }
   }
 }
-
-/// How long after opening a new stream's dialog Name is refocused if
-/// something took the focus away.
-const Duration streamNameRefocusDelay = Duration(milliseconds: 400);
 
 /// Calendar days from [from] to [to] (date parts only, DST safe).
 int seedShiftDays(DateTime from, DateTime to) => DateTime.utc(

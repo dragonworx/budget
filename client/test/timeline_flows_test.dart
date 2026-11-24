@@ -1532,7 +1532,6 @@ void main() {
       // Primed synchronously, inside the tap.
       expect(page.primeSoftKeyboardCalls, primed + 1);
       await tester.pump();
-      await tester.pump(nameRefocusDelay);
       await tester.pumpAndSettle();
       expect(nameFocused(tester), isTrue);
       // Once by default; just Details and Schedule.
@@ -1599,7 +1598,6 @@ void main() {
     final primed = page.primeSoftKeyboardCalls;
     await tester.tap(find.text('Rent'), kind: PointerDeviceKind.touch);
     await tester.pump();
-    await tester.pump(nameRefocusDelay);
     await tester.pumpAndSettle();
     expect(page.primeSoftKeyboardCalls, primed);
     expect(nameFocused(tester), isFalse);
@@ -1646,7 +1644,6 @@ void main() {
       final ctx = tester.element(find.byType(BalanceChart));
       unawaited(showEventEditor(ctx, streamId: 'p1'));
       await tester.pump();
-      await tester.pump(nameRefocusDelay);
       await tester.pumpAndSettle();
       expect(amountFocused(tester), isTrue);
       expect(find.byKey(const ValueKey('editor-name')), findsNothing);
@@ -1692,11 +1689,47 @@ void main() {
     unawaited(showEventEditor(ctx, streamId: 'p1'));
     expect(page.primeSoftKeyboardCalls, primed + 1);
     await tester.pump();
-    await tester.pump(nameRefocusDelay);
     await tester.pumpAndSettle();
     expect(nameFocused(tester), isTrue);
     expect(find.byKey(const ValueKey('editor-interval')), findsNothing);
     expect(sectionTitles(tester), ['Details', 'Schedule']);
+  });
+
+  testWidgets('showEventEditor: Amount is focused only after the panel '
+      'transition finishes; a field the user focuses mid-open keeps it', (
+    tester,
+  ) async {
+    await _pump(tester, size: const Size(1440, 900));
+    final ctx = tester.element(find.byType(BalanceChart));
+    unawaited(showEventEditor(ctx, streamId: 'p1'));
+    await tester.pump();
+    // Mid-slide: the first-frame focus may already be on Amount (so the
+    // keyboard can rise inside the tap). Stealing it mid-open must stick.
+    final amount = find.descendant(
+      of: find.byKey(const ValueKey('editor-amount')),
+      matching: find.byType(EditableText),
+    );
+    expect(amount, findsOneWidget);
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    expect(nameFocused(tester), isFalse);
+    await tester.pump(const Duration(milliseconds: 50));
+    // Not a timer: still mid-transition, Amount stays unfocused.
+    expect(nameFocused(tester), isFalse);
+    await tester.pumpAndSettle();
+    expect(nameFocused(tester), isTrue);
+
+    // Open again and move focus to the seed-like in-editor control
+    // (the category field) before the slide finishes.
+    await tester.tap(find.byKey(const ValueKey('editor-close')));
+    await tester.pumpAndSettle();
+    unawaited(showEventEditor(ctx, streamId: 'p1'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tap(find.byKey(const ValueKey('editor-category-field')));
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(nameFocused(tester), isFalse);
   });
 
   for (final (name, size, a11y) in const [

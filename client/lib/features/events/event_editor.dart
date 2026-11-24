@@ -25,6 +25,7 @@ import '../../widgets/money_text.dart';
 import '../../widgets/frequency_picker.dart';
 import '../../widgets/formula/formula_style.dart' show formatFieldValue;
 import '../../widgets/formula/formula_field.dart';
+import '../../widgets/after_transition.dart';
 import '../../widgets/ui.dart';
 import '../timeline/occurrence_dates.dart';
 import '../timeline/occurrence_info.dart';
@@ -367,30 +368,33 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (!_readOnly && widget.existing == null) {
+        // First frame: still close to the opening tap, so iOS / Android
+        // web can raise the keyboard (see [primeSoftKeyboard]).
         _focusAmount();
+        // Again once the panel / switcher has actually finished, unless
+        // the user has already moved focus inside the editor. Something
+        // closing in the same frame (the New ▾ menu restoring its focus)
+        // or the opening route can otherwise take it away.
+        _openWait.schedule(context, _focusAmountIfIdle);
       } else if (!_scope.hasFocus) {
         _scope.requestFocus();
       }
     });
-    // Amount again once the panel / sheet has animated in, unless the user
-    // has already moved focus inside the editor. Something closing in the
-    // same frame (the New ▾ menu restoring its focus) or the opening route
-    // can otherwise take it away.
-    // (New events only: editing doesn't pop the keyboard over the form.)
-    if (!_readOnly && widget.existing == null) {
-      _refocus = Timer(nameRefocusDelay, () {
-        if (!mounted || _amountFocus.hasFocus) return;
-        final primary = FocusManager.instance.primaryFocus;
-        final inEditor =
-            primary != null &&
-            primary != _scope &&
-            primary.ancestors.contains(_scope);
-        if (!inEditor) _focusAmount();
-      });
-    }
   }
 
-  Timer? _refocus;
+  final _openWait = TransitionWait();
+
+  /// Amount (or the loan principal) unless the user already moved focus
+  /// inside this editor during the open transition.
+  void _focusAmountIfIdle() {
+    if (!mounted || _amountFocus.hasFocus || _principalFocus.hasFocus) return;
+    final primary = FocusManager.instance.primaryFocus;
+    final inEditor =
+        primary != null &&
+        primary != _scope &&
+        primary.ancestors.contains(_scope);
+    if (!inEditor) _focusAmount();
+  }
 
   /// The event's category: the one picked (or the saved one), else the
   /// last one used in this stream, else the first. Null only while the
@@ -501,7 +505,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     _interval.dispose();
     _count.dispose();
     _scope.dispose();
-    _refocus?.cancel();
+    _openWait.cancel();
     _amountFocus.dispose();
     _principalFocus.dispose();
     super.dispose();
@@ -2260,7 +2264,3 @@ class _ViewOnlyNote extends StatelessWidget {
     );
   }
 }
-
-/// When a new event's editor re-checks that Amount has focus (after
-/// the panel's entrance animation).
-const Duration nameRefocusDelay = Duration(milliseconds: 400);
