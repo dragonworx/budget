@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 // Landing after sign-in: the last-used stream opens directly; with none, the
 // Streams home shows an empty state with New stream; creating one lands in
 // it. There are no projects.
@@ -185,7 +183,7 @@ void main() {
 
   // The header stream picker fills the room between the brand and the
   // actions, portrait and landscape: the raised trigger stretches across
-  // it, name at the left, arrow pinned at the right end; the actions stay
+  // it, name centred, arrow pinned at the right end; the actions stay
   // on screen.
   for (final (size, docked) in const [
     (Size(320, 640), false),
@@ -266,28 +264,24 @@ void main() {
         for (final r in rights) {
           expect(r.right, lessThanOrEqualTo(size.width));
         }
-        // The name leads the trigger; a long one ellipsises.
+        // The name is centred in the trigger; a long one ellipsises and
+        // stays clear of the arrow.
+        expect(
+          tester.widget<Text>(find.text(name)).textAlign,
+          TextAlign.center,
+        );
         final text = tester.renderObject<RenderParagraph>(
           find.descendant(of: find.text(name), matching: find.byType(RichText)),
         );
         final textBox = tester.getRect(
           find.descendant(of: find.text(name), matching: find.byType(RichText)),
         );
-        if (textBox.width > 0) {
-          expect(textBox.left, greaterThan(chip.left));
-          expect(textBox.left, lessThan(chip.left + 14));
-          expect(textBox.right, lessThanOrEqualTo(arrow.left + 0.5));
-        }
+        expect(textBox.center.dx, closeTo(chip.center.dx, 2));
+        expect(textBox.right, lessThanOrEqualTo(arrow.left + 1));
         // A short name on a wide header: the arrow stays at the far right,
         // not next to the name.
         if (name == 'Bills' && size.width >= 600) {
-          final textEnd =
-              textBox.left +
-              math.min(
-                text.getMaxIntrinsicWidth(double.infinity),
-                textBox.width,
-              );
-          expect(arrow.left - textEnd, greaterThan(100));
+          expect(arrow.left - textBox.right, greaterThan(48));
         }
         final glyphs = text.getMaxIntrinsicWidth(double.infinity);
         if (glyphs > area.width - 40) expect(text.didExceedMaxLines, isTrue);

@@ -16,6 +16,7 @@ import 'package:budget_client/features/timeline/occurrence_dates.dart';
 import 'package:budget_client/features/timeline/occurrence_info.dart';
 import 'package:budget_client/features/timeline/selection_period.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
+import 'package:budget_client/theme/app_theme.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/foundation.dart'
@@ -23,7 +24,6 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/gestures.dart';
 import 'package:budget_client/state/realtime_providers.dart';
 import 'package:budget_client/widgets/list_glyph.dart';
-import 'package:budget_client/widgets/day_add_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1860,12 +1860,11 @@ void main() {
     (Size(1180, 820), true),
   ]) {
     testWidgets(
-      '${size.width.toInt()}x${size.height.toInt()} header: Tab goes New event today → Reminders '
+      '${size.width.toInt()}x${size.height.toInt()} header: Tab goes Reminders '
       '→ Events${mid ? ' → Stream settings' : ''} → View → More',
       (tester) async {
         await _pump(tester, size: size);
         final order = [
-          'new-event-today',
           'open-reminders',
           'open-events',
           if (mid) 'stream-settings',
@@ -1887,9 +1886,9 @@ void main() {
           return hit;
         }
 
-        // Start on New event today, then Tab through the rest in order.
+        // Start on Reminders, then Tab through the rest in order.
         final start = find.descendant(
-          of: find.byKey(const ValueKey('new-event-today')),
+          of: find.byKey(const ValueKey('open-reminders')),
           matching: find.byType(Focus),
         );
         Focus.of(
@@ -1904,7 +1903,7 @@ void main() {
           createDependency: false,
         ).requestFocus();
         await tester.pump();
-        expect(focused(), 'new-event-today');
+        expect(focused(), 'open-reminders');
         for (final k in order.skip(1)) {
           await tester.sendKeyEvent(LogicalKeyboardKey.tab);
           await tester.pump();
@@ -1963,7 +1962,7 @@ void main() {
       }
       expect(more.right, lessThanOrEqualTo(w));
       expect(more.right, greaterThan(w - 16));
-      // Right end, in order: New event today · Reminders · Events ·
+      // Right end, in order: Reminders · Events ·
       // Stream settings (≥960) · View · More, at every width (320
       // included: Events never hides in More); neighbours after
       // Reminders touch (even spacing, no stray gaps).
@@ -1989,10 +1988,6 @@ void main() {
           expect(gap, greaterThan(-1), reason: '${row[i - 1]} → ${row[i]}');
           expect(gap, lessThan(4), reason: '${row[i - 1]} → ${row[i]}');
         }
-        expect(
-          r('open-reminders').left,
-          greaterThan(r('new-today-gap').right - 1),
-        );
         expect(r('open-events').width, greaterThanOrEqualTo(40));
         expect(r('open-events').right, lessThanOrEqualTo(w));
         // The glyph is painted (not transparent) when the list is closed.
@@ -2034,8 +2029,9 @@ void main() {
         );
         expect(find.byTooltip('Events (2)'), findsOneWidget);
       }
-      // New event today is the first button: nothing between the stream
+      // Reminders is the first button: nothing between the stream
       // area and it (Share stream lives in More at every width).
+      expect(find.byKey(const ValueKey('new-event-today')), findsNothing);
       for (final e
           in find
               .descendant(
@@ -2049,7 +2045,7 @@ void main() {
         if (rect.left > r('header-stream-area').right - 0.5) {
           expect(
             rect.left,
-            greaterThan(r('new-event-today').left - 0.5),
+            greaterThan(r('open-reminders').left - 0.5),
             reason: '${e.widget.key}',
           );
         }
@@ -2124,7 +2120,7 @@ void main() {
                 .evaluate())
           tester.getRect(find.byWidget(e.widget)).left,
       ].where((l) => l >= name.right - 0.5).reduce(math.min);
-      // Only the sync dot and the small lead gap before New event today.
+      // The small lead gap before Reminders. The sync dot sits on the logo.
       expect(firstAction - name.right, lessThanOrEqualTo(30));
       expect(find.byKey(const ValueKey('open-plan')), findsNothing);
       // No date range / heat map row and no tips row: the chart takes the
@@ -2191,113 +2187,61 @@ void main() {
       expect(r('timeline-more').right, lessThanOrEqualTo(w));
       expect(r('header-stream-picker').width, greaterThan(40));
       expect(r('header-stream-picker').right, lessThanOrEqualTo(tx.left));
-      // One sync dot: on the logo below 360, in the action row otherwise.
+      // One sync dot, on the logo's top-right, overlapping it slightly.
       expect(find.byType(RealtimeDot), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('brand-rt-dot')),
-        w < 360 ? findsOneWidget : findsNothing,
-      );
+      final logo = r('timeline-brand');
+      final dot = r('brand-rt-dot');
+      expect(dot.top, lessThan(logo.top));
+      expect(dot.right, greaterThan(logo.right));
+      expect(dot.left, lessThan(logo.right));
+      expect(dot.bottom, greaterThan(logo.top));
+      expect(logo.top - dot.top, lessThan(6));
+      expect(dot.right - logo.right, lessThan(6));
       await tester.tap(find.byKey(const ValueKey('open-events')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('panel-new-event')), findsOneWidget);
     });
   }
 
-  // "New event today" (the day popup's +): always in the header, immediately
-  // before Reminders, at every width; never in More.
-  for (final w in const [
-    320.0,
-    339.0,
-    360.0,
-    390.0,
-    402.0,
-    412.0,
-    600.0,
-    959.0,
-    960.0,
-    1240.0,
-    1440.0,
-  ]) {
-    testWidgets('${w.toInt()}px: New event today sits right before '
-        'Reminders; the stream name keeps room', (tester) async {
-      await _pump(tester, size: Size(w, w < 600 ? 800 : 900));
-      expect(tester.takeException(), isNull);
-      final btn = find.byKey(const ValueKey('new-event-today'));
-      expect(btn, findsOneWidget);
-      // The day popup's "+": same icon, same tonal circle.
-      final nb = tester.widget<IconButton>(btn);
-      expect(identical(nb.icon, dayAddIcon), isTrue);
-      expect((nb.icon as Icon).icon, Icons.add_rounded);
-      expect((nb.icon as Icon).size, 22);
-      final want = dayAddButtonStyle();
+  // The add control is a circle on the chart's top-right, never in the header.
+  for (final size in const [Size(402, 874), Size(1440, 900)]) {
+    testWidgets('${size.width.toInt()}px: circular add floats on the '
+        'chart\'s top-right and opens today', (tester) async {
+      final store = await _pump(tester, size: size);
+      expect(find.byKey(const ValueKey('new-event-today')), findsNothing);
+      final fab = find.byKey(const ValueKey('add-event-fab'));
+      expect(fab, findsOneWidget);
+      final material = tester.widget<Material>(fab);
+      expect(material.shape, isA<CircleBorder>());
+      expect(material.color, AppTheme.accent);
+      final box = tester.getRect(fab);
+      expect(box.width, 56);
+      expect(box.height, 56);
+      final chart = tester.getRect(find.byType(BalanceChart));
+      expect(box.right, closeTo(chart.right - 12, 1));
+      expect(box.top, closeTo(chart.top + 12, 1));
       expect(
-        nb.style!.backgroundColor!.resolve({}),
-        want.backgroundColor!.resolve({}),
+        find.descendant(of: find.byType(AppBar), matching: fab),
+        findsNothing,
       );
-      expect(
-        nb.style!.foregroundColor!.resolve({}),
-        want.foregroundColor!.resolve({}),
-      );
-      expect(nb.style!.visualDensity, VisualDensity.compact);
-      expect(tester.widget<IconButton>(btn).tooltip, 'New event today');
-      Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
-      final n = tester.getRect(btn), rem = r('open-reminders');
-      expect(n.width, greaterThanOrEqualTo(36));
-      expect(n.right, lessThanOrEqualTo(rem.left + 0.5));
-      expect(rem.left - n.right, lessThan(12), reason: 'adjacent');
-      // A clear gap so the + doesn't touch Reminders: 8 at >=960, 6 on
-      // tablets, 4 on phones.
-      final gap = w >= 960 ? 8.0 : (w >= 600 ? 6.0 : 4.0);
-      expect(rem.left - n.right, moreOrLessEquals(gap, epsilon: 0.5));
-      expect((n.center.dy - rem.center.dy).abs(), lessThan(2));
-      expect(n.left, greaterThan(r('header-stream-picker').right - 1));
-      expect(r('header-stream-picker').width, greaterThan(40));
-      expect(r('timeline-more').right, lessThanOrEqualTo(w));
-      // Nothing else sits between it and Reminders.
-      final between = find.byWidgetPredicate((wd) {
-        if (wd is! IconButton && wd is! ButtonStyleButton) return false;
-        final e = find.byWidget(wd);
-        if (e.evaluate().isEmpty) return false;
-        final b = tester.getRect(e.first);
-        return b.left >= n.right - 0.5 &&
-            b.right <= rem.left + 0.5 &&
-            (b.center.dy - n.center.dy).abs() < 20;
-      });
-      expect(between, findsNothing);
-      // Never duplicated in More.
-      await tester.tap(find.byKey(const ValueKey('timeline-more')));
-      await tester.pumpAndSettle();
-      expect(find.text('New event today'), findsNothing);
-    });
-  }
-
-  for (final w in const [402.0, 1440.0]) {
-    testWidgets('${w.toInt()}px: New event today opens the New event '
-        'editor on today; nothing is created until saved', (tester) async {
-      final store = await _pump(tester, size: Size(w, 874));
-      await tester.tap(find.byKey(const ValueKey('new-event-today')));
+      await tester.tap(fab);
       await tester.pumpAndSettle();
       final editor = tester.widget<EventEditor>(find.byType(EventEditor));
-      final now = DateTime.now();
-      expect(editor.initialDate, DateTime(now.year, now.month, now.day));
+      expect(editor.initialDate, _day);
       expect(editor.existing, isNull);
-      expect(find.byKey(const ValueKey('editor-amount')), findsOneWidget);
       expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('view-only stream: New event today stays visible, disabled', (
-    tester,
-  ) async {
+  testWidgets('view-only stream: no add button', (tester) async {
     await _pump(
       tester,
       size: const Size(402, 874),
       setup: (s) => s.role = Role.viewer,
     );
-    final btn = find.byKey(const ValueKey('new-event-today'));
-    expect(btn, findsOneWidget);
-    expect(tester.widget<IconButton>(btn).onPressed, isNull);
+    expect(find.byKey(const ValueKey('new-event-today')), findsNothing);
+    expect(find.byKey(const ValueKey('add-event-fab')), findsNothing);
   });
 
   group('Events list hover highlights the event lane (desktop mouse)', () {
@@ -2885,6 +2829,42 @@ void main() {
       await _viewGo(tester, 'today');
       await tester.pumpAndSettle();
       expect(tester.widget<Text>(pickDate).data, first);
+    });
+
+    testWidgets('chart add opens a new event on the selected day', (
+      tester,
+    ) async {
+      final store = await _pump(tester);
+      final fab = find.byKey(const ValueKey('add-event-fab'));
+      expect(fab, findsOneWidget);
+      expect(tester.widget<Material>(fab).shape, isA<CircleBorder>());
+      final box = tester.getRect(fab);
+      final chart = tester.getRect(find.byType(BalanceChart));
+      expect(box.width, 56);
+      expect(box.height, 56);
+      expect(box.right, closeTo(chart.right - 12, 1));
+      expect(box.top, closeTo(chart.top + 12, 1));
+
+      await tester.tap(fab);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<EventEditor>(find.byType(EventEditor)).initialDate,
+        _day,
+      );
+      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
+      Navigator.of(tester.element(find.byType(EventEditor))).pop();
+      await tester.pumpAndSettle();
+
+      await _viewGo(tester, 'seed');
+      await tester.pumpAndSettle();
+      await expectSelected(tester, seedDay, 'seed');
+      await tester.tap(fab);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<EventEditor>(find.byType(EventEditor)).initialDate,
+        seedDay,
+      );
+      expect(store.calls.where((c) => c.startsWith('create')), isEmpty);
     });
   });
 

@@ -26,7 +26,6 @@ import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/stream_dialog.dart';
 import '../../widgets/list_glyph.dart';
-import '../../widgets/day_add_button.dart';
 import '../../widgets/stream_picker.dart';
 import '../../widgets/ui.dart';
 import '../events/editor_outcome.dart';
@@ -1509,10 +1508,19 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                             stream.lossThreshold.toDouble(),
                                           ),
                                         ),
+                                        if (stream.role.canEdit)
+                                          Positioned(
+                                            top: 12,
+                                            right: 12,
+                                            child: _timelineAddButton(
+                                              context,
+                                              stream,
+                                            ),
+                                          ),
                                         if (_goalActive)
                                           Positioned(
                                             top: combo != null ? 44 : 8,
-                                            right: 8,
+                                            right: stream.role.canEdit ? 76 : 8,
                                             child: FilterChip(
                                               key: const ValueKey(
                                                 'target-tool',
@@ -1536,7 +1544,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                         if (combo != null)
                                           Positioned(
                                             top: 8,
-                                            right: 8,
+                                            right: stream.role.canEdit ? 76 : 8,
                                             child: _CombinedLegend(
                                               combo: combo,
                                               streamName: stream.name,
@@ -1702,10 +1710,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   // ---------------------------------------------------------------- header
 
   /// Every timeline action lives in the header row, right of the stream
-  /// name, all icon-only, left to right: New event today (the day popup's
-  /// +, never collapses) · a small gap · Reminders (plain icon) · Events
+  /// name, all icon-only, left to right: Reminders (plain icon) · Events
   /// (plain list icon) · Stream settings (≥960px) · View (eye: Go to
   /// today / seed date / date…, Combine, Categories) · More (⋮, rightmost).
+  /// Adding an event is the circular button on the chart, not a header icon.
   ///
   /// Share stream is always in More; below 960px Stream settings is too.
   /// Below 360px the back slot, logo gap and View button tighten.
@@ -1717,8 +1725,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   ) {
     final desk = width >= 600, mid = width >= 960;
     final tiny = width < 360;
-    // Phones up to 420px: the always-there icons (New event today,
-    // Reminders, Events, View, More) drop the 48px tap padding to 40 so the
+    // Phones up to 420px: the always-there icons (Reminders, Events, View,
+    // More) drop the 48px tap padding to 40 so the
     // stream name keeps room at 320.
     final slim = width < 420
         ? IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap)
@@ -1805,20 +1813,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     ];
 
     return [
-      // Below 360 the sync dot sits on the logo's corner instead.
-      if (!tiny) const RealtimeDot(),
       // Go to today / seed date live in the View (eye) menu; Share stream
       // in More.
       SizedBox(width: mid ? 6 : (tiny ? 0 : 2)),
-      // New event today: always in the header, at every width, just before
-      // Reminders (the only header action that creates; chart taps never do).
-      _newTodayButton(context, stream, style: slim),
-      // Breathing room so the + doesn't touch Reminders (both are filled
-      // shapes): 8 on desktop, 6 on tablets, 4 on phones (320 included).
-      SizedBox(
-        key: const ValueKey('new-today-gap'),
-        width: mid ? 8 : (desk ? 6 : 4),
-      ),
       // The reminders calendar: a plain icon like Events / View / More (no
       // fill), at every width; the label is its tooltip / semantics.
       IconButton(
@@ -1950,30 +1947,29 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
   }
 
-  /// "New event today": the day popup's "+" (same icon and tonal circle),
-  /// opening the New event editor with today as the start date. Never
-  /// collapses into More; view-only streams show it disabled.
-  Widget _newTodayButton(
-    BuildContext context,
-    BudgetStream stream, {
-    ButtonStyle? style,
-  }) {
-    final canEdit = stream.role.canEdit;
-    return IconButton(
-      key: const ValueKey('new-event-today'),
-      tooltip: canEdit ? 'New event today' : 'New event today (view only)',
-      style: style == null
-          ? dayAddButtonStyle()
-          : dayAddButtonStyle().merge(style),
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-      onPressed: canEdit
-          ? () => _openEditor(
-              context,
-              stream,
-              initialDate: dateOnly(DateTime.now()),
-            )
-          : null,
-      icon: dayAddIcon,
+  /// Circular add, floating on the chart's top-right corner. Opens a new
+  /// event on the selected day (today when none is selected).
+  Widget _timelineAddButton(BuildContext context, BudgetStream stream) {
+    final day = _pinnedDay ?? dateOnly(DateTime.now());
+    return Tooltip(
+      message: 'Add an event on ${formatOccurrenceDate(day)}',
+      child: Material(
+        key: const ValueKey('add-event-fab'),
+        color: AppTheme.accent,
+        elevation: 6,
+        shadowColor: const Color(0x66000000),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => _createOnceOnDay(context, day),
+          child: const SizedBox(
+            width: 56,
+            height: 56,
+            child: Icon(Icons.add_rounded, size: 28, color: AppTheme.onAccent),
+          ),
+        ),
+      ),
     );
   }
 
@@ -2478,7 +2474,7 @@ class _StreamHeader extends StatelessWidget {
   final BudgetStream stream;
   final bool compact;
 
-  /// Below 360px: a 2px gap before New event today (no sync dot there).
+  /// Below 360px: a 2px gap before the action icons (no sync dot there).
   final bool tight;
 
   @override
@@ -2486,8 +2482,8 @@ class _StreamHeader extends StatelessWidget {
     final theme = Theme.of(context);
     // Fills the free space between the brand and the actions (the toolbar
     // lays the actions out first, so they always fit): the raised trigger
-    // stretches across all of it, the name at its left (ellipsised) and
-    // the arrow pinned at its right edge. Portrait and landscape alike.
+    // stretches across all of it, the name centred (ellipsised) and the
+    // arrow pinned at its right edge. Portrait and landscape alike.
     return SizedBox(
       key: const ValueKey('header-stream-area'),
       width: double.infinity,
@@ -2542,17 +2538,20 @@ class _StreamHeader extends StatelessWidget {
                       message: 'Jump to another stream',
                       waitDuration: const Duration(milliseconds: 500),
                       child: SizedBox(
+                        width: double.infinity,
                         height: compact ? 36 : 38,
-                        child: Padding(
-                          padding: EdgeInsets.only(
-                            left: compact ? 6 : 12,
-                            right: compact ? 2 : 6,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
+                        child: Stack(
+                          children: [
+                            Padding(
+                              // Clear of the arrow on the right, matched on
+                              // the left so the name sits in the middle.
+                              padding: EdgeInsets.symmetric(
+                                horizontal: compact ? 24 : 32,
+                              ),
+                              child: Center(
                                 child: Text(
                                   stream.name,
+                                  textAlign: TextAlign.center,
                                   style: compact
                                       ? theme.textTheme.titleMedium
                                       : theme.textTheme.titleLarge,
@@ -2560,14 +2559,19 @@ class _StreamHeader extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              Icon(
+                            ),
+                            Positioned(
+                              right: compact ? 0 : 2,
+                              child: Icon(
                                 Icons.arrow_drop_down_rounded,
-                                key: const ValueKey('header-stream-arrow'),
+                                key: const ValueKey(
+                                  'header-stream-arrow',
+                                ),
                                 size: compact ? 20 : 24,
                                 color: AppTheme.textMuted,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -2702,36 +2706,38 @@ class _HeaderBrand extends StatelessWidget {
 
   final bool compact;
 
-  /// Below 360px: a smaller gap before the stream name, and the sync dot on
-  /// the logo.
+  /// Below 360px: a smaller gap before the stream name.
   final bool tight;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsetsDirectional.only(end: tight ? 4 : (compact ? 6 : 12)),
-    child: Semantics(
-      label: 'Budgie',
-      image: true,
-      child: BrandAnchor(
-        key: const ValueKey('timeline-brand'),
-        child: tight
-            // Below 360px the sync dot rides on the logo's corner, so the
-            // action row (with Events) and the stream name both fit.
-            ? Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  BudgieIcon(size: compact ? 26 : 32),
-                  const Positioned(
-                    right: -9,
-                    bottom: -2,
-                    child: RealtimeDot(key: ValueKey('brand-rt-dot')),
-                  ),
-                ],
-              )
-            : BudgieIcon(size: compact ? 26 : 32),
+  Widget build(BuildContext context) {
+    final size = compact ? 26.0 : 32.0;
+    return Padding(
+      padding: EdgeInsetsDirectional.only(end: tight ? 4 : (compact ? 6 : 12)),
+      child: Semantics(
+        label: 'Budgie',
+        image: true,
+        child: BrandAnchor(
+          key: const ValueKey('timeline-brand'),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              BudgieIcon(size: size),
+              // Sync status, overlapping the logo's top-right corner.
+              const Positioned(
+                top: -2,
+                right: -2,
+                child: RealtimeDot(
+                  key: ValueKey('brand-rt-dot'),
+                  badge: true,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// The import an undo bar can roll back.

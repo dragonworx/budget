@@ -433,10 +433,8 @@ void main() {
         find.textContaining('Ended 2 series, deleted 1 event'),
         findsOneWidget,
       );
-      // Nothing left to end that day: the ✂ is disabled, saying so.
-      final btn = tester.widget<IconButton>(trim);
-      expect(btn.onPressed, isNull);
-      expect(btn.tooltip, startsWith('Nothing runs past'));
+      // Nothing left to end that day: the ✂ is hidden.
+      expect(trim, findsNothing);
       await tester.tap(find.text('Undo'));
       await tester.pumpAndSettle();
       expect(store.calls.last, 'undo batch-1');
@@ -447,14 +445,11 @@ void main() {
     });
   }
 
-  testWidgets('viewers: the ✂ is there but disabled', (tester) async {
+  testWidgets('viewers: the ✂ is hidden', (tester) async {
     final store = await _pump(tester, setup: (s) => s.role = Role.viewer);
     await _openPick(tester, PointerDeviceKind.mouse);
-    final btn = tester.widget<IconButton>(
-      find.byKey(const ValueKey('pick-trim')),
-    );
-    expect(btn.onPressed, isNull);
-    expect(btn.tooltip, startsWith('View only'));
+    expect(find.byKey(const ValueKey('pick-trim')), findsNothing);
+    expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
     expect(store.calls, isEmpty);
   });
 

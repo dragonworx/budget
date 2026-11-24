@@ -395,8 +395,8 @@ class BalanceChart extends StatefulWidget {
   /// Null: no ✂.
   final ValueChanged<DateTime>? onTrimDay;
 
-  /// Why the ✂ is disabled on a day (view only, nothing to end), shown as
-  /// its tooltip; null: enabled.
+  /// Why the pick bubble's ✂ is unavailable on a day (view only, nothing
+  /// to end). A reason hides the button; null: it is shown and acts.
   final String? Function(DateTime day)? trimDayBlock;
 
   /// The day selected on the date lane (the pinned pick bubble), or null
@@ -2673,7 +2673,8 @@ class _BalanceChartState extends State<BalanceChart>
     // The day's totals show from touch-down, live while dragging, and stay
     // on release.
     final stats = pickDayStats(day);
-    final bubbleW = widget.onTrimDay == null ? 256.0 : 292.0;
+    // The ✂ only takes a slot when that day can actually be ended.
+    final bubbleW = _canTrimDay(day) ? 292.0 : 256.0;
     final bubbleH =
         (stats.balance == null ? 64.0 : 84.0) + (stats.sync == null ? 0 : 18);
     // Above the finger on touch so it stays visible; just above the cursor
@@ -2894,10 +2895,11 @@ class _BalanceChartState extends State<BalanceChart>
                   ],
                 ),
               ),
-              // The only action. Shows from the press on (while dragging
-              // the pointer is busy, so it acts once the pick is pinned).
+              // Shown from the press on (while dragging the pointer is
+              // busy, so they act once the pick is pinned). The ✂ is
+              // omitted when this day has nothing to end.
               const SizedBox(width: 8),
-              if (widget.onTrimDay != null) ...[
+              if (_canTrimDay(day)) ...[
                 _trimDayButton(day, btn),
                 const SizedBox(width: 4),
               ],
@@ -2915,17 +2917,19 @@ class _BalanceChartState extends State<BalanceChart>
     );
   }
 
+  /// True when the pick bubble should show its ✂ for [day].
+  bool _canTrimDay(DateTime day) =>
+      widget.onTrimDay != null && widget.trimDayBlock?.call(day) == null;
+
   /// The pick bubble's ✂: ends every event on [day] (the page confirms,
-  /// with one Undo). Disabled, saying why, when [BalanceChart.trimDayBlock]
-  /// has a reason.
+  /// with one Undo). Only built when [_canTrimDay] is true.
   Widget _trimDayButton(DateTime day, ButtonStyle style) {
-    final block = widget.trimDayBlock?.call(day);
     return IconButton(
       key: const ValueKey('pick-trim'),
-      tooltip: block ?? 'End all events on ${formatOccurrenceDate(day)}',
+      tooltip: 'End all events on ${formatOccurrenceDate(day)}',
       style: style,
       icon: const Icon(Icons.content_cut_rounded, size: 20),
-      onPressed: block != null ? null : () => widget.onTrimDay!(day),
+      onPressed: () => widget.onTrimDay!(day),
     );
   }
 

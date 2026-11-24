@@ -267,8 +267,11 @@ class RealtimeController {
 }
 
 /// Small dot: green connected, amber connecting/reconnecting, grey offline.
+/// [badge] drops the row padding so it can sit on a corner.
 class RealtimeDot extends ConsumerWidget {
-  const RealtimeDot({super.key});
+  const RealtimeDot({super.key, this.badge = false});
+
+  final bool badge;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -285,19 +288,22 @@ class RealtimeDot extends ConsumerWidget {
         'Offline: changes from others won’t show until reconnected',
       ),
     };
+    final dot = Container(
+      key: ValueKey('rt-dot-${s.name}'),
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
     return Tooltip(
       message: label,
       child: Semantics(
         label: 'Sync ${s.name}',
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Container(
-            key: ValueKey('rt-dot-${s.name}'),
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-        ),
+        child: badge
+            ? dot
+            : Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: dot,
+              ),
       ),
     );
   }

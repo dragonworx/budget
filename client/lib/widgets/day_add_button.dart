@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// The day "+" look, shared by the timeline's day popup (pick bubble) and
-/// the header's "New event today", so both read as the same action: a
+/// The day "+" look, used by the timeline's day popup (pick bubble): a
 /// tonal accent circle (compact) with a rounded plus.
 ButtonStyle dayAddButtonStyle() => IconButton.styleFrom(
   backgroundColor: AppTheme.accent.withValues(alpha: 0.18),

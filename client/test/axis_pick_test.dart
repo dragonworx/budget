@@ -168,7 +168,7 @@ void main() {
       await tester.pump();
       final pressed = look();
       expect(find.byKey(const ValueKey('pick-add')), findsOneWidget);
-      // The shared day "+" (the header's New event today wears it too).
+      // The day popup's "+".
       expect(
         identical(
           tester

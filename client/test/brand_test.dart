@@ -152,6 +152,12 @@ void main() {
       expect(find.byKey(const ValueKey('brand-navbar')), findsNothing);
       final r = tester.getRect(icon);
       expect(r.width, width < 600 ? 26 : 32);
+      // The sync dot overlaps the logo's top-right corner.
+      final dot = tester.getRect(find.byKey(const ValueKey('brand-rt-dot')));
+      expect(dot.top, lessThan(r.top));
+      expect(dot.right, greaterThan(r.right));
+      expect(dot.left, lessThan(r.right));
+      expect(dot.bottom, greaterThan(r.top));
       // Left side: right after the back button, before the stream name.
       final back = tester.getRect(find.byKey(const ValueKey('timeline-back')));
       expect(r.left, greaterThanOrEqualTo(back.right - 1));
