@@ -619,7 +619,12 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
         backgroundColor: AppTheme.surface,
         body: Builder(
           builder: (context) => AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
+            duration:
+                instantSoftKeyboardOpen &&
+                    _editing != null &&
+                    _editing!.event == null
+                ? Duration.zero
+                : const Duration(milliseconds: 180),
             transitionBuilder: (child, anim) => FadeTransition(
               opacity: anim,
               child: SlideTransition(

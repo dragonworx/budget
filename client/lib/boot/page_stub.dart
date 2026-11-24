@@ -63,6 +63,12 @@ void handoffSoftKeyboard() {}
 /// Web: capture-phase listener so the proxy is focused in the tap itself.
 void installSoftKeyboardPrimer() {}
 
+/// Web: skip the New event / New stream open animation on iOS Safari.
+bool get instantSoftKeyboardOpen => false;
+
+/// Web: `?kb=a|b|c|d` strategy (tests always behave like desktop).
+String get softKeyboardVariant => 'a';
+
 /// Non-web (tests): the platform clipboard (mock it with
 /// `SystemChannels.platform`); a platform error is a [ClipboardReadException].
 Future<String?> readClipboardText() async {

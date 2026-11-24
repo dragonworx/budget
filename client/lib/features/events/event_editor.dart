@@ -125,6 +125,9 @@ Future<EditorOutcome?> showEventEditor(
   return showSidePanel<EditorOutcome>(
     context,
     label: existing == null ? 'New event' : 'Edit event',
+    transitionDuration: instantSoftKeyboardOpen && existing == null && !readOnly
+        ? Duration.zero
+        : const Duration(milliseconds: 220),
     builder: (context) => EventEditor(
       streamId: streamId,
       existing: existing,

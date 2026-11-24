@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Keyboard tests</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 16px 16px 48px;
+      font: 16px/1.4 -apple-system, system-ui, sans-serif;
+      background: #0b141a; color: #e8f1f0;
+    }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    p.lead { color: #9bb0ad; margin: 0 0 16px; }
+    a { color: #5eead4; }
+    .card {
+      background: #132028; border: 1px solid #1f3a3a; border-radius: 12px;
+      padding: 12px; margin: 0 0 12px;
+    }
+    .card h2 { font-size: 15px; margin: 0 0 6px; color: #5eead4; }
+    .card p { margin: 0 0 10px; color: #b5c7c4; font-size: 14px; }
+    button {
+      display: block; width: 100%; margin: 0 0 8px; padding: 14px 12px;
+      font-size: 16px; font-weight: 600; border: 0; border-radius: 10px;
+      background: #14b8a6; color: #042f2e; -webkit-appearance: none;
+    }
+    button.alt { background: #334155; color: #e8f1f0; }
+    input[type=text], input[type=tel] {
+      width: 100%; font-size: 16px; padding: 12px; border-radius: 10px;
+      border: 1px solid #2a9d8f; background: #0b141a; color: #fff;
+      margin: 0 0 8px;
+    }
+    #log {
+      white-space: pre-wrap; font: 12px/1.35 ui-monospace, Menlo, monospace;
+      background: #071016; border-radius: 10px; padding: 10px; min-height: 120px;
+      color: #a7f3d0; max-height: 240px; overflow: auto;
+    }
+    .ok { color: #86efac; } .warn { color: #fbbf24; }
+  </style>
+</head>
+<body>
+  <h1>iPhone keyboard tests</h1>
+  <p class="lead">
+    Tap each button and see whether the iOS keyboard actually appears
+    (a blinking caret alone is a fail). Then try the in-app variants
+    on the live app.
+  </p>
+
+  <div class="card">
+    <h2>Target fields</h2>
+    <p>These are ordinary HTML inputs (font-size 16px, on screen).</p>
+    <input id="field" type="text" inputmode="text" placeholder="Text field" autocomplete="off">
+    <input id="amount" type="text" inputmode="decimal" placeholder="Amount (decimal)" autocomplete="off">
+  </div>
+
+  <div class="card">
+    <h2>1. Direct focus</h2>
+    <p>Focus the field inside the event. If these fail, iOS is blocking more than Flutter.</p>
+    <button data-t="click-focus">1a. Focus on click</button>
+    <button data-t="touchend-focus">1b. Focus on touchend</button>
+    <button data-t="touchstart-focus">1c. Focus on touchstart / pointerdown</button>
+  </div>
+
+  <div class="card">
+    <h2>2. Proxy then handoff</h2>
+    <p>Focus a hidden 16px proxy in pointerdown, then move focus to the field after a delay. iOS should keep the keyboard if it opened.</p>
+    <button data-t="handoff-0">2a. Handoff at 0 ms</button>
+    <button data-t="handoff-300">2b. Handoff at 300 ms</button>
+    <button data-t="handoff-600">2c. Handoff at 600 ms</button>
+  </div>
+
+  <div class="card">
+    <h2>3. Flutter-like interference</h2>
+    <p>Reproduces what the Flutter engine does on a tap.</p>
+    <button data-t="prevent-then-touchend">3a. preventDefault on pointerdown, focus on touchend</button>
+    <button data-t="capture-then-prevent">3b. Focus in capture pointerdown, then preventDefault</button>
+    <button data-t="steal-timer0">3c. Focus in pointerdown, then move focus to a div at 0 ms</button>
+  </div>
+
+  <div class="card">
+    <h2>In-app variants (after this page)</h2>
+    <p>Sign in as usual, open a stream, then try New event and New stream. A green “kb=…” badge in the corner confirms which strategy is live.</p>
+    <p>
+      <a href="/?kb=a">/?kb=a</a> — default: pointerdown + instant open + handoff<br>
+      <a href="/?kb=b">/?kb=b</a> — pointerdown + instant open, keep the proxy focused<br>
+      <a href="/?kb=c">/?kb=c</a> — previous: touchend + instant open + handoff<br>
+      <a href="/?kb=d">/?kb=d</a> — no proxy, just skip the open animation
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Event log</h2>
+    <button class="alt" type="button" id="clear">Clear log</button>
+    <div id="log"></div>
+  </div>
+
+<script>
+(function () {
+  const logEl = document.getElementById('log');
+  const field = document.getElementById('field');
+  const amount = document.getElementById('amount');
+  const lines = [];
+  function log(msg, cls) {
+    const t = (performance.now() / 1000).toFixed(3);
+    const a = document.activeElement;
+    const tag = a ? (a.tagName + (a.id ? '#' + a.id : '') + (a.getAttribute && a.getAttribute('data-kb-primer') ? '[proxy]' : '')) : 'null';
+    const line = t + 's  ' + msg + '  active=' + tag;
+    lines.push(line);
+    const div = document.createElement('div');
+    if (cls) div.className = cls;
+    div.textContent = line;
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  ['focus', 'blur'].forEach(ev => {
+    document.addEventListener(ev, e => {
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.id === 'steal')) {
+        log(ev + ' ' + (t.id || t.tagName), ev === 'focus' ? 'ok' : 'warn');
+      }
+    }, true);
+  });
+
+  let proxy = null;
+  function makeProxy(mode) {
+    if (proxy) proxy.remove();
+    const el = document.createElement('input');
+    el.type = 'text';
+    el.setAttribute('data-kb-primer', '1');
+    el.setAttribute('inputmode', mode || 'text');
+    el.setAttribute('autocomplete', 'off');
+    el.style.cssText = 'position:fixed;left:0;bottom:0;width:100%;height:40px;font-size:16px;opacity:0.02;z-index:99999;border:0;background:transparent;color:transparent;caret-color:transparent;';
+    document.body.appendChild(el);
+    proxy = el;
+    return el;
+  }
+  function dropProxy() {
+    if (proxy) { proxy.remove(); proxy = null; }
+  }
+
+  function bind(sel, type, fn, capture) {
+    document.querySelector('[data-t="' + sel + '"]').addEventListener(type, fn, !!capture);
+  }
+
+  bind('click-focus', 'click', () => { dropProxy(); field.focus(); log('1a click focus'); });
+  bind('touchend-focus', 'touchend', e => { dropProxy(); field.focus(); log('1b touchend focus'); }, true);
+  function downFocus(e) {
+    dropProxy();
+    field.focus();
+    log('1c ' + e.type + ' focus');
+  }
+  bind('touchstart-focus', 'touchstart', downFocus, true);
+  bind('touchstart-focus', 'pointerdown', downFocus, true);
+
+  function handoff(ms) {
+    return function (e) {
+      const p = makeProxy('text');
+      p.focus();
+      log(e.type + ' proxy focused; handoff in ' + ms + 'ms');
+      setTimeout(() => {
+        field.focus();
+        dropProxy();
+        log('handoff to #field after ' + ms + 'ms');
+      }, ms);
+    };
+  }
+  bind('handoff-0', 'pointerdown', handoff(0), true);
+  bind('handoff-300', 'pointerdown', handoff(300), true);
+  bind('handoff-600', 'pointerdown', handoff(600), true);
+
+  bind('prevent-then-touchend', 'pointerdown', e => {
+    e.preventDefault();
+    log('3a pointerdown preventDefault');
+  }, true);
+  bind('prevent-then-touchend', 'touchend', () => {
+    dropProxy();
+    field.focus();
+    log('3a touchend focus after preventDefault');
+  }, true);
+
+  bind('capture-then-prevent', 'pointerdown', e => {
+    dropProxy();
+    field.focus();
+    log('3b capture pointerdown focus');
+  }, true);
+  bind('capture-then-prevent', 'pointerdown', e => {
+    e.preventDefault();
+    log('3b bubble pointerdown preventDefault');
+  }, false);
+
+  let steal = document.getElementById('steal');
+  if (!steal) {
+    steal = document.createElement('div');
+    steal.id = 'steal';
+    steal.tabIndex = -1;
+    steal.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;';
+    document.body.appendChild(steal);
+  }
+  bind('steal-timer0', 'pointerdown', () => {
+    dropProxy();
+    field.focus();
+    log('3c pointerdown focus #field');
+    setTimeout(() => {
+      steal.focus();
+      log('3c Timer(0) moved focus to #steal (flutter-view analogue)');
+    }, 0);
+  }, true);
+
+  document.getElementById('clear').onclick = () => { logEl.textContent = ''; };
+  log('ready. Tap a button and watch for the system keyboard.');
+})();
+</script>
+</body>
+</html>

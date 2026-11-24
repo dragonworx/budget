@@ -85,6 +85,8 @@ web.HTMLInputElement? _keyboardPrimer;
 Timer? _handoffTimer;
 int _handoffTries = 0;
 bool _primerInstalled = false;
+bool _handoffDone = false;
+String? _variant;
 
 /// Flutter web's editing input is either a semantics text-field
 /// (Safari / iOS) or a node under `flt-text-editing-host`.
@@ -94,6 +96,43 @@ const _flutterInputSelector =
     'flt-text-editing-host input,flt-text-editing-host textarea,'
     'input.flt-text-editing,textarea.flt-text-editing';
 
+/// In-app strategy from `?kb=` (search or hash query). Default `a`.
+///
+/// * a — prime on pointerdown/touchstart (before Flutter's
+///   preventDefault), skip the open animation, hand off to Flutter's
+///   field, re-assert proxy focus if something steals it.
+/// * b — same prime and instant open, but do not hand off (keeps the
+///   proxy focused; tests whether the handoff is what dismisses the
+///   keyboard).
+/// * c — previous approach: prime on touchend/click, instant open,
+///   hand off.
+/// * d — no proxy; just skip the open animation and requestFocus on
+///   the first frame.
+String get softKeyboardVariant => _variant ??= _readKbParam() ?? 'a';
+
+/// Skip the New event / New stream open animation on touch web so the
+/// field can exist as soon as possible after the tap.
+bool get instantSoftKeyboardOpen => _shouldPrimeKeyboard;
+
+String? _readKbParam() {
+  String? from(String raw) {
+    final q = raw.startsWith('?') ? raw.substring(1) : raw;
+    if (q.isEmpty) return null;
+    final params = Uri.splitQueryString(q);
+    final v = params['kb']?.toLowerCase();
+    if (v == 'a' || v == 'b' || v == 'c' || v == 'd') return v;
+    return null;
+  }
+
+  final loc = web.window.location;
+  final search = from(loc.search);
+  if (search != null) return search;
+  final hash = loc.hash;
+  final qi = hash.indexOf('?');
+  if (qi >= 0) return from(hash.substring(qi));
+  return null;
+}
+
 void _kbLog(String ev, [web.Element? el]) {
   final a = el ?? web.document.activeElement;
   final tag = a?.nodeName ?? '';
@@ -102,43 +141,84 @@ void _kbLog(String ev, [web.Element? el]) {
   final ph = a?.getAttribute('placeholder') ?? '';
   final role = a?.getAttribute('data-semantics-role') ?? '';
   final line = '$ev tag=$tag type=$typ mode=$mode ph=$ph role=$role';
-  // Playwright reads <html data-kb="...">.
   final root = web.document.documentElement;
   if (root == null) return;
   final prev = root.getAttribute('data-kb') ?? '';
   root.setAttribute('data-kb', prev.isEmpty ? line : '$prev||$line');
 }
 
-/// Install a capture-phase listener so the proxy is focused inside the
-/// trusted touchend/click, *before* Flutter's Dart handler runs. Dart
-/// onPressed / onTap often runs after the native event has returned,
-/// and iOS Safari then refuses to raise the keyboard (a caret still
-/// paints). Call once from main().
+/// Install capture-phase listeners so the proxy is focused inside the
+/// trusted gesture, *before* Flutter's Dart handler and (for `a`/`b`)
+/// before the engine's pointerdown preventDefault + Timer(0) view
+/// focus, which can void iOS's keyboard permission. Call once from
+/// main().
 void installSoftKeyboardPrimer() {
   if (_primerInstalled) return;
   _primerInstalled = true;
-  // Desktop already autofocuses; do not install a proxy there.
+  // Force a read so the badge and listeners agree on the variant.
+  final v = softKeyboardVariant;
   if (!_shouldPrimeKeyboard) return;
-  web.document.addEventListener(
-    'touchend',
-    ((web.Event e) => _onPrimeGesture(e)).toJS,
-    true.toJS,
-  );
-  web.document.addEventListener(
-    'click',
-    ((web.Event e) => _onPrimeGesture(e)).toJS,
-    true.toJS,
-  );
+  void badge() => _showVariantBadge(v);
+  if (web.document.body != null) {
+    badge();
+  } else {
+    web.window.addEventListener('load', ((web.Event _) => badge()).toJS);
+  }
+  if (v == 'd') return;
+  void listen(String type, {bool reassert = false}) {
+    web.document.addEventListener(
+      type,
+      ((web.Event e) {
+        if (reassert) {
+          if (_keyboardPrimer != null && !_handoffDone) {
+            primeSoftKeyboard(via: '$type-capture');
+          }
+          return;
+        }
+        final kind = _kindFromEvent(e);
+        if (kind == null) return;
+        primeSoftKeyboard(decimal: kind == 'decimal', via: '$type-capture');
+      }).toJS,
+      true.toJS,
+    );
+  }
+
+  if (v == 'c') {
+    listen('touchend');
+    listen('click');
+  } else {
+    // a, b: focus on the events that start the gesture, before the
+    // engine preventDefault's pointerdown on the Flutter view.
+    listen('pointerdown');
+    listen('touchstart');
+    // Re-assert in the same gesture if Timer(0) already ran between
+    // down and up (it usually has not; this is still a trusted event).
+    listen('pointerup', reassert: true);
+    listen('touchend', reassert: true);
+  }
 }
 
-void _onPrimeGesture(web.Event e) {
-  if (!_shouldPrimeKeyboard) return;
-  final kind = _kindFromEvent(e);
-  if (kind == null) return;
-  primeSoftKeyboard(decimal: kind == 'decimal', via: '${e.type}-capture');
+void _showVariantBadge(String v) {
+  const labels = {
+    'a': 'kb=a · pointerdown + handoff',
+    'b': 'kb=b · pointerdown, keep proxy',
+    'c': 'kb=c · touchend + handoff',
+    'd': 'kb=d · instant open, no proxy',
+  };
+  final existing = web.document.getElementById('kb-variant-badge');
+  existing?.remove();
+  final el = web.document.createElement('div') as web.HTMLElement
+    ..id = 'kb-variant-badge'
+    ..textContent = labels[v] ?? 'kb=$v';
+  el.style.cssText =
+      'position:fixed;top:6px;left:6px;z-index:2147483646;'
+      'font:12px/1.3 -apple-system,system-ui,sans-serif;'
+      'background:#0e1a22;color:#b8f3e4;border:1px solid #2a9d8f;'
+      'border-radius:8px;padding:5px 8px;opacity:0.92;'
+      'pointer-events:none;';
+  web.document.body?.append(el);
 }
 
-/// Which keyboard the tapped control should open, or null to leave it.
 String? _kindFromEvent(web.Event e) {
   web.Node? node = e.target as web.Node?;
   var depth = 0;
@@ -154,7 +234,6 @@ String? _kindFromEvent(web.Event e) {
       final aria = el.getAttribute('aria-label') ?? '';
       final kind = _primeKindFromLabel(aria);
       if (kind != null) return kind;
-      // Leaf-ish nodes only: a host's textContent is the whole page.
       if (name == 'SPAN' ||
           name == 'BUTTON' ||
           name == 'A' ||
@@ -189,22 +268,23 @@ String? _primeKindFromLabel(String raw) {
 }
 
 /// Touch browsers (iOS Safari especially) only raise the soft keyboard
-/// for a focus() made inside the user's tap. Flutter's text-editing
+/// for a focus() made inside the user's gesture. Flutter's text-editing
 /// input does not exist yet, so a proxy input is focused now; once
 /// Flutter has created its own, [handoffSoftKeyboard] moves focus to
-/// it (iOS keeps the keyboard open when focus moves input-to-input).
+/// it (iOS keeps the keyboard open when focus moves input-to-input),
+/// unless variant `b` keeps the proxy.
 ///
-/// The proxy is a real, in-viewport 16px field (not a 1×1 opacity-0
+/// The proxy is a real, in-viewport 16px field (not a 1x1 opacity-0
 /// node: iOS ignores those). It stays until the handoff, not until
 /// the first blur — dropping it before Flutter's input exists is
 /// what left a painted caret with no system keyboard.
 void primeSoftKeyboard({bool decimal = false, String? via}) {
   if (!_shouldPrimeKeyboard) return;
+  if (softKeyboardVariant == 'd') return;
   _handoffTimer?.cancel();
   _handoffTries = 0;
+  _handoffDone = false;
   final src = via ?? 'dart';
-  // Reuse a live primer (capture-phase touchend, then New ▾ pointer
-  // up, then showEventEditor) so we do not blur mid-gesture.
   final existing = _keyboardPrimer;
   if (existing != null && existing.isConnected) {
     if (decimal) existing.inputMode = 'decimal';
@@ -213,23 +293,17 @@ void primeSoftKeyboard({bool decimal = false, String? via}) {
     return;
   }
   existing?.remove();
-  // Fresh log for a new open; keep it across reuse so the capture
-  // event is still visible to Playwright after Dart primes again.
   web.document.documentElement?.setAttribute('data-kb', '');
   final input = web.document.createElement('input') as web.HTMLInputElement
     ..type = 'text'
     ..inputMode = decimal ? 'decimal' : 'text'
     ..tabIndex = -1
     ..setAttribute('data-kb-primer', '1')
-    ..setAttribute('aria-hidden', 'true')
     ..setAttribute('autocomplete', 'off')
     ..setAttribute('autocorrect', 'off')
     ..setAttribute('autocapitalize', 'none')
     ..setAttribute('spellcheck', 'false')
     ..enterKeyHint = 'done';
-  // In the viewport, 16px, only *almost* invisible: iOS will not
-  // raise the keyboard for display:none, visibility:hidden,
-  // opacity:0 or a 0/1px box. Transparent text, no chrome.
   input.style.cssText =
       'position:fixed;left:0;bottom:0;width:100%;height:40px;'
       'font-size:16px;line-height:40px;border:0;padding:0;margin:0;'
@@ -237,19 +311,45 @@ void primeSoftKeyboard({bool decimal = false, String? via}) {
       'opacity:0.02;z-index:99999;outline:none;pointer-events:none;';
   web.document.body?.append(input);
   _keyboardPrimer = input;
+  input.addEventListener('blur', ((web.Event _) => _onPrimerBlur()).toJS);
   input.focus(web.FocusOptions(preventScroll: true));
   _kbLog('prime via=$src');
-  // Safety net: never leave the proxy in the page.
-  Timer(const Duration(seconds: 8), () {
+  Timer(const Duration(seconds: 20), () {
     if (identical(_keyboardPrimer, input)) _dropPrimer();
+  });
+}
+
+void _onPrimerBlur() {
+  final input = _keyboardPrimer;
+  if (input == null || _handoffDone) return;
+  final active = web.document.activeElement;
+  if (active != null && _isFlutterField(active)) {
+    if (softKeyboardVariant != 'b') {
+      _kbLog('blur-to-field', active);
+      scheduleMicrotask(_dropPrimer);
+    }
+    return;
+  }
+  // Engine Timer(0) requestViewFocusChange / safeBlur often moves
+  // focus to flutter-view. Pull it back so a keyboard that already
+  // opened stays up, and so later handoff is still input-to-input.
+  scheduleMicrotask(() {
+    if (_keyboardPrimer == null || _handoffDone) return;
+    final now = web.document.activeElement;
+    if (now != null && _isFlutterField(now)) return;
+    if (!identical(web.document.activeElement, input)) {
+      input.focus(web.FocusOptions(preventScroll: true));
+      _kbLog('guard-refocus');
+    }
   });
 }
 
 /// Move focus from the proxy to Flutter's text-editing input, once
 /// that node exists. Safe to call on every requestFocus; it no-ops
-/// when nothing was primed (desktop, or an edit view).
+/// when nothing was primed (desktop, edit views, or variants b/d).
 void handoffSoftKeyboard() {
   if (_keyboardPrimer == null) return;
+  if (softKeyboardVariant == 'b' || softKeyboardVariant == 'd') return;
   if (_tryHandoff()) return;
   _handoffTimer?.cancel();
   _handoffTries = 0;
@@ -276,8 +376,6 @@ bool _isFlutterField(web.Element el) {
 }
 
 bool _tryHandoff() {
-  // If Flutter already focused the right field, just drop the proxy
-  // (and do not steal focus if the user has moved to another field).
   final active = web.document.activeElement;
   if (active != null && _isFlutterField(active)) {
     _kbLog('handoff-already', active);
@@ -300,8 +398,6 @@ bool _tryHandoff() {
   }
   (next as web.HTMLElement).focus(web.FocusOptions(preventScroll: true));
   _kbLog('handoff', next);
-  // Drop the proxy after this turn so iOS never sees a gap with
-  // no focused input (that dismisses the keyboard).
   scheduleMicrotask(_dropPrimer);
   return true;
 }
@@ -309,6 +405,7 @@ bool _tryHandoff() {
 void _dropPrimer() {
   _handoffTimer?.cancel();
   _handoffTimer = null;
+  _handoffDone = true;
   final input = _keyboardPrimer;
   _keyboardPrimer = null;
   input?.remove();

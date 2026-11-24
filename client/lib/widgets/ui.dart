@@ -132,13 +132,14 @@ Future<T?> showSidePanel<T>(
   required WidgetBuilder builder,
   double width = 480,
   String label = 'Panel',
+  Duration transitionDuration = const Duration(milliseconds: 220),
 }) {
   return showGeneralDialog<T>(
     context: context,
     barrierDismissible: true,
     barrierLabel: label,
     barrierColor: Colors.black.withValues(alpha: 0.45),
-    transitionDuration: const Duration(milliseconds: 220),
+    transitionDuration: transitionDuration,
     pageBuilder: (context, _, _) {
       final screen = MediaQuery.sizeOf(context);
       final w = screen.width < 720 ? screen.width : width;

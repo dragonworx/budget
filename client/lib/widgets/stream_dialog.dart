@@ -30,6 +30,12 @@ Future<BudgetStream?> showStreamDialog(
   if (existing == null) primeSoftKeyboard();
   return showDialog<BudgetStream>(
     context: context,
+    animationStyle: instantSoftKeyboardOpen && existing == null
+        ? const AnimationStyle(
+            duration: Duration.zero,
+            reverseDuration: Duration.zero,
+          )
+        : null,
     builder: (context) => StreamDialog(
       existing: existing,
       onSave: onSave,
