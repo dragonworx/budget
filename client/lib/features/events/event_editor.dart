@@ -121,7 +121,7 @@ Future<EditorOutcome?> showEventEditor(
 }) {
   // Still inside the tap: lets iOS / Android web raise the keyboard for
   // the Amount field that focuses once the panel is built.
-  if (!readOnly && existing == null) primeSoftKeyboard();
+  if (!readOnly && existing == null) primeSoftKeyboard(decimal: true);
   return showSidePanel<EditorOutcome>(
     context,
     label: existing == null ? 'New event' : 'Edit event',
@@ -448,6 +448,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   void _focusAmount() {
     if (_readOnly) return;
     (_loanMode && !_syncMode ? _principalFocus : _amountFocus).requestFocus();
+    handoffSoftKeyboard();
   }
 
   /// Everything the form would save, to detect unsaved edits.

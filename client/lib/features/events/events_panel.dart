@@ -194,7 +194,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
         // closes), outside the tap: prime the keyboard on the release.
         Listener(
           behavior: HitTestBehavior.translucent,
-          onPointerUp: (_) => primeSoftKeyboard(),
+          onPointerUp: (_) => primeSoftKeyboard(decimal: true),
           child: item(
             'new-option-new',
             Icons.add_rounded,
@@ -324,7 +324,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   void _open(BudgetEvent? t, {bool primed = false}) {
     _clearHover();
     // New: still inside the tap, so phones raise the keyboard for Name.
-    if (t == null && !primed) primeSoftKeyboard();
+    if (t == null && !primed) primeSoftKeyboard(decimal: true);
     // Keep the list's scroll position for when the editor returns.
     final offset = _listScroll.hasClients ? _listScroll.offset : 0.0;
     final old = _listScroll;

@@ -54,7 +54,14 @@ bool get prefersReducedMotion => prefersReducedMotionForTest;
 int primeSoftKeyboardCalls = 0;
 
 /// Web: focuses a hidden input inside the tap so phones raise the keyboard.
-void primeSoftKeyboard() => primeSoftKeyboardCalls++;
+void primeSoftKeyboard({bool decimal = false, String? via}) =>
+    primeSoftKeyboardCalls++;
+
+/// Web: moves that input's focus to Flutter's text-editing field.
+void handoffSoftKeyboard() {}
+
+/// Web: capture-phase listener so the proxy is focused in the tap itself.
+void installSoftKeyboardPrimer() {}
 
 /// Non-web (tests): the platform clipboard (mock it with
 /// `SystemChannels.platform`); a platform error is a [ClipboardReadException].

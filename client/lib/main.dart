@@ -5,6 +5,9 @@ import 'package:go_router/go_router.dart';
 
 import 'app.dart';
 import 'boot/app_version.dart';
+import 'boot/page_stub.dart'
+    if (dart.library.js_interop) 'boot/page_web.dart'
+    as page;
 import 'boot/boot_loader.dart';
 import 'brand/brand.dart';
 import 'data/api_client.dart';
@@ -14,6 +17,9 @@ import 'state/realtime_providers.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // iOS Safari: focus a proxy input in the trusted tap, before Flutter's
+  // Dart handler (which often runs after the native event has returned).
+  page.installSoftKeyboardPrimer();
   // Pushed routes (e.g. a new stream's timeline) update the browser URL,
   // so reload and browser back behave.
   GoRouter.optionURLReflectsImperativeAPIs = true;

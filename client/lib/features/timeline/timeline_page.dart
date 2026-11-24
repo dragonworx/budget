@@ -1953,20 +1953,28 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     final day = _pinnedDay ?? dateOnly(DateTime.now());
     return Tooltip(
       message: 'Add an event on ${formatOccurrenceDate(day)}',
-      child: Material(
-        key: const ValueKey('add-event-fab'),
-        color: AppTheme.accent,
-        elevation: 6,
-        shadowColor: const Color(0x66000000),
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () => _createOnceOnDay(context, day),
-          child: const SizedBox(
-            width: 56,
-            height: 56,
-            child: Icon(Icons.add_rounded, size: 28, color: AppTheme.onAccent),
+      child: Semantics(
+        button: true,
+        label: 'Add an event',
+        child: Material(
+          key: const ValueKey('add-event-fab'),
+          color: AppTheme.accent,
+          elevation: 6,
+          shadowColor: const Color(0x66000000),
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => _createOnceOnDay(context, day),
+            child: const SizedBox(
+              width: 56,
+              height: 56,
+              child: Icon(
+                Icons.add_rounded,
+                size: 28,
+                color: AppTheme.onAccent,
+              ),
+            ),
           ),
         ),
       ),

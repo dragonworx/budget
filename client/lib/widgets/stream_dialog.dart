@@ -141,6 +141,7 @@ class _StreamDialogState extends State<StreamDialog> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _nameFocus.requestFocus();
+        handoffSoftKeyboard();
         _openWait.schedule(context, _focusNameIfIdle);
       });
     }
@@ -155,7 +156,10 @@ class _StreamDialogState extends State<StreamDialog> {
     final inDialog =
         ctx != null &&
         ctx.findAncestorStateOfType<_StreamDialogState>() == this;
-    if (!inDialog) _nameFocus.requestFocus();
+    if (!inDialog) {
+      _nameFocus.requestFocus();
+      handoffSoftKeyboard();
+    }
   }
 
   @override
