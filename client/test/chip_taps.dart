@@ -47,3 +47,48 @@ Future<Offset> revealDayTip(
   }
   fail('no net chip opened a day popup');
 }
+
+/// Grid-scans the chart for a tap that opens an occurrence popup,
+/// skipping the add-event FAB that now sits on the plot (a scan that
+/// hits it opens the editor, and then no tip is ever found). Prefer
+/// this over tapping net chips when the test then scrubs a lane or
+/// pinches: those gestures start on a lane dot, not a chip.
+Future<Offset> revealOccurrenceTip(
+  WidgetTester tester, {
+  PointerDeviceKind kind = PointerDeviceKind.touch,
+  bool Function(Offset p)? ok,
+}) async {
+  final plot = tester.getRect(find.byType(BalanceChart));
+  final tip = find.byKey(const ValueKey('occurrence-tooltip'));
+  final fab = find.byKey(const ValueKey('add-event-fab'));
+  final fabRect = fab.evaluate().isEmpty
+      ? Rect.zero
+      : tester.getRect(fab).inflate(16);
+  final close = find.byKey(const ValueKey('editor-close'));
+
+  Future<void> dismissEditorIfOpen() async {
+    if (close.evaluate().isEmpty) return;
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+  }
+
+  for (var fy = 0.02; fy < 0.98; fy += 0.03) {
+    for (var fx = 0.05; fx < 0.98; fx += 0.04) {
+      final p = Offset(
+        plot.left + plot.width * fx,
+        plot.top + plot.height * fy,
+      );
+      if (fabRect.contains(p)) continue;
+      await tester.tapAt(p, kind: kind);
+      await tester.pump();
+      await dismissEditorIfOpen();
+      if (tip.evaluate().isNotEmpty && (ok == null || ok(p))) {
+        // Let the opening tap's pointer fully clear before the
+        // caller starts a new gesture at the same spot.
+        await tester.pump();
+        return p;
+      }
+    }
+  }
+  fail('a tap should reveal some dot');
+}

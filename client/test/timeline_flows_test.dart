@@ -870,31 +870,18 @@ void main() {
     await _pump(tester, size: const Size(412, 839));
     final plot = tester.getRect(find.byType(BalanceChart));
     final tip = find.byKey(const ValueKey('tip-balance'));
-    // Find a spot where a plain tap shows a dot's info.
-    Offset? spot;
-    for (var fy = 0.02; fy < 0.98 && spot == null; fy += 0.03) {
-      for (var fx = 0.3; fx < 0.98 && spot == null; fx += 0.04) {
-        final p = Offset(
-          plot.left + plot.width * fx,
-          plot.top + plot.height * fy,
-        );
-        await tester.tapAt(p, kind: PointerDeviceKind.touch);
-        await tester.pump();
-        // Both fingers must reach the chart: clear of the popup.
-        final popup = find.byKey(const ValueKey('occurrence-tooltip'));
-        if (tip.evaluate().isNotEmpty &&
-            popup.evaluate().isNotEmpty &&
-            !tester.getRect(popup).inflate(50).contains(p) &&
-            !tester
-                .getRect(popup)
-                .inflate(50)
-                .contains(p + const Offset(0, 40))) {
-          spot = p;
-        }
-        await tester.pump(const Duration(seconds: 6));
-      }
-    }
-    expect(spot, isNotNull, reason: 'a tap should reveal some dot');
+    final popup = find.byKey(const ValueKey('occurrence-tooltip'));
+    // Chip-tap, not a grid scan: the add-event FAB sits on the chart and
+    // a scan that hits it opens the editor, so no tip is ever found.
+    // Both fingers must still reach the chart, clear of the popup.
+    final spot = await revealOccurrenceTip(
+      tester,
+      ok: (p) {
+        if (tip.evaluate().isEmpty || popup.evaluate().isEmpty) return false;
+        final r = tester.getRect(popup).inflate(50);
+        return !r.contains(p) && !r.contains(p + const Offset(0, 40));
+      },
+    );
     for (final firstUp in [0, 1]) {
       final a = await tester.startGesture(spot!, kind: PointerDeviceKind.touch);
       final b = await tester.startGesture(
@@ -924,19 +911,7 @@ void main() {
     final store = await _pump(tester, size: const Size(390, 844));
     final plot = tester.getRect(find.byType(BalanceChart));
     final tip = find.byKey(const ValueKey('occurrence-tooltip'));
-    Offset? spot;
-    for (var fy = 0.02; fy < 0.98 && spot == null; fy += 0.03) {
-      for (var fx = 0.3; fx < 0.98 && spot == null; fx += 0.04) {
-        final p = Offset(
-          plot.left + plot.width * fx,
-          plot.top + plot.height * fy,
-        );
-        await tester.tapAt(p, kind: PointerDeviceKind.touch);
-        await tester.pump();
-        if (tip.evaluate().isNotEmpty) spot = p;
-      }
-    }
-    expect(spot, isNotNull, reason: 'a tap should reveal some dot');
+    final spot = await revealOccurrenceTip(tester);
     // Tap tip: no timeout on touch.
     await tester.pump(const Duration(seconds: 10));
     expect(tip, findsOneWidget);
@@ -980,20 +955,7 @@ void main() {
     final tip = find.byKey(const ValueKey('occurrence-tooltip'));
     final pill = find.byKey(const ValueKey('y-highlight'));
     final line = find.byKey(const ValueKey('y-highlight-line'));
-    Future<Offset> reveal() async {
-      for (var fy = 0.02; fy < 0.98; fy += 0.03) {
-        for (var fx = 0.3; fx < 0.98; fx += 0.04) {
-          final p = Offset(
-            plot.left + plot.width * fx,
-            plot.top + plot.height * fy,
-          );
-          await tester.tapAt(p, kind: PointerDeviceKind.touch);
-          await tester.pump();
-          if (tip.evaluate().isNotEmpty) return p;
-        }
-      }
-      fail('a tap should reveal some dot');
-    }
+    Future<Offset> reveal() => revealOccurrenceTip(tester);
 
     expect(pill, findsNothing);
     await reveal();
@@ -1391,19 +1353,7 @@ void main() {
     await _pump(tester, size: const Size(390, 844));
     final plot = tester.getRect(find.byType(BalanceChart));
     final tip = find.byKey(const ValueKey('occurrence-tooltip'));
-    Offset? spot;
-    for (var fy = 0.02; fy < 0.98 && spot == null; fy += 0.03) {
-      for (var fx = 0.3; fx < 0.98 && spot == null; fx += 0.04) {
-        final p = Offset(
-          plot.left + plot.width * fx,
-          plot.top + plot.height * fy,
-        );
-        await tester.tapAt(p, kind: PointerDeviceKind.touch);
-        await tester.pump();
-        if (tip.evaluate().isNotEmpty) spot = p;
-      }
-    }
-    expect(spot, isNotNull);
+    final spot = await revealOccurrenceTip(tester);
     final empty = Offset(plot.left + 8, plot.top + 6);
     await tester.tapAt(empty, kind: PointerDeviceKind.touch);
     await tester.pump();
