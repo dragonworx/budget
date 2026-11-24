@@ -24,6 +24,7 @@ import 'json_helpers.dart';
 import 'events.dart';
 import 'legacy_aliases.dart';
 import 'variables.dart';
+import 'kbdebug.dart';
 import '../domain/formulas.dart';
 import '../domain/variable_service.dart';
 
@@ -96,6 +97,11 @@ Handler buildHandler(Session base, Config config,
   // Deprecated: SSE lived at GET /api/events before the Streams/Events
   // rename; tabs still running an older build reconnect here.
   root.mount('/api/events', liveApi.call);
+
+  // Temporary iOS keyboard remote log (?kbdebug=1). Public, rate-limited.
+  final kb = kbdebugHandler(log: log);
+  root.get('/api/kbdebug', kb);
+  root.post('/api/kbdebug', kb);
 
   return const Pipeline()
       .addMiddleware(requestLogging(

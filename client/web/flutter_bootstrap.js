@@ -14,7 +14,25 @@
     L.stage('main');
     if (!build || !window.fetch || !window.ReadableStream) { L.progress('main', null); return Promise.resolve(); }
     var url = new URL(mainPath, document.baseURI).toString();
-    return fetch(url).then(function (r) {
+    function clearWorkers() {
+      var tasks = [];
+      try {
+        if ('serviceWorker' in navigator) {
+          tasks.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+            return Promise.all(rs.map(function (r) { return r.unregister(); }));
+          }));
+        }
+        if (window.caches) {
+          tasks.push(caches.keys().then(function (ks) {
+            return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+          }));
+        }
+      } catch (e) {}
+      return tasks.length ? Promise.all(tasks) : Promise.resolve();
+    }
+    return clearWorkers().then(function () {
+      return fetch(url, { cache: 'no-store' });
+    }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + mainPath);
       // Content-Length is the wire size: with a (pre)compressed response it
       // is smaller than the bytes the reader yields, so only trust it when

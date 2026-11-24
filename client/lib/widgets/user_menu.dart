@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../boot/app_version.dart';
 import '../data/auth_repository.dart';
 import '../data/models.dart' show ServerFeatures;
 import '../features/variables/variables_manager.dart';
@@ -139,6 +140,13 @@ class UserMenu extends ConsumerWidget {
               SizedBox(width: 10),
               Text('Sign out'),
             ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          enabled: false,
+          child: Text(
+            'Build ${buildId.isEmpty ? 'dev' : buildId}',
+            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
           ),
         ),
       ],

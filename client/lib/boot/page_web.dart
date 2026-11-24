@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 
 import 'package:web/web.dart' as web;
@@ -83,13 +84,17 @@ bool get prefersReducedMotion =>
 
 web.HTMLInputElement? _keyboardPrimer;
 Timer? _handoffTimer;
+Timer? _debugPostTimer;
 int _handoffTries = 0;
 bool _primerInstalled = false;
 bool _handoffDone = false;
+bool _handoffRafPending = false;
 bool _focusPatched = false;
 bool _viewFocusBlocked = false;
 String? _armedKind;
 String? _variant;
+bool? _kbdebug;
+const _compiledBuildId = String.fromEnvironment('BUILD_ID');
 
 /// Flutter web's editing input is either a semantics text-field
 /// (Safari / iOS) or a node under `flt-text-editing-host`.
@@ -102,27 +107,33 @@ const _flutterInputSelector =
 /// In-app strategy from `?kb=` (search or hash query). Default `a`.
 ///
 /// * a — prime on touchend/click (what iOS honours), skip the open
-///   animation, block Flutter's Timer(0) view-focus steal so the
-///   proxy never blurs, then hand off to Flutter's field.
+///   animation, block Flutter's Timer(0) view-focus steal, then after
+///   one requestAnimationFrame (so Safari can finish synthetic
+///   mouse/click events) hand off to Flutter's field.
 /// * b — previous default: prime on pointerdown/touchstart and hand
 ///   off (does not open the keyboard on a real iPhone).
-/// * c — touchend/click and hand off, but do not block the steal.
+/// * c — touchend prime only: the proxy stays focused (no handoff).
 /// * d — no proxy; just skip the open animation and requestFocus on
 ///   the first frame.
-String get softKeyboardVariant => _variant ??= _readKbParam() ?? 'a';
+String get softKeyboardVariant {
+  if (_variant != null) return _variant!;
+  final v = _readFlag('kb');
+  _variant = (v == 'a' || v == 'b' || v == 'c' || v == 'd') ? v : 'a';
+  return _variant!;
+}
+
+/// When the URL has `?kbdebug=1`, POST the focus log to `/api/kbdebug`.
+bool get kbDebugEnabled => _kbdebug ??= _readFlag('kbdebug') == '1';
 
 /// Skip the New event / New stream open animation on touch web so the
 /// field can exist as soon as possible after the tap.
 bool get instantSoftKeyboardOpen => _shouldPrimeKeyboard;
 
-String? _readKbParam() {
+String? _readFlag(String name) {
   String? from(String raw) {
     final q = raw.startsWith('?') ? raw.substring(1) : raw;
     if (q.isEmpty) return null;
-    final params = Uri.splitQueryString(q);
-    final v = params['kb']?.toLowerCase();
-    if (v == 'a' || v == 'b' || v == 'c' || v == 'd') return v;
-    return null;
+    return Uri.splitQueryString(q)[name]?.toLowerCase();
   }
 
   final loc = web.window.location;
@@ -136,16 +147,56 @@ String? _readKbParam() {
 
 void _kbLog(String ev, [web.Element? el]) {
   final a = el ?? web.document.activeElement;
-  final tag = a?.nodeName ?? '';
-  final typ = a?.getAttribute('type') ?? '';
-  final mode = a?.getAttribute('inputmode') ?? '';
-  final ph = a?.getAttribute('placeholder') ?? '';
-  final role = a?.getAttribute('data-semantics-role') ?? '';
-  final line = '$ev tag=$tag type=$typ mode=$mode ph=$ph role=$role';
+  final ms = web.window.performance.now().toStringAsFixed(0);
+  final line = '${ms}ms $ev ${_fieldSnap(a)}';
   final root = web.document.documentElement;
   if (root == null) return;
   final prev = root.getAttribute('data-kb') ?? '';
   root.setAttribute('data-kb', prev.isEmpty ? line : '$prev||$line');
+  if (kbDebugEnabled) _scheduleKbDebugPost();
+}
+
+String _fieldSnap(web.Element? a) {
+  if (a == null) return 'tag=null';
+  web.HTMLElement? he;
+  web.CSSStyleDeclaration? st;
+  if (a.nodeName != '#text' && a.nodeName != '#document') {
+    he = a as web.HTMLElement;
+    st = web.window.getComputedStyle(he);
+  }
+  return 'tag=${a.nodeName} type=${a.getAttribute('type') ?? ''} '
+      'mode=${a.getAttribute('inputmode') ?? ''} '
+      'ph=${a.getAttribute('placeholder') ?? ''} '
+      'role=${a.getAttribute('data-semantics-role') ?? ''} '
+      'ro=${a.getAttribute('readonly') ?? ''} '
+      'dis=${a.getAttribute('disabled') ?? ''} '
+      'w=${he?.offsetWidth ?? 0} h=${he?.offsetHeight ?? 0} '
+      'op=${st?.opacity ?? ''} disp=${st?.display ?? ''} '
+      'vis=${st?.visibility ?? ''} fs=${st?.fontSize ?? ''} '
+      'conn=${a.isConnected}';
+}
+
+void _scheduleKbDebugPost() {
+  _debugPostTimer?.cancel();
+  _debugPostTimer = Timer(const Duration(milliseconds: 600), _postKbDebug);
+}
+
+void _postKbDebug() {
+  final root = web.document.documentElement;
+  final payload = jsonEncode({
+    'v': 1,
+    'build': _compiledBuildId,
+    'kb': softKeyboardVariant,
+    'ua': web.window.navigator.userAgent,
+    'href': web.window.location.href,
+    'active': _fieldSnap(web.document.activeElement),
+    'log': root?.getAttribute('data-kb') ?? '',
+    'ts': DateTime.now().toUtc().toIso8601String(),
+  });
+  keepaliveRequest('POST', '/api/kbdebug', const {
+    'content-type': 'application/json',
+    'x-requested-with': 'budget-kbdebug',
+  }, payload);
 }
 
 /// Install capture-phase listeners. Call once from main().
@@ -153,6 +204,12 @@ void installSoftKeyboardPrimer() {
   if (_primerInstalled) return;
   _primerInstalled = true;
   final v = softKeyboardVariant;
+  if (kbDebugEnabled) {
+    onPageHidden(_postKbDebug);
+    _kbLog(
+      'debug-on build=$_compiledBuildId ua=${web.window.navigator.userAgent}',
+    );
+  }
   if (!_shouldPrimeKeyboard) return;
   void badge() => _showVariantBadge(v);
   if (web.document.body != null) {
@@ -173,8 +230,9 @@ void installSoftKeyboardPrimer() {
   }
 
   // a and c: prime on touchend/click only. On pointerdown we only
-  // arm the view-focus block (variant a) so Flutter's Timer(0)
+  // arm the view-focus block so Flutter's Timer(0)
   // requestViewFocusChange cannot steal focus after we prime.
+  // Variant c keeps the proxy focused (no handoff).
   _listen('pointerdown', armOnly: true);
   _listen('touchend', prime: true);
   _listen('click', prime: true);
@@ -183,7 +241,7 @@ void installSoftKeyboardPrimer() {
   web.document.addEventListener(
     'mousedown',
     ((web.Event e) {
-      if (softKeyboardVariant != 'a') return;
+      if (softKeyboardVariant != 'a' && softKeyboardVariant != 'c') return;
       if (_keyboardPrimer == null || _handoffDone || !_viewFocusBlocked) {
         return;
       }
@@ -215,7 +273,7 @@ void _listen(
       final kind = hit ?? (prime ? _armedKind : null);
       if (kind == null) return;
       if (armOnly) {
-        if (softKeyboardVariant == 'a') {
+        if (softKeyboardVariant == 'a' || softKeyboardVariant == 'c') {
           _armViewFocusBlock();
           _armedKind = kind;
           _kbLog('arm-block via=$type');
@@ -228,7 +286,9 @@ void _listen(
         return;
       }
       if (prime) {
-        if (softKeyboardVariant == 'a') _armViewFocusBlock();
+        if (softKeyboardVariant == 'a' || softKeyboardVariant == 'c') {
+          _armViewFocusBlock();
+        }
         _armedKind = kind;
         primeSoftKeyboard(decimal: kind == 'decimal', via: '$type-capture');
       }
@@ -308,16 +368,19 @@ void _disarmViewFocusBlock() {
 
 void _showVariantBadge(String v) {
   const labels = {
-    'a': 'kb=a · touchend + handoff',
+    'a': 'kb=a · touchend + rAF handoff',
     'b': 'kb=b · pointerdown + handoff',
-    'c': 'kb=c · touchend, no steal-block',
+    'c': 'kb=c · touchend, no handoff',
     'd': 'kb=d · instant open, no proxy',
   };
   final existing = web.document.getElementById('kb-variant-badge');
   existing?.remove();
   final el = web.document.createElement('div') as web.HTMLElement
     ..id = 'kb-variant-badge'
-    ..textContent = labels[v] ?? 'kb=$v';
+    ..textContent =
+        '${labels[v] ?? 'kb=$v'}'
+        '${_compiledBuildId.isEmpty ? '' : ' · $_compiledBuildId'}'
+        '${kbDebugEnabled ? ' · debug' : ''}';
   el.style.cssText =
       'position:fixed;top:6px;left:6px;z-index:2147483646;'
       'font:12px/1.3 -apple-system,system-ui,sans-serif;'
@@ -460,17 +523,30 @@ void _onPrimerBlur() {
 
 /// Move focus from the proxy to Flutter's text-editing input, once
 /// that node exists. Safe to call on every requestFocus; it no-ops
-/// when nothing was primed (desktop, edit views, or variant d).
+/// when nothing was primed (desktop, edit views, variant c or d).
+///
+/// The focus itself is delayed by one animation frame so Safari can
+/// finish the synthetic mouse/click events that follow touchend.
+/// The proxy was already focused synchronously in that touchend.
 void handoffSoftKeyboard() {
   if (_keyboardPrimer == null) return;
-  if (softKeyboardVariant == 'd') return;
-  if (_tryHandoff()) return;
-  _handoffTimer?.cancel();
-  _handoffTries = 0;
-  _handoffTimer = Timer.periodic(const Duration(milliseconds: 16), (t) {
-    _handoffTries++;
-    if (_tryHandoff() || _handoffTries > 60) t.cancel();
-  });
+  if (softKeyboardVariant == 'd' || softKeyboardVariant == 'c') return;
+  if (_handoffDone) return;
+  if (_handoffRafPending) return;
+  _handoffRafPending = true;
+  _kbLog('handoff-raf');
+  web.window.requestAnimationFrame(
+    ((num _) {
+      _handoffRafPending = false;
+      if (_tryHandoff()) return;
+      _handoffTimer?.cancel();
+      _handoffTries = 0;
+      _handoffTimer = Timer.periodic(const Duration(milliseconds: 16), (t) {
+        _handoffTries++;
+        if (_tryHandoff() || _handoffTries > 60) t.cancel();
+      });
+    }).toJS,
+  );
 }
 
 bool _isPrimer(web.Element el) =>
@@ -489,32 +565,64 @@ bool _isFlutterField(web.Element el) {
   return false;
 }
 
+web.Element? _findFlutterField() {
+  final list = web.document.querySelectorAll(_flutterInputSelector);
+  for (var i = 0; i < list.length; i++) {
+    final node = list.item(i);
+    if (node == null || node.nodeName == '#text') continue;
+    final el = node as web.Element;
+    if (_isPrimer(el)) continue;
+    return el;
+  }
+  return null;
+}
+
+/// Make the semantics input a keyboard-worthy target (attached, not
+/// display:none, non-zero size, font-size 16, not fully transparent)
+/// so the handoff is a direct input→input focus, not proxy→body.
+bool _prepareHandoffTarget(web.Element el) {
+  if (!el.isConnected) return false;
+  if (el.getAttribute('disabled') != null) return false;
+  final he = el as web.HTMLElement;
+  final st = web.window.getComputedStyle(he);
+  if (st.display == 'none' || st.visibility == 'hidden') return false;
+  he.setAttribute('data-kb-handoff', '1');
+  he.style.fontSize = '16px';
+  if (he.offsetWidth < 16) he.style.minWidth = '16px';
+  if (he.offsetHeight < 16) he.style.minHeight = '16px';
+  if (st.opacity == '0') he.style.opacity = '0.02';
+  return he.offsetWidth >= 16 && he.offsetHeight >= 16;
+}
+
 bool _tryHandoff() {
+  if (_handoffDone || _keyboardPrimer == null) return true;
   final active = web.document.activeElement;
   if (active != null && _isFlutterField(active)) {
     _kbLog('handoff-already', active);
     scheduleMicrotask(_dropPrimer);
     return true;
   }
-  final list = web.document.querySelectorAll(_flutterInputSelector);
-  web.Element? next;
-  for (var i = 0; i < list.length; i++) {
-    final node = list.item(i);
-    if (node == null || node.nodeName == '#text') continue;
-    final el = node as web.Element;
-    if (_isPrimer(el)) continue;
-    next = el;
-    break;
-  }
+  final next = _findFlutterField();
   if (next == null) {
     _kbLog('handoff-wait');
     return false;
   }
-  web.document.documentElement?.setAttribute('data-kb-block', 'handoff');
+  if (!_prepareHandoffTarget(next)) {
+    _kbLog('handoff-not-ready', next);
+    return false;
+  }
+  // Keep data-kb-block=1 so a flutter-view steal cannot hop through
+  // <body> while we move focus directly onto the field (already allowed
+  // by the focus patch).
   (next as web.HTMLElement).focus(web.FocusOptions(preventScroll: true));
-  _kbLog('handoff', next);
-  scheduleMicrotask(_dropPrimer);
-  return true;
+  final now = web.document.activeElement;
+  if (now != null && _isFlutterField(now)) {
+    _kbLog('handoff', now);
+    scheduleMicrotask(_dropPrimer);
+    return true;
+  }
+  _kbLog('handoff-miss', now);
+  return false;
 }
 
 void _dropPrimer() {

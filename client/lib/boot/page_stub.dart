@@ -67,6 +67,7 @@ void installSoftKeyboardPrimer() {}
 bool get instantSoftKeyboardOpen => false;
 
 /// Web: `?kb=a|b|c|d` strategy (tests always behave like desktop).
+/// `c` is touchend prime with no handoff.
 String get softKeyboardVariant => 'a';
 
 /// Non-web (tests): the platform clipboard (mock it with

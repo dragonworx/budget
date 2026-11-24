@@ -239,6 +239,24 @@
     };
   })();
   </script>
+  <script>
+  // Drop any previously installed Flutter service worker and its Cache
+  // Storage so iOS Safari cannot keep serving an older main.dart.js.
+  (function(){
+    try {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(rs){
+          rs.forEach(function(r){ r.unregister(); });
+        });
+      }
+      if (window.caches) {
+        caches.keys().then(function(ks){
+          ks.forEach(function(k){ caches.delete(k); });
+        });
+      }
+    } catch (e) {}
+  })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
