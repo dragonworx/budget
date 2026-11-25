@@ -118,6 +118,45 @@ Widget categoryDot(Color? color, {double size = 10}) => Container(
 /// Leading slot shared by dots and folder icons so names stay aligned.
 const double kCategoryLeadingSize = 18;
 
+/// Folder glyphs as [const Icon]s so both survive the web release icon-font
+/// tree-shaker, and use the outlined pair so the open and closed glyphs match.
+/// (`Icons.folder_open` is a different, filled codepoint that can fail to
+/// draw on some mobile browsers even when it is in the subset.)
+Widget categoryFolderIcon({
+  required bool open,
+  Color? color,
+  double size = kCategoryLeadingSize,
+  Key? key,
+}) {
+  Widget icon = open
+      ? const Icon(Icons.folder_open_outlined)
+      : const Icon(Icons.folder_outlined);
+  icon = IconTheme(
+    data: IconThemeData(color: color, size: size),
+    child: icon,
+  );
+  return key == null ? icon : KeyedSubtree(key: key, child: icon);
+}
+
+/// Same const-[Icon] split for the expand/collapse chevron.
+Widget categoryExpandIcon({
+  required bool open,
+  Color? color,
+  double? size,
+  Key? key,
+}) {
+  Widget icon = open
+      ? const Icon(Icons.expand_more_rounded)
+      : const Icon(Icons.chevron_right_rounded);
+  if (color != null || size != null) {
+    icon = IconTheme(
+      data: IconThemeData(color: color, size: size),
+      child: icon,
+    );
+  }
+  return key == null ? icon : KeyedSubtree(key: key, child: icon);
+}
+
 /// A single-line path: ancestor names in regular weight, the leaf in bold.
 /// A top-level leaf is just bold. Ellipsizes as one run.
 class CategoryPathLabel extends StatelessWidget {
@@ -338,10 +377,9 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
         color: AppTheme.textMuted,
       );
     } else if (isFolder) {
-      child = Icon(
-        open ? Icons.folder_open : Icons.folder_outlined,
+      child = categoryFolderIcon(
+        open: open,
         key: ValueKey('${widget.itemKeyPrefix}folder-${c.id}'),
-        size: 18,
         color: colorFromHex(c.color) ?? AppTheme.textMuted,
       );
     } else {
@@ -444,11 +482,11 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
     final star = c != null && !isFolder && widget.onToggleFavorite != null;
     Widget? trailing;
     if (isFolder) {
-      trailing = Icon(
-        open ? Icons.expand_more_rounded : Icons.chevron_right_rounded,
+      trailing = categoryExpandIcon(
+        open: open,
         key: ValueKey('${widget.itemKeyPrefix}expand-${c.id}'),
-        size: 22,
         color: AppTheme.textMuted,
+        size: 22,
       );
     } else if (selected) {
       trailing = const Icon(Icons.check_rounded, size: 18);

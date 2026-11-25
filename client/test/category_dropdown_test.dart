@@ -125,10 +125,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('row-folder-shop')), findsOneWidget);
-    final folderIcon = tester.widget<Icon>(
-      find.byKey(const ValueKey('row-folder-shop')),
+    Icon folderIcon() => tester.widget<Icon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('row-folder-shop')),
+        matching: find.byType(Icon),
+      ),
     );
-    expect(folderIcon.icon, Icons.folder_outlined);
+    expect(folderIcon().icon, Icons.folder_outlined);
     expect(find.byKey(const ValueKey('row-expand-shop')), findsOneWidget);
     expect(find.byKey(const ValueKey('row-folder-ins')), findsNothing);
     expect(find.byKey(const ValueKey('row-star-ins')), findsOneWidget);
@@ -153,10 +156,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('row-expand-shop')));
     await tester.pumpAndSettle();
-    expect(
-      tester.widget<Icon>(find.byKey(const ValueKey('row-folder-shop'))).icon,
-      Icons.folder_open,
-    );
+    expect(folderIcon().icon, Icons.folder_open_outlined);
     expect(find.byKey(const ValueKey('row-groc')), findsWidgets);
     expect(find.byKey(const ValueKey('row-star-groc')), findsWidgets);
   });

@@ -1289,12 +1289,9 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                     : InkWell(
                         onTap: () => _toggleExpanded(c),
                         borderRadius: BorderRadius.circular(6),
-                        child: Icon(
-                          _expanded.contains(c.id)
-                              ? Icons.folder_open
-                              : Icons.folder_outlined,
+                        child: categoryFolderIcon(
+                          open: _expanded.contains(c.id),
                           key: ValueKey('category-folder-${c.id}'),
-                          size: 18,
                           color: AppTheme.textMuted,
                         ),
                       ),
@@ -1308,11 +1305,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                   padding: EdgeInsets.zero,
                   constraints: BoxConstraints.tightFor(width: b, height: b),
                   onPressed: () => _toggleExpanded(c),
-                  icon: Icon(
-                    _expanded.contains(c.id)
-                        ? Icons.expand_more_rounded
-                        : Icons.chevron_right_rounded,
-                  ),
+                  icon: categoryExpandIcon(open: _expanded.contains(c.id)),
                 ),
               if (manage) ...[
                 MenuAnchor(
