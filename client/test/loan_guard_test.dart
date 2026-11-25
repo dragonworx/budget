@@ -216,10 +216,10 @@ void main() {
 
     expect(colourIn('a1'), AppTheme.debitColor);
     expect(colourIn('l1'), AppTheme.text);
-    // No "Alert at" fact on the loan stream's card (spec 003 §11).
+    // No alert chip on the loan stream's card (spec 003 §11).
     Finder alertIn(String id) => find.descendant(
       of: find.byKey(ValueKey('stream-card-$id')),
-      matching: find.text('Alert at'),
+      matching: find.textContaining('Alert <'),
     );
     expect(alertIn('a1'), findsOneWidget);
     expect(alertIn('l1'), findsNothing);

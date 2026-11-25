@@ -21,6 +21,8 @@ class AppTheme {
   static const Color text = Color(0xFFE6EBF2);
   static const Color textMuted = Color(0xFFA2ADBC); // ≥7:1 on surface
   static const Color textFaint = Color(0xFF7F8A9A); // ≥4.5:1 on bg/surface
+  /// Meta text on [surface] (stream cards). ≥4.5:1 (actually ~6.9:1).
+  static const Color cardMeta = Color(0xFF9AA4B2);
 
   // Accent and semantics.
   static const Color accent = Color(0xFF3DD6B5);

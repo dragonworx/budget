@@ -307,4 +307,123 @@ void main() {
       });
     }
   }
+
+  testWidgets('P1–P3: the card is the timeline tap target; ⋮ and a '
+      'long-press open the menu without navigating', (tester) async {
+    final repo = FakeStreamRepository(
+      streams: [testStream('a1', 'Everyday'), testStream('a2', 'Savings')],
+    );
+    final c = await _app(tester, repo, size: const Size(390, 844));
+    expect(_path(c), '/');
+
+    expect(find.text('Open timeline'), findsNothing);
+    expect(find.text('BALANCE TODAY'), findsNothing);
+    expect(find.text('My streams · balance today'), findsOneWidget);
+    expect(find.byKey(const ValueKey('shared-heading')), findsNothing);
+
+    final meta = find.byKey(const ValueKey('stream-card-meta-a1'));
+    expect(meta, findsOneWidget);
+    expect(tester.widget<Text>(meta).data, 'Seed \$0 · 1 Jan 2026');
+    expect(tester.widget<Text>(meta).style?.color, AppTheme.cardMeta);
+    expect(tester.widget<Text>(meta).style?.fontSize, 12);
+    expect(find.byKey(const ValueKey('stream-card-alert-a1')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('stream-card-a1')),
+        matching: find.text('Alert < \$0'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('stream-card-alert-a1'))).height,
+      20,
+    );
+
+    final chevron = find.byKey(const ValueKey('stream-card-chevron-a1'));
+    expect(chevron, findsOneWidget);
+    expect(tester.getSize(chevron), const Size(16, 16));
+
+    final menu = find.byTooltip('Stream actions');
+    expect(menu, findsWidgets);
+    final menuSize = tester.getSize(menu.first);
+    expect(menuSize.width, greaterThanOrEqualTo(44));
+    expect(menuSize.height, greaterThanOrEqualTo(44));
+
+    // ⋮ opens the menu and does not open the timeline.
+    await tester.tap(menu.first);
+    await tester.pumpAndSettle();
+    expect(find.text('Stream settings'), findsOneWidget);
+    expect(_path(c), '/');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('Stream settings'), findsNothing);
+
+    // A finger long-press on the card opens the same menu, still no navigation.
+    // Aim at the hero number, well clear of the ⋮ hit area.
+    final card = find.byKey(const ValueKey('stream-card-a1'));
+    await tester.longPress(card);
+    await tester.pumpAndSettle();
+    expect(find.text('Stream settings'), findsOneWidget);
+    expect(_path(c), '/');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    final sem = tester.getSemantics(card);
+    expect(sem.label, contains('Everyday'));
+    expect(sem.label, contains('Balance today'));
+    expect(sem.label, contains('Open timeline'));
+    expect(sem.label, contains('Seed \$0 · 1 Jan 2026'));
+    expect(sem.label, contains('Alert < \$0'));
+
+    // Enter / Space on a focused card opens the timeline.
+    final focus = find.byKey(const ValueKey('stream-card-focus-a1'));
+    expect(focus, findsOneWidget);
+    final ink = find
+        .descendant(of: focus, matching: find.byType(InkWell))
+        .first;
+    final node = Focus.of(tester.element(ink));
+    node.requestFocus();
+    await tester.pump();
+    expect(node.hasFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_path(c), '/streams/a1/timeline');
+  });
+
+  testWidgets('tapping the card body opens the timeline', (tester) async {
+    final repo = FakeStreamRepository(streams: [testStream('a1', 'Everyday')]);
+    final c = await _app(tester, repo);
+    expect(_path(c), '/');
+    await tester.tap(find.byKey(const ValueKey('stream-card-a1')));
+    await tester.pumpAndSettle();
+    expect(_path(c), '/streams/a1/timeline');
+  });
+
+  testWidgets('Shared with me heading also names balance today', (
+    tester,
+  ) async {
+    final repo = FakeStreamRepository(
+      streams: [
+        testStream('a1', 'Everyday'),
+        testStream(
+          'b1',
+          'Joint',
+          shared: true,
+          role: Role.editor,
+          ownerName: 'Sam',
+        ),
+      ],
+      lastStreamId: 'gone',
+    );
+    await _app(tester, repo);
+    expect(find.text('My streams · balance today'), findsOneWidget);
+    expect(find.text('Shared with me · balance today'), findsOneWidget);
+    expect(find.text('Shared by Sam'), findsOneWidget);
+    // Shared editor can still open the ⋮? canShare is owner-only, canEdit is true
+    // for editors so the menu is present. Chevron too.
+    expect(
+      find.byKey(const ValueKey('stream-card-chevron-b1')),
+      findsOneWidget,
+    );
+  });
 }

@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -223,11 +225,12 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                     heading('Invitations for you', 'invites-heading'),
                     for (final i in invites) _PendingInviteTile(invite: i),
                   ],
-                  if (mine.isNotEmpty && shared.isNotEmpty)
-                    heading('My streams', 'mine-heading'),
-                  if (mine.isNotEmpty) grid(mine),
+                  if (mine.isNotEmpty) ...[
+                    heading('My streams · balance today', 'mine-heading'),
+                    grid(mine),
+                  ],
                   if (shared.isNotEmpty) ...[
-                    heading('Shared with me', 'shared-heading'),
+                    heading('Shared with me · balance today', 'shared-heading'),
                     grid(shared),
                   ],
                 ],
@@ -312,7 +315,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
 
 enum _StreamAction { edit, delete, share }
 
-class _StreamCard extends ConsumerWidget {
+class _StreamCard extends ConsumerStatefulWidget {
   const _StreamCard({
     required this.stream,
     required this.onOpen,
@@ -332,7 +335,28 @@ class _StreamCard extends ConsumerWidget {
   final VoidCallback onDelete;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_StreamCard> createState() => _StreamCardState();
+}
+
+class _StreamCardState extends ConsumerState<_StreamCard> {
+  final _menuKey = GlobalKey<PopupMenuButtonState<_StreamAction>>();
+
+  BudgetStream get stream => widget.stream;
+
+  bool get _hasMenu => stream.role.canEdit || widget.canShare;
+
+  void _openMenu() {
+    if (!_hasMenu) return;
+    _menuKey.currentState?.showButtonMenu();
+  }
+
+  /// Whole dollars drop cents so the 12px meta line stays compact
+  /// ("Seed $2,000 · 30 Sep 2026", "Alert < $0").
+  String _compactMoney(num v) =>
+      formatMoneyAmount(v, decimalDigits: v % 1 == 0 ? 0 : 2);
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final today = ref.watch(todayBalanceProvider(stream.id));
     final value = today.valueOrNull;
@@ -342,6 +366,88 @@ class _StreamCard extends ConsumerWidget {
         value != null &&
         belowAlert(value, stream.lossThreshold);
     String money(num v) => formatMoneyAmount(v, decimalDigits: 2);
+    final balanceText = today.isLoading && value == null
+        ? '—'
+        : value == null
+        ? 'No data'
+        : money(value.toDouble());
+    final seedText = _compactMoney(stream.seedBalance.toDouble());
+    final seedDate = DateFormat('d MMM y').format(stream.seedDate);
+    final meta = 'Seed $seedText · $seedDate';
+    final showAlert = !stream.hasLoan;
+    final alertText = showAlert
+        ? 'Alert < ${_compactMoney(stream.lossThreshold.toDouble())}'
+        : null;
+    final sharedBy = stream.shared && stream.owner != null
+        ? 'Shared by ${stream.owner!.displayName}'
+        : null;
+    final offset = offsetIndicator(stream);
+    final semantics = [
+      stream.name,
+      ?sharedBy,
+      ?offset,
+      'Balance today $balanceText',
+      meta,
+      ?alertText,
+      'Open timeline',
+    ].join('. ');
+
+    final menu = !_hasMenu
+        ? null
+        : Semantics(
+            label: 'Stream actions',
+            button: true,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: PopupMenuButton<_StreamAction>(
+                key: _menuKey,
+                tooltip: 'Stream actions',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.standard,
+                  minimumSize: WidgetStatePropertyAll(Size(44, 44)),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                ),
+                iconSize: 20,
+                icon: const Icon(Icons.more_vert_rounded),
+                onSelected: (action) => switch (action) {
+                  _StreamAction.edit => widget.onEdit(),
+                  _StreamAction.delete => widget.onDelete(),
+                  _StreamAction.share => widget.onShare(),
+                },
+                itemBuilder: (context) => [
+                  if (widget.canShare)
+                    const PopupMenuItem(
+                      value: _StreamAction.share,
+                      child: ListTile(
+                        leading: Icon(Icons.person_add_alt_1_outlined),
+                        title: Text('Share stream…'),
+                      ),
+                    ),
+                  if (stream.role.canEdit)
+                    const PopupMenuItem(
+                      value: _StreamAction.edit,
+                      child: ListTile(
+                        leading: Icon(Icons.tune_rounded),
+                        title: Text('Stream settings'),
+                      ),
+                    ),
+                  if (widget.canDelete)
+                    const PopupMenuItem(
+                      value: _StreamAction.delete,
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline_rounded),
+                        title: Text('Delete stream'),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+
     return Material(
       color: AppTheme.surface,
       shape: RoundedRectangleBorder(
@@ -349,204 +455,190 @@ class _StreamCard extends ConsumerWidget {
         side: const BorderSide(color: AppTheme.border),
       ),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        key: ValueKey('stream-card-${stream.id}'),
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const IconTile.glyph(
-                    StreamIcon(key: ValueKey('stream-icon')),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Tooltip(
-                      message: stream.name,
-                      waitDuration: const Duration(milliseconds: 500),
-                      child: Text(
-                        stream.name,
-                        style: theme.textTheme.titleMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (!stream.role.isOwner) ...[
-                    RoleChip(stream.role),
-                    const SizedBox(width: 6),
-                  ] else if (ownedStreamShared(ref, stream)) ...[
-                    const Tooltip(
-                      message: 'Shared with others',
-                      child: Icon(
-                        Icons.people_alt_outlined,
-                        key: ValueKey('owned-shared-badge'),
-                        size: 18,
-                        color: AppTheme.accent,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  if (stream.role.canEdit || canShare)
-                    PopupMenuButton<_StreamAction>(
-                      tooltip: 'Stream actions',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 44,
-                        minHeight: 44,
-                      ),
-                      style: const ButtonStyle(
-                        visualDensity: VisualDensity.standard,
-                        minimumSize: WidgetStatePropertyAll(Size(44, 44)),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: WidgetStatePropertyAll(EdgeInsets.zero),
-                      ),
-                      iconSize: 20,
-                      icon: const Icon(Icons.more_vert_rounded),
-                      onSelected: (action) => switch (action) {
-                        _StreamAction.edit => onEdit(),
-                        _StreamAction.delete => onDelete(),
-                        _StreamAction.share => onShare(),
-                      },
-                      itemBuilder: (context) => [
-                        if (canShare)
-                          const PopupMenuItem(
-                            value: _StreamAction.share,
-                            child: ListTile(
-                              leading: Icon(Icons.person_add_alt_1_outlined),
-                              title: Text('Share stream…'),
+      child: RawGestureDetector(
+        behavior: HitTestBehavior.translucent,
+        gestures: {
+          _TouchLongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                _TouchLongPressGestureRecognizer
+              >(
+                () => _TouchLongPressGestureRecognizer(debugOwner: this),
+                (r) => r.onLongPress = _openMenu,
+              ),
+        },
+        child: Semantics(
+          key: ValueKey('stream-card-${stream.id}'),
+          container: true,
+          explicitChildNodes: true,
+          button: true,
+          label: semantics,
+          onTap: widget.onOpen,
+          child: FocusableActionDetector(
+            key: ValueKey('stream-card-focus-${stream.id}'),
+            shortcuts: const {
+              SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+              SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+            },
+            actions: {
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (_) {
+                  widget.onOpen();
+                  return null;
+                },
+              ),
+            },
+            child: InkWell(
+              onTap: widget.onOpen,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ExcludeSemantics(
+                            child: Row(
+                              children: [
+                                const IconTile.glyph(
+                                  StreamIcon(key: ValueKey('stream-icon')),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Tooltip(
+                                    message: stream.name,
+                                    waitDuration: const Duration(
+                                      milliseconds: 500,
+                                    ),
+                                    child: Text(
+                                      stream.name,
+                                      style: theme.textTheme.titleMedium,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (!stream.role.isOwner) ...[
+                                  RoleChip(stream.role),
+                                  const SizedBox(width: 6),
+                                ] else if (ownedStreamShared(ref, stream)) ...[
+                                  const Tooltip(
+                                    message: 'Shared with others',
+                                    child: Icon(
+                                      Icons.people_alt_outlined,
+                                      key: ValueKey('owned-shared-badge'),
+                                      size: 18,
+                                      color: AppTheme.accent,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
+                              ],
                             ),
                           ),
-                        if (stream.role.canEdit)
-                          const PopupMenuItem(
-                            value: _StreamAction.edit,
-                            child: ListTile(
-                              leading: Icon(Icons.tune_rounded),
-                              title: Text('Stream settings'),
+                        ),
+                        ?menu,
+                        ExcludeSemantics(
+                          child: IgnorePointer(
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              key: ValueKey('stream-card-chevron-${stream.id}'),
+                              size: 16,
+                              color: AppTheme.textMuted,
                             ),
                           ),
-                        if (canDelete)
-                          const PopupMenuItem(
-                            value: _StreamAction.delete,
-                            child: ListTile(
-                              leading: Icon(Icons.delete_outline_rounded),
-                              title: Text('Delete stream'),
-                            ),
-                          ),
+                        ),
                       ],
                     ),
-                ],
-              ),
-              if (stream.shared && stream.owner != null) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Shared by ${stream.owner!.displayName}',
-                  style: theme.textTheme.bodySmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-              if (offsetIndicator(stream) case final line?) ...[
-                const SizedBox(height: 6),
-                Row(
-                  key: const ValueKey('stream-offset-indicator'),
-                  children: [
-                    const Icon(
-                      Icons.savings_outlined,
-                      size: 14,
-                      color: AppTheme.textFaint,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        line,
-                        style: theme.textTheme.bodySmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    ExcludeSemantics(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (sharedBy != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              sharedBy,
+                              style: theme.textTheme.bodySmall,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                          if (offset != null) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              key: const ValueKey('stream-offset-indicator'),
+                              children: [
+                                const Icon(
+                                  Icons.savings_outlined,
+                                  size: 14,
+                                  color: AppTheme.textFaint,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    offset,
+                                    style: theme.textTheme.bodySmall,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 34,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                balanceText,
+                                style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: low
+                                      ? AppTheme.debitColor
+                                      : AppTheme.text,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  meta,
+                                  key: ValueKey(
+                                    'stream-card-meta-${stream.id}',
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    height: 16 / 12,
+                                    color: AppTheme.cardMeta,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (alertText != null) ...[
+                                const SizedBox(width: 8),
+                                _AlertChip(
+                                  key: ValueKey(
+                                    'stream-card-alert-${stream.id}',
+                                  ),
+                                  label: alertText,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ],
-              const SizedBox(height: 8),
-              Text(
-                'BALANCE TODAY',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  letterSpacing: 1,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textFaint,
-                ),
               ),
-              const SizedBox(height: 2),
-              Padding(
-                padding: EdgeInsets.zero,
-                child: SizedBox(
-                  height: 34,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      today.isLoading && value == null
-                          ? '—'
-                          : value == null
-                          ? 'No data'
-                          : money(value.toDouble()),
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: low ? AppTheme.debitColor : AppTheme.text,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Divider(height: 1),
-              const SizedBox(height: 8),
-              Padding(
-                padding: EdgeInsets.zero,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _Fact(
-                        label:
-                            'Seed · ${DateFormat('d MMM y').format(stream.seedDate)}',
-                        value: money(stream.seedBalance.toDouble()),
-                      ),
-                    ),
-                    // Loan streams don't alert (spec 003 §11).
-                    if (!stream.hasLoan) ...[
-                      const SizedBox(width: 12),
-                      _Fact(
-                        label: 'Alert at',
-                        value: '< ${money(stream.lossThreshold.toDouble())}',
-                        alignEnd: true,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Spacer(),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: const Size(44, 44),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    onPressed: onOpen,
-                    iconAlignment: IconAlignment.end,
-                    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-                    label: const Text('Open timeline'),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -554,34 +646,57 @@ class _StreamCard extends ConsumerWidget {
   }
 }
 
-class _Fact extends StatelessWidget {
-  const _Fact({
-    required this.label,
-    required this.value,
-    this.alignEnd = false,
-  });
+/// 20dp chip: 12px bell + "Alert < $0".
+class _AlertChip extends StatelessWidget {
+  const _AlertChip({super.key, required this.label});
   final String label;
-  final String value;
-  final bool alignEnd;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: alignEnd
-          ? CrossAxisAlignment.end
-          : CrossAxisAlignment.start,
-      children: [
-        Text(label, style: theme.textTheme.labelSmall),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium?.copyWith(color: AppTheme.text),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
+    return Container(
+      height: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppTheme.overlay,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.notifications_none_rounded,
+            size: 12,
+            color: AppTheme.cardMeta,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1,
+              color: AppTheme.cardMeta,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
+  }
+}
+
+/// Long-press opens the card's ⋮ menu, but only for a finger (or stylus)
+/// so a mouse click on desktop is not delayed by the long-press arena.
+class _TouchLongPressGestureRecognizer extends LongPressGestureRecognizer {
+  _TouchLongPressGestureRecognizer({super.debugOwner});
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.touch &&
+        event.kind != PointerDeviceKind.stylus) {
+      return false;
+    }
+    return super.isPointerAllowed(event);
   }
 }
 
