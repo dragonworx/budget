@@ -11,6 +11,7 @@ import 'package:budget_client/widgets/formula/formula_field.dart';
 import 'package:budget_client/widgets/user_menu.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -141,58 +142,52 @@ void main() {
       expect(k('menu-variables'), findsNothing);
       expect(find.text('Admin'), findsWidgets);
     });
-  });
-
-  group('timeline user menu', () {
-    for (final role in [Role.owner, Role.viewer]) {
-      testWidgets('Variables (${role.name}) opens the owner\'s set', (
-        tester,
-      ) async {
-        final vars = await _timeline(tester, role: role);
-        // Auth config applies the server flag; set it after the pump.
-        ServerFeatures.variables = true;
-        await tester.tap(k('user-menu'));
-        await tester.pumpAndSettle();
-        // Order: Variables, Categories, Admin, Help, Sign out.
-        final varsY = tester.getTopLeft(k('menu-variables')).dy;
-        final catsY = tester.getTopLeft(k('menu-categories')).dy;
-        final adminY = tester.getTopLeft(k('menu-admin')).dy;
-        final helpY = tester.getTopLeft(k('menu-help')).dy;
-        final outY = tester.getTopLeft(k('sign-out')).dy;
-        expect(varsY, lessThan(catsY));
-        expect(catsY, lessThan(adminY));
-        expect(adminY, lessThan(helpY));
-        expect(helpY, lessThan(outY));
-        await tester.tap(k('menu-variables'));
-        await tester.pumpAndSettle();
-        expect(k('variables-manager'), findsOneWidget);
-        expect(vars.reads, contains('list acc'));
-        expect(
-          k('variable-new-row'),
-          role == Role.owner ? findsOneWidget : findsNothing,
-        );
-      });
-    }
-
-    testWidgets('absent without the server feature', (tester) async {
-      await _timeline(tester);
-      await tester.tap(k('user-menu'));
-      await tester.pumpAndSettle();
-      expect(k('menu-categories'), findsOneWidget);
-      expect(k('menu-variables'), findsNothing);
-      expect(k('menu-help'), findsOneWidget);
-      expect(find.text('Help'), findsOneWidget);
-      expect(find.text('Gestures & shortcuts'), findsNothing);
-    });
 
     testWidgets('Help opens gestures and shortcuts', (tester) async {
-      await _timeline(tester);
-      await tester.tap(k('user-menu'));
-      await tester.pumpAndSettle();
+      await pump(tester, on: true);
+      expect(k('menu-help'), findsOneWidget);
+      expect(
+        tester.getTopLeft(k('menu-help')).dy,
+        greaterThan(tester.getTopLeft(k('menu-admin')).dy),
+      );
       await tester.tap(k('menu-help'));
       await tester.pumpAndSettle();
       expect(find.text('Timeline shortcuts'), findsOneWidget);
       expect(find.text('Show this sheet'), findsOneWidget);
+    });
+  });
+
+  group('timeline has no user menu', () {
+    testWidgets('the avatar is not in the header; More has no Variables, '
+        'Categories or Help; ? opens shortcuts; View still offers '
+        'Manage categories…', (tester) async {
+      await _timeline(tester);
+      expect(k('user-menu'), findsNothing);
+      await tester.tap(k('timeline-more'));
+      await tester.pumpAndSettle();
+      expect(k('more-categories'), findsNothing);
+      expect(k('more-variables'), findsNothing);
+      expect(find.text('Manage categories…'), findsNothing);
+      expect(find.text('Edit variables'), findsNothing);
+      expect(find.text('Variables'), findsNothing);
+      expect(find.text('Help'), findsNothing);
+      expect(find.text('Gestures & shortcuts'), findsNothing);
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+      await tester.sendKeyEvent(LogicalKeyboardKey.slash);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
+      await tester.pumpAndSettle();
+      expect(find.text('Timeline shortcuts'), findsOneWidget);
+      expect(find.text('Show this sheet'), findsOneWidget);
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      await tester.tap(k('fit-menu'));
+      await tester.pumpAndSettle();
+      expect(k('view-manage-categories'), findsOneWidget);
+      await tester.tap(k('view-manage-categories'));
+      await tester.pumpAndSettle();
+      expect(k('categories-manager'), findsOneWidget);
     });
   });
 

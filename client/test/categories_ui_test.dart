@@ -1,7 +1,7 @@
 // Categories (global per owner): the model helpers, the manager table
 // (drag handle, leaf colour / folder icon, single-line name, ⋮ menu with
 // Delete N events / Delete category; dashed new-category row; opened from
-// the user menu), the editor's read-only picker, the eye menu's Categories
+// the View menu), the editor's read-only picker, the eye menu's Categories
 // section, the Events list's category filter, and a plan's own (unique)
 // category name.
 import 'dart:math' as math;
@@ -11,13 +11,11 @@ import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/categories/categories_manager.dart';
 import 'package:budget_client/widgets/category_dropdown.dart';
-import 'package:budget_client/widgets/user_menu.dart';
 import 'package:budget_client/features/events/event_type_buttons.dart';
 import 'package:budget_client/features/events/event_types.dart';
 import 'package:budget_client/features/events/solve_sheet.dart';
 import 'package:budget_client/features/timeline/stack_lanes.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
-import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/material.dart';
@@ -28,7 +26,6 @@ import 'package:budget_client/boot/page_stub.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/category_dropdown.dart';
-import 'support/fake_auth.dart';
 import 'support/fake_categories.dart';
 
 final _now = DateTime.now();
@@ -184,9 +181,6 @@ Future<(_Store, _Cats)> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        authRepositoryProvider.overrideWithValue(
-          FakeAuthRepository(user: adminUser),
-        ),
         streamRepositoryProvider.overrideWithValue(_StreamRepo(store)),
         eventRepositoryProvider.overrideWithValue(events),
         categoryRepositoryProvider.overrideWithValue(cats),
@@ -199,9 +193,12 @@ Future<(_Store, _Cats)> _pump(
 }
 
 Future<void> _openManager(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey('user-menu')));
+  await tester.tap(find.byKey(const ValueKey('fit-menu')));
   await tester.pumpAndSettle();
-  await tester.tap(find.byKey(const ValueKey('menu-categories')));
+  final manage = find.byKey(const ValueKey('view-manage-categories'));
+  await tester.ensureVisible(manage);
+  await tester.pumpAndSettle();
+  await tester.tap(manage);
   await tester.pumpAndSettle();
   expect(find.byKey(const ValueKey('categories-manager')), findsOneWidget);
 }
@@ -365,25 +362,25 @@ void main() {
     });
   }
 
-  testWidgets('the avatar menu has "Categories" with an icon; the '
-      'Events list has no categories button', (tester) async {
+  testWidgets('the View menu has "Manage categories…"; the '
+      'Events list has no categories button; the header has no avatar menu', (
+    tester,
+  ) async {
     await _pump(tester, size: const Size(390, 844));
+    expect(find.byKey(const ValueKey('user-menu')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('panel-categories')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('panel-close')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('user-menu')));
+    await tester.tap(find.byKey(const ValueKey('fit-menu')));
     await tester.pumpAndSettle();
-    expect(find.text('Categories'), findsOneWidget);
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('menu-categories')),
-        matching: find.byType(CategoryMenuGlyph),
-      ),
+      find.byKey(const ValueKey('view-manage-categories')),
       findsOneWidget,
     );
-    await tester.tap(find.byKey(const ValueKey('menu-categories')));
+    expect(find.text('Manage categories…'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('view-manage-categories')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('categories-manager')), findsOneWidget);
     expect(find.textContaining('all your streams'), findsWidgets);

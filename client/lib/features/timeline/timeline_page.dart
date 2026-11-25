@@ -58,7 +58,6 @@ import 'span_header.dart';
 import 'view_units.dart';
 import 'zoom_level.dart';
 import 'occurrence_info.dart';
-import '../../widgets/user_menu.dart';
 import 'shortcuts_help.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
@@ -1739,8 +1738,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// Every timeline action lives in the header row, right of the stream
   /// name, all icon-only, left to right: Reminders (plain icon) · Events
   /// (plain list icon) · Stream settings (≥960px) · View (eye: Go to
-  /// today / seed date / date…, Combine, Categories) · More (⋮) · the
-  /// signed-in user's avatar (rightmost).
+  /// today / seed date / date…, Combine, Categories) · More (⋮, rightmost).
   /// Adding an event is the circular button on the chart, not a header icon.
   ///
   /// Share stream is always in More; below 960px Stream settings is too.
@@ -1838,7 +1836,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         ),
       // View (eye): icon-only at every width, named by its tooltip.
       _fitMenu(stream, compact: !desk, tight: tiny, style: slim),
-      // More, then the signed-in avatar (rightmost).
+      // Always the rightmost item. The avatar/user menu lives on the
+      // Streams home screen, not here.
       PopupMenuButton<String>(
         key: const ValueKey('timeline-more'),
         tooltip: 'More',
@@ -1857,13 +1856,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           }
         },
         itemBuilder: (context) => more,
-      ),
-      // Avatar menu: Variables, Categories, Admin (if admin), Sign out.
-      UserMenu(
-        streamId: stream.id,
-        canEdit: canEdit,
-        showRealtimeDot: false,
-        compact: width < 420,
       ),
       SizedBox(width: desk ? 8 : (tiny ? 0 : 2)),
     ];
