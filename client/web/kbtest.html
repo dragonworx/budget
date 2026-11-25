@@ -92,12 +92,27 @@
     <h2>In-app variants (after this page)</h2>
     <p>Sign in as usual, open a stream, then try New event and New stream. A green “kb=…” badge in the corner confirms which strategy is live.</p>
     <p>
-      <a href="/?kb=a">/?kb=a</a> — default: touchend prime, rAF-delayed handoff, block view-focus steal<br>
-      <a href="/?kb=b">/?kb=b</a> — old default: pointerdown + handoff (did not open the keyboard)<br>
-      <a href="/?kb=c">/?kb=c</a> — touchend prime only, proxy stays focused (no handoff)<br>
-      <a href="/?kb=d">/?kb=d</a> — no proxy, just skip the open animation<br>
-      Add <a href="/?kb=a&amp;kbdebug=1">?kbdebug=1</a> to any of these to POST the device focus log to /api/kbdebug
+      <a href="/?kb=a&amp;kbdebug=1">/?kb=a&amp;kbdebug=1</a> — default: rect-hit touchend prime, rAF handoff, block view-focus steal<br>
+      <a href="/?kb=b&amp;kbdebug=1">/?kb=b&amp;kbdebug=1</a> — old default: pointerdown + handoff (did not open the keyboard)<br>
+      <a href="/?kb=c&amp;kbdebug=1">/?kb=c&amp;kbdebug=1</a> — same prime as a, proxy stays focused (no handoff)<br>
+      <a href="/?kb=d&amp;kbdebug=1">/?kb=d&amp;kbdebug=1</a> — real transparent input under the finger at the button, then handoff<br>
+      <a href="/?kb=e&amp;kbdebug=1">/?kb=e&amp;kbdebug=1</a> — visible (opacity 1, 16px, normal size) input parked just off-screen, then handoff<br>
+      The <code>kbdebug=1</code> flag POSTs the device focus log to /api/kbdebug
     </p>
+  </div>
+
+  <div class="card">
+    <h2>4. App CSS / viewport lock</h2>
+    <p>Budgie’s index.html sets <code>html,body { position:fixed; touch-action:none; overflow:hidden }</code> and locks the viewport meta. Toggle that here and retry 1b / 3a / 5a. If the keyboard stops appearing, the CSS lock is involved.</p>
+    <button class="alt" type="button" id="toggle-lock">4. Toggle app CSS lock (off)</button>
+    <button data-t="lock-touchend">4a. Focus on touchend (uses current lock state)</button>
+  </div>
+
+  <div class="card">
+    <h2>5. Visible off-screen input</h2>
+    <p>A real, fully visible (opacity 1, font-size 16px, 40px tall) input is parked just above the viewport — not display:none, visibility:hidden, or opacity:0. Focus it in the gesture, then hand off to the on-screen field. This is the in-app <code>?kb=e</code> idea.</p>
+    <button data-t="offscreen-touchend">5a. Focus visible off-screen input on touchend, then handoff</button>
+    <button data-t="offscreen-click">5b. Same, on click</button>
   </div>
 
   <div class="card">
@@ -239,6 +254,59 @@
     field.focus();
     log('3d touchend focus #field');
   }, true);
+
+  const APP_LOCK = 'margin:0;padding:0;position:fixed;inset:0;width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none;touch-action:none;-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:transparent';
+  const VIEW_LOCK = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+  let lockOn = /(?:^|[?&])lock=1(?:&|$)/.test(location.search);
+  const savedHtml = document.documentElement.getAttribute('style') || '';
+  const savedBody = document.body.getAttribute('style') || '';
+  function applyLock(on) {
+    lockOn = on;
+    const html = document.documentElement;
+    const body = document.body;
+    if (on) {
+      html.style.cssText = APP_LOCK;
+      body.style.cssText = APP_LOCK + ';padding:16px 16px 48px;overflow:auto;';
+      var m = document.querySelector('meta[name="viewport"]');
+      if (m) m.setAttribute('content', VIEW_LOCK);
+    } else {
+      html.style.cssText = savedHtml;
+      body.style.cssText = savedBody;
+    }
+    const b = document.getElementById('toggle-lock');
+    if (b) b.textContent = '4. Toggle app CSS lock (' + (on ? 'on' : 'off') + ')';
+    log('app CSS lock ' + (on ? 'ON' : 'OFF'));
+  }
+  document.getElementById('toggle-lock').onclick = () => applyLock(!lockOn);
+  if (lockOn) applyLock(true);
+
+  bind('lock-touchend', 'touchend', e => { dropProxy(); field.focus(); log('4a touchend focus (lock=' + (lockOn ? 'on' : 'off') + ')'); }, true);
+
+  function makeVisibleOffscreen() {
+    if (proxy) proxy.remove();
+    const el = document.createElement('input');
+    el.type = 'text';
+    el.setAttribute('data-kb-primer', '1');
+    el.setAttribute('inputmode', 'text');
+    el.setAttribute('autocomplete', 'off');
+    el.id = 'offscreen-proxy';
+    el.style.cssText = 'position:fixed;left:8px;top:-56px;width:calc(100% - 16px);height:40px;font-size:16px;line-height:40px;border:1px solid #94a3b8;padding:0 8px;background:#fff;color:#111;caret-color:#111;opacity:1;z-index:99999;outline:none;';
+    document.body.appendChild(el);
+    proxy = el;
+    return el;
+  }
+  function offscreenHandoff(e) {
+    const p = makeVisibleOffscreen();
+    p.focus();
+    log(e.type + ' focused visible off-screen input; handoff in 1 rAF');
+    requestAnimationFrame(() => {
+      field.focus();
+      dropProxy();
+      log('handoff to #field after rAF');
+    });
+  }
+  bind('offscreen-touchend', 'touchend', offscreenHandoff, true);
+  bind('offscreen-click', 'click', offscreenHandoff, true);
 
   document.getElementById('clear').onclick = () => { logEl.textContent = ''; };
   log('ready. Tap a button and watch for the system keyboard.');

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../boot/kb_hotspot.dart';
 import '../../brand/brand.dart';
 import '../../data/alert.dart';
 import '../../data/api_client.dart';
@@ -101,11 +102,16 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                         : '$count stream${count == 1 ? '' : 's'} · open one to plan its balance over time',
                     actions: [
                       if (count != null && count > 0)
-                        FilledButton.icon(
-                          key: const ValueKey('new-stream'),
-                          onPressed: () => _create(context),
-                          icon: const Icon(Icons.add_rounded, size: 20),
-                          label: const Text('New stream'),
+                        KbHotspot(
+                          id: 'home-new-stream',
+                          kind: 'text',
+                          onActivate: () => _create(context),
+                          child: FilledButton.icon(
+                            key: const ValueKey('new-stream'),
+                            onPressed: () => _create(context),
+                            icon: const Icon(Icons.add_rounded, size: 20),
+                            label: const Text('New stream'),
+                          ),
                         ),
                     ],
                   ),
@@ -146,11 +152,16 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                 glyph: const StreamIcon(key: ValueKey('stream-icon')),
                 title: 'No streams yet',
                 message: 'Create a stream with a starting (seed) balance, then plan its events on the timeline. Streams others share with you show up here too.',
-                action: FilledButton.icon(
-                  key: const ValueKey('new-stream'),
-                  onPressed: () => _create(context),
-                  icon: const Icon(Icons.add_rounded, size: 20),
-                  label: const Text('New stream'),
+                action: KbHotspot(
+                  id: 'home-new-stream-empty',
+                  kind: 'text',
+                  onActivate: () => _create(context),
+                  child: FilledButton.icon(
+                    key: const ValueKey('new-stream'),
+                    onPressed: () => _create(context),
+                    icon: const Icon(Icons.add_rounded, size: 20),
+                    label: const Text('New stream'),
+                  ),
                 ),
               ),
             ],

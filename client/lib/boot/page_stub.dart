@@ -67,8 +67,22 @@ void installSoftKeyboardPrimer() {}
 bool get instantSoftKeyboardOpen => false;
 
 /// Web: `?kb=a|b|c|d` strategy (tests always behave like desktop).
-/// `c` is touchend prime with no handoff.
+/// `c` is touchend prime with no handoff. `d` is a real DOM input overlay.
 String get softKeyboardVariant => 'a';
+
+/// Web: screen rect of a New event / New stream / FAB / day-add control.
+void registerKbHotspot({
+  required String id,
+  required double left,
+  required double top,
+  required double width,
+  required double height,
+  required String kind,
+  void Function()? onActivate,
+}) {}
+
+/// Web: drop a previously registered hotspot.
+void unregisterKbHotspot(String id) {}
 
 /// Non-web (tests): the platform clipboard (mock it with
 /// `SystemChannels.platform`); a platform error is a [ClipboardReadException].

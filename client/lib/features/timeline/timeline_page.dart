@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../boot/kb_hotspot.dart';
 import '../../boot/page_stub.dart'
     if (dart.library.js_interop) '../../boot/page_web.dart'
     as page;
@@ -1956,23 +1957,28 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       child: Semantics(
         button: true,
         label: 'Add an event',
-        child: Material(
-          key: const ValueKey('add-event-fab'),
-          color: AppTheme.accent,
-          elevation: 6,
-          shadowColor: const Color(0x66000000),
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () => _createOnceOnDay(context, day),
-            child: const SizedBox(
-              width: 56,
-              height: 56,
-              child: Icon(
-                Icons.add_rounded,
-                size: 28,
-                color: AppTheme.onAccent,
+        child: KbHotspot(
+          id: 'add-event-fab',
+          kind: 'decimal',
+          onActivate: () => _createOnceOnDay(context, day),
+          child: Material(
+            key: const ValueKey('add-event-fab'),
+            color: AppTheme.accent,
+            elevation: 6,
+            shadowColor: const Color(0x66000000),
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () => _createOnceOnDay(context, day),
+              child: const SizedBox(
+                width: 56,
+                height: 56,
+                child: Icon(
+                  Icons.add_rounded,
+                  size: 28,
+                  color: AppTheme.onAccent,
+                ),
               ),
             ),
           ),
@@ -2572,9 +2578,7 @@ class _StreamHeader extends StatelessWidget {
                               right: compact ? 0 : 2,
                               child: Icon(
                                 Icons.arrow_drop_down_rounded,
-                                key: const ValueKey(
-                                  'header-stream-arrow',
-                                ),
+                                key: const ValueKey('header-stream-arrow'),
                                 size: compact ? 20 : 24,
                                 color: AppTheme.textMuted,
                               ),
@@ -2735,10 +2739,7 @@ class _HeaderBrand extends StatelessWidget {
               const Positioned(
                 top: -2,
                 right: -2,
-                child: RealtimeDot(
-                  key: ValueKey('brand-rt-dot'),
-                  badge: true,
-                ),
+                child: RealtimeDot(key: ValueKey('brand-rt-dot'), badge: true),
               ),
             ],
           ),

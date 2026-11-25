@@ -64,6 +64,20 @@ void main() {
     expect((await call('POST', body: 'not-json')).statusCode, 400);
   });
 
+  test('POST clear empties the store', () async {
+    await call('POST', body: jsonEncode({'build': '1', 'log': 'keep-me'}));
+    expect(
+        ((jsonDecode(await (await call('GET')).readAsString())
+            as Map)['entries'] as List),
+        hasLength(1));
+    final cleared = await call('POST', body: jsonEncode({'clear': true}));
+    expect(cleared.statusCode, 200);
+    final map = jsonDecode(await cleared.readAsString()) as Map;
+    expect(map['cleared'], isTrue);
+    final got = jsonDecode(await (await call('GET')).readAsString()) as Map;
+    expect(got['entries'], isEmpty);
+  });
+
   test('rate-limits a chatty client', () async {
     h = kbdebugHandler(
       log: Log((_) {}),

@@ -22,6 +22,7 @@ import 'ghost_line.dart';
 import 'occurrence_info.dart';
 import 'selection_period.dart';
 import 'stack_lanes.dart';
+import '../../boot/kb_hotspot.dart';
 import '../../widgets/day_add_button.dart';
 import 'step_dots.dart';
 import 'tap_menu.dart';
@@ -2903,12 +2904,17 @@ class _BalanceChartState extends State<BalanceChart>
                 _trimDayButton(day, btn),
                 const SizedBox(width: 4),
               ],
-              IconButton(
-                key: const ValueKey('pick-add'),
-                tooltip: 'Add an event on ${formatOccurrenceDate(day)}',
-                style: btn,
-                icon: dayAddIcon,
-                onPressed: _addFromPin,
+              KbHotspot(
+                id: 'pick-add',
+                kind: 'decimal',
+                onActivate: _addFromPin,
+                child: IconButton(
+                  key: const ValueKey('pick-add'),
+                  tooltip: 'Add an event on ${formatOccurrenceDate(day)}',
+                  style: btn,
+                  icon: dayAddIcon,
+                  onPressed: _addFromPin,
+                ),
               ),
             ],
           ),
@@ -3291,16 +3297,24 @@ class _BalanceChartState extends State<BalanceChart>
                 ),
               if (widget.onAddForPeriod != null) ...[
                 const SizedBox(width: 6),
-                IconButton.outlined(
-                  key: const ValueKey('sel-add'),
-                  tooltip: 'Add an event for this period',
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  onPressed: () => widget.onAddForPeriod!(
+                KbHotspot(
+                  id: 'sel-add',
+                  kind: 'decimal',
+                  onActivate: () => widget.onAddForPeriod!(
                     dateOnly(sum.start),
                     dateOnly(sum.end),
                   ),
-                  icon: const Icon(Icons.add_rounded),
+                  child: IconButton.outlined(
+                    key: const ValueKey('sel-add'),
+                    tooltip: 'Add an event for this period',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    onPressed: () => widget.onAddForPeriod!(
+                      dateOnly(sum.start),
+                      dateOnly(sum.end),
+                    ),
+                    icon: const Icon(Icons.add_rounded),
+                  ),
                 ),
               ],
             ],

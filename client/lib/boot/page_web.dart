@@ -94,6 +94,9 @@ bool _viewFocusBlocked = false;
 String? _armedKind;
 String? _variant;
 bool? _kbdebug;
+final _hotspots = <String, _KbHotspot>{};
+final _overlays = <String, web.HTMLInputElement>{};
+String? _lastRectsLog;
 const _compiledBuildId = String.fromEnvironment('BUILD_ID');
 
 /// Flutter web's editing input is either a semantics text-field
@@ -106,19 +109,26 @@ const _flutterInputSelector =
 
 /// In-app strategy from `?kb=` (search or hash query). Default `a`.
 ///
-/// * a — prime on touchend/click (what iOS honours), skip the open
-///   animation, block Flutter's Timer(0) view-focus steal, then after
-///   one requestAnimationFrame (so Safari can finish synthetic
-///   mouse/click events) hand off to Flutter's field.
+/// * a — default. Capture-phase touchend/pointerup/click primes the
+///   proxy when the point hits a registered New-event / New-stream /
+///   FAB / day-add rect (not by walking event.target). Flutter's
+///   Timer(0) view-focus steal is blocked from pointerdown. After one
+///   requestAnimationFrame, focus moves to Flutter's field.
 /// * b — previous default: prime on pointerdown/touchstart and hand
 ///   off (does not open the keyboard on a real iPhone).
-/// * c — touchend prime only: the proxy stays focused (no handoff).
-/// * d — no proxy; just skip the open animation and requestFocus on
-///   the first frame.
+/// * c — same prime as a, but the proxy stays focused (no handoff).
+/// * d — a real transparent `<input>` sits on each hotspot so the
+///   finger lands on a native field; then rAF-handoff to Flutter's
+///   field. This is the HtmlElementView-style fallback.
+/// * e — like a, but the proxy is a fully visible (opacity 1, 16px
+///   font, normal size) input parked just off-screen, focused in the
+///   same touchend, then handed off.
 String get softKeyboardVariant {
   if (_variant != null) return _variant!;
   final v = _readFlag('kb');
-  _variant = (v == 'a' || v == 'b' || v == 'c' || v == 'd') ? v : 'a';
+  _variant = (v == 'a' || v == 'b' || v == 'c' || v == 'd' || v == 'e')
+      ? v
+      : 'a';
   return _variant!;
 }
 
@@ -152,7 +162,14 @@ void _kbLog(String ev, [web.Element? el]) {
   final root = web.document.documentElement;
   if (root == null) return;
   final prev = root.getAttribute('data-kb') ?? '';
-  root.setAttribute('data-kb', prev.isEmpty ? line : '$prev||$line');
+  var next = prev.isEmpty ? line : '$prev||$line';
+  if (next.length > 12000) {
+    final cut = next.indexOf('||', next.length - 12000);
+    next = cut >= 0
+        ? next.substring(cut + 2)
+        : next.substring(next.length - 12000);
+  }
+  root.setAttribute('data-kb', next);
   if (kbDebugEnabled) _scheduleKbDebugPost();
 }
 
@@ -191,6 +208,7 @@ void _postKbDebug() {
     'href': web.window.location.href,
     'active': _fieldSnap(web.document.activeElement),
     'log': root?.getAttribute('data-kb') ?? '',
+    'rects': _rectsSummary(),
     'ts': DateTime.now().toUtc().toIso8601String(),
   });
   keepaliveRequest('POST', '/api/kbdebug', const {
@@ -206,8 +224,13 @@ void installSoftKeyboardPrimer() {
   final v = softKeyboardVariant;
   if (kbDebugEnabled) {
     onPageHidden(_postKbDebug);
+    final nav = web.window.navigator;
     _kbLog(
-      'debug-on build=$_compiledBuildId ua=${web.window.navigator.userAgent}',
+      'debug-on build=$_compiledBuildId kb=$v '
+      'coarse=${web.window.matchMedia('(pointer: coarse)').matches} '
+      'hoverNone=${web.window.matchMedia('(hover: none)').matches} '
+      'maxTouch=${nav.maxTouchPoints} '
+      'ua=${nav.userAgent}',
     );
   }
   if (!_shouldPrimeKeyboard) return;
@@ -217,31 +240,34 @@ void installSoftKeyboardPrimer() {
   } else {
     web.window.addEventListener('load', ((web.Event _) => badge()).toJS);
   }
-  if (v == 'd') return;
   _installFocusPatch();
 
+  // Always observe these on capture so a miss still shows up in kbdebug.
+  // Hit-testing uses registered rects (gesture-time), not event.target.
   if (v == 'b') {
-    // Old default: focus on pointerdown/touchstart (fails on device).
     _listen('pointerdown', prime: true);
     _listen('touchstart', prime: true);
     _listen('pointerup', reassert: true);
     _listen('touchend', reassert: true);
+    _listen('click', reassert: true);
     return;
   }
 
-  // a and c: prime on touchend/click only. On pointerdown we only
-  // arm the view-focus block so Flutter's Timer(0)
-  // requestViewFocusChange cannot steal focus after we prime.
-  // Variant c keeps the proxy focused (no handoff).
+  // a, c, d, e: arm the steal-block on pointerdown/touchstart; prime
+  // on touchend/pointerup/click. Variant d's overlay already receives
+  // the tap natively; the listener still arms the block and logs.
   _listen('pointerdown', armOnly: true);
+  _listen('touchstart', armOnly: true);
   _listen('touchend', prime: true);
+  _listen('pointerup', prime: true);
   _listen('click', prime: true);
-  // After touchend focus, a compatibility mousedown on the button can
-  // move focus to <body>. Cancel it while the proxy is held.
+  // After touchend focus, a compatibility mousedown on the canvas can
+  // move focus to <body>. Cancel it while the proxy is held. Not on
+  // d: the overlay input needs its default mouse sequence.
   web.document.addEventListener(
     'mousedown',
     ((web.Event e) {
-      if (softKeyboardVariant != 'a' && softKeyboardVariant != 'c') return;
+      if (!_stealBlockVariant || softKeyboardVariant == 'd') return;
       if (_keyboardPrimer == null || _handoffDone || !_viewFocusBlocked) {
         return;
       }
@@ -250,6 +276,11 @@ void installSoftKeyboardPrimer() {
     }).toJS,
     true.toJS,
   );
+}
+
+bool get _stealBlockVariant {
+  final v = softKeyboardVariant;
+  return v == 'a' || v == 'c' || v == 'd' || v == 'e';
 }
 
 void _listen(
@@ -261,35 +292,49 @@ void _listen(
   web.document.addEventListener(
     type,
     ((web.Event e) {
+      final point = _eventPoint(e);
+      final targetName = _eventTargetName(e);
+      final rectHit = point == null ? null : _hitHotspot(point.x, point.y);
+      final labelHit = _kindFromEvent(e);
+      final kind =
+          rectHit?.kind ??
+          labelHit ??
+          ((prime || reassert) ? _armedKind : null);
+      if (kbDebugEnabled) {
+        final xy = point == null
+            ? '-'
+            : '${point.x.toStringAsFixed(0)},${point.y.toStringAsFixed(0)}';
+        final hit = rectHit == null ? 'miss' : '${rectHit.id}/${rectHit.kind}';
+        _kbLog(
+          'ev=$type tgt=$targetName xy=$xy hit=$hit '
+          'label=${labelHit ?? '-'} kind=${kind ?? '-'}',
+        );
+      }
       if (reassert) {
         if (_keyboardPrimer != null && !_handoffDone) {
           primeSoftKeyboard(via: '$type-capture');
         }
         return;
       }
-      // Arming is only for the New-event / New-stream down itself, not a
-      // stale kind from a previous gesture.
-      final hit = _kindFromEvent(e);
-      final kind = hit ?? (prime ? _armedKind : null);
       if (kind == null) return;
       if (armOnly) {
-        if (softKeyboardVariant == 'a' || softKeyboardVariant == 'c') {
+        if (_stealBlockVariant) {
           _armViewFocusBlock();
           _armedKind = kind;
-          _kbLog('arm-block via=$type');
+          _kbLog('arm-block via=$type id=${rectHit?.id ?? 'label'}');
           // Same as kbtest 3a: suppress compatibility mouse events that
-          // would blur the proxy after the touchend focus.
-          if (e.cancelable) e.preventDefault();
+          // would blur the proxy after the touchend focus. Skip on d so
+          // the overlay input can take focus natively.
+          if (softKeyboardVariant != 'd' && e.cancelable) e.preventDefault();
         } else {
           _armedKind = kind;
         }
         return;
       }
       if (prime) {
-        if (softKeyboardVariant == 'a' || softKeyboardVariant == 'c') {
-          _armViewFocusBlock();
-        }
+        if (_stealBlockVariant) _armViewFocusBlock();
         _armedKind = kind;
+        if (softKeyboardVariant == 'd') return;
         primeSoftKeyboard(decimal: kind == 'decimal', via: '$type-capture');
       }
     }).toJS,
@@ -297,12 +342,215 @@ void _listen(
   );
 }
 
+class _KbHotspot {
+  _KbHotspot({
+    required this.id,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+    required this.kind,
+    this.onActivate,
+  });
+
+  final String id;
+  final double left;
+  final double top;
+  final double width;
+  final double height;
+  final String kind;
+  final void Function()? onActivate;
+
+  bool contains(double x, double y, {double pad = 12}) =>
+      x >= left - pad &&
+      x <= left + width + pad &&
+      y >= top - pad &&
+      y <= top + height + pad;
+
+  String get summary =>
+      '$id:${left.toStringAsFixed(0)},${top.toStringAsFixed(0)},'
+      '${width.toStringAsFixed(0)},${height.toStringAsFixed(0)},$kind';
+}
+
+/// Screen rect of a New event / New stream / FAB / day-add control.
+/// The capture listener hit-tests the touch against these rects so it
+/// can focus the proxy inside the gesture, without waiting for Dart
+/// onTap and without walking event.target (on a real iPhone that is
+/// the Flutter glass pane, not a labelled semantics node).
+void registerKbHotspot({
+  required String id,
+  required double left,
+  required double top,
+  required double width,
+  required double height,
+  required String kind,
+  void Function()? onActivate,
+}) {
+  final prev = _hotspots[id];
+  final next = _KbHotspot(
+    id: id,
+    left: left,
+    top: top,
+    width: width,
+    height: height,
+    kind: kind,
+    onActivate: onActivate,
+  );
+  _hotspots[id] = next;
+  final moved =
+      prev == null ||
+      prev.left != left ||
+      prev.top != top ||
+      prev.width != width ||
+      prev.height != height ||
+      prev.kind != kind;
+  if (moved) _logRectsIfChanged();
+  if (softKeyboardVariant == 'd' && _shouldPrimeKeyboard) {
+    _syncOverlay(next);
+  }
+}
+
+void unregisterKbHotspot(String id) {
+  if (_hotspots.remove(id) == null) return;
+  _removeOverlay(id);
+  _logRectsIfChanged();
+}
+
+String _rectsSummary() => _hotspots.values.map((h) => h.summary).join(';');
+
+void _logRectsIfChanged() {
+  final s = _rectsSummary();
+  if (s == _lastRectsLog) return;
+  _lastRectsLog = s;
+  _kbLog('rects n=${_hotspots.length} $s');
+}
+
+_KbHotspot? _hitHotspot(double x, double y) {
+  _KbHotspot? best;
+  var bestArea = double.infinity;
+  for (final h in _hotspots.values) {
+    if (!h.contains(x, y)) continue;
+    final area = h.width * h.height;
+    if (area < bestArea) {
+      best = h;
+      bestArea = area;
+    }
+  }
+  return best;
+}
+
+({double x, double y})? _eventPoint(web.Event e) {
+  if (e.isA<web.TouchEvent>()) {
+    final te = e as web.TouchEvent;
+    final list = te.changedTouches.length > 0 ? te.changedTouches : te.touches;
+    if (list.length > 0) {
+      final t = list.item(0);
+      if (t != null) {
+        return (x: t.clientX.toDouble(), y: t.clientY.toDouble());
+      }
+    }
+    return null;
+  }
+  if (e.isA<web.MouseEvent>()) {
+    final m = e as web.MouseEvent;
+    return (x: m.clientX.toDouble(), y: m.clientY.toDouble());
+  }
+  return null;
+}
+
+String _eventTargetName(web.Event e) {
+  final t = e.target;
+  if (t == null) return 'null';
+  try {
+    return (t as web.Node).nodeName;
+  } catch (_) {
+    return '?';
+  }
+}
+
+double _overlayActivateAt = 0;
+
+void _syncOverlay(_KbHotspot h) {
+  var el = _overlays[h.id];
+  if (el == null || !el.isConnected) {
+    el?.remove();
+    el = web.document.createElement('input') as web.HTMLInputElement
+      ..type = 'text'
+      ..inputMode = h.kind == 'decimal' ? 'decimal' : 'text'
+      ..tabIndex = 0
+      ..id = 'kb-hot-${h.id}'
+      ..setAttribute('data-kb-hot', h.id)
+      ..setAttribute('autocomplete', 'off')
+      ..setAttribute('autocorrect', 'off')
+      ..setAttribute('autocapitalize', 'none')
+      ..setAttribute('spellcheck', 'false')
+      ..enterKeyHint = 'done';
+    el.addEventListener(
+      'focus',
+      ((web.Event _) {
+        final cur = _hotspots[h.id];
+        if (cur == null) return;
+        _onOverlayFocus(cur, el!);
+      }).toJS,
+    );
+    el.addEventListener(
+      'touchend',
+      ((web.Event _) {
+        final cur = _hotspots[h.id];
+        if (cur != null) _onOverlayActivate(cur);
+      }).toJS,
+    );
+    el.addEventListener(
+      'click',
+      ((web.Event _) {
+        final cur = _hotspots[h.id];
+        if (cur != null) _onOverlayActivate(cur);
+      }).toJS,
+    );
+    el.addEventListener('blur', ((web.Event ev) => _onPrimerBlur(ev)).toJS);
+    web.document.body?.append(el);
+    _overlays[h.id] = el;
+  }
+  el.inputMode = h.kind == 'decimal' ? 'decimal' : 'text';
+  el.style.cssText =
+      'position:fixed;left:${h.left}px;top:${h.top}px;'
+      'width:${h.width}px;height:${h.height}px;'
+      'font-size:16px;border:0;padding:0;margin:0;'
+      'background:transparent;color:transparent;caret-color:transparent;'
+      'opacity:0.02;z-index:2147483645;outline:none;pointer-events:auto;';
+}
+
+void _onOverlayFocus(_KbHotspot h, web.HTMLInputElement el) {
+  _armViewFocusBlock();
+  _handoffTimer?.cancel();
+  _handoffTries = 0;
+  _handoffDone = false;
+  _handoffRafPending = false;
+  _keyboardPrimer = el;
+  el.setAttribute('data-kb-primer', '1');
+  _kbLog('prime via=overlay-native id=${h.id}');
+}
+
+void _onOverlayActivate(_KbHotspot h) {
+  final now = web.window.performance.now();
+  if (now - _overlayActivateAt < 400) return;
+  _overlayActivateAt = now;
+  _kbLog('overlay-activate id=${h.id}');
+  h.onActivate?.call();
+}
+
+void _removeOverlay(String id) {
+  final el = _overlays.remove(id);
+  if (identical(_keyboardPrimer, el)) _keyboardPrimer = null;
+  el?.remove();
+}
+
 /// Patch HTMLElement.focus / blur so Flutter's view-root focus
 /// (Timer(0) requestViewFocusChange, safeBlur) and a raw blur()
 /// cannot take focus off the proxy. A blur followed by refocus
 /// can dismiss the iOS keyboard, so we skip the steal rather than
-/// repairing it afterwards. Handoff sets data-kb-block to a value
-/// other than "1" so the real field can take focus.
+/// repairing it afterwards. Also log focusin/focusout with
+/// relatedTarget and a stack (for kbdebug).
 void _installFocusPatch() {
   if (_focusPatched) return;
   _focusPatched = true;
@@ -319,7 +567,9 @@ void _installFocusPatch() {
     '  }',
     '  function primer() { return document.querySelector(primerSel); }',
     '  function allowed(el) {',
+    '    if (!el) return false;',
     '    if (el === primer()) return true;',
+    '    if (el.getAttribute && el.getAttribute("data-kb-hot")) return true;',
     '    var role = el.getAttribute && el.getAttribute("data-semantics-role");',
     '    var cls = (el.className && String(el.className)) || "";',
     '    if (role === "text-field") return true;',
@@ -333,6 +583,16 @@ void _installFocusPatch() {
     '    var prev = root.getAttribute("data-kb") || "";',
     '    root.setAttribute("data-kb", prev ? prev + "||" + line : line);',
     '  }',
+    '  function snap(el) {',
+    '    if (!el) return "null";',
+    '    var role = (el.getAttribute && el.getAttribute("data-semantics-role")) || "";',
+    '    var id = el.id ? ("#" + el.id) : "";',
+    '    return (el.tagName || "?") + id + (role ? (" role=" + role) : "");',
+    '  }',
+    '  function stack() {',
+    '    try { return String((new Error()).stack || "").replace(/\\s+/g, " ").slice(0, 360); }',
+    '    catch (x) { return ""; }',
+    '  }',
     '  var origFocus = HTMLElement.prototype.focus;',
     '  HTMLElement.prototype.focus = function (opts) {',
     '    if (blocked() && primer() && !allowed(this)) {',
@@ -344,11 +604,22 @@ void _installFocusPatch() {
     '  var origBlur = HTMLElement.prototype.blur;',
     '  HTMLElement.prototype.blur = function () {',
     '    if (blocked() && this === primer()) {',
-    '      log("block-primer-blur tag=" + (this.tagName || "") + " type= mode= ph= role=");',
+    '      log("block-primer-blur tag=" + (this.tagName || "") + " type= mode= ph= role= stack=" + stack());',
     '      return;',
     '    }',
     '    return origBlur.call(this);',
     '  };',
+    '  document.addEventListener("focusout", function (e) {',
+    '    var p = primer();',
+    '    if (!p || e.target !== p) return;',
+    '    var ms = (window.performance && performance.now()) ? performance.now().toFixed(0) : "0";',
+    '    log(ms + "ms primer-focusout rel=" + snap(e.relatedTarget) + " stack=" + stack());',
+    '  }, true);',
+    '  document.addEventListener("focusin", function (e) {',
+    '    if (!blocked()) return;',
+    '    var ms = (window.performance && performance.now()) ? performance.now().toFixed(0) : "0";',
+    '    log(ms + "ms focusin tag=" + snap(e.target) + " rel=" + snap(e.relatedTarget));',
+    '  }, true);',
     '})();',
   ].join('\n');
   (web.document.head ?? web.document.documentElement)?.append(script);
@@ -368,10 +639,11 @@ void _disarmViewFocusBlock() {
 
 void _showVariantBadge(String v) {
   const labels = {
-    'a': 'kb=a · touchend + rAF handoff',
+    'a': 'kb=a · rect touchend + rAF handoff',
     'b': 'kb=b · pointerdown + handoff',
-    'c': 'kb=c · touchend, no handoff',
-    'd': 'kb=d · instant open, no proxy',
+    'c': 'kb=c · rect touchend, no handoff',
+    'd': 'kb=d · input under finger + handoff',
+    'e': 'kb=e · visible off-screen input + handoff',
   };
   final existing = web.document.getElementById('kb-variant-badge');
   existing?.remove();
@@ -438,6 +710,22 @@ String? _primeKindFromLabel(String raw) {
   return null;
 }
 
+String _primerCss() {
+  if (softKeyboardVariant == 'e') {
+    // Visible, normal-size, 16px. Parked just above the viewport so
+    // it is off-screen but not display:none / visibility:hidden /
+    // opacity:0 (those are the cases iOS is known to ignore).
+    return 'position:fixed;left:8px;top:-56px;width:calc(100% - 16px);height:40px;'
+        'font-size:16px;line-height:40px;border:1px solid #94a3b8;padding:0 8px;margin:0;'
+        'background:#fff;color:#111;caret-color:#111;'
+        'opacity:1;z-index:99999;outline:none;pointer-events:none;';
+  }
+  return 'position:fixed;left:0;bottom:0;width:100%;height:40px;'
+      'font-size:16px;line-height:40px;border:0;padding:0;margin:0;'
+      'background:transparent;color:transparent;caret-color:transparent;'
+      'opacity:0.02;z-index:99999;outline:none;pointer-events:none;';
+}
+
 /// iOS Safari only raises the soft keyboard for a focus() made inside
 /// touchend/click (not pointerdown/touchstart). Flutter's field does
 /// not exist yet, so a proxy is focused in that gesture; once Flutter
@@ -472,14 +760,10 @@ void primeSoftKeyboard({bool decimal = false, String? via}) {
     ..setAttribute('autocapitalize', 'none')
     ..setAttribute('spellcheck', 'false')
     ..enterKeyHint = 'done';
-  input.style.cssText =
-      'position:fixed;left:0;bottom:0;width:100%;height:40px;'
-      'font-size:16px;line-height:40px;border:0;padding:0;margin:0;'
-      'background:transparent;color:transparent;caret-color:transparent;'
-      'opacity:0.02;z-index:99999;outline:none;pointer-events:none;';
+  input.style.cssText = _primerCss();
   web.document.body?.append(input);
   _keyboardPrimer = input;
-  input.addEventListener('blur', ((web.Event _) => _onPrimerBlur()).toJS);
+  input.addEventListener('blur', ((web.Event ev) => _onPrimerBlur(ev)).toJS);
   input.focus(web.FocusOptions(preventScroll: true));
   _kbLog('prime via=$src');
   Timer(const Duration(seconds: 20), () {
@@ -487,12 +771,23 @@ void primeSoftKeyboard({bool decimal = false, String? via}) {
   });
 }
 
-void _onPrimerBlur() {
+void _onPrimerBlur([web.Event? e]) {
   final input = _keyboardPrimer;
   if (input == null || _handoffDone) return;
   final active = web.document.activeElement;
+  String rel = 'null';
+  if (e != null && e.isA<web.FocusEvent>()) {
+    final rt = (e as web.FocusEvent).relatedTarget;
+    if (rt != null) {
+      try {
+        rel = (rt as web.Node).nodeName;
+      } catch (_) {
+        rel = '?';
+      }
+    }
+  }
   if (active != null && _isFlutterField(active)) {
-    _kbLog('blur-to-field', active);
+    _kbLog('blur-to-field rel=$rel', active);
     if (softKeyboardVariant != 'b') {
       scheduleMicrotask(_dropPrimer);
     }
@@ -502,11 +797,11 @@ void _onPrimerBlur() {
   // During that transition WebKit reports activeElement as <body>.
   final block = web.document.documentElement?.getAttribute('data-kb-block');
   if (block == 'handoff') {
-    _kbLog('blur-to-handoff', active);
+    _kbLog('blur-to-handoff rel=$rel', active);
     return;
   }
   // A blur here, before handoff, is the failure mode on iOS.
-  _kbLog('primer-blur', active);
+  _kbLog('primer-blur rel=$rel', active);
   // Variant b is the old pointerdown path, which re-asserted focus.
   // For a, we must not refocus: that can dismiss the keyboard.
   if (softKeyboardVariant != 'b') return;
@@ -530,7 +825,7 @@ void _onPrimerBlur() {
 /// The proxy was already focused synchronously in that touchend.
 void handoffSoftKeyboard() {
   if (_keyboardPrimer == null) return;
-  if (softKeyboardVariant == 'd' || softKeyboardVariant == 'c') return;
+  if (softKeyboardVariant == 'c') return;
   if (_handoffDone) return;
   if (_handoffRafPending) return;
   _handoffRafPending = true;
@@ -632,7 +927,11 @@ void _dropPrimer() {
   _disarmViewFocusBlock();
   final input = _keyboardPrimer;
   _keyboardPrimer = null;
-  input?.remove();
+  if (input != null && input.getAttribute('data-kb-hot') != null) {
+    input.removeAttribute('data-kb-primer');
+  } else {
+    input?.remove();
+  }
   _kbLog('drop');
 }
 

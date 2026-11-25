@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../boot/kb_hotspot.dart';
 import '../boot/page_stub.dart'
     if (dart.library.js_interop) '../boot/page_web.dart';
 import '../data/models.dart';
@@ -277,15 +278,20 @@ class _StreamPickerState extends ConsumerState<StreamPicker> {
         // MenuItemButton runs onPressed a frame later (after the menu
         // closes), outside the tap: prime the keyboard on the release so
         // the New stream dialog's Name field raises it on phones.
-        Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerUp: (_) => primeSoftKeyboard(),
-          child: _action(
-            'new-stream',
-            Icons.add_rounded,
-            'New stream',
-            widget.onNewStream!,
-            focus: first(),
+        KbHotspot(
+          id: 'new-stream',
+          kind: 'text',
+          onActivate: widget.onNewStream,
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerUp: (_) => primeSoftKeyboard(),
+            child: _action(
+              'new-stream',
+              Icons.add_rounded,
+              'New stream',
+              widget.onNewStream!,
+              focus: first(),
+            ),
           ),
         ),
     ];

@@ -50,6 +50,12 @@ Handler kbdebugHandler({Log? log, KbDebugStore? store, RateLimiter? limiter}) {
     if (decoded is! Map) {
       return jsonError(400, 'JSON body must be an object');
     }
+    final body = Map<String, dynamic>.from(decoded);
+    if (body['clear'] == true) {
+      s.clear();
+      logs.info('kbdebug-clear', {'ip': ip});
+      return jsonOk({'ok': true, 'cleared': true});
+    }
     final entry = <String, dynamic>{
       'recv': DateTime.now().toUtc().toIso8601String(),
       'ip': ip,

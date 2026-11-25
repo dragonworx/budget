@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../loans/loan_display.dart';
 import '../../widgets/eye_icons.dart';
+import '../../boot/kb_hotspot.dart';
 import '../../boot/page_stub.dart'
     if (dart.library.js_interop) '../../boot/page_web.dart';
 import '../../data/api_client.dart';
@@ -192,14 +193,19 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       menuChildren: [
         // MenuItemButton runs onPressed a frame later (after the menu
         // closes), outside the tap: prime the keyboard on the release.
-        Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerUp: (_) => primeSoftKeyboard(decimal: true),
-          child: item(
-            'new-option-new',
-            Icons.add_rounded,
-            'New',
-            () => _open(null, primed: true),
+        KbHotspot(
+          id: 'panel-new-option-new',
+          kind: 'decimal',
+          onActivate: () => _open(null, primed: true),
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerUp: (_) => primeSoftKeyboard(decimal: true),
+            child: item(
+              'new-option-new',
+              Icons.add_rounded,
+              'New',
+              () => _open(null, primed: true),
+            ),
           ),
         ),
         Tooltip(
@@ -216,16 +222,21 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
         key: _newSplitKey,
         mainAxisSize: MainAxisSize.min,
         children: [
-          FilledButton.tonalIcon(
-            key: const ValueKey('panel-new-event'),
-            style: FilledButton.styleFrom(
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.horizontal(left: radius),
+          KbHotspot(
+            id: 'panel-new-event',
+            kind: 'decimal',
+            onActivate: () => _open(null),
+            child: FilledButton.tonalIcon(
+              key: const ValueKey('panel-new-event'),
+              style: FilledButton.styleFrom(
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.horizontal(left: radius),
+                ),
               ),
+              onPressed: () => _open(null),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New'),
             ),
-            onPressed: () => _open(null),
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('New'),
           ),
           const SizedBox(width: 2),
           Tooltip(
