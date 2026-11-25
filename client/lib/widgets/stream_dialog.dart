@@ -147,6 +147,14 @@ class _StreamDialogState extends State<StreamDialog> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _nameFocus.requestFocus();
+        setSoftKeyboardTextHandler((text) {
+          if (!mounted) return;
+          if (_name.text == text) return;
+          _name.value = TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+          );
+        });
         handoffSoftKeyboard();
         _openWait.schedule(context, _focusNameIfIdle);
       });
@@ -164,12 +172,21 @@ class _StreamDialogState extends State<StreamDialog> {
         ctx.findAncestorStateOfType<_StreamDialogState>() == this;
     if (!inDialog) {
       _nameFocus.requestFocus();
+      setSoftKeyboardTextHandler((text) {
+        if (!mounted) return;
+        if (_name.text == text) return;
+        _name.value = TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        );
+      });
       handoffSoftKeyboard();
     }
   }
 
   @override
   void dispose() {
+    setSoftKeyboardTextHandler(null);
     _openWait.cancel();
     _nameFocus.dispose();
     _name.dispose();

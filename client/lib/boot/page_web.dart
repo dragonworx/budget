@@ -109,11 +109,13 @@ const _flutterInputSelector =
 
 /// In-app strategy from `?kb=` (search or hash query). Default `a`.
 ///
-/// * a — default. Capture-phase touchend/pointerup/click primes the
-///   proxy when the point hits a registered New-event / New-stream /
-///   FAB / day-add rect (not by walking event.target). Flutter's
-///   Timer(0) view-focus steal is blocked from pointerdown. After one
-///   requestAnimationFrame, focus moves to Flutter's field.
+/// * a — default. The proxy is pre-created at startup (iOS will not
+///   raise the keyboard for an input inserted during the gesture).
+///   Capture-phase touchend/click focuses it when the point hits a
+///   registered rect. Flutter's field is not allowed to steal focus
+///   until the keyboard is visible (visualViewport shrink), then we
+///   hand off input-to-input. Typing on the proxy is synced into the
+///   Dart controller in the meantime.
 /// * b — previous default: prime on pointerdown/touchstart and hand
 ///   off (does not open the keyboard on a real iPhone).
 /// * c — same prime as a, but the proxy stays focused (no handoff).
@@ -241,6 +243,19 @@ void installSoftKeyboardPrimer() {
     web.window.addEventListener('load', ((web.Event _) => badge()).toJS);
   }
   _installFocusPatch();
+  // The proxy must already be in the DOM and laid out before the first
+  // tap. Creating it inside pointerup/touchend is why the first device
+  // tap never raised the keyboard (later taps reused the existing node).
+  if (v != 'd') {
+    if (web.document.body != null) {
+      _ensurePrimer();
+    } else {
+      web.window.addEventListener(
+        'load',
+        ((web.Event _) => _ensurePrimer()).toJS,
+      );
+    }
+  }
 
   // Always observe these on capture so a miss still shows up in kbdebug.
   // Hit-testing uses registered rects (gesture-time), not event.target.
@@ -254,12 +269,14 @@ void installSoftKeyboardPrimer() {
   }
 
   // a, c, d, e: arm the steal-block on pointerdown/touchstart; prime
-  // on touchend/pointerup/click. Variant d's overlay already receives
-  // the tap natively; the listener still arms the block and logs.
+  // only on touchend/click (iOS honours those, not pointerup). pointerup
+  // is logged but must not focus: on CriOS it fires ~10ms before
+  // touchend and was the event that first inserted the proxy.
+  // Variant d's overlay already receives the tap natively.
   _listen('pointerdown', armOnly: true);
   _listen('touchstart', armOnly: true);
+  _listen('pointerup');
   _listen('touchend', prime: true);
-  _listen('pointerup', prime: true);
   _listen('click', prime: true);
   // After touchend focus, a compatibility mousedown on the canvas can
   // move focus to <body>. Cancel it while the proxy is held. Not on
@@ -296,10 +313,8 @@ void _listen(
       final targetName = _eventTargetName(e);
       final rectHit = point == null ? null : _hitHotspot(point.x, point.y);
       final labelHit = _kindFromEvent(e);
-      final kind =
-          rectHit?.kind ??
-          labelHit ??
-          ((prime || reassert) ? _armedKind : null);
+      final realHit = rectHit?.kind ?? labelHit;
+      final kind = realHit ?? ((prime || reassert) ? _armedKind : null);
       if (kbDebugEnabled) {
         final xy = point == null
             ? '-'
@@ -316,8 +331,16 @@ void _listen(
         }
         return;
       }
-      if (kind == null) return;
       if (armOnly) {
+        // A miss starts a new gesture: do not prime later events from
+        // a leftover kind (that is why "tap anywhere" opened the
+        // keyboard after the first FAB press on kb=c).
+        if (realHit == null) {
+          if (type == 'pointerdown' || type == 'touchstart') {
+            _armedKind = null;
+          }
+          return;
+        }
         if (_stealBlockVariant) {
           _armViewFocusBlock();
           _armedKind = kind;
@@ -331,6 +354,7 @@ void _listen(
         }
         return;
       }
+      if (kind == null) return;
       if (prime) {
         if (_stealBlockVariant) _armViewFocusBlock();
         _armedKind = kind;
@@ -532,6 +556,16 @@ void _onOverlayFocus(_KbHotspot h, web.HTMLInputElement el) {
 }
 
 void _onOverlayActivate(_KbHotspot h) {
+  final el = _overlays[h.id];
+  if (el != null) {
+    _armViewFocusBlock();
+    _handoffDone = false;
+    _keyboardPrimer = el;
+    el.setAttribute('data-kb-primer', '1');
+    el.focus(web.FocusOptions(preventScroll: true));
+    _noteViewport();
+    _kbLog('prime via=overlay-touchend id=${h.id}');
+  }
   final now = web.window.performance.now();
   if (now - _overlayActivateAt < 400) return;
   _overlayActivateAt = now;
@@ -566,10 +600,15 @@ void _installFocusPatch() {
     '    return root && root.getAttribute(attr) === "1";',
     '  }',
     '  function primer() { return document.querySelector(primerSel); }',
+    '  function handingOff() {',
+    '    var root = document.documentElement;',
+    '    return root && root.getAttribute(attr) === "handoff";',
+    '  }',
     '  function allowed(el) {',
     '    if (!el) return false;',
     '    if (el === primer()) return true;',
     '    if (el.getAttribute && el.getAttribute("data-kb-hot")) return true;',
+    '    if (!handingOff()) return false;',
     '    var role = el.getAttribute && el.getAttribute("data-semantics-role");',
     '    var cls = (el.className && String(el.className)) || "";',
     '    if (role === "text-field") return true;',
@@ -639,7 +678,7 @@ void _disarmViewFocusBlock() {
 
 void _showVariantBadge(String v) {
   const labels = {
-    'a': 'kb=a · rect touchend + rAF handoff',
+    'a': 'kb=a · precreated touchend, handoff after keyboard',
     'b': 'kb=b · pointerdown + handoff',
     'c': 'kb=c · rect touchend, no handoff',
     'd': 'kb=d · input under finger + handoff',
@@ -727,27 +766,66 @@ String _primerCss() {
 }
 
 /// iOS Safari only raises the soft keyboard for a focus() made inside
-/// touchend/click (not pointerdown/touchstart). Flutter's field does
-/// not exist yet, so a proxy is focused in that gesture; once Flutter
-/// has created its own, [handoffSoftKeyboard] moves focus to it.
-///
-/// The proxy is a real, in-viewport 16px field (not a 1x1 opacity-0
-/// node: iOS ignores those). It stays until the handoff. We block
-/// engine view-focus steals so the proxy is not blurred (a blur then
-/// refocus can dismiss the keyboard).
-void primeSoftKeyboard({bool decimal = false, String? via}) {
-  if (!_shouldPrimeKeyboard) return;
-  if (softKeyboardVariant == 'd') return;
-  _handoffTimer?.cancel();
-  _handoffTries = 0;
-  _handoffDone = false;
-  final src = via ?? 'dart';
-  final existing = _keyboardPrimer;
+/// touchend/click on an input that was already in the DOM and laid out
+/// before the gesture started. Flutter's own field is not allowed to
+/// take focus until the keyboard is visible; [handoffSoftKeyboard]
+/// then moves focus input-to-input.
+void Function(String text)? _proxyTextHandler;
+double? _viewportAtPrime;
+bool _kbViewportHooked = false;
+
+void setSoftKeyboardTextHandler(void Function(String text)? handler) {
+  _proxyTextHandler = handler;
+}
+
+void _noteViewport() {
+  final vv = web.window.visualViewport;
+  _viewportAtPrime = (vv?.height ?? web.window.innerHeight).toDouble();
+}
+
+bool _keyboardIsUp() {
+  final start = _viewportAtPrime;
+  if (start == null) return false;
+  final now = (web.window.visualViewport?.height ?? web.window.innerHeight)
+      .toDouble();
+  return start - now > 80;
+}
+
+void _onProxyTyped(String text) {
+  _kbLog('proxy-input len=${text.length}');
+  _proxyTextHandler?.call(text);
+  final field = _findFlutterField();
+  if (field == null) return;
+  if (field.isA<web.HTMLInputElement>()) {
+    final inp = field as web.HTMLInputElement;
+    if (inp.value != text) {
+      inp.value = text;
+      inp.dispatchEvent(web.Event('input'));
+    }
+  } else if (field.isA<web.HTMLTextAreaElement>()) {
+    final area = field as web.HTMLTextAreaElement;
+    if (area.value != text) {
+      area.value = text;
+      area.dispatchEvent(web.Event('input'));
+    }
+  }
+}
+
+/// Create (or reuse) the standing proxy. Does not focus it.
+web.HTMLInputElement? _ensurePrimer({bool decimal = false}) {
+  if (softKeyboardVariant == 'd') return _keyboardPrimer;
+  var existing = _keyboardPrimer;
+  if (existing == null || !existing.isConnected) {
+    final listed = web.document.querySelector('[data-kb-primer="1"]');
+    if (listed != null && listed.isA<web.HTMLInputElement>()) {
+      existing = listed as web.HTMLInputElement;
+    }
+  }
   if (existing != null && existing.isConnected) {
-    if (decimal) existing.inputMode = 'decimal';
-    existing.focus(web.FocusOptions(preventScroll: true));
-    _kbLog('prime-reuse via=$src');
-    return;
+    existing.inputMode = decimal ? 'decimal' : 'text';
+    existing.style.cssText = _primerCss();
+    _keyboardPrimer = existing;
+    return existing;
   }
   existing?.remove();
   final input = web.document.createElement('input') as web.HTMLInputElement
@@ -764,11 +842,34 @@ void primeSoftKeyboard({bool decimal = false, String? via}) {
   web.document.body?.append(input);
   _keyboardPrimer = input;
   input.addEventListener('blur', ((web.Event ev) => _onPrimerBlur(ev)).toJS);
+  input.addEventListener(
+    'input',
+    ((web.Event _) => _onProxyTyped(input.value)).toJS,
+  );
+  _kbLog('primer-ready');
+  return input;
+}
+
+void primeSoftKeyboard({bool decimal = false, String? via}) {
+  if (!_shouldPrimeKeyboard) return;
+  if (softKeyboardVariant == 'd') return;
+  final src = via ?? 'dart';
+  final input = _ensurePrimer(decimal: decimal);
+  if (input == null) return;
+  // Dart onPointerUp / showDialog must not focus: on CriOS that ran
+  // at pointerup, before touchend, and used to insert the node inside
+  // the gesture. Capture-phase touchend/click owns focus().
+  if (src == 'dart' && softKeyboardVariant != 'b') {
+    _kbLog('prime-ensure via=dart');
+    return;
+  }
+  _handoffTimer?.cancel();
+  _handoffTries = 0;
+  _handoffDone = false;
+  _handoffRafPending = false;
+  _noteViewport();
   input.focus(web.FocusOptions(preventScroll: true));
-  _kbLog('prime via=$src');
-  Timer(const Duration(seconds: 20), () {
-    if (identical(_keyboardPrimer, input)) _dropPrimer();
-  });
+  _kbLog('prime-reuse via=$src');
 }
 
 void _onPrimerBlur([web.Event? e]) {
@@ -817,31 +918,58 @@ void _onPrimerBlur([web.Event? e]) {
 }
 
 /// Move focus from the proxy to Flutter's text-editing input, once
-/// that node exists. Safe to call on every requestFocus; it no-ops
-/// when nothing was primed (desktop, edit views, variant c or d).
-///
-/// The focus itself is delayed by one animation frame so Safari can
-/// finish the synthetic mouse/click events that follow touchend.
-/// The proxy was already focused synchronously in that touchend.
+/// the keyboard is visibly up (visualViewport shrink). Safe to call
+/// on every requestFocus; it no-ops when nothing was primed (desktop,
+/// edit views, variant c). Until then, typed text is synced into the
+/// Dart controller via [setSoftKeyboardTextHandler].
 void handoffSoftKeyboard() {
   if (_keyboardPrimer == null) return;
   if (softKeyboardVariant == 'c') return;
   if (_handoffDone) return;
   if (_handoffRafPending) return;
   _handoffRafPending = true;
-  _kbLog('handoff-raf');
-  web.window.requestAnimationFrame(
-    ((num _) {
+  _noteViewport();
+  _kbLog('handoff-wait-kb');
+  if (!_kbViewportHooked) {
+    _kbViewportHooked = true;
+    web.window.visualViewport?.addEventListener(
+      'resize',
+      ((web.Event _) {
+        if (_handoffDone || _keyboardPrimer == null) return;
+        if (softKeyboardVariant == 'c') return;
+        if (_keyboardIsUp()) {
+          _kbLog('keyboard-up');
+          _tryHandoff();
+        }
+      }).toJS,
+    );
+  }
+  _handoffTimer?.cancel();
+  _handoffTries = 0;
+  _handoffTimer = Timer.periodic(const Duration(milliseconds: 50), (t) {
+    if (_handoffDone || _keyboardPrimer == null) {
+      t.cancel();
       _handoffRafPending = false;
-      if (_tryHandoff()) return;
-      _handoffTimer?.cancel();
-      _handoffTries = 0;
-      _handoffTimer = Timer.periodic(const Duration(milliseconds: 16), (t) {
-        _handoffTries++;
-        if (_tryHandoff() || _handoffTries > 60) t.cancel();
-      });
-    }).toJS,
-  );
+      return;
+    }
+    if (_keyboardIsUp()) {
+      _kbLog('keyboard-up');
+      _tryHandoff();
+      t.cancel();
+      _handoffRafPending = false;
+      return;
+    }
+    _handoffTries++;
+    // Give the keyboard time to appear; then hand off anyway so
+    // desktop / WebKit emulation (no visualViewport shrink) still
+    // reaches the Flutter field.
+    if (_handoffTries >= 16) {
+      _kbLog('handoff-timeout');
+      _tryHandoff();
+      t.cancel();
+      _handoffRafPending = false;
+    }
+  });
 }
 
 bool _isPrimer(web.Element el) =>
@@ -906,9 +1034,11 @@ bool _tryHandoff() {
     _kbLog('handoff-not-ready', next);
     return false;
   }
-  // Keep data-kb-block=1 so a flutter-view steal cannot hop through
-  // <body> while we move focus directly onto the field (already allowed
-  // by the focus patch).
+  // Copy anything already typed on the proxy, then allow this field
+  // through the focus patch (block=handoff) and move focus directly.
+  final typed = _keyboardPrimer?.value ?? '';
+  if (typed.isNotEmpty) _onProxyTyped(typed);
+  web.document.documentElement?.setAttribute('data-kb-block', 'handoff');
   (next as web.HTMLElement).focus(web.FocusOptions(preventScroll: true));
   final now = web.document.activeElement;
   if (now != null && _isFlutterField(now)) {
@@ -926,11 +1056,16 @@ void _dropPrimer() {
   _handoffDone = true;
   _disarmViewFocusBlock();
   final input = _keyboardPrimer;
-  _keyboardPrimer = null;
   if (input != null && input.getAttribute('data-kb-hot') != null) {
+    // Overlay: leave it in place for the next tap, but it is not the
+    // standing primer.
     input.removeAttribute('data-kb-primer');
-  } else {
-    input?.remove();
+    input.value = '';
+    _keyboardPrimer = null;
+  } else if (input != null) {
+    // Keep the standing proxy in the DOM so the next first tap does
+    // not have to create it inside the gesture.
+    input.value = '';
   }
   _kbLog('drop');
 }

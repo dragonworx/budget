@@ -84,6 +84,9 @@ void registerKbHotspot({
 /// Web: drop a previously registered hotspot.
 void unregisterKbHotspot(String id) {}
 
+/// Web: receive text typed into the keyboard proxy so Amount/Name stay in sync.
+void setSoftKeyboardTextHandler(void Function(String text)? handler) {}
+
 /// Non-web (tests): the platform clipboard (mock it with
 /// `SystemChannels.platform`); a platform error is a [ClipboardReadException].
 Future<String?> readClipboardText() async {

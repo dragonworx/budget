@@ -451,6 +451,14 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   void _focusAmount() {
     if (_readOnly) return;
     (_loanMode && !_syncMode ? _principalFocus : _amountFocus).requestFocus();
+    setSoftKeyboardTextHandler((text) {
+      if (!mounted) return;
+      if (_amount.text == text) return;
+      _amount.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+    });
     handoffSoftKeyboard();
   }
 
@@ -503,6 +511,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
 
   @override
   void dispose() {
+    setSoftKeyboardTextHandler(null);
     _amount.dispose();
     _balance.dispose();
     _syncPreviewTimer?.cancel();
