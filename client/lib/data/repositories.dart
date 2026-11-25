@@ -396,10 +396,16 @@ class CategoryRepository {
     required String name,
     String? color,
     String? parentId,
+    bool moveParentEvents = false,
   }) async {
     final data = await _api.post(
       '/api/streams/$streamId/categories',
-      body: {'name': name, 'color': ?color, 'parentId': ?parentId},
+      body: {
+        'name': name,
+        'color': ?color,
+        'parentId': ?parentId,
+        if (moveParentEvents) 'moveParentEvents': true,
+      },
     );
     return Category.fromJson(data as Map<String, dynamic>);
   }

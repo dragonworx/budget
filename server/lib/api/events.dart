@@ -167,8 +167,8 @@ Router eventsRouter(Session conn) {
       return jsonOk(withResolvedFlag(event.toJson(), prep.resolvedDifferently));
     } on OffsetLinkError catch (e) {
       return jsonError(e.status, e.message);
-    } on CategoryNameException catch (e) {
-      return categoryNameError(e);
+    } on CategoryConstraintException catch (e) {
+      return categoryConstraintOnEvent(e);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }
@@ -324,8 +324,8 @@ Router eventsRouter(Session conn) {
         'original': r.original.toJson(),
         'created': r.created?.toJson(),
       }, prep.resolvedDifferently));
-    } on CategoryNameException catch (e) {
-      return categoryNameError(e);
+    } on CategoryConstraintException catch (e) {
+      return categoryConstraintOnEvent(e);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }

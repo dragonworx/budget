@@ -27,15 +27,15 @@ class CategoryDropdownAction {
 /// name (with a path when it has a parent), opening a menu as wide as the
 /// field.
 ///
-/// The menu is Favourites (flat, if any) then a separator then top-level
-/// categories. A parent drills into a submenu of its children; the parent
-/// itself stays selectable. On touch the submenu is a pushed page with a
-/// back row.
+/// The menu is a tinted Favourites block (flat leaves, if any) then a
+/// labelled Categories tree. Folders (categories with children) expand
+/// and collapse inline — a tap anywhere on the folder row toggles them
+/// and never selects. Only leaves can be picked or starred.
 ///
 /// Rows are at least 48px tall; the menu scrolls past 60% of the screen
-/// height. Keyboard: Enter / Space open it, the chosen (else first) row
-/// takes focus, arrows move, Enter picks, Esc closes the menu only (or
-/// goes back one drill-in page).
+/// height. Keyboard: Enter / Space open it, the chosen (else first) leaf
+/// takes focus, arrows move, Enter picks a leaf or toggles a folder, Esc
+/// closes the menu only.
 class CategoryDropdown extends StatefulWidget {
   const CategoryDropdown({
     super.key,
@@ -69,7 +69,7 @@ class CategoryDropdown extends StatefulWidget {
   final Key triggerKey;
 
   /// Menu rows are keyed `<prefix><id>` (`<prefix>all` for [allLabel],
-  /// `<prefix>drill-<id>` to open a parent's children, `<prefix>back`).
+  /// `<prefix>expand-<id>` on a folder's chevron).
   final String itemKeyPrefix;
 
   /// When set, a first "all" row (a filter's default).
@@ -124,11 +124,8 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
   /// pressed since): only then does the focused row show its ring.
   bool _keyboardNav = false;
 
-  /// Non-null: the submenu of this parent's children is showing.
-  String? _drillId;
-
-  /// Kept across a favourite-toggle rebuild that may close the menu.
-  String? _restoreDrillId;
+  /// Folder ids that are expanded in the inline tree.
+  final Set<String> _expanded = {};
 
   /// True while the user still wants the menu open (a parent rebuild
   /// after starring otherwise closes MenuAnchor).
@@ -163,20 +160,23 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
     _keyboardNav = HardwareKeyboard.instance.logicalKeysPressed.any(
       _openKeys.contains,
     );
-    _restoreDrillId = null;
-    _drillId = null;
+    _expandSelectedPath();
     _holdMenu = true;
     _menu.open();
+  }
+
+  void _expandSelectedPath() {
+    final sel = widget.selectedId;
+    if (sel == null) return;
+    for (final step in categoryPath(widget.categories, sel)) {
+      if (step.id != sel) _expanded.add(step.id);
+    }
   }
 
   void _reopenIfHeld({int frames = 0}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_holdMenu) return;
       if (!_menu.isOpen) _menu.open();
-      final keep = _restoreDrillId;
-      if (keep != null && _drillId != keep) {
-        setState(() => _drillId = keep);
-      }
       if (frames < 20) _reopenIfHeld(frames: frames + 1);
     });
   }
@@ -245,20 +245,26 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
     final byId = {for (final c in _pool) c.id: c};
     return [
       for (final id in widget.favoriteIds)
-        if (byId[id] != null) byId[id]!,
+        if (byId[id] != null && isCategoryLeaf(_pool, byId[id]!)) byId[id]!,
     ];
   }
 
   void _pick(Category? c) {
+    if (c != null && !isCategoryLeaf(_pool, c)) {
+      _toggleExpand(c.id);
+      return;
+    }
     _holdMenu = false;
-    _restoreDrillId = null;
-    _drillId = null;
     _menu.close();
     widget.onSelected(c);
   }
 
-  void _drill(String? id) {
-    setState(() => _drillId = id);
+  void _toggleExpand(String id) {
+    _holdMenu = true;
+    setState(() {
+      if (!_expanded.add(id)) _expanded.remove(id);
+    });
+    _reopenIfHeld();
     _focusRow();
   }
 
@@ -285,8 +291,8 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
   );
 
   void _toggleFavorite(Category c) {
+    if (!isCategoryLeaf(_pool, c)) return;
     _holdMenu = true;
-    _restoreDrillId = _drillId;
     widget.onToggleFavorite!(c);
     _reopenIfHeld();
   }
@@ -309,30 +315,42 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
     );
   }
 
+  Widget _sectionLabel(String text, {Key? key}) => Padding(
+    key: key,
+    padding: const EdgeInsets.fromLTRB(16, 10, 12, 6),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: AppTheme.textMuted,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.8,
+      ),
+    ),
+  );
+
   Widget _row(
     Category? c, {
     required double width,
     required bool selected,
     bool focus = false,
     bool showPath = false,
-    List<Category> children = const [],
+    int depth = 0,
   }) {
-    final actions = <Widget>[
-      if (c != null && widget.onToggleFavorite != null) _star(c),
-      if (c != null && children.isNotEmpty)
-        IconButton(
-          key: ValueKey('${widget.itemKeyPrefix}drill-${c.id}'),
-          tooltip: 'Show ${c.name} categories',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-          iconSize: 20,
-          onPressed: () => _drill(c.id),
-          icon: const Icon(Icons.chevron_right_rounded),
-        ),
-    ];
-    // Star / chevron sit beside the MenuItemButton, not in trailingIcon:
-    // on Flutter web a trailing IconButton's taps are eaten by the parent
-    // item and would select (and close) instead of starring or drilling.
+    final pool = _pool;
+    final isFolder = c != null && categoryHasChildren(pool, c.id);
+    final open = c != null && _expanded.contains(c.id);
+    final star = c != null && !isFolder && widget.onToggleFavorite != null;
+    Widget? trailing;
+    if (isFolder) {
+      trailing = Icon(
+        open ? Icons.expand_more_rounded : Icons.chevron_right_rounded,
+        key: ValueKey('${widget.itemKeyPrefix}expand-${c.id}'),
+        size: 22,
+        color: AppTheme.textMuted,
+      );
+    } else if (selected) {
+      trailing = const Icon(Icons.check_rounded, size: 18);
+    }
     return SizedBox(
       key: ValueKey('${widget.itemKeyPrefix}${c?.id ?? 'all'}'),
       width: width,
@@ -342,20 +360,56 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
             child: MenuItemButton(
               focusNode: focus ? _focusItem : null,
               style: _style,
-              onPressed: () => _pick(c),
-              trailingIcon: selected
-                  ? const Icon(Icons.check_rounded, size: 18)
-                  : null,
-              child: Semantics(
-                selected: selected,
-                child: _entry(c, showPath: showPath),
+              closeOnActivate: !isFolder,
+              onPressed: () {
+                if (isFolder) {
+                  _toggleExpand(c.id);
+                } else {
+                  _pick(c);
+                }
+              },
+              trailingIcon: trailing,
+              child: Padding(
+                padding: EdgeInsets.only(left: 16.0 * depth),
+                child: Semantics(
+                  selected: selected,
+                  button: true,
+                  label: c == null
+                      ? widget.allLabel
+                      : (isFolder
+                            ? (open ? 'Collapse ${c.name}' : 'Expand ${c.name}')
+                            : c.name),
+                  child: _entry(c, showPath: showPath),
+                ),
               ),
             ),
           ),
-          ...actions,
+          if (star) _star(c),
         ],
       ),
     );
+  }
+
+  void _addTree(
+    List<Widget> widgets,
+    Category c, {
+    required double width,
+    required Category? selected,
+    required void Function(Category? c, {bool showPath, int depth}) addRow,
+    int depth = 0,
+  }) {
+    addRow(c, showPath: false, depth: depth);
+    if (!_expanded.contains(c.id)) return;
+    for (final ch in childCategories(_pool, c.id)) {
+      _addTree(
+        widgets,
+        ch,
+        width: width,
+        selected: selected,
+        addRow: addRow,
+        depth: depth + 1,
+      );
+    }
   }
 
   List<Widget> _menuChildren(double width) {
@@ -364,72 +418,68 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
     final footer = widget.footer;
     final widgets = <Widget>[];
     var focusAssigned = false;
-    void addRow(
-      Category? c, {
-      bool showPath = false,
-      List<Category> children = const [],
-    }) {
-      final sel = c?.id == selected?.id || (c == null && selected == null);
+    void addRow(Category? c, {bool showPath = false, int depth = 0}) {
+      final sel =
+          (c != null && isCategoryLeaf(pool, c) && c.id == selected?.id) ||
+          (c == null && selected == null);
+      final focus = !focusAssigned && (sel || selected == null);
       widgets.add(
         _row(
           c,
           width: width,
           selected: sel,
-          focus: !focusAssigned && (sel || widgets.isEmpty),
+          focus: focus,
           showPath: showPath,
-          children: children,
+          depth: depth,
         ),
       );
-      if (sel || widgets.length == 1) focusAssigned = true;
+      if (focus) focusAssigned = true;
     }
 
-    final drill = _drillId == null ? null : categoryById(pool, _drillId);
-    if (drill != null) {
+    if (widget.allLabel != null) addRow(null);
+    final favs = _favorites;
+    if (favs.isNotEmpty) {
       widgets.add(
-        SizedBox(
-          width: width,
-          child: MenuItemButton(
-            key: ValueKey('${widget.itemKeyPrefix}back'),
-            focusNode: _focusItem,
-            style: _style,
-            leadingIcon: const Icon(Icons.arrow_back_rounded, size: 18),
-            onPressed: () => _drill(null),
-            child: const Text('Back'),
+        ColoredBox(
+          key: ValueKey('${widget.itemKeyPrefix}favorites-block'),
+          color: AppTheme.accentSoft,
+          child: _sectionLabel(
+            'FAVOURITES',
+            key: ValueKey('${widget.itemKeyPrefix}favorites-header'),
           ),
         ),
       );
-      focusAssigned = true;
-      // The parent itself is still selectable on this page.
-      addRow(drill, children: const []);
-      for (final ch in childCategories(pool, drill.id)) {
-        addRow(ch);
-      }
-    } else {
-      if (widget.allLabel != null) addRow(null);
-      final favs = _favorites;
-      if (favs.isNotEmpty) {
+      for (final c in favs) {
+        final sel = c.id == selected?.id;
         widgets.add(
-          Padding(
-            key: ValueKey('${widget.itemKeyPrefix}favorites-header'),
-            padding: const EdgeInsets.fromLTRB(16, 10, 12, 4),
-            child: Text(
-              'Favourites',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: AppTheme.textMuted,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-              ),
+          ColoredBox(
+            color: AppTheme.accentSoft,
+            child: _row(
+              c,
+              width: width,
+              selected: sel,
+              focus: !focusAssigned && sel,
+              showPath: c.parentId != null,
             ),
           ),
         );
-        for (final c in favs) {
-          addRow(c, showPath: c.parentId != null);
-        }
-        widgets.add(const Divider(height: 9));
+        if (sel) focusAssigned = true;
       }
-      for (final c in rootCategories(pool)) {
-        addRow(c, children: childCategories(pool, c.id));
-      }
+      widgets.add(
+        const ColoredBox(
+          color: AppTheme.borderStrong,
+          child: SizedBox(height: 2, width: double.infinity),
+        ),
+      );
+    }
+    widgets.add(
+      _sectionLabel(
+        'CATEGORIES',
+        key: ValueKey('${widget.itemKeyPrefix}categories-header'),
+      ),
+    );
+    for (final c in rootCategories(pool)) {
+      _addTree(widgets, c, width: width, selected: selected, addRow: addRow);
     }
     if (footer != null) {
       widgets.add(const Divider(height: 9));
@@ -468,19 +518,14 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
         return Focus(
           canRequestFocus: false,
           skipTraversal: true,
-          // Esc with the menu open closes the submenu first, then the menu
-          // only: the key stops here instead of reaching an enclosing
-          // editor's shortcuts.
+          // Esc with the menu open closes the menu only: the key stops
+          // here instead of reaching an enclosing editor's shortcuts.
           onKeyEvent: (node, e) {
             if (e is KeyDownEvent &&
                 e.logicalKey == LogicalKeyboardKey.escape &&
                 _menu.isOpen) {
-              if (_drillId != null) {
-                _drill(null);
-              } else {
-                _holdMenu = false;
-                _menu.close();
-              }
+              _holdMenu = false;
+              _menu.close();
               return KeyEventResult.handled;
             }
             return KeyEventResult.ignored;
@@ -498,18 +543,14 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
               HardwareKeyboard.instance.addHandler(_onKey);
               setState(() {
                 _isOpen = true;
-                _drillId = _restoreDrillId;
-                _restoreDrillId = null;
+                _expandSelectedPath();
               });
               _focusRow();
             },
             onClose: () {
               HardwareKeyboard.instance.removeHandler(_onKey);
               if (mounted && !_holdMenu) {
-                setState(() {
-                  _isOpen = false;
-                  _drillId = null;
-                });
+                setState(() => _isOpen = false);
               }
             },
             menuChildren: _menuChildren(width),

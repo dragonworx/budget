@@ -72,6 +72,20 @@ List<Category> visibleForPicker(Iterable<Category> all) => [
     if (!hiddenInPicker(all, c)) c,
 ];
 
+/// True when [c] has no children (a leaf: the only kind that can hold
+/// transactions or be favourited).
+bool isCategoryLeaf(Iterable<Category> all, Category c) =>
+    all.every((x) => x.parentId != c.id);
+
+bool categoryHasChildren(Iterable<Category> all, String id) =>
+    all.any((x) => x.parentId == id);
+
+/// Visible leaves: the only categories a new event may start on or pick.
+List<Category> visibleLeaves(Iterable<Category> all) => [
+  for (final c in visibleForPicker(all))
+    if (isCategoryLeaf(all, c)) c,
+];
+
 /// Tree walk: each root, then its children (for the manager list).
 List<Category> flattenedTree(Iterable<Category> all) {
   final out = <Category>[];

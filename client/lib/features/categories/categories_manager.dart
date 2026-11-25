@@ -269,20 +269,62 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
   bool get _newValid =>
       _newName.text.trim().isNotEmpty && _newProblem(_newName.text) == null;
 
+  Future<void> _explain(String title, String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _create() async {
     if (_busy) return;
+    final name = normalizeCategoryName(_newName.text);
     final problem = categoryNameProblem(_newName.text, _list);
     if (problem != null) {
       setState(() => _newError = problem);
       _newFocus.requestFocus();
       return;
     }
+    var moveParentEvents = false;
+    if (_newParentId != null) {
+      final parent = _list.cast<Category?>().firstWhere(
+        (c) => c!.id == _newParentId,
+        orElse: () => null,
+      );
+      final n = parent?.eventCount ?? 0;
+      if (parent != null && n > 0) {
+        final ok = await showConfirmDialog(
+          context,
+          title: 'Move ${parent.name}\'s transactions?',
+          message:
+              '${parent.name} has ${n == 1 ? '1 transaction' : '$n transactions'}. '
+              'Adding a subcategory turns it into a folder, which can\'t hold '
+              'transactions. Those will move into "$name".',
+          confirmLabel: 'Move and add',
+          cancelLabel: 'Cancel',
+          isDestructive: false,
+        );
+        if (!ok || !mounted) return;
+        moveParentEvents = true;
+      }
+    }
     setState(() => _busy = true);
     try {
       final c = await _notifier.create(
-        normalizeCategoryName(_newName.text),
+        name,
         color: _newColor ?? pickCategoryColor(_list),
         parentId: _newParentId,
+        moveParentEvents: moveParentEvents,
       );
       if (!mounted) return;
       setState(() {
@@ -419,6 +461,12 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
   }
 
   Future<void> _toggleFavorite(Category c) async {
+    if (!isCategoryLeaf(_list, c) &&
+        !(ref.read(categoryFavoritesProvider(widget.streamId)).valueOrNull ??
+                const <String>[])
+            .contains(c.id)) {
+      return;
+    }
     await _run(
       () => ref
           .read(categoryFavoritesProvider(widget.streamId).notifier)
@@ -427,6 +475,22 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
   }
 
   Future<void> _move(Category c, String? parentId) async {
+    if (parentId != null) {
+      final parent = _list.cast<Category?>().firstWhere(
+        (x) => x!.id == parentId,
+        orElse: () => null,
+      );
+      final n = parent?.eventCount ?? 0;
+      if (parent != null && n > 0) {
+        await _explain(
+          "Can't nest under ${parent.name}",
+          '${parent.name} has ${n == 1 ? '1 transaction' : '$n transactions'}. '
+              "Folders can't hold transactions. Add a subcategory first — you'll "
+              'be asked to move those transactions into it.',
+        );
+        return;
+      }
+    }
     await _run(
       () => _notifier.edit(
         c.id,
@@ -938,16 +1002,21 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                 ),
                 MenuAnchor(
                   menuChildren: [
-                    MenuItemButton(
-                      key: ValueKey('category-star-${c.id}'),
-                      leadingIcon: Icon(
-                        isFav ? Icons.star_rounded : Icons.star_border_rounded,
+                    if (kids.isEmpty || isFav)
+                      MenuItemButton(
+                        key: ValueKey('category-star-${c.id}'),
+                        leadingIcon: Icon(
+                          isFav
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                        ),
+                        onPressed: _busy ? null : () => _toggleFavorite(c),
+                        child: Text(
+                          isFav
+                              ? 'Remove from favourites'
+                              : 'Add to favourites',
+                        ),
                       ),
-                      onPressed: _busy ? null : () => _toggleFavorite(c),
-                      child: Text(
-                        isFav ? 'Remove from favourites' : 'Add to favourites',
-                      ),
-                    ),
                     if (widget.canEdit && c.parentId == null)
                       MenuItemButton(
                         key: ValueKey('category-add-child-${c.id}'),

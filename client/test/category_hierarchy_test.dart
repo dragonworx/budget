@@ -1,5 +1,5 @@
 // Hierarchical categories: tree helpers, last-used default (hidden /
-// deleted fallback), and breakdown roll-up with a Direct line.
+// deleted fallback), and breakdown roll-up under a parent folder.
 import 'package:budget_client/boot/page_stub.dart';
 import 'package:budget_client/data/category_tree.dart';
 import 'package:budget_client/data/last_category.dart';
@@ -116,13 +116,18 @@ void main() {
     ];
     expect(
       defaultNewEventCategory(categories: cats, preferredId: 'gone')?.id,
-      'u',
-      reason: 'deleted id falls back to first visible',
+      'p',
+      reason: 'deleted id falls back to first visible leaf, not a folder',
     );
     expect(
       defaultNewEventCategory(categories: cats, preferredId: 'hid')?.id,
-      'u',
+      'p',
       reason: 'hidden preferred is skipped',
+    );
+    expect(
+      defaultNewEventCategory(categories: cats, preferredId: 'u')?.id,
+      'p',
+      reason: 'a stored folder is skipped for the first visible leaf',
     );
     expect(
       defaultNewEventCategory(categories: cats, preferredId: 'p')?.id,
@@ -172,7 +177,7 @@ void main() {
     );
   });
 
-  test('breakdown rolls children under the parent with a Direct line', () {
+  test('breakdown rolls children under the parent without a Direct line', () {
     final cats = [
       _c('u', 'Utilities'),
       _c('p', 'Power', parentId: 'u'),
@@ -189,19 +194,15 @@ void main() {
     expect(rolled.map((n) => n.name).toList(), ['Utilities', 'Insurance']);
     expect(rolled.first.count, 4);
     expect(rolled.first.cents, -7000);
-    expect(rolled.first.children.map((c) => c.name).toList(), [
-      'Direct',
-      'Power',
-      'Gas',
-    ]);
-    expect(rolled.first.children.first.isDirect, isTrue);
-    expect(rolled.first.children.first.cents, -1000);
+    expect(rolled.first.children.map((c) => c.name).toList(), ['Power', 'Gas']);
+    expect(rolled.first.children.every((c) => !c.isDirect), isTrue);
     expect(rolled.last.children, isEmpty);
     expect(rolled.last.cents, -5000);
-    // Parent total is direct + children.
+    // Leftover amounts on the folder stay in the parent total and are
+    // not listed as a child.
     expect(
       rolled.first.cents,
-      rolled.first.children.fold<int>(0, (a, c) => a + c.cents),
+      -1000 + rolled.first.children.fold<int>(0, (a, c) => a + c.cents),
     );
   });
 }

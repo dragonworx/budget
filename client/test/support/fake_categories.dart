@@ -74,6 +74,7 @@ class FakeCategoryRepository extends CategoryRepository {
     required String name,
     String? color,
     String? parentId,
+    bool moveParentEvents = false,
   }) async {
     calls.add('create $name');
     final existing = await list(streamId);

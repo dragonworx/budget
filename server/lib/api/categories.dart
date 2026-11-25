@@ -87,7 +87,8 @@ void attachCategoryRoutes(Router router, Session conn) {
           name: body['name'] is String ? body['name'] as String : '',
           color: parseEventColor(body['color']),
           hidden: optionalBool(body, 'hidden') ?? false,
-          parentId: optionalParentId(body)));
+          parentId: optionalParentId(body),
+          moveParentEvents: optionalBool(body, 'moveParentEvents') ?? false));
       return jsonOk(c.toJson(), status: 201);
     } on CategoryNameException catch (e) {
       return nameError(e);
@@ -257,6 +258,10 @@ void attachCategoryRoutes(Router router, Session conn) {
 }
 
 /// 409 for a taken name, 400 for a blank / too long one.
+
+Response categoryConstraintOnEvent(CategoryConstraintException e) =>
+    jsonError(400, e.message, details: {'code': e.code});
+
 Response categoryNameError(CategoryNameException e) =>
     jsonError(e.conflict ? 409 : 400, e.message,
         details: {'code': e.conflict ? 'category_name_taken' : 'invalid_name'});

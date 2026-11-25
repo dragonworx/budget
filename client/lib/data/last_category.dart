@@ -21,16 +21,16 @@ void storeLastCategory(String streamId, String? id, {String? userId}) {
 }
 
 /// The category a new event should start on: [preferredId] (session or
-/// stored) if it still exists and is visible in the picker, else the
+/// stored) if it still exists, is visible, and is a leaf, else the
 /// category of the most recently created event on the stream (events are
-/// listed oldest-first) if that row is still visible, else the first
-/// visible category in the owner's list order.
+/// listed oldest-first) if that row is still a visible leaf, else the
+/// first visible leaf in the owner's list order.
 Category? defaultNewEventCategory({
   required Iterable<Category> categories,
   String? preferredId,
   Iterable<BudgetEvent> recentEvents = const [],
 }) {
-  final visible = visibleForPicker(categories);
+  final visible = visibleLeaves(categories);
   Category? by(String? id) =>
       id == null ? null : visible.where((c) => c.id == id).firstOrNull;
   final preferred = by(preferredId);

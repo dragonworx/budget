@@ -12,8 +12,7 @@ import 'clusters.dart';
 
 typedef BreakdownLine = ({String name, int count, int cents});
 
-/// A rolled-up breakdown row: a top-level category (with children) or a
-/// leaf / "Direct" line.
+/// A rolled-up breakdown row: a top-level folder (with children) or a leaf.
 class BreakdownNode {
   const BreakdownNode({
     required this.name,
@@ -32,9 +31,10 @@ class BreakdownNode {
   bool get expandable => children.isNotEmpty;
 }
 
-/// Groups flat name lines under their parent category. A parent that also
-/// has its own events gets a "Direct" child so those amounts stay visible.
-/// With no categories (or no parents), the lines stay flat.
+/// Groups flat name lines under their parent category. Folders cannot
+/// hold events, so leftover amounts on a parent stay in the folder total
+/// rather than appearing as a "Direct" child. With no categories (or no
+/// parents), the lines stay flat.
 List<BreakdownNode> rollUpBreakdownLines(
   List<BreakdownLine> lines, [
   Iterable<Category> categories = const [],
@@ -72,32 +72,13 @@ List<BreakdownNode> rollUpBreakdownLines(
       () {
         final group = top[key]!;
         final kids = <BreakdownNode>[];
-        var direct = (name: key, count: 0, cents: 0);
-        var hasDirect = false;
         for (final l in group) {
           if (l.name == key) {
-            hasDirect = true;
-            direct = (
-              name: key,
-              count: direct.count + l.count,
-              cents: direct.cents + l.cents,
-            );
-          } else {
-            kids.add(
-              BreakdownNode(name: l.name, count: l.count, cents: l.cents),
-            );
+            // Leftover events on a folder (shouldn't exist) stay in
+            // [count] and [cents] on the parent; not listed as "Direct".
+            continue;
           }
-        }
-        if (hasDirect && kids.isNotEmpty) {
-          kids.insert(
-            0,
-            BreakdownNode(
-              name: 'Direct',
-              count: direct.count,
-              cents: direct.cents,
-              isDirect: true,
-            ),
-          );
+          kids.add(BreakdownNode(name: l.name, count: l.count, cents: l.cents));
         }
         final count = group.fold<int>(0, (a, l) => a + l.count);
         final cents = group.fold<int>(0, (a, l) => a + l.cents);
@@ -135,7 +116,7 @@ class GroupBreakdown {
   final String period;
   final List<BreakdownLine> lines;
 
-  /// Rolled-up [lines] (parents + children + Direct). Empty: the view
+  /// Rolled-up [lines] (folders + children). Empty: the view
   /// falls back to [lines].
   final List<BreakdownNode> rolled;
 

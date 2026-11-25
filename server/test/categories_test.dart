@@ -342,20 +342,20 @@ void main() {
         as: me, body: {'name': 'power'});
     expect(dup.status, 409);
 
-    // Events may be filed on a parent.
+    // Events may not be filed on a folder.
     final ev = await h.call('POST', '/api/streams/${s.a}/events',
         as: me,
         body: {...Harness.tx('ignored'), 'categoryId': parent.json['id']});
-    expect(ev.status, 201, reason: '${ev.json}');
-    expect(ev.json['name'], 'Utilities');
+    expect(ev.status, 400, reason: '${ev.json}');
+    expect(ev.json['details']['code'], 'category_not_a_leaf');
     final ev2 = await h.call('POST', '/api/streams/${s.a}/events',
         as: me,
         body: {...Harness.tx('ignored'), 'categoryId': power.json['id']});
-    expect(ev2.status, 201);
+    expect(ev2.status, 201, reason: '${ev2.json}');
     final list = await cats(s.a);
     final u = list.firstWhere((c) => c['name'] == 'Utilities');
-    expect(u['eventCount'], 1);
-    expect(u['eventCountSubtree'], 2);
+    expect(u['eventCount'], 0);
+    expect(u['eventCountSubtree'], 1);
     expect(list.firstWhere((c) => c['name'] == 'Power')['eventCount'], 1);
 
     // Deleting the parent is blocked while it has children.
@@ -370,7 +370,7 @@ void main() {
     expect(blocked.json['details']['code'], 'category_has_children');
     expect(blocked.json['details']['children'], 1);
 
-    // Un-nest, then delete is allowed (events of the parent go too).
+    // Un-nest, then delete is allowed (the empty folder has no events).
     final moved = await h.call(
         'PATCH', '/api/streams/${s.a}/categories/${power.json['id']}',
         as: me, body: {'parentId': null});
@@ -418,12 +418,17 @@ void main() {
     await h.login('favview');
     await h.call('POST', '/api/streams/${s.a}/invites',
         as: me, body: {'email': h.email('favview')});
-    final vStar = await h.call(
+    final folderStar = await h.call(
         'PUT', '/api/streams/${s.a}/categories/${parent.json['id']}/favorite',
+        as: 'favview');
+    expect(folderStar.status, 400, reason: '${folderStar.json}');
+    expect(folderStar.json['details']['code'], 'category_not_a_leaf');
+    final vStar = await h.call(
+        'PUT', '/api/streams/${s.a}/categories/${coles.json['id']}/favorite',
         as: 'favview');
     expect(vStar.status, 200, reason: '${vStar.json}');
     expect([for (final f in vStar.json['favorites'] as List) f['categoryId']],
-        [parent.json['id']]);
+        [coles.json['id']]);
     final mine =
         await h.call('GET', '/api/streams/${s.a}/category-favorites', as: me);
     expect([for (final f in mine.json['favorites'] as List) f['categoryId']],
@@ -472,5 +477,50 @@ void main() {
             }))
             .status,
         403);
+  });
+
+  test('adding a child moves parent events when asked; nest is blocked',
+      () async {
+    if (!h.ok) return markTestSkipped('no test DB');
+    me = 'catleaf';
+    final s = await h.seed(me, 'Leaf');
+    final ins = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Insurance'});
+    expect(ins.status, 201);
+    final ev = await h.call('POST', '/api/streams/${s.a}/events',
+        as: me, body: {...Harness.tx('ignored'), 'categoryId': ins.json['id']});
+    expect(ev.status, 201, reason: '${ev.json}');
+
+    final blocked = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Car insurance', 'parentId': ins.json['id']});
+    expect(blocked.status, 400, reason: '${blocked.json}');
+    expect(blocked.json['details']['code'], 'category_has_events');
+
+    final child =
+        await h.call('POST', '/api/streams/${s.a}/categories', as: me, body: {
+      'name': 'Car insurance',
+      'parentId': ins.json['id'],
+      'moveParentEvents': true,
+    });
+    expect(child.status, 201, reason: '${child.json}');
+    expect(child.json['parentId'], ins.json['id']);
+
+    final after = await cats(s.a);
+    expect(after.firstWhere((c) => c['name'] == 'Insurance')['eventCount'], 0);
+    expect(
+        after.firstWhere((c) => c['name'] == 'Car insurance')['eventCount'], 1);
+
+    // Nesting a leaf under a category that still has events is blocked.
+    final other = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Streaming'});
+    final ev2 = await h.call('POST', '/api/streams/${s.a}/events',
+        as: me,
+        body: {...Harness.tx('ignored'), 'categoryId': other.json['id']});
+    expect(ev2.status, 201);
+    final nest = await h.call(
+        'PATCH', '/api/streams/${s.a}/categories/${child.json['id']}',
+        as: me, body: {'parentId': other.json['id']});
+    expect(nest.status, 400, reason: '${nest.json}');
+    expect(nest.json['details']['code'], 'category_has_events');
   });
 }

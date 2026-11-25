@@ -23,7 +23,8 @@ class CategoryConstraintException implements Exception {
   CategoryConstraintException(this.message, {this.code = 'invalid_parent'});
   final String message;
 
-  /// `category_has_children`, `max_depth`, `sync_nested`, `invalid_parent`.
+  /// `category_has_children`, `max_depth`, `sync_nested`, `invalid_parent`,
+  /// `category_not_a_leaf`, `category_has_events`.
   final String code;
   @override
   String toString() => message;
@@ -192,11 +193,21 @@ class CategoryRepo {
   }
 
   /// Adds a category to [ownerId]'s set.
+  Future<int> _directEventCount(String id) async {
+    final rows = await _conn.execute(
+      Sql.named(
+          'SELECT count(*)::int FROM events WHERE category_id = @id::uuid'),
+      parameters: {'id': id},
+    );
+    return rows.first[0] as int;
+  }
+
   Future<Category> create(String ownerId,
       {required String name,
       String? color,
       bool hidden = false,
-      String? parentId}) async {
+      String? parentId,
+      bool moveParentEvents = false}) async {
     final n = normalizeCategoryName(name);
     if (parentId != null && isSyncName(n)) {
       throw CategoryConstraintException('Sync cannot be nested',
@@ -204,9 +215,29 @@ class CategoryRepo {
     }
     await _checkFree(ownerId, n);
     await _assertParent(ownerId, parentId);
+    var parentEvents = 0;
+    if (parentId != null) {
+      parentEvents = await _directEventCount(parentId);
+      if (parentEvents > 0 && !moveParentEvents) {
+        throw CategoryConstraintException(
+            'This category has transactions, so it can\'t become a folder '
+            'until those are moved into a subcategory',
+            code: 'category_has_events');
+      }
+    }
     color ??= await _unusedColor(ownerId);
     final sort = await _nextSort(ownerId, parentId);
     try {
+      // If we must move the parent's events into this new child, park them
+      // on a temporary null? Events.category_id is probably NOT NULL.
+      // So: insert the child while the parent still has events would trip
+      // categories_parent_must_be_empty. Move events to a holding leaf first
+      // is messy. Better: defer the parent_id on insert (create as top-level),
+      // move events onto the new leaf, then set parent_id.
+      String? insertParent = parentId;
+      if (parentId != null && parentEvents > 0 && moveParentEvents) {
+        insertParent = null;
+      }
       final rows = await _conn.execute(
         Sql.named(
             'INSERT INTO categories (owner_id, name, color, hidden, parent_id, sort_order) '
@@ -216,11 +247,25 @@ class CategoryRepo {
           'n': n,
           'c': color,
           'h': hidden,
-          'p': parentId,
+          'p': insertParent,
           's': sort,
         },
       );
-      return (await get(rows.first[0] as String))!;
+      final id = rows.first[0] as String;
+      if (parentId != null && parentEvents > 0 && moveParentEvents) {
+        await _conn.execute(
+          Sql.named(
+              'UPDATE events SET category_id = @c::uuid WHERE category_id = @p::uuid'),
+          parameters: {'c': id, 'p': parentId},
+        );
+        await _conn.execute(
+          Sql.named(
+              'UPDATE categories SET parent_id = @p::uuid, sort_order = @s '
+              'WHERE id = @id::uuid'),
+          parameters: {'p': parentId, 's': sort, 'id': id},
+        );
+      }
+      return (await get(id))!;
     } on ServerException catch (e) {
       throw _mapConstraint(e);
     }
@@ -257,6 +302,12 @@ class CategoryRepo {
     final nextParent = clearParent ? null : (parentId ?? c.parentId);
     if (clearParent || parentId != null) {
       await _assertParent(c.ownerId, nextParent, childId: id);
+      if (nextParent != null && await _directEventCount(nextParent) > 0) {
+        throw CategoryConstraintException(
+            'This category has transactions, so it can\'t become a folder '
+            'until those are moved into a subcategory',
+            code: 'category_has_events');
+      }
     }
     if (nextParent != null && isSyncName(n)) {
       throw CategoryConstraintException('Sync cannot be nested',
@@ -358,6 +409,17 @@ class CategoryRepo {
       throw CategoryConstraintException(
           'parentId is not a category of this owner');
     }
+    if (msg.contains('filed on a category that has children')) {
+      throw CategoryConstraintException(
+          "Folders can't hold transactions. Pick a category with no subcategories.",
+          code: 'category_not_a_leaf');
+    }
+    if (msg.contains('still has events')) {
+      throw CategoryConstraintException(
+          'This category has transactions, so it can\'t become a folder '
+          'until those are moved into a subcategory',
+          code: 'category_has_events');
+    }
     throw CategoryConstraintException(
         msg.isEmpty ? 'invalid category parent' : msg);
   }
@@ -439,6 +501,11 @@ class CategoryRepo {
     if (c == null || c.ownerId != await ownerOfStream(streamId)) {
       throw FormatException('categoryId is not a category of this stream');
     }
+    if (await childCount(c.id) > 0) {
+      throw CategoryConstraintException(
+          "Folders can't hold transactions. Pick a category with no subcategories.",
+          code: 'category_not_a_leaf');
+    }
     return c.name;
   }
 
@@ -451,6 +518,8 @@ class CategoryRepo {
         FROM category_favorites f
         JOIN categories c ON c.id = f.category_id
         WHERE f.user_id = @u::uuid AND c.owner_id = @o::uuid
+          AND NOT EXISTS (
+            SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
         ORDER BY f.sort_order, f.created_at, c.name
       '''),
       parameters: {'u': userId, 'o': ownerId},
@@ -470,6 +539,11 @@ class CategoryRepo {
     final c = await get(categoryId);
     if (c == null || c.ownerId != ownerId) {
       throw CategoryConstraintException('category not found');
+    }
+    if (await childCount(categoryId) > 0) {
+      throw CategoryConstraintException(
+          'Only categories with no subcategories can be favourited',
+          code: 'category_not_a_leaf');
     }
     final next = await _conn.execute(
       Sql.named('SELECT coalesce(max(sort_order), -1) + 1 '

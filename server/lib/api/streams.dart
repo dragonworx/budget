@@ -184,6 +184,8 @@ Router buildStreamsApi(Session conn) {
       rethrow;
     } on CategoryNameException catch (e) {
       return categoryNameError(e);
+    } on CategoryConstraintException catch (e) {
+      return categoryConstraintOnEvent(e);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     } on ArgumentError catch (e) {

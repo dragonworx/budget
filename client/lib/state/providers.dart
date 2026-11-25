@@ -96,12 +96,14 @@ class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
     String name, {
     String? color,
     String? parentId,
+    bool moveParentEvents = false,
   }) async {
     final c = await _repo.create(
       arg,
       name: name,
       color: color,
       parentId: parentId,
+      moveParentEvents: moveParentEvents,
     );
     state = AsyncData([...state.valueOrNull ?? const <Category>[], c]);
     _refetchAll();
