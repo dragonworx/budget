@@ -1,6 +1,7 @@
-// Saved timeline view: reopening a stream restores my last view of it
-// (horizontal + balance range), saves are debounced (never per drag
-// frame), flushed on page hide, and explicit actions become the new view.
+// Saved timeline view: reopening a stream restores its last zoom (span)
+// and balance range, recentred on today; saves are debounced (never per
+// drag frame), flushed on page hide, and explicit actions become the new
+// view.
 import 'dart:async';
 
 import 'package:budget_client/boot/page_stub.dart' as page;
@@ -177,6 +178,9 @@ Future<void> _drag(WidgetTester tester, {int steps = 30}) async {
   );
 }
 
+double _centeredStart(double days) =>
+    dayCoord(viewStartCenteredOn(_today, days));
+
 void main() {
   setUp(page.clearLocal);
 
@@ -217,7 +221,7 @@ void main() {
   });
 
   testWidgets('drag: no save during the frames, one ~1s after it settles; '
-      'reopening (and reloading) restores exactly that view', (tester) async {
+      'reopening keeps the span and scale, recentred on today', (tester) async {
     await _setUp(tester);
     await _open(tester);
     final before = _snap(tester);
@@ -235,21 +239,25 @@ void main() {
     expect((saved.yMin, saved.yMax), (after.lo, after.hi));
     expect(_repo.saves.single.$3, isFalse);
 
-    // Reopen in this browser (local copy): identical, no re-save.
+    // Reopen in this browser (local copy): same zoom and scale, today
+    // at the centre; the panned start is not restored. No re-save.
     await _open(tester, stream: 'b');
     await _open(tester);
     final again = _snap(tester);
-    expect(again.start, closeTo(after.start, 1e-9));
+    expect(again.start, closeTo(_centeredStart(after.days), 1e-9));
+    expect(again.start, isNot(closeTo(after.start, 1e-6)));
     expect(again.days, after.days);
     expect((again.lo, again.hi), (after.lo, after.hi));
 
-    // Another device / cleared storage: the server copy restores it.
+    // Another device / cleared storage: the server copy's span and
+    // scale restore, also recentred on today.
     page.clearLocal();
     await _open(tester, stream: 'b');
     await _open(tester);
     final remote = _snap(tester);
-    expect(remote.start, closeTo(after.start, 1e-9));
+    expect(remote.start, closeTo(_centeredStart(after.days), 1e-9));
     expect((remote.lo, remote.hi), (after.lo, after.hi));
+    expect(remote.days, after.days);
     await tester.pump(const Duration(seconds: 2));
     expect(_repo.saves.where((s) => s.$1 == 'a'), hasLength(1));
   });
@@ -272,8 +280,12 @@ void main() {
     expect(dayCoord(_chart(tester).viewStart), isNot(view.start));
     _repo.loadGate!.complete();
     await tester.pumpAndSettle();
-    // ... then the saved view, balance range included, without a refit.
-    expect(dayCoord(_chart(tester).viewStart), closeTo(view.start, 1e-9));
+    // ... then the saved span and balance range, recentred on today,
+    // without a refit or a re-save.
+    expect(
+      dayCoord(_chart(tester).viewStart),
+      closeTo(_centeredStart(view.days), 1e-9),
+    );
     expect(_chart(tester).visibleDays, 91.31);
     expect((_y(tester).min, _y(tester).max), (-500.0, 4000.0));
     await tester.pump(const Duration(seconds: 2));
@@ -317,8 +329,10 @@ void main() {
     await _open(tester);
     expect(
       dayCoord(_chart(tester).viewStart),
-      closeTo(dayCoord(_d(-400)), 1e-9),
+      closeTo(_centeredStart(30.44), 1e-9),
     );
+    expect(_chart(tester).visibleDays, closeTo(30.44, 1e-9));
+    expect((_y(tester).min, _y(tester).max), (0.0, 100.0));
     await tester.tap(find.byKey(const ValueKey('fit-menu')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('view-today')));
@@ -328,5 +342,34 @@ void main() {
     final s = _repo.saves.single.$2;
     expect(s.startDate.isAfter(_d(-3)), isTrue);
     expect(s.yMax, isNot(100), reason: 'Today refits the balance');
+  });
+
+  testWidgets('Today line is at the chart centre on open; span and y kept', (
+    tester,
+  ) async {
+    await _setUp(tester);
+    const days = 91.31;
+    _repo.server['a'] = SavedView(
+      start: dayCoord(_d(-200)),
+      days: days,
+      unit: ViewUnit.quarter,
+      yMin: -500,
+      yMax: 4000,
+    );
+    double? todayX;
+    debugDateMarker = (label, date, x) {
+      if (label == 'Today') todayX = x;
+    };
+    addTearDown(() => debugDateMarker = null);
+    await _open(tester);
+    expect(_chart(tester).visibleDays, days);
+    expect((_y(tester).min, _y(tester).max), (-500.0, 4000.0));
+    expect(
+      dayCoord(_chart(tester).viewStart),
+      closeTo(_centeredStart(days), 1e-9),
+    );
+    final w = tester.getSize(find.byType(BalanceChart)).width;
+    expect(todayX, isNotNull);
+    expect(todayX, closeTo(w / 2, 1.5));
   });
 }

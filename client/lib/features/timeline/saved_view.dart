@@ -5,6 +5,7 @@ import '../../boot/page_stub.dart'
     as page;
 import 'chart_geometry.dart';
 import 'view_units.dart';
+import 'zoom_level.dart';
 
 /// Left edge limits as day coordinates: 1900-01-01 .. 2200-01-01 (the
 /// server clamps to the same).
@@ -81,6 +82,20 @@ class SavedView {
 
   @override
   String toString() => 'SavedView(${toJson()})';
+}
+
+/// Same span, unit and balance range as [view], shifted so today's start
+/// (the Today line) sits at the horizontal centre. Opening a stream uses
+/// this so a saved zoom and scale come back, but the window is recentred.
+SavedView centerViewOnToday(SavedView view, [DateTime? now]) {
+  final today = dateOnly(now ?? DateTime.now());
+  return SavedView(
+    start: dayCoord(viewStartCenteredOn(today, view.days)),
+    days: view.days,
+    unit: view.unit,
+    yMin: view.yMin,
+    yMax: view.yMax,
+  );
 }
 
 /// This browser's copy of each saved view (local storage), per signed-in

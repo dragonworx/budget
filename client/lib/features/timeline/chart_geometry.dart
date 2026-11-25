@@ -69,6 +69,12 @@ DateTime dateFromDayCoord(double coord) {
 DateTime addDays(DateTime date, double days) =>
     dateFromDayCoord(dayCoord(date) + days);
 
+/// Left edge of a [days]-wide window whose Today line ([day]'s start)
+/// sits at the horizontal centre of the date window (the chart / plot,
+/// not the whole screen).
+DateTime viewStartCenteredOn(DateTime day, double days) =>
+    addDays(dateOnly(day), -days / 2);
+
 /// [date] moved by whole calendar days, at local midnight.
 DateTime addCalendarDays(DateTime date, int days) =>
     DateTime(date.year, date.month, date.day + days);

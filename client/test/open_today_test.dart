@@ -1,4 +1,5 @@
 import 'package:budget_client/features/timeline/chart_geometry.dart';
+import 'package:budget_client/features/timeline/saved_view.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/features/timeline/view_units.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,14 +9,27 @@ void main() {
     final today = DateTime(2026, 10, 19);
     final v = initialView(today, ViewUnit.month);
     expect(v.days, 31); // October
-    final centre = v.start.add(
-      Duration(
-        microseconds: (v.days / 2 * Duration.microsecondsPerDay).round(),
-      ),
+    expect(v.start, viewStartCenteredOn(today, v.days));
+    // The Today line sits on the day's start, at the window's centre.
+    expect(addDays(v.start, v.days / 2), today);
+  });
+
+  test('a saved view keeps its span and scale, recentred on today', () {
+    final today = DateTime(2026, 11, 26);
+    final v = SavedView(
+      start: dayCoord(DateTime(2024, 1, 1)),
+      days: 91.31,
+      unit: ViewUnit.quarter,
+      yMin: -500,
+      yMax: 4000,
     );
-    // Centre of the view falls within today.
-    expect(centre.isAfter(today), isTrue);
-    expect(centre.isBefore(today.add(const Duration(days: 1))), isTrue);
+    final c = centerViewOnToday(v, today);
+    expect(c.days, 91.31);
+    expect(c.unit, ViewUnit.quarter);
+    expect((c.yMin, c.yMax), (-500.0, 4000.0));
+    expect(c.start, isNot(v.start));
+    expect(c.start, dayCoord(viewStartCenteredOn(today, v.days)));
+    expect(addDays(c.startDate, c.days / 2), today);
   });
 
   test('default view keeps today\'s balance in view with zero at 1/3', () {

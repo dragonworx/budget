@@ -298,18 +298,20 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _viewChanged();
   }
 
-  /// Shows [v] (a saved view) instead of the default.
+  /// Shows [v]'s span and balance scale, shifted so today is at the
+  /// horizontal centre of the date window. A restore is not a change.
   void _applySavedView(SavedView v) {
-    _viewStart = v.startDate;
-    _visibleDays = v.days;
-    _unit = v.unit ?? ViewUnit.nearest(v.days);
+    final centered = centerViewOnToday(v);
+    _viewStart = centered.startDate;
+    _visibleDays = centered.days;
+    _unit = centered.unit ?? ViewUnit.nearest(centered.days);
     final (from, to) = _dataWindowFor(_viewStart, _visibleDays);
     _dataFrom = from;
     _dataTo = to;
-    _restoreY = v.yRange;
-    _chartY = v.yRange;
+    _restoreY = centered.yRange;
+    _chartY = centered.yRange;
     _yRestoreToken++;
-    _viewSaved = v;
+    _viewSaved = centered;
   }
 
   /// The server's copy (another device may have moved it since this
@@ -320,7 +322,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       if (!mounted || v == null || _viewStreamId != streamId || _viewTouched) {
         return;
       }
-      if (v.sameAs(_viewSaved)) return;
+      if (centerViewOnToday(v).sameAs(_viewSaved)) return;
       final uid = _viewUid;
       if (uid != null) _viewStore.save(uid, streamId, v);
       _viewAnim.stop();
@@ -858,9 +860,10 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _viewTouched = false;
     _chartY = null;
     _restoreY = null;
-    // Reopening restores my last view of this stream (this browser's copy
-    // now, the server's when it arrives). Otherwise: today at the default
-    // unit, $0 a third of the way up.
+    // Reopening keeps this stream's last zoom (span) and balance scale
+    // (this browser's copy now, the server's when it arrives), shifted so
+    // today is at the horizontal centre. Otherwise: the default unit,
+    // centred on today, $0 a third of the way up.
     final uid = _viewUid;
     final cached = uid == null ? null : _viewStore.load(uid, stream.id);
     if (cached != null) {
@@ -2625,10 +2628,11 @@ class _BalanceError extends StatelessWidget {
   );
 }
 
-/// Opening view: one [unit] wide, centred on [today].
+/// Opening view: one [unit] wide, with today's start (the Today line)
+/// at the horizontal centre of the date window.
 ({DateTime start, double days}) initialView(DateTime today, ViewUnit unit) {
   final days = unit.spanContaining(today).days.toDouble();
-  return (start: addDays(dateOnly(today), 0.5 - days / 2), days: days);
+  return (start: viewStartCenteredOn(today, days), days: days);
 }
 
 /// The timeline's combined view (see [combineSeries]).
