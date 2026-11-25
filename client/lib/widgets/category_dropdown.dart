@@ -130,6 +130,10 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
   /// Kept across a favourite-toggle rebuild that may close the menu.
   String? _restoreDrillId;
 
+  /// True while the user still wants the menu open (a parent rebuild
+  /// after starring otherwise closes MenuAnchor).
+  bool _holdMenu = false;
+
   static final _openKeys = {
     LogicalKeyboardKey.enter,
     LogicalKeyboardKey.numpadEnter,
@@ -152,13 +156,35 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
   }
 
   void _toggle() {
-    if (_menu.isOpen) return _menu.close();
+    if (_menu.isOpen) {
+      _holdMenu = false;
+      return _menu.close();
+    }
     _keyboardNav = HardwareKeyboard.instance.logicalKeysPressed.any(
       _openKeys.contains,
     );
     _restoreDrillId = null;
     _drillId = null;
+    _holdMenu = true;
     _menu.open();
+  }
+
+  void _reopenIfHeld({int frames = 0}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_holdMenu) return;
+      if (!_menu.isOpen) _menu.open();
+      final keep = _restoreDrillId;
+      if (keep != null && _drillId != keep) {
+        setState(() => _drillId = keep);
+      }
+      if (frames < 20) _reopenIfHeld(frames: frames + 1);
+    });
+  }
+
+  @override
+  void didUpdateWidget(CategoryDropdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_holdMenu) _reopenIfHeld();
   }
 
   /// The chosen (else first) row takes focus on open, so arrows / Enter /
@@ -224,6 +250,8 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
   }
 
   void _pick(Category? c) {
+    _holdMenu = false;
+    _restoreDrillId = null;
     _drillId = null;
     _menu.close();
     widget.onSelected(c);
@@ -257,17 +285,10 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
   );
 
   void _toggleFavorite(Category c) {
+    _holdMenu = true;
     _restoreDrillId = _drillId;
     widget.onToggleFavorite!(c);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (!_menu.isOpen) _menu.open();
-      final keep = _restoreDrillId ?? _drillId;
-      if (keep != null && _drillId != keep) {
-        setState(() => _drillId = keep);
-      }
-      _focusRow();
-    });
+    _reopenIfHeld();
   }
 
   Widget _star(Category c) {
@@ -420,7 +441,10 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
             focusNode: widgets.isEmpty ? _focusItem : null,
             style: _style,
             leadingIcon: Icon(footer.icon, size: 18),
-            onPressed: footer.onPressed,
+            onPressed: () {
+              _holdMenu = false;
+              footer.onPressed();
+            },
             child: Text(
               footer.label,
               maxLines: 1,
@@ -454,6 +478,7 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
               if (_drillId != null) {
                 _drill(null);
               } else {
+                _holdMenu = false;
                 _menu.close();
               }
               return KeyEventResult.handled;
@@ -480,7 +505,7 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
             },
             onClose: () {
               HardwareKeyboard.instance.removeHandler(_onKey);
-              if (mounted) {
+              if (mounted && !_holdMenu) {
                 setState(() {
                   _isOpen = false;
                   _drillId = null;

@@ -218,11 +218,21 @@ class CategoryFavoritesNotifier
   }
 
   Future<void> setFavorite(String id, bool fav) async {
-    final repo = ref.read(categoryRepositoryProvider);
-    final list = fav
-        ? await repo.addFavorite(arg, id)
-        : await repo.removeFavorite(arg, id);
-    state = AsyncData(list);
+    final previous = state.valueOrNull ?? const <String>[];
+    final optimistic = fav
+        ? [...previous.where((x) => x != id), id]
+        : [...previous.where((x) => x != id)];
+    state = AsyncData(optimistic);
+    try {
+      final repo = ref.read(categoryRepositoryProvider);
+      final list = fav
+          ? await repo.addFavorite(arg, id)
+          : await repo.removeFavorite(arg, id);
+      state = AsyncData(list);
+    } catch (e) {
+      state = AsyncData(previous);
+      rethrow;
+    }
   }
 
   Future<void> toggle(String id) async {
