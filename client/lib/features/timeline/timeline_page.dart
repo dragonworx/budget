@@ -1798,8 +1798,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         key: ValueKey('more-categories'),
         value: 'categories',
         child: ListTile(
-          leading: Icon(Icons.sell_outlined),
-          title: Text('Edit categories'),
+          leading: Icon(Icons.tune_rounded),
+          title: Text('Manage categories…'),
         ),
       ),
       // The owner's variables (spec 012); read-only for editors and viewers.

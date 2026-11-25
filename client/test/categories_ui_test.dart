@@ -358,8 +358,8 @@ void main() {
     });
   }
 
-  testWidgets('the header ⋮ has "Edit categories"; the Events list has no '
-      'categories button', (tester) async {
+  testWidgets('the header ⋮ has "Manage categories…" with an icon; the '
+      'Events list has no categories button', (tester) async {
     await _pump(tester, size: const Size(390, 844));
     await tester.tap(find.byKey(const ValueKey('open-events')));
     await tester.pumpAndSettle();
@@ -368,7 +368,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('timeline-more')));
     await tester.pumpAndSettle();
-    expect(find.text('Edit categories'), findsOneWidget);
+    expect(find.text('Manage categories…'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('more-categories')),
+        matching: find.byIcon(Icons.tune_rounded),
+      ),
+      findsOneWidget,
+    );
     await tester.tap(find.byKey(const ValueKey('more-categories')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('categories-manager')), findsOneWidget);

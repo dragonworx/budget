@@ -299,10 +299,10 @@ class _ViewMenuState extends State<ViewMenu> {
         MenuItemButton(
           key: const ValueKey('view-manage-categories'),
           style: _style,
-          leadingIcon: const Icon(Icons.sell_outlined, size: 18),
+          leadingIcon: const Icon(Icons.tune_rounded, size: 18),
           onPressed: widget.onManageCategories,
           child: Text(
-            widget.canEditCategories ? 'Edit categories…' : 'View categories…',
+            widget.canEditCategories ? 'Manage categories…' : 'View categories…',
           ),
         ),
     ];
