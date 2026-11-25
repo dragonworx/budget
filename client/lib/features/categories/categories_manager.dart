@@ -1292,7 +1292,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                         child: categoryFolderIcon(
                           open: _expanded.contains(c.id),
                           key: ValueKey('category-folder-${c.id}'),
-                          color: AppTheme.textMuted,
+                          color: colorFromHex(c.color) ?? AppTheme.textMuted,
                         ),
                       ),
               ),

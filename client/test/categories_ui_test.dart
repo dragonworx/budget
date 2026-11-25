@@ -10,6 +10,7 @@ import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
 import 'package:budget_client/features/categories/categories_manager.dart';
+import 'package:budget_client/widgets/category_dropdown.dart';
 import 'package:budget_client/features/events/event_type_buttons.dart';
 import 'package:budget_client/features/events/event_types.dart';
 import 'package:budget_client/features/events/solve_sheet.dart';
@@ -1592,7 +1593,13 @@ void main() {
       find.byKey(const ValueKey('category-color-$housingId')),
       findsNothing,
     );
-    // Roots start expanded, so the leaf is already visible.
+    FolderGlyph folderIcon() => tester.widget<FolderGlyph>(
+      find.byKey(const ValueKey('category-folder-$housingId')),
+    );
+    // Roots start expanded, so the leaf is already visible; the
+    // folder mark uses the category's own colour (not muted grey).
+    expect(folderIcon().open, isTrue);
+    expect(folderIcon().color, const Color(0xFF3D6FD8));
     expect(find.byKey(const ValueKey('category-row-$mortId')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('category-color-$mortId')),
@@ -1600,6 +1607,8 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('category-name-$housingId')));
     await tester.pumpAndSettle();
+    expect(folderIcon().open, isFalse);
+    expect(folderIcon().color, const Color(0xFF3D6FD8));
     expect(find.byKey(const ValueKey('category-row-$mortId')), findsNothing);
     expect(
       find.byKey(const ValueKey('category-name-field-$housingId')),

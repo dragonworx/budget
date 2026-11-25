@@ -118,24 +118,118 @@ Widget categoryDot(Color? color, {double size = 10}) => Container(
 /// Leading slot shared by dots and folder icons so names stay aligned.
 const double kCategoryLeadingSize = 18;
 
-/// Folder glyphs as [const Icon]s so both survive the web release icon-font
-/// tree-shaker, and use the outlined pair so the open and closed glyphs match.
-/// (`Icons.folder_open` is a different, filled codepoint that can fail to
-/// draw on some mobile browsers even when it is in the subset.)
+/// A stroked folder glyph, painted (not an icon-font [Icon]) so both the
+/// open and closed states render on browsers that drop or fail to draw
+/// Material folder codepoints even when they are in the release subset.
+/// [open] adds a front lip; the chevron also shows state.
 Widget categoryFolderIcon({
   required bool open,
   Color? color,
   double size = kCategoryLeadingSize,
   Key? key,
 }) {
-  Widget icon = open
-      ? const Icon(Icons.folder_open_outlined)
-      : const Icon(Icons.folder_outlined);
-  icon = IconTheme(
-    data: IconThemeData(color: color, size: size),
-    child: icon,
+  return FolderGlyph(
+    key: key,
+    open: open,
+    color: color ?? AppTheme.textMuted,
+    size: size,
   );
-  return key == null ? icon : KeyedSubtree(key: key, child: icon);
+}
+
+/// Leading folder mark shared by the category picker and the manager.
+class FolderGlyph extends StatelessWidget {
+  const FolderGlyph({
+    super.key,
+    required this.open,
+    required this.color,
+    this.size = kCategoryLeadingSize,
+  });
+
+  final bool open;
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _FolderGlyphPainter(open: open, color: color)),
+    );
+  }
+}
+
+class _FolderGlyphPainter extends CustomPainter {
+  const _FolderGlyphPainter({required this.open, required this.color});
+
+  final bool open;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.shortestSide;
+    if (s <= 0) return;
+    final stroke = (s * 0.1).clamp(1.2, 1.8);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round
+      ..isAntiAlias = true;
+
+    final pad = stroke * 0.65;
+    final left = pad;
+    final right = s - pad;
+    final top = pad + s * 0.05;
+    final bottom = s - pad;
+    final tabH = s * 0.20;
+    final tabW = s * 0.42;
+    final r = s * 0.11;
+    final rad = Radius.circular(r);
+
+    final back = Path()
+      ..moveTo(left, top + tabH)
+      ..lineTo(left, top + r)
+      ..arcToPoint(Offset(left + r, top), radius: rad)
+      ..lineTo(left + tabW * 0.78, top)
+      ..lineTo(left + tabW, top + tabH)
+      ..lineTo(right - r, top + tabH)
+      ..arcToPoint(Offset(right, top + tabH + r), radius: rad);
+
+    if (!open) {
+      back
+        ..lineTo(right, bottom - r)
+        ..arcToPoint(Offset(right - r, bottom), radius: rad)
+        ..lineTo(left + r, bottom)
+        ..arcToPoint(Offset(left, bottom - r), radius: rad)
+        ..close();
+      canvas.drawPath(back, paint);
+      return;
+    }
+
+    // Rear pocket, then a front lip slightly dropped so "open" is obvious.
+    final rearBottom = bottom - s * 0.18;
+    back
+      ..lineTo(right, rearBottom)
+      ..lineTo(left, rearBottom)
+      ..close();
+    canvas.drawPath(back, paint);
+
+    final flapTop = top + tabH + s * 0.16;
+    final inset = s * 0.07;
+    final flap = Path()
+      ..moveTo(left, flapTop)
+      ..lineTo(right, flapTop)
+      ..lineTo(right - inset, bottom)
+      ..lineTo(left + inset, bottom)
+      ..close();
+    canvas.drawPath(flap, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _FolderGlyphPainter old) =>
+      old.open != open || old.color != color;
 }
 
 /// Same const-[Icon] split for the expand/collapse chevron.
