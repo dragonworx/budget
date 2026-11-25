@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -138,6 +139,16 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
 
   /// One key per row (by category id).
   final Map<String, GlobalKey> _rowKeys = {};
+  final _scroll = ScrollController();
+  final _listAreaKey = GlobalKey();
+
+  /// Immediate handle-drag (touch and mouse).
+  String? _draggingId;
+  Offset? _pointerPos;
+  _DropCue? _dropCue;
+  Timer? _autoScroll;
+  OverlayEntry? _feedback;
+  int? _dragPointer;
 
   /// After a rename re-sorts the table: brings [id]'s row into view.
   void _revealRow(String id) {
@@ -158,6 +169,15 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
       ref.read(categoriesProvider(widget.streamId)).valueOrNull ??
       const <Category>[];
 
+  /// Expanded-aware flatten, same order as the table.
+  List<Category> get _visible {
+    final raw = _list;
+    return [
+      for (final c in flattenedTree(raw))
+        if (c.parentId == null || _expanded.contains(c.parentId)) c,
+    ];
+  }
+
   /// Rename, recolour, delete: the owner only (they reach every stream).
   bool get _canManage {
     if (!widget.canEdit) return false;
@@ -172,15 +192,23 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
 
   @override
   void dispose() {
+    _clearDrag(notify: false);
     _newName.dispose();
     _newFocus.dispose();
     _editName.dispose();
     _editFocus.dispose();
     _undoTimer?.cancel();
+    _scroll.dispose();
     super.dispose();
   }
 
   // ---- in-place rename ----
+
+  void _toggleExpanded(Category c) {
+    setState(() {
+      if (!_expanded.add(c.id)) _expanded.remove(c.id);
+    });
+  }
 
   void _startEdit(Category c) {
     if (_busy) return;
@@ -570,7 +598,6 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
   // ---- layout ----
 
   double get _button => _touch ? 40 : 36;
-  static const double _countWidth = 52;
 
   @override
   Widget build(BuildContext context) {
@@ -647,10 +674,10 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                   ? 'View only: you have viewer access. Categories are shared '
                         'by all the owner\'s streams.'
                   : manage
-                  ? 'Shared by all your streams: counts and deletes cover '
-                        'every stream. Tap a name to rename it, a dot to '
-                        'recolour. Drag to nest or reorder on desktop; '
-                        'on a phone use the arrows and Move to…'
+                  ? 'Shared by all your streams. Tap a name to rename a '
+                        'category, or a folder to expand it. Recolour a leaf '
+                        'with its dot. Drag the handle to reorder. More has '
+                        'Move, Delete, and Delete events.'
                   : 'Shared by all the owner\'s streams. You can add '
                         'categories; only the owner renames or deletes them.',
               style: muted,
@@ -682,6 +709,11 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
           else
             Flexible(
               child: SingleChildScrollView(
+                key: _listAreaKey,
+                controller: _scroll,
+                physics: _draggingId != null
+                    ? const NeverScrollableScrollPhysics()
+                    : null,
                 padding: const EdgeInsets.only(right: 6, bottom: 4),
                 child: Column(
                   key: const ValueKey('categories-table'),
@@ -690,7 +722,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                     _headerRow(muted, manage),
                     const Divider(height: 1),
                     for (final c in list) ...[
-                      _row(c, manage, counts, narrow),
+                      _wrapDropCue(c, _row(c, manage, counts)),
                       const Divider(height: 1),
                     ],
                   ],
@@ -751,38 +783,353 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
+          if (manage) SizedBox(width: _button + 4),
           SizedBox(width: _button + 4),
           Expanded(child: Text('NAME', style: s)),
-          Tooltip(
-            message: 'Events in all streams',
-            child: SizedBox(
-              width: _countWidth,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text('EVENTS', style: s, maxLines: 1),
-                ),
-              ),
-            ),
-          ),
-          if (manage) SizedBox(width: _button * 2 + 6),
+          if (manage) SizedBox(width: _button),
         ],
       ),
     );
   }
 
-  Widget _row(Category c, bool manage, Map<String, int> counts, bool narrow) {
+  // ---- handle drag (immediate, touch and mouse) ----
+
+  void _onHandleDown(Category c, PointerDownEvent e) {
+    if (_busy || _draggingId != null) return;
+    if (e.kind == PointerDeviceKind.mouse && e.buttons != kPrimaryMouseButton) {
+      return;
+    }
+    _dragPointer = e.pointer;
+    GestureBinding.instance.pointerRouter.addRoute(e.pointer, _onDragPointer);
+    setState(() {
+      _draggingId = c.id;
+      _pointerPos = e.position;
+      _dropCue = _cueAt(e.position);
+    });
+    _insertFeedback(c);
+    _autoScroll?.cancel();
+    _autoScroll = Timer.periodic(
+      const Duration(milliseconds: 16),
+      (_) => _autoScrollTick(),
+    );
+  }
+
+  void _onDragPointer(PointerEvent e) {
+    if (e.pointer != _dragPointer) return;
+    if (e is PointerMoveEvent) {
+      _pointerPos = e.position;
+      final cue = _cueAt(e.position);
+      if (mounted) setState(() => _dropCue = cue);
+      _feedback?.markNeedsBuild();
+    } else if (e is PointerUpEvent || e is PointerCancelEvent) {
+      _finishDrag(drop: e is PointerUpEvent);
+    }
+  }
+
+  void _finishDrag({required bool drop}) {
+    final id = _draggingId;
+    final cue = _dropCue;
+    _clearDrag(notify: true);
+    if (!drop || id == null || cue == null) return;
+    final c = categoryById(_list, id);
+    if (c == null) return;
+    _applyDrop(c, cue);
+  }
+
+  void _clearDrag({bool notify = true}) {
+    if (_dragPointer != null) {
+      GestureBinding.instance.pointerRouter.removeRoute(
+        _dragPointer!,
+        _onDragPointer,
+      );
+    }
+    _autoScroll?.cancel();
+    _autoScroll = null;
+    _feedback?.remove();
+    _feedback = null;
+    _dragPointer = null;
+    _draggingId = null;
+    _pointerPos = null;
+    _dropCue = null;
+    if (notify && mounted) setState(() {});
+  }
+
+  void _insertFeedback(Category c) {
+    _feedback?.remove();
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+    _feedback = OverlayEntry(
+      builder: (context) {
+        final p = _pointerPos ?? Offset.zero;
+        final allowed = _dropCue?.allowed ?? false;
+        final theme = Theme.of(context);
+        return Positioned(
+          left: p.dx + 12,
+          top: p.dy + 8,
+          child: IgnorePointer(
+            child: Material(
+              key: const ValueKey('category-drag-feedback'),
+              elevation: 6,
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      allowed ? Icons.drag_indicator_rounded : Icons.block,
+                      size: 16,
+                      color: allowed
+                          ? AppTheme.textMuted
+                          : theme.colorScheme.error,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(c.name),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    overlay.insert(_feedback!);
+  }
+
+  void _autoScrollTick() {
+    if (_draggingId == null || _pointerPos == null || !_scroll.hasClients) {
+      return;
+    }
+    final ctx = _listAreaKey.currentContext;
+    final box = ctx?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final top = box.localToGlobal(Offset.zero).dy;
+    final bottom = top + box.size.height;
+    final y = _pointerPos!.dy;
+    const edge = 48.0;
+    var delta = 0.0;
+    if (y < top + edge) {
+      delta = -((top + edge) - y).clamp(4.0, 18.0);
+    } else if (y > bottom - edge) {
+      delta = (y - (bottom - edge)).clamp(4.0, 18.0);
+    }
+    if (delta == 0) return;
+    final next = (_scroll.offset + delta).clamp(
+      0.0,
+      _scroll.position.maxScrollExtent,
+    );
+    if (next == _scroll.offset) return;
+    _scroll.jumpTo(next);
+    if (mounted) setState(() => _dropCue = _cueAt(_pointerPos!));
+    _feedback?.markNeedsBuild();
+  }
+
+  bool _sameIds(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  int _destIndex(String? parentId, {Category? before, Category? after}) {
+    final ids = [
+      for (final s
+          in parentId == null
+              ? rootCategories(_list)
+              : childCategories(_list, parentId))
+        if (s.id != _draggingId) s.id,
+    ];
+    if (before != null) {
+      final i = ids.indexOf(before.id);
+      return i < 0 ? 0 : i;
+    }
+    if (after != null) {
+      final i = ids.indexOf(after.id);
+      return i < 0 ? ids.length : i + 1;
+    }
+    return ids.length;
+  }
+
+  bool _canNest(Category dragged, Category parent) =>
+      canMoveToParent(_list, dragged, parent) && parent.eventCount == 0;
+
+  _DropCue _insertCue({
+    required Category dragged,
+    required String? parentId,
+    required int index,
+    String? lineAboveId,
+    String? lineBelowId,
+    String? highlightFolderId,
+  }) {
+    var allowed = true;
+    if (parentId != dragged.parentId) {
+      final parent = parentId == null ? null : categoryById(_list, parentId);
+      allowed =
+          canMoveToParent(_list, dragged, parent) &&
+          (parent == null || parent.eventCount == 0);
+    }
+    return _DropCue(
+      parentId: parentId,
+      index: index,
+      lineAboveId: allowed ? lineAboveId : null,
+      lineBelowId: allowed ? lineBelowId : null,
+      highlightFolderId: allowed ? highlightFolderId : null,
+      allowed: allowed,
+    );
+  }
+
+  _DropCue? _cueAt(Offset global) {
+    final dragged = categoryById(_list, _draggingId);
+    if (dragged == null) return null;
+    final boxes = <({Category c, Rect r})>[];
+    for (final c in _visible) {
+      final ctx = _rowKeys[c.id]?.currentContext;
+      final box = ctx?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize || !box.attached) continue;
+      boxes.add((c: c, r: box.localToGlobal(Offset.zero) & box.size));
+    }
+    if (boxes.isEmpty) return null;
+    final y = global.dy;
+
+    _DropCue before(Category c) => _insertCue(
+      dragged: dragged,
+      parentId: c.parentId,
+      index: _destIndex(c.parentId, before: c),
+      lineAboveId: c.id,
+    );
+    _DropCue after(Category c) => _insertCue(
+      dragged: dragged,
+      parentId: c.parentId,
+      index: _destIndex(c.parentId, after: c),
+      lineBelowId: c.id,
+    );
+
+    for (var i = 0; i < boxes.length; i++) {
+      final b = boxes[i];
+      if (y < b.r.top) {
+        return i == 0 ? before(b.c) : after(boxes[i - 1].c);
+      }
+      if (y <= b.r.bottom) {
+        if (b.c.id == dragged.id) {
+          return _DropCue(
+            parentId: dragged.parentId,
+            index: _destIndex(dragged.parentId, before: b.c),
+            allowed: true,
+          );
+        }
+        final isFolder = childCategories(_list, b.c.id).isNotEmpty;
+        final t = b.r.height == 0 ? 0.5 : (y - b.r.top) / b.r.height;
+        if (isFolder && t >= 0.28 && t <= 0.72 && _canNest(dragged, b.c)) {
+          return _DropCue(
+            parentId: b.c.id,
+            index: 0,
+            highlightFolderId: b.c.id,
+            allowed: true,
+          );
+        }
+        return t < 0.5 ? before(b.c) : after(b.c);
+      }
+    }
+
+    // Gaps already handled by the top < next.top branch. After the last:
+    final last = boxes.last.c;
+    if (last.id == dragged.id) {
+      return _DropCue(
+        parentId: dragged.parentId,
+        index: _destIndex(dragged.parentId, after: last),
+        allowed: true,
+      );
+    }
+    return after(last);
+  }
+
+  Future<void> _applyDrop(Category c, _DropCue cue) async {
+    if (!cue.allowed) return;
+    final destParent = cue.parentId;
+    final sibs = destParent == null
+        ? rootCategories(_list)
+        : childCategories(_list, destParent);
+    final ids = [
+      for (final s in sibs)
+        if (s.id != c.id) s.id,
+    ];
+    final index = cue.index.clamp(0, ids.length);
+    ids.insert(index, c.id);
+    final current = [for (final s in sibs) s.id];
+    if (c.parentId == destParent && _sameIds(current, ids)) return;
+    if (c.parentId != destParent) {
+      if (destParent != null) {
+        final parent = categoryById(_list, destParent);
+        final n = parent?.eventCount ?? 0;
+        if (parent != null && n > 0) {
+          await _explain(
+            "Can't nest under ${parent.name}",
+            '${parent.name} has ${n == 1 ? '1 transaction' : '$n transactions'}. '
+                "Folders can't hold transactions. Add a subcategory first — you'll "
+                'be asked to move those transactions into it.',
+          );
+          return;
+        }
+      }
+      await _run(() async {
+        await _notifier.edit(
+          c.id,
+          parentId: destParent,
+          clearParent: destParent == null,
+        );
+        await _notifier.reorder(parentId: destParent, ids: ids);
+      });
+    } else {
+      await _run(() => _notifier.reorder(parentId: c.parentId, ids: ids));
+    }
+  }
+
+  Widget _dropLine() => Container(
+    key: const ValueKey('category-drop-line'),
+    height: 3,
+    margin: const EdgeInsets.symmetric(horizontal: 8),
+    decoration: BoxDecoration(
+      color: AppTheme.accent,
+      borderRadius: BorderRadius.circular(2),
+    ),
+  );
+
+  Widget _wrapDropCue(Category c, Widget body) {
+    final cue = _dropCue;
+    final above = cue != null && cue.lineAboveId == c.id;
+    final below = cue != null && cue.lineBelowId == c.id;
+    final hl = cue != null && cue.highlightFolderId == c.id;
+    final dragging = _draggingId == c.id;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (above) _dropLine(),
+        DecoratedBox(
+          decoration: hl
+              ? BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.accent, width: 2),
+                )
+              : const BoxDecoration(),
+          child: Opacity(opacity: dragging ? 0.35 : 1, child: body),
+        ),
+        if (below) _dropLine(),
+      ],
+    );
+  }
+
+  Widget _row(Category c, bool manage, Map<String, int> counts) {
     final theme = Theme.of(context);
-    final color = colorFromHex(c.color) ?? laneColor(0);
     final editing = manage && _editingId == c.id;
     final b = _button;
     final kids = childCategories(_list, c.id);
     final direct = counts[c.id] ?? c.eventCount;
-    final n = kids.isEmpty
-        ? direct
-        : direct +
-              kids.fold<int>(0, (a, k) => a + (counts[k.id] ?? k.eventCount));
     final favs =
         ref.watch(categoryFavoritesProvider(widget.streamId)).valueOrNull ??
         const <String>[];
@@ -791,26 +1138,6 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
         ? rootCategories(_list)
         : childCategories(_list, c.parentId!);
     final sibIndex = sibs.indexWhere((x) => x.id == c.id);
-    final Widget swatch = manage
-        ? _ColorDotMenu(
-            key: ValueKey('category-color-${c.id}'),
-            color: c.color,
-            size: b,
-            onPicked: (v) {
-              if (v != c.color) _run(() => _notifier.edit(c.id, color: v));
-            },
-          )
-        : SizedBox(
-            width: b,
-            height: b,
-            child: Center(
-              child: Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-            ),
-          );
     final Widget name = editing
         ? CallbackShortcuts(
             bindings: {
@@ -865,7 +1192,9 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
         : InkWell(
             key: ValueKey('category-name-${c.id}'),
             borderRadius: BorderRadius.circular(6),
-            onTap: manage && !_busy ? () => _startEdit(c) : null,
+            onTap: kids.isNotEmpty
+                ? () => _toggleExpanded(c)
+                : (manage && !_busy ? () => _startEdit(c) : null),
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: b),
               child: Padding(
@@ -875,8 +1204,9 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                     Flexible(
                       child: Text(
                         c.name,
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                        softWrap: false,
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -912,107 +1242,91 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                 ? CrossAxisAlignment.start
                 : CrossAxisAlignment.center,
             children: [
-              if (manage && !_touch && !narrow)
-                Draggable<Category>(
-                  data: c,
-                  feedback: Material(
-                    elevation: 3,
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Text(c.name),
+              if (manage)
+                Listener(
+                  onPointerDown: _busy ? null : (e) => _onHandleDown(c, e),
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.grab,
+                    child: Tooltip(
+                      message: 'Drag to reorder',
+                      child: SizedBox(
+                        width: b,
+                        height: b,
+                        child: Icon(
+                          Icons.drag_indicator_rounded,
+                          key: ValueKey('category-drag-${c.id}'),
+                          size: 20,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
                     ),
-                  ),
-                  child: Icon(
-                    Icons.drag_indicator_rounded,
-                    key: ValueKey('category-drag-${c.id}'),
-                    size: 20,
-                    color: AppTheme.textMuted,
                   ),
                 ),
               SizedBox(width: 16.0 * (c.parentId == null ? 0 : 1)),
+              // Leaf: tappable colour dot (static for viewers).
+              // Folder: folder icon; tapping the row (or chevron) toggles it.
               SizedBox(
-                width: kids.isEmpty ? 8 : b,
+                width: b,
                 height: b,
                 child: kids.isEmpty
-                    ? const SizedBox.shrink()
-                    : IconButton(
-                        key: ValueKey('category-expand-${c.id}'),
-                        tooltip: _expanded.contains(c.id)
-                            ? 'Collapse'
-                            : 'Expand',
-                        padding: EdgeInsets.zero,
-                        onPressed: () => setState(() {
-                          if (!_expanded.add(c.id)) _expanded.remove(c.id);
-                        }),
-                        icon: Icon(
+                    ? (manage
+                          ? _ColorDotMenu(
+                              key: ValueKey('category-color-${c.id}'),
+                              color: c.color,
+                              size: b,
+                              onPicked: (v) {
+                                if (v != c.color) {
+                                  _run(() => _notifier.edit(c.id, color: v));
+                                }
+                              },
+                            )
+                          : Center(
+                              child: categoryDot(
+                                colorFromHex(c.color),
+                                size: 14,
+                              ),
+                            ))
+                    : InkWell(
+                        onTap: () => _toggleExpanded(c),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Icon(
                           _expanded.contains(c.id)
-                              ? Icons.expand_more_rounded
-                              : Icons.chevron_right_rounded,
+                              ? Icons.folder_open
+                              : Icons.folder_outlined,
+                          key: ValueKey('category-folder-${c.id}'),
+                          size: 18,
+                          color: AppTheme.textMuted,
                         ),
                       ),
               ),
-              swatch,
-              if (kids.isNotEmpty) ...[
-                const SizedBox(width: 4),
-                Icon(
-                  _expanded.contains(c.id)
-                      ? Icons.folder_open
-                      : Icons.folder_outlined,
-                  key: ValueKey('category-folder-${c.id}'),
-                  size: 18,
-                  color: AppTheme.textMuted,
-                ),
-              ],
               const SizedBox(width: 4),
               Expanded(child: name),
-              SizedBox(
-                width: _countWidth,
-                height: b,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Tooltip(
-                    message: kids.isEmpty
-                        ? '${_events(n)} in all streams'
-                        : '${_events(n)} in this category and its children (${_events(direct)} direct)',
-                    child: Text(
-                      '$n',
-                      semanticsLabel: kids.isEmpty
-                          ? '${_events(n)} in all streams'
-                          : '${_events(n)} in this category and its children',
-                      key: ValueKey('category-count-${c.id}'),
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppTheme.textMuted,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
+              if (kids.isNotEmpty)
+                IconButton(
+                  key: ValueKey('category-expand-${c.id}'),
+                  tooltip: _expanded.contains(c.id) ? 'Collapse' : 'Expand',
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints.tightFor(width: b, height: b),
+                  onPressed: () => _toggleExpanded(c),
+                  icon: Icon(
+                    _expanded.contains(c.id)
+                        ? Icons.expand_more_rounded
+                        : Icons.chevron_right_rounded,
                   ),
                 ),
-              ),
               if (manage) ...[
-                const SizedBox(width: 6),
-                _action(
-                  key: ValueKey('category-delete-events-${c.id}'),
-                  tooltip: direct == 0
-                      ? 'No events to delete'
-                      : 'Delete ${_events(direct)} in all streams (keep category)',
-                  icon: Icons.playlist_remove_rounded,
-                  onPressed: _busy || direct == 0
-                      ? null
-                      : () => _deleteEvents(c, direct),
-                ),
-                _action(
-                  key: ValueKey('category-delete-${c.id}'),
-                  tooltip: kids.isNotEmpty
-                      ? 'Move or delete subcategories first'
-                      : direct == 0
-                      ? 'Delete category'
-                      : 'Delete category and its ${_events(direct)}',
-                  icon: Icons.delete_outline_rounded,
-                  danger: true,
-                  onPressed: _busy ? null : () => _delete(c, direct),
-                ),
                 MenuAnchor(
+                  key: ValueKey('category-menu-${c.id}'),
                   menuChildren: [
+                    if (manage)
+                      MenuItemButton(
+                        key: ValueKey('category-rename-${c.id}'),
+                        leadingIcon: const Icon(
+                          Icons.drive_file_rename_outline,
+                        ),
+                        onPressed: _busy ? null : () => _startEdit(c),
+                        child: const Text('Rename'),
+                      ),
                     if (kids.isEmpty || isFav)
                       MenuItemButton(
                         key: ValueKey('category-star-${c.id}'),
@@ -1044,7 +1358,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                         onPressed: _busy ? null : () => _moveToSheet(c),
                         child: const Text('Move to…'),
                       ),
-                    if (manage && (_touch || narrow)) ...[
+                    if (manage) ...[
                       MenuItemButton(
                         key: ValueKey('category-up-${c.id}'),
                         leadingIcon: const Icon(
@@ -1067,6 +1381,24 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                         child: const Text('Move down'),
                       ),
                     ],
+                    if (direct > 0)
+                      MenuItemButton(
+                        key: ValueKey('category-delete-events-${c.id}'),
+                        leadingIcon: const Icon(Icons.playlist_remove_rounded),
+                        onPressed: _busy
+                            ? null
+                            : () => _deleteEvents(c, direct),
+                        child: Text('Delete ${_events(direct)}'),
+                      ),
+                    MenuItemButton(
+                      key: ValueKey('category-delete-${c.id}'),
+                      leadingIcon: Icon(
+                        Icons.delete_outline_rounded,
+                        color: theme.colorScheme.error,
+                      ),
+                      onPressed: _busy ? null : () => _delete(c, direct),
+                      child: const Text('Delete category'),
+                    ),
                   ],
                   builder: (context, controller, _) => _action(
                     key: ValueKey('category-more-${c.id}'),
@@ -1083,21 +1415,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
         ),
       ),
     );
-    return DragTarget<Category>(
-      onWillAcceptWithDetails: (d) =>
-          d.data.id != c.id && canMoveToParent(_list, d.data, c),
-      onAcceptWithDetails: (d) => _move(d.data, c.id),
-      builder: (context, pending, _) => DecoratedBox(
-        decoration: pending.isNotEmpty
-            ? BoxDecoration(
-                color: AppTheme.accent.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppTheme.accent),
-              )
-            : const BoxDecoration(),
-        child: body,
-      ),
-    );
+    return body;
   }
 
   Widget _action({
@@ -1479,4 +1797,22 @@ class CategoryPicker extends ConsumerWidget {
             color: theme.colorScheme.error,
           ),
         );
+}
+
+class _DropCue {
+  const _DropCue({
+    required this.parentId,
+    required this.index,
+    this.lineAboveId,
+    this.lineBelowId,
+    this.highlightFolderId,
+    required this.allowed,
+  });
+
+  final String? parentId;
+  final int index;
+  final String? lineAboveId;
+  final String? lineBelowId;
+  final String? highlightFolderId;
+  final bool allowed;
 }

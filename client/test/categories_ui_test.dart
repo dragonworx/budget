@@ -1,8 +1,9 @@
 // Categories (global per owner): the model helpers, the manager table
-// (in-place rename, swatch, count, Delete N events / Delete category, the
-// dashed new-category row; opened from the header ⋮), the editor's read-only
-// picker, the eye menu's Categories section, the Events list's category
-// filter, and a plan's own (unique) category name.
+// (drag handle, leaf colour / folder icon, single-line name, ⋮ menu with
+// Delete N events / Delete category; dashed new-category row; opened from
+// the header ⋮), the editor's read-only picker, the eye menu's Categories
+// section, the Events list's category filter, and a plan's own (unique)
+// category name.
 import 'dart:math' as math;
 
 import 'package:budget_client/data/api_client.dart';
@@ -164,6 +165,7 @@ Future<(_Store, _Cats)> _pump(
   WidgetTester tester, {
   Size size = const Size(1440, 900),
   Role role = Role.owner,
+  List<Category> extra = const [],
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -173,6 +175,7 @@ Future<(_Store, _Cats)> _pump(
   final store = _Store()..role = role;
   final events = _EventRepo(store);
   final cats = _Cats(store, events);
+  if (extra.isNotEmpty) cats.extra['acc'] = [...extra];
   await tester.pumpWidget(const SizedBox());
   await tester.pumpWidget(
     ProviderScope(
@@ -194,6 +197,38 @@ Future<void> _openManager(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('more-categories')));
   await tester.pumpAndSettle();
   expect(find.byKey(const ValueKey('categories-manager')), findsOneWidget);
+}
+
+Future<void> _openRowMenu(WidgetTester tester, String id) async {
+  final more = find.byKey(ValueKey('category-more-$id'));
+  await tester.ensureVisible(more);
+  await tester.pumpAndSettle();
+  await tester.tap(more);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _closeRowMenu(WidgetTester tester) async {
+  final sheet = find.byKey(const ValueKey('categories-manager'));
+  if (sheet.evaluate().isEmpty) return;
+  final s = tester.getRect(sheet);
+  Rect? menu;
+  for (final el in find.byType(MenuItemButton).evaluate()) {
+    final r = tester.getRect(find.byWidget(el.widget));
+    menu = menu == null ? r : menu.expandToInclude(r);
+  }
+  if (menu == null) return;
+  final pad = menu.inflate(8);
+  final candidates = <Offset>[
+    Offset(s.left + 16, s.top + 18),
+    Offset(s.center.dx, s.top + 18),
+    Offset(s.left + 16, s.bottom - 16),
+  ];
+  final p = candidates.firstWhere(
+    (o) => s.contains(o) && !pad.contains(o),
+    orElse: () => Offset(s.left + 8, s.top + 8),
+  );
+  await tester.tapAt(p);
+  await tester.pumpAndSettle();
 }
 
 Finder _field(String key) => find.descendant(
@@ -243,51 +278,62 @@ void main() {
     ('phone', Size(390, 844)),
     ('phone 320', Size(320, 640)),
   ]) {
-    testWidgets('$label: the manager is a table (colour, name, count, two '
-        'action buttons) with a dashed new-category row last; no overflow', (
+    testWidgets('$label: the manager is a table (handle, colour, name, '
+        'more) with a dashed new-category row last; no overflow', (
       tester,
     ) async {
       await _pump(tester, size: size);
       await _openManager(tester);
       expect(find.byKey(const ValueKey('categories-table')), findsOneWidget);
       expect(find.text('NAME'), findsOneWidget);
-      expect(find.text('EVENTS'), findsOneWidget);
+      expect(find.text('EVENTS'), findsNothing);
       final dialog = tester.getRect(
         find.byKey(const ValueKey('categories-manager')),
       );
-      for (final (id, n) in [(_wages, 1), (_rent, 1), (_groc, 2)]) {
+      for (final id in [_wages, _rent, _groc]) {
         final row = find.byKey(ValueKey('category-row-$id'));
         expect(row, findsOneWidget);
+        expect(find.byKey(ValueKey('category-count-$id')), findsNothing);
+        expect(find.byKey(ValueKey('category-drag-$id')), findsOneWidget);
+        expect(find.byKey(ValueKey('category-color-$id')), findsOneWidget);
+        expect(find.byKey(ValueKey('category-more-$id')), findsOneWidget);
+        expect(find.byKey(ValueKey('category-delete-$id')), findsNothing);
         expect(
-          tester.widget<Text>(find.byKey(ValueKey('category-count-$id'))).data,
-          '$n',
+          find.byKey(ValueKey('category-delete-events-$id')),
+          findsNothing,
         );
         for (final k in [
+          'category-drag-$id',
           'category-color-$id',
           'category-name-$id',
-          'category-delete-events-$id',
-          'category-delete-$id',
+          'category-more-$id',
         ]) {
           final r = tester.getRect(find.byKey(ValueKey(k)));
           expect(r.right, lessThanOrEqualTo(dialog.right + 0.5), reason: k);
         }
-        // Actions sit on the right, after the count, with tooltips.
         expect(
-          tester.getRect(find.byKey(ValueKey('category-delete-$id'))).left,
+          tester.getRect(find.byKey(ValueKey('category-color-$id'))).left,
           greaterThan(
-            tester.getRect(find.byKey(ValueKey('category-count-$id'))).right,
+            tester.getRect(find.byKey(ValueKey('category-drag-$id'))).right -
+                0.5,
           ),
         );
-        final del = tester.widget<IconButton>(
-          find.byKey(ValueKey('category-delete-$id')),
-        );
-        expect(del.tooltip, contains('Delete category'));
-        // Usable touch targets.
         expect(
-          tester.getSize(find.byKey(ValueKey('category-delete-$id'))).width,
+          tester.getRect(find.byKey(ValueKey('category-more-$id'))).left,
+          greaterThan(
+            tester.getRect(find.byKey(ValueKey('category-name-$id'))).right -
+                0.5,
+          ),
+        );
+        expect(
+          tester.getSize(find.byKey(ValueKey('category-more-$id'))).width,
           greaterThanOrEqualTo(36),
         );
       }
+      await _openRowMenu(tester, _groc);
+      expect(find.text('Delete 2 events'), findsOneWidget);
+      expect(find.text('Delete 1 event'), findsNothing);
+      expect(find.text('Delete category'), findsOneWidget);
       expect(find.byKey(const ValueKey('category-new-row')), findsOneWidget);
       expect(
         tester.getRect(find.byKey(const ValueKey('category-new-row'))).top,
@@ -305,8 +351,8 @@ void main() {
                 'category-menu-',
               ),
         ),
-        findsNothing,
-        reason: 'no ⋮ menus any more',
+        findsNWidgets(3),
+        reason: 'each row has a ⋮ menu',
       );
       expect(tester.takeException(), isNull);
     });
@@ -394,9 +440,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('the swatch recolours from the palette', (tester) async {
+  testWidgets('the leaf colour swatch recolours from the palette', (
+    tester,
+  ) async {
     final (_, cats) = await _pump(tester);
     await _openManager(tester);
+    expect(find.byKey(ValueKey('category-color-$_rent')), findsOneWidget);
     await tester.tap(find.byKey(ValueKey('category-color-$_rent')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('category-swatch-5')));
@@ -457,16 +506,12 @@ void main() {
   });
 
   testWidgets('Delete N events confirms (all streams), keeps the category, '
-      'the count updates live, the button disables at 0, and Undo restores', (
-    tester,
-  ) async {
+      'the menu item is hidden at 0, and Undo restores', (tester) async {
     final (store, cats) = await _pump(tester);
     await _openManager(tester);
+    await _openRowMenu(tester, _groc);
     final btn = find.byKey(ValueKey('category-delete-events-$_groc'));
-    expect(
-      tester.widget<IconButton>(btn).tooltip,
-      'Delete 2 events in all streams (keep category)',
-    );
+    expect(find.text('Delete 2 events'), findsOneWidget);
     await tester.tap(btn);
     await tester.pumpAndSettle();
     expect(find.text('Delete 2 events?'), findsOneWidget);
@@ -477,20 +522,17 @@ void main() {
     expect(cats.calls, contains('deleteEvents $_groc'));
     expect(store.txs.keys, isNot(contains('g1')));
     expect(find.byKey(ValueKey('category-row-$_groc')), findsOneWidget);
-    expect(
-      tester.widget<Text>(find.byKey(ValueKey('category-count-$_groc'))).data,
-      '0',
-    );
-    expect(tester.widget<IconButton>(btn).onPressed, isNull);
+    await _openRowMenu(tester, _groc);
+    expect(find.byKey(ValueKey('category-delete-events-$_groc')), findsNothing);
+    expect(find.text('Delete 2 events'), findsNothing);
+    await _closeRowMenu(tester);
     expect(find.byKey(const ValueKey('category-undo')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('category-undo-button')));
     await tester.pumpAndSettle();
     expect(store.calls, contains('undo batch-$_groc'));
     expect(store.txs.keys, containsAll(['g1', 'g2']));
-    expect(
-      tester.widget<Text>(find.byKey(ValueKey('category-count-$_groc'))).data,
-      '2',
-    );
+    await _openRowMenu(tester, _groc);
+    expect(find.text('Delete 2 events'), findsOneWidget);
   });
 
   testWidgets('Delete category: the confirmation names it and its event '
@@ -499,6 +541,7 @@ void main() {
   ) async {
     final (store, cats) = await _pump(tester);
     await _openManager(tester);
+    await _openRowMenu(tester, _groc);
     await tester.tap(find.byKey(ValueKey('category-delete-$_groc')));
     await tester.pumpAndSettle();
     expect(find.text('Delete category "Groceries"?'), findsOneWidget);
@@ -509,6 +552,7 @@ void main() {
     await tester.tap(find.text('Cancel').last);
     await tester.pumpAndSettle();
     expect(cats.calls.where((c) => c.startsWith('delete')), isEmpty);
+    await _openRowMenu(tester, _groc);
     await tester.tap(find.byKey(ValueKey('category-delete-$_groc')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Delete category and events'));
@@ -1134,6 +1178,7 @@ void main() {
     await _pump(tester);
     await _openManager(tester);
     // Rent has 1 event.
+    await _openRowMenu(tester, _rent);
     await tester.tap(find.byKey(ValueKey('category-delete-$_rent')));
     await tester.pumpAndSettle();
     expect(
@@ -1143,6 +1188,8 @@ void main() {
     expect(find.textContaining('all 1'), findsNothing);
     await tester.tap(find.text('Cancel').last);
     await tester.pumpAndSettle();
+    await _openRowMenu(tester, _rent);
+    expect(find.text('Delete 1 event'), findsOneWidget);
     await tester.tap(find.byKey(ValueKey('category-delete-events-$_rent')));
     await tester.pumpAndSettle();
     expect(find.text('Delete 1 event?'), findsOneWidget);
@@ -1156,6 +1203,8 @@ void main() {
     await tester.tap(find.text('Cancel').last);
     await tester.pumpAndSettle();
     // Groceries has 2.
+    await _openRowMenu(tester, _groc);
+    expect(find.text('Delete 2 events'), findsOneWidget);
     await tester.tap(find.byKey(ValueKey('category-delete-events-$_groc')));
     await tester.pumpAndSettle();
     expect(
@@ -1443,5 +1492,114 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
       expect(tester.takeException(), isNull);
     });
+  });
+
+  testWidgets('drag handle reorders siblings and shows a drop line', (
+    tester,
+  ) async {
+    final (_, cats) = await _pump(tester);
+    await _openManager(tester);
+    // Default order is name-sorted: Groceries, Rent, Wages.
+    final groc = tester.getRect(find.byKey(ValueKey('category-row-$_groc')));
+    final wages = tester.getRect(find.byKey(ValueKey('category-row-$_wages')));
+    expect(groc.top, lessThan(wages.top));
+    final handle = find.byKey(ValueKey('category-drag-$_groc'));
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump();
+    await gesture.moveTo(wages.center + const Offset(0, 24));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('category-drop-line')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('category-drag-feedback')),
+      findsOneWidget,
+    );
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(cats.calls, contains('reorder top $_rent,$_wages,$_groc'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('viewers have no drag handle', (tester) async {
+    await _pump(tester, role: Role.viewer);
+    await _openManager(tester);
+    expect(find.byKey(ValueKey('category-drag-$_rent')), findsNothing);
+  });
+
+  testWidgets('a long name stays on one line and ellipsises at 320px', (
+    tester,
+  ) async {
+    const name =
+        'Household subscription for streaming and digital media services';
+    final id = fakeCategoryId(name);
+    await _pump(
+      tester,
+      size: const Size(320, 640),
+      extra: [Category(id: id, streamId: 'acc', name: name, color: '#3D6FD8')],
+    );
+    await _openManager(tester);
+    final label = find.byKey(ValueKey('category-name-$id'));
+    final text = tester.widget<Text>(
+      find.descendant(of: label, matching: find.byType(Text)),
+    );
+    expect(text.maxLines, 1);
+    expect(text.overflow, TextOverflow.ellipsis);
+    expect(text.softWrap, isFalse);
+    final para = tester.renderObject<RenderParagraph>(
+      find.descendant(of: label, matching: find.byType(RichText)),
+    );
+    expect(para.didExceedMaxLines, isTrue);
+    expect(para.size.height, lessThan(28));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tapping a folder row or its chevron expands and collapses', (
+    tester,
+  ) async {
+    const housingId = 'cat-housing';
+    const mortId = 'cat-mortgage';
+    await _pump(
+      tester,
+      extra: [
+        const Category(
+          id: housingId,
+          streamId: 'acc',
+          name: 'Housing',
+          color: '#3D6FD8',
+        ),
+        const Category(
+          id: mortId,
+          streamId: 'acc',
+          name: 'Mortgage repayment',
+          color: '#B36A12',
+          parentId: housingId,
+          depth: 1,
+        ),
+      ],
+    );
+    await _openManager(tester);
+    expect(
+      find.byKey(const ValueKey('category-folder-$housingId')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('category-color-$housingId')),
+      findsNothing,
+    );
+    // Roots start expanded, so the leaf is already visible.
+    expect(find.byKey(const ValueKey('category-row-$mortId')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('category-color-$mortId')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('category-name-$housingId')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('category-row-$mortId')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('category-name-field-$housingId')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('category-expand-$housingId')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('category-row-$mortId')), findsOneWidget);
   });
 }
