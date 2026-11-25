@@ -586,7 +586,10 @@ class _DayCell extends StatelessWidget {
                           : inMonth
                           ? AppTheme.text
                           : AppTheme.textFaint,
-                      fontWeight: isToday ? FontWeight.w700 : null,
+                      // Today stays bold; days with events are bold too.
+                      fontWeight: isToday || items.isNotEmpty
+                          ? FontWeight.w700
+                          : FontWeight.w400,
                     ),
                   ),
                 ),

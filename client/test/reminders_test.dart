@@ -294,6 +294,58 @@ void main() {
     expect(find.byKey(const ValueKey('reminders-tooltip')), findsOneWidget);
     expect(find.text('Net'), findsOneWidget);
   });
+
+  testWidgets('day numbers with events are bold; empty days are not; today, '
+      'selected and out-of-month styling stay', (tester) async {
+    fakeEvents = [
+      tx('pay', dir: EventDirection.credit, amount: '1000'),
+      tx('rent', amount: '400'),
+      tx('coffee', amount: '5', start: DateTime(2026, 10, 21)),
+      tx('prior', amount: '8', start: DateTime(2026, 9, 30)),
+    ];
+    addTearDown(() => fakeEvents = defaultEvents);
+    await pump(tester, const Size(1440, 900));
+
+    Text number(DateTime d) {
+      final cell = find.byKey(
+        ValueKey('reminders-day-${d.year}-${d.month}-${d.day}'),
+      );
+      return tester.widget<Text>(
+        find.descendant(of: cell, matching: find.text('${d.day}')).first,
+      );
+    }
+
+    AnimatedContainer box(DateTime d) => tester.widget<AnimatedContainer>(
+      find.byKey(ValueKey('reminders-day-${d.year}-${d.month}-${d.day}')),
+    );
+
+    final today = DateTime(2026, 10, 19);
+    final empty = DateTime(2026, 10, 20);
+    final busy = DateTime(2026, 10, 21);
+    final prior = DateTime(2026, 9, 30);
+
+    // Today (has events) stays accent + bold.
+    expect(number(today).style?.fontWeight, FontWeight.w700);
+    expect(number(today).style?.color, AppTheme.accent);
+    // A later day with events is bold, normal in-month colour.
+    expect(number(busy).style?.fontWeight, FontWeight.w700);
+    expect(number(busy).style?.color, AppTheme.text);
+    // An empty in-month day is regular weight.
+    expect(number(empty).style?.fontWeight, FontWeight.w400);
+    expect(number(empty).style?.color, AppTheme.text);
+    // Out-of-month day with events: still faint, but bold.
+    expect(number(prior).style?.fontWeight, FontWeight.w700);
+    expect(number(prior).style?.color, AppTheme.textFaint);
+
+    await tester.tap(find.byKey(const ValueKey('reminders-day-2026-10-21')));
+    await tester.pumpAndSettle();
+    final dec = box(busy).decoration as BoxDecoration;
+    expect((dec.border as Border).top.color, AppTheme.accent);
+    expect((dec.border as Border).top.width, 2);
+    // Selection didn't drop the bold day number.
+    expect(number(busy).style?.fontWeight, FontWeight.w700);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 List<BudgetEvent> fakeEvents = defaultEvents;
