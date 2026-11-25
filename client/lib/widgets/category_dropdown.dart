@@ -24,8 +24,8 @@ class CategoryDropdownAction {
 
 /// The full-width category drop-down shared by the Events list filter and
 /// the event editor: a field showing the chosen category's colour dot and
-/// name (with a path when it has a parent), opening a menu as wide as the
-/// field.
+/// path (parent names regular, the leaf bold), opening a menu as wide as
+/// the field. Folders in the menu wear a folder icon.
 ///
 /// The menu is a tinted Favourites block (flat leaves, if any) then a
 /// labelled Categories tree. Folders (categories with children) expand
@@ -114,6 +114,67 @@ Widget categoryDot(Color? color, {double size = 10}) => Container(
     shape: BoxShape.circle,
   ),
 );
+
+/// Leading slot shared by dots and folder icons so names stay aligned.
+const double kCategoryLeadingSize = 18;
+
+/// A single-line path: ancestor names in regular weight, the leaf in bold.
+/// A top-level leaf is just bold. Ellipsizes as one run.
+class CategoryPathLabel extends StatelessWidget {
+  const CategoryPathLabel({
+    super.key,
+    required this.names,
+    this.style,
+    this.separator = ' › ',
+  });
+
+  /// Ancestor names followed by the leaf (a single name is a top-level leaf).
+  final List<String> names;
+  final TextStyle? style;
+  final String separator;
+
+  factory CategoryPathLabel.fromCategories({
+    Key? key,
+    required Iterable<Category> categories,
+    required String id,
+    TextStyle? style,
+    String separator = ' › ',
+  }) => CategoryPathLabel(
+    key: key,
+    names: [for (final c in categoryPath(categories, id)) c.name],
+    style: style,
+    separator: separator,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    if (names.isEmpty) return const SizedBox.shrink();
+    final base = style ?? DefaultTextStyle.of(context).style;
+    final leafStyle = base.copyWith(fontWeight: FontWeight.w700);
+    if (names.length == 1) {
+      return Text(
+        names.single,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+        style: leafStyle,
+      );
+    }
+    final parentStyle = base.copyWith(fontWeight: FontWeight.w400);
+    final parent = names.sublist(0, names.length - 1).join(separator);
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: parent + separator, style: parentStyle),
+          TextSpan(text: names.last, style: leafStyle),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+    );
+  }
+}
 
 class _CategoryDropdownState extends State<CategoryDropdown> {
   final _menu = MenuController();
@@ -268,27 +329,68 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
     _focusRow();
   }
 
-  Widget _entry(Category? c, {TextStyle? style, bool showPath = false}) => Row(
-    children: [
-      if (c == null)
-        const Icon(Icons.sell_outlined, size: 16, color: AppTheme.textMuted)
-      else
-        categoryDot(colorFromHex(c.color)),
-      const SizedBox(width: 10),
-      Expanded(
-        child: Text(
-          c == null
-              ? (widget.allLabel ?? '')
-              : (showPath
-                    ? categoryPathLabel(widget.categories, c.id)
-                    : c.name),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: style,
-        ),
-      ),
-    ],
-  );
+  Widget _leading(Category? c, {required bool isFolder, required bool open}) {
+    Widget child;
+    if (c == null) {
+      child = const Icon(
+        Icons.sell_outlined,
+        size: 18,
+        color: AppTheme.textMuted,
+      );
+    } else if (isFolder) {
+      child = Icon(
+        open ? Icons.folder_open : Icons.folder_outlined,
+        key: ValueKey('${widget.itemKeyPrefix}folder-${c.id}'),
+        size: 18,
+        color: colorFromHex(c.color) ?? AppTheme.textMuted,
+      );
+    } else {
+      child = Center(child: categoryDot(colorFromHex(c.color)));
+    }
+    return SizedBox(
+      width: kCategoryLeadingSize,
+      height: kCategoryLeadingSize,
+      child: child,
+    );
+  }
+
+  Widget _entry(Category? c, {TextStyle? style, bool showPath = false}) {
+    final isFolder = c != null && categoryHasChildren(_pool, c.id);
+    final open = c != null && _expanded.contains(c.id);
+    final Widget label;
+    if (c == null) {
+      label = Text(
+        widget.allLabel ?? '',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+        style: style,
+      );
+    } else if (showPath) {
+      label = CategoryPathLabel.fromCategories(
+        categories: widget.categories,
+        id: c.id,
+        style: style,
+      );
+    } else if (isFolder) {
+      label = Text(
+        c.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+        style: style,
+      );
+    } else {
+      label = CategoryPathLabel(names: [c.name], style: style);
+    }
+    return Row(
+      children: [
+        _leading(c, isFolder: isFolder, open: open),
+        const SizedBox(width: 10),
+        Expanded(child: label),
+      ],
+    );
+  }
 
   void _toggleFavorite(Category c) {
     if (!isCategoryLeaf(_pool, c)) return;

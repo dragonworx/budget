@@ -952,6 +952,17 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                       ),
               ),
               swatch,
+              if (kids.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  _expanded.contains(c.id)
+                      ? Icons.folder_open
+                      : Icons.folder_outlined,
+                  key: ValueKey('category-folder-${c.id}'),
+                  size: 18,
+                  color: AppTheme.textMuted,
+                ),
+              ],
               const SizedBox(width: 4),
               Expanded(child: name),
               SizedBox(
