@@ -1293,6 +1293,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                           open: _expanded.contains(c.id),
                           key: ValueKey('category-folder-${c.id}'),
                           color: colorFromHex(c.color) ?? AppTheme.textMuted,
+                          size: kCategoryManagerFolderSize,
                         ),
                       ),
               ),

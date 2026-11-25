@@ -118,6 +118,10 @@ Widget categoryDot(Color? color, {double size = 10}) => Container(
 /// Leading slot shared by dots and folder icons so names stay aligned.
 const double kCategoryLeadingSize = 18;
 
+/// Visible folder mark in Manage categories: the same diameter as the
+/// leaf colour dots (see [_ColorDotMenu] in the manager).
+const double kCategoryManagerFolderSize = 22;
+
 /// A stroked folder glyph, painted (not an icon-font [Icon]) so both the
 /// open and closed states render on browsers that drop or fail to draw
 /// Material folder codepoints even when they are in the release subset.
@@ -151,10 +155,16 @@ class FolderGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(painter: _FolderGlyphPainter(open: open, color: color)),
+    // [Center] loosens the incoming constraints so a tight row slot
+    // (the manager's 36/40px hit target) cannot stretch the glyph.
+    return Center(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _FolderGlyphPainter(open: open, color: color),
+        ),
+      ),
     );
   }
 }

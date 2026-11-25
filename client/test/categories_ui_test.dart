@@ -1600,6 +1600,21 @@ void main() {
     // folder mark uses the category's own colour (not muted grey).
     expect(folderIcon().open, isTrue);
     expect(folderIcon().color, const Color(0xFF3D6FD8));
+    expect(folderIcon().size, kCategoryManagerFolderSize);
+    // The glyph stays the colour-dot size, not stretched to the row
+    // hit target; a gap remains before the name, like the leaves.
+    final mark = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('category-folder-$housingId')),
+        matching: find.byType(CustomPaint),
+      ),
+    );
+    expect(mark.width, kCategoryManagerFolderSize);
+    expect(mark.height, kCategoryManagerFolderSize);
+    final nameBox = tester.getRect(
+      find.byKey(const ValueKey('category-name-$housingId')),
+    );
+    expect(nameBox.left - mark.right, greaterThanOrEqualTo(8));
     expect(find.byKey(const ValueKey('category-row-$mortId')), findsOneWidget);
     expect(
       find.byKey(const ValueKey('category-color-$mortId')),
