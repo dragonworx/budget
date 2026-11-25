@@ -66,10 +66,6 @@ void installSoftKeyboardPrimer() {}
 /// Web: skip the New event / New stream open animation on iOS Safari.
 bool get instantSoftKeyboardOpen => false;
 
-/// Web: `?kb=a|b|c|d` strategy (tests always behave like desktop).
-/// `c` is touchend prime with no handoff. `d` is a real DOM input overlay.
-String get softKeyboardVariant => 'a';
-
 /// Web: screen rect of a New event / New stream / FAB / day-add control.
 void registerKbHotspot({
   required String id,
@@ -78,7 +74,6 @@ void registerKbHotspot({
   required double width,
   required double height,
   required String kind,
-  void Function()? onActivate,
 }) {}
 
 /// Web: drop a previously registered hotspot.

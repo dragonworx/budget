@@ -1247,6 +1247,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
               hintText: '0.00',
               helperText: syncBalanceHint,
               formulasEnabled: ServerFeatures.variables,
+              legacyKeyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               textInputAction: TextInputAction.done,
               onSubmitted: (_) => _save(),
               onChanged: (_) {
@@ -1270,6 +1273,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
               prefixText: symbol.isEmpty ? null : '$symbol ',
               hintText: '0.00',
               formulasEnabled: ServerFeatures.variables,
+              legacyKeyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               // Type and category always have a value: Enter / the
               // keyboard's Done saves (only when no suggestion is open).
               textInputAction: TextInputAction.done,

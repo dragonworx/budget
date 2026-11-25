@@ -281,7 +281,6 @@ class _StreamPickerState extends ConsumerState<StreamPicker> {
         KbHotspot(
           id: 'new-stream',
           kind: 'text',
-          onActivate: widget.onNewStream,
           child: Listener(
             behavior: HitTestBehavior.translucent,
             onPointerUp: (_) => primeSoftKeyboard(),

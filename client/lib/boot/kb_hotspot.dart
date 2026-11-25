@@ -7,16 +7,11 @@ import 'page_stub.dart' if (dart.library.js_interop) 'page_web.dart' as page;
 /// capture-phase touchend can focus the proxy without waiting for Dart
 /// `onTap` (and without walking event.target, which on a real iPhone is
 /// the Flutter glass pane, not a labelled semantics node).
-///
-/// On `?kb=d`, a transparent DOM `<input>` is placed over the rect so
-/// the finger lands on a real field; [onActivate] then opens the sheet
-/// (the overlay swallows the tap, so Flutter's `onPressed` will not run).
 class KbHotspot extends SingleChildRenderObjectWidget {
   const KbHotspot({
     super.key,
     required this.id,
     required this.kind,
-    this.onActivate,
     required Widget child,
   }) : super(child: child);
 
@@ -26,20 +21,16 @@ class KbHotspot extends SingleChildRenderObjectWidget {
   /// `decimal` (amount) or `text` (name).
   final String kind;
 
-  /// Used by the `?kb=d` overlay when it intercepts the tap.
-  final VoidCallback? onActivate;
-
   @override
   RenderObject createRenderObject(BuildContext context) {
-    return RenderKbHotspot(id: id, kind: kind, onActivate: onActivate);
+    return RenderKbHotspot(id: id, kind: kind);
   }
 
   @override
   void updateRenderObject(BuildContext context, RenderKbHotspot renderObject) {
     renderObject
       ..id = id
-      ..kind = kind
-      ..onActivate = onActivate;
+      ..kind = kind;
   }
 }
 
@@ -47,10 +38,8 @@ class RenderKbHotspot extends RenderProxyBox {
   RenderKbHotspot({
     required String id,
     required String kind,
-    VoidCallback? onActivate,
   }) : _id = id,
-       _kind = kind,
-       _onActivate = onActivate;
+       _kind = kind;
 
   String _id;
   String get id => _id;
@@ -69,14 +58,6 @@ class RenderKbHotspot extends RenderProxyBox {
     _publish();
   }
 
-  VoidCallback? _onActivate;
-  VoidCallback? get onActivate => _onActivate;
-  set onActivate(VoidCallback? value) {
-    if (identical(_onActivate, value)) return;
-    _onActivate = value;
-    _publish();
-  }
-
   void _publish() {
     if (!hasSize || !attached) return;
     final origin = localToGlobal(Offset.zero);
@@ -87,7 +68,6 @@ class RenderKbHotspot extends RenderProxyBox {
       width: size.width,
       height: size.height,
       kind: _kind,
-      onActivate: _onActivate,
     );
   }
 

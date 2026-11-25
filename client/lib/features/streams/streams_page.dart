@@ -105,7 +105,6 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                         KbHotspot(
                           id: 'home-new-stream',
                           kind: 'text',
-                          onActivate: () => _create(context),
                           child: FilledButton.icon(
                             key: const ValueKey('new-stream'),
                             onPressed: () => _create(context),
@@ -155,7 +154,6 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                 action: KbHotspot(
                   id: 'home-new-stream-empty',
                   kind: 'text',
-                  onActivate: () => _create(context),
                   child: FilledButton.icon(
                     key: const ValueKey('new-stream'),
                     onPressed: () => _create(context),

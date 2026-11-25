@@ -65,8 +65,7 @@ String sessionCookieHeader(Config config, String token, {bool clear = false}) {
 bool _isPublic(String path) =>
     path == '/health' ||
     path.startsWith('/api/auth/') ||
-    path == '/api/auth' ||
-    path == '/api/kbdebug';
+    path == '/api/auth';
 
 bool _isApi(String path) => path == '/api' || path.startsWith('/api/');
 

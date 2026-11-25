@@ -30,7 +30,7 @@ Middleware authzMiddleware(ScopedDb db, {bool featureVariables = true}) {
         if (auth == null || seg.isEmpty || seg[0] != 'api') {
           return inner(request);
         }
-        if (seg.length > 1 && (seg[1] == 'auth' || seg[1] == 'kbdebug')) {
+        if (seg.length > 1 && seg[1] == 'auth') {
           return inner(request);
         }
         final rest = seg.sublist(1);

@@ -20,6 +20,15 @@
 		-Server
 	}
 
+	# Retired keyboard-experiment paths: 404 rather than SPA fallback
+	# or the API auth 401.
+	handle /kbtest.html {
+		respond 404
+	}
+	handle /api/kbdebug {
+		respond 404
+	}
+
 	@api path /api/* /health /ready
 	handle @api {
 		reverse_proxy {
@@ -49,7 +58,7 @@
 		# links them with ?v=, bumped when they change).
 		@icons path /favicon.ico /favicon-32.png /apple-touch-icon-180.png /icons/* /manifest.json
 		header @icons Cache-Control "public, max-age=86400"
-		@html path / /index.html /flutter_bootstrap.js /flutter_service_worker.js /version.json /build.json /main.dart.js /kbtest.html
+		@html path / /index.html /flutter_bootstrap.js /flutter_service_worker.js /version.json /build.json /main.dart.js
 		header @html Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
 		try_files {path} /index.html
 		# .br/.zst/.gz siblings are made at image build (client/Dockerfile);

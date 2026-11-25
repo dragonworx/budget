@@ -1960,7 +1960,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         child: KbHotspot(
           id: 'add-event-fab',
           kind: 'decimal',
-          onActivate: () => _createOnceOnDay(context, day),
           child: Material(
             key: const ValueKey('add-event-fab'),
             color: AppTheme.accent,

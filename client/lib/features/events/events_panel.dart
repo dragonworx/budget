@@ -196,7 +196,6 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
         KbHotspot(
           id: 'panel-new-option-new',
           kind: 'decimal',
-          onActivate: () => _open(null, primed: true),
           child: Listener(
             behavior: HitTestBehavior.translucent,
             onPointerUp: (_) => primeSoftKeyboard(decimal: true),
@@ -225,7 +224,6 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
           KbHotspot(
             id: 'panel-new-event',
             kind: 'decimal',
-            onActivate: () => _open(null),
             child: FilledButton.tonalIcon(
               key: const ValueKey('panel-new-event'),
               style: FilledButton.styleFrom(

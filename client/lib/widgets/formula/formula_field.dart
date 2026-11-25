@@ -80,7 +80,11 @@ class FormulaField extends StatefulWidget {
   /// Today's input formatters; applied only while formulas are off.
   final List<TextInputFormatter> legacyFormatters;
 
-  /// Today's keyboard; used only while formulas are off.
+  /// OS keyboard for this field (decimal, integer, …). Kept even when
+  /// formulas are on: the iOS decimal pad has no minus or operators,
+  /// those come from the inline keys row, and variable names from the
+  /// picker. Switching to a text keyboard here is what made Amount
+  /// open the alphanumeric keyboard on iPhone.
   final TextInputType legacyKeyboardType;
   final VariableScope scope;
   final FormulaEditingController? controller;
@@ -854,7 +858,7 @@ class _FormulaFieldState extends State<FormulaField> {
       controller: _c,
       focusNode: _focus,
       decoration: decoration,
-      keyboardType: on ? TextInputType.text : widget.legacyKeyboardType,
+      keyboardType: widget.legacyKeyboardType,
       textInputAction: widget.textInputAction,
       textAlign: widget.textAlign,
       autofocus: widget.autofocus,

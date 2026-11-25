@@ -111,14 +111,17 @@ void main() {
     expect(tf.autocorrect, isTrue);
   });
 
-  testWidgets('formulas on: text keyboard, no autocorrect or smart dashes', (
+  testWidgets('formulas on: decimal keyboard, no autocorrect or smart dashes', (
     tester,
   ) async {
     await pumpFormula(tester);
     final tf = tester.widget<TextField>(
       find.descendant(of: amountField, matching: find.byType(TextField)),
     );
-    expect(tf.keyboardType, TextInputType.text);
+    expect(
+      tf.keyboardType,
+      const TextInputType.numberWithOptions(decimal: true),
+    );
     expect(tf.autocorrect, isFalse);
     expect(tf.enableSuggestions, isFalse);
     expect(tf.smartDashesType, SmartDashesType.disabled);

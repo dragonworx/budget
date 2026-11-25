@@ -2907,7 +2907,6 @@ class _BalanceChartState extends State<BalanceChart>
               KbHotspot(
                 id: 'pick-add',
                 kind: 'decimal',
-                onActivate: _addFromPin,
                 child: IconButton(
                   key: const ValueKey('pick-add'),
                   tooltip: 'Add an event on ${formatOccurrenceDate(day)}',
@@ -3300,10 +3299,6 @@ class _BalanceChartState extends State<BalanceChart>
                 KbHotspot(
                   id: 'sel-add',
                   kind: 'decimal',
-                  onActivate: () => widget.onAddForPeriod!(
-                    dateOnly(sum.start),
-                    dateOnly(sum.end),
-                  ),
                   child: IconButton.outlined(
                     key: const ValueKey('sel-add'),
                     tooltip: 'Add an event for this period',
