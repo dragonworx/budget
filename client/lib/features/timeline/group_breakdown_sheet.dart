@@ -4,12 +4,115 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../data/models.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/money_text.dart';
 import 'chart_geometry.dart';
 import 'clusters.dart';
 
 typedef BreakdownLine = ({String name, int count, int cents});
+
+/// A rolled-up breakdown row: a top-level category (with children) or a
+/// leaf / "Direct" line.
+class BreakdownNode {
+  const BreakdownNode({
+    required this.name,
+    required this.count,
+    required this.cents,
+    this.isDirect = false,
+    this.children = const [],
+  });
+
+  final String name;
+  final int count;
+  final int cents;
+  final bool isDirect;
+  final List<BreakdownNode> children;
+
+  bool get expandable => children.isNotEmpty;
+}
+
+/// Groups flat name lines under their parent category. A parent that also
+/// has its own events gets a "Direct" child so those amounts stay visible.
+/// With no categories (or no parents), the lines stay flat.
+List<BreakdownNode> rollUpBreakdownLines(
+  List<BreakdownLine> lines, [
+  Iterable<Category> categories = const [],
+]) {
+  if (lines.isEmpty) return const [];
+  final byName = {for (final c in categories) c.name.toLowerCase(): c};
+  if (byName.isEmpty || categories.every((c) => c.parentId == null)) {
+    return [
+      for (final l in lines)
+        BreakdownNode(name: l.name, count: l.count, cents: l.cents),
+    ];
+  }
+  final byId = {for (final c in categories) c.id: c};
+  String? parentName(BreakdownLine l) {
+    final c = byName[l.name.toLowerCase()];
+    if (c == null || c.parentId == null) return null;
+    return byId[c.parentId]?.name;
+  }
+
+  final top = <String, List<BreakdownLine>>{};
+  final order = <String>[];
+  void add(String key, BreakdownLine l) {
+    if (!top.containsKey(key)) {
+      top[key] = [];
+      order.add(key);
+    }
+    top[key]!.add(l);
+  }
+
+  for (final l in lines) {
+    add(parentName(l) ?? l.name, l);
+  }
+  return [
+    for (final key in order)
+      () {
+        final group = top[key]!;
+        final kids = <BreakdownNode>[];
+        var direct = (name: key, count: 0, cents: 0);
+        var hasDirect = false;
+        for (final l in group) {
+          if (l.name == key) {
+            hasDirect = true;
+            direct = (
+              name: key,
+              count: direct.count + l.count,
+              cents: direct.cents + l.cents,
+            );
+          } else {
+            kids.add(
+              BreakdownNode(name: l.name, count: l.count, cents: l.cents),
+            );
+          }
+        }
+        if (hasDirect && kids.isNotEmpty) {
+          kids.insert(
+            0,
+            BreakdownNode(
+              name: 'Direct',
+              count: direct.count,
+              cents: direct.cents,
+              isDirect: true,
+            ),
+          );
+        }
+        final count = group.fold<int>(0, (a, l) => a + l.count);
+        final cents = group.fold<int>(0, (a, l) => a + l.cents);
+        if (kids.isEmpty) {
+          return BreakdownNode(name: key, count: count, cents: cents);
+        }
+        return BreakdownNode(
+          name: key,
+          count: count,
+          cents: cents,
+          children: kids,
+        );
+      }(),
+  ];
+}
 
 /// What the breakdown shows, built from a bin's cached totals; the event
 /// lines beyond the top 3 are computed here, for this one bin only.
@@ -18,6 +121,7 @@ class GroupBreakdown {
     required this.bin,
     required this.period,
     required this.lines,
+    this.rolled = const [],
     required this.streams,
     this.opening,
     this.closing,
@@ -30,6 +134,10 @@ class GroupBreakdown {
   final GroupBin bin;
   final String period;
   final List<BreakdownLine> lines;
+
+  /// Rolled-up [lines] (parents + children + Direct). Empty: the view
+  /// falls back to [lines].
+  final List<BreakdownNode> rolled;
 
   /// Combined view: one line per stream (empty otherwise).
   final List<BreakdownLine> streams;
@@ -47,6 +155,7 @@ GroupBreakdown buildGroupBreakdown(
   required String Function(String eventId) nameOf,
   String Function(String? streamId)? streamName,
   List<(int, bool)> alertCrossings = const [],
+  Iterable<Category> categories = const [],
 }) {
   final us0 = bin.start.microsecondsSinceEpoch;
   final us1 = bin.end.microsecondsSinceEpoch;
@@ -87,6 +196,10 @@ GroupBreakdown buildGroupBreakdown(
       for (final l in clusters.linesOf(bin))
         (name: nameOf(l.eventId), count: l.count, cents: l.cents),
     ],
+    rolled: rollUpBreakdownLines([
+      for (final l in clusters.linesOf(bin))
+        (name: nameOf(l.eventId), count: l.count, cents: l.cents),
+    ], categories),
     streams: streams.length < 2
         ? const []
         : [
@@ -121,7 +234,7 @@ String _balance(double? v) => v == null
 
 /// The breakdown's content; [onZoomIn] shows the period at about a third
 /// of the plot. [touch]: rows and buttons at least 44 pt tall.
-class GroupBreakdownView extends StatelessWidget {
+class GroupBreakdownView extends StatefulWidget {
   const GroupBreakdownView({
     super.key,
     required this.data,
@@ -132,6 +245,17 @@ class GroupBreakdownView extends StatelessWidget {
   final GroupBreakdown data;
   final VoidCallback? onZoomIn;
   final bool touch;
+
+  @override
+  State<GroupBreakdownView> createState() => _GroupBreakdownViewState();
+}
+
+class _GroupBreakdownViewState extends State<GroupBreakdownView> {
+  final Set<String> _open = {};
+
+  GroupBreakdown get data => widget.data;
+  VoidCallback? get onZoomIn => widget.onZoomIn;
+  bool get touch => widget.touch;
 
   @override
   Widget build(BuildContext context) {
@@ -251,13 +375,63 @@ class GroupBreakdownView extends StatelessWidget {
             ),
           ),
         ],
-        if (data.lines.isNotEmpty) const Divider(height: 12),
-        for (final l in data.lines)
-          row(
-            '${l.name} ×${groupCountText(l.count)}',
-            exactMoneyText(l.cents),
-            color: signed(l.cents),
+        if (data.lines.isNotEmpty || data.rolled.isNotEmpty)
+          const Divider(height: 12),
+        for (final node
+            in (data.rolled.isNotEmpty
+                ? data.rolled
+                : [
+                    for (final l in data.lines)
+                      BreakdownNode(
+                        name: l.name,
+                        count: l.count,
+                        cents: l.cents,
+                      ),
+                  ])) ...[_breakdownNode(node, row, signed, indent: 0)],
+      ],
+    );
+  }
+
+  Widget _breakdownNode(
+    BreakdownNode node,
+    Widget Function(String, String, {Color? color, Key? key}) row,
+    Color Function(int) signed, {
+    required int indent,
+  }) {
+    final open = _open.contains(node.name);
+    final label = '${node.name} ×${groupCountText(node.count)}';
+    final pad = EdgeInsets.only(left: indent * 14.0);
+    if (!node.expandable) {
+      return Padding(
+        padding: pad,
+        child: row(
+          label,
+          exactMoneyText(node.cents),
+          color: signed(node.cents),
+        ),
+      );
+    }
+    return Column(
+      key: ValueKey('group-breakdown-parent-${node.name}'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          key: ValueKey('group-breakdown-expand-${node.name}'),
+          onTap: () => setState(() {
+            if (!_open.add(node.name)) _open.remove(node.name);
+          }),
+          child: Padding(
+            padding: pad,
+            child: row(
+              label,
+              exactMoneyText(node.cents),
+              color: signed(node.cents),
+            ),
           ),
+        ),
+        if (open)
+          for (final ch in node.children)
+            _breakdownNode(ch, row, signed, indent: indent + 1),
       ],
     );
   }
@@ -317,6 +491,28 @@ class GroupBreakdownCard extends StatelessWidget {
                 cents: data.lines.skip(3).fold(0, (a, l) => a + l.cents),
               ),
             ],
+            rolled: () {
+              final src = data.rolled.isNotEmpty
+                  ? data.rolled
+                  : [
+                      for (final l in data.lines)
+                        BreakdownNode(
+                          name: l.name,
+                          count: l.count,
+                          cents: l.cents,
+                        ),
+                    ];
+              if (src.length <= 4) return src;
+              final rest = src.skip(3);
+              return [
+                ...src.take(3),
+                BreakdownNode(
+                  name: '${src.length - 3} more events',
+                  count: rest.fold(0, (a, l) => a + l.count),
+                  cents: rest.fold(0, (a, l) => a + l.cents),
+                ),
+              ];
+            }(),
           );
     return Material(
       key: const ValueKey('group-breakdown-card'),

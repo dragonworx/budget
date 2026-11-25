@@ -188,7 +188,7 @@ void main() {
     final pre = await h.call(
         'GET', '/api/streams/${s.a}/categories/${pay['id']}/delete-preview',
         as: me);
-    expect(pre.json, {'events': 4, 'counterparts': 0});
+    expect(pre.json, {'events': 4, 'counterparts': 0, 'children': 0});
 
     final del = await h
         .call('DELETE', '/api/streams/${s.a}/categories/${pay['id']}', as: me);
@@ -314,5 +314,163 @@ void main() {
       expect((await h.call(m, p, as: '${me}ed', body: b)).status, 403,
           reason: 'editor $m $p');
     }
+  });
+
+  test('hierarchy: nest, max depth 2, unique names, delete blocked', () async {
+    if (!h.ok) return markTestSkipped('no test DB');
+    me = 'cathier';
+    final s = await h.seed(me, 'Hier');
+    final parent = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Utilities'});
+    expect(parent.status, 201, reason: '${parent.json}');
+    expect(parent.json['parentId'], isNull);
+    expect(parent.json['depth'], 0);
+    final power = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Power', 'parentId': parent.json['id']});
+    expect(power.status, 201, reason: '${power.json}');
+    expect(power.json['parentId'], parent.json['id']);
+    expect(power.json['depth'], 1);
+
+    // A grandchild is rejected.
+    final deep = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Peak Power', 'parentId': power.json['id']});
+    expect(deep.status, 400, reason: '${deep.json}');
+    expect(deep.json['details']['code'], 'max_depth');
+
+    // Owner-wide unique names still hold across the tree.
+    final dup = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'power'});
+    expect(dup.status, 409);
+
+    // Events may be filed on a parent.
+    final ev = await h.call('POST', '/api/streams/${s.a}/events',
+        as: me,
+        body: {...Harness.tx('ignored'), 'categoryId': parent.json['id']});
+    expect(ev.status, 201, reason: '${ev.json}');
+    expect(ev.json['name'], 'Utilities');
+    final ev2 = await h.call('POST', '/api/streams/${s.a}/events',
+        as: me,
+        body: {...Harness.tx('ignored'), 'categoryId': power.json['id']});
+    expect(ev2.status, 201);
+    final list = await cats(s.a);
+    final u = list.firstWhere((c) => c['name'] == 'Utilities');
+    expect(u['eventCount'], 1);
+    expect(u['eventCountSubtree'], 2);
+    expect(list.firstWhere((c) => c['name'] == 'Power')['eventCount'], 1);
+
+    // Deleting the parent is blocked while it has children.
+    final pre = await h.call('GET',
+        '/api/streams/${s.a}/categories/${parent.json['id']}/delete-preview',
+        as: me);
+    expect(pre.json['children'], 1);
+    final blocked = await h.call(
+        'DELETE', '/api/streams/${s.a}/categories/${parent.json['id']}',
+        as: me);
+    expect(blocked.status, 409, reason: '${blocked.json}');
+    expect(blocked.json['details']['code'], 'category_has_children');
+    expect(blocked.json['details']['children'], 1);
+
+    // Un-nest, then delete is allowed (events of the parent go too).
+    final moved = await h.call(
+        'PATCH', '/api/streams/${s.a}/categories/${power.json['id']}',
+        as: me, body: {'parentId': null});
+    expect(moved.status, 200, reason: '${moved.json}');
+    expect(moved.json['parentId'], isNull);
+    final del = await h.call(
+        'DELETE', '/api/streams/${s.a}/categories/${parent.json['id']}',
+        as: me);
+    expect(del.status, 200, reason: '${del.json}');
+    expect(
+        (await cats(s.a)).map((c) => c['name']), isNot(contains('Utilities')));
+    expect((await cats(s.a)).map((c) => c['name']), contains('Power'));
+  });
+
+  test('Sync cannot be nested; favourites are per user', () async {
+    if (!h.ok) return markTestSkipped('no test DB');
+    me = 'catfav';
+    final s = await h.seed(me, 'Favs');
+    final parent = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Shopping'});
+    final sync = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Sync'});
+    expect(sync.status, 201);
+    final nestSync = await h.call(
+        'PATCH', '/api/streams/${s.a}/categories/${sync.json['id']}',
+        as: me, body: {'parentId': parent.json['id']});
+    expect(nestSync.status, 400, reason: '${nestSync.json}');
+    expect(nestSync.json['details']['code'], 'sync_nested');
+    final underSync = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Coles', 'parentId': sync.json['id']});
+    expect(underSync.status, 400, reason: '${underSync.json}');
+
+    final coles = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Coles', 'parentId': parent.json['id']});
+    expect(coles.status, 201, reason: '${coles.json}');
+
+    final star = await h.call(
+        'PUT', '/api/streams/${s.a}/categories/${coles.json['id']}/favorite',
+        as: me);
+    expect(star.status, 200, reason: '${star.json}');
+    expect([for (final f in star.json['favorites'] as List) f['categoryId']],
+        [coles.json['id']]);
+
+    // A viewer can star for themselves; the owner's list is unchanged.
+    await h.login('favview');
+    await h.call('POST', '/api/streams/${s.a}/invites',
+        as: me, body: {'email': h.email('favview')});
+    final vStar = await h.call(
+        'PUT', '/api/streams/${s.a}/categories/${parent.json['id']}/favorite',
+        as: 'favview');
+    expect(vStar.status, 200, reason: '${vStar.json}');
+    expect([for (final f in vStar.json['favorites'] as List) f['categoryId']],
+        [parent.json['id']]);
+    final mine =
+        await h.call('GET', '/api/streams/${s.a}/category-favorites', as: me);
+    expect([for (final f in mine.json['favorites'] as List) f['categoryId']],
+        [coles.json['id']]);
+
+    final unstar = await h.call(
+        'DELETE', '/api/streams/${s.a}/categories/${coles.json['id']}/favorite',
+        as: me);
+    expect(unstar.status, 200);
+    expect(unstar.json['favorites'], isEmpty);
+
+    // Reorder siblings.
+    final fuel = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Fuel', 'parentId': parent.json['id']});
+    expect(fuel.status, 201);
+    final re = await h
+        .call('POST', '/api/streams/${s.a}/categories/reorder', as: me, body: {
+      'parentId': parent.json['id'],
+      'ids': [fuel.json['id'], coles.json['id']],
+    });
+    expect(re.status, 200, reason: '${re.json}');
+    final kids = [
+      for (final c in re.json['categories'] as List)
+        if (c['parentId'] == parent.json['id']) c
+    ]..sort((a, b) => (a['sortOrder'] as num).compareTo(b['sortOrder'] as num));
+    expect([for (final c in kids) c['name']], ['Fuel', 'Coles']);
+
+    // Editors may add a child, not reparent or reorder.
+    await h.login('${me}ed');
+    await h.call('POST', '/api/streams/${s.a}/invites',
+        as: me, body: {'email': h.email('${me}ed'), 'role': 'editor'});
+    final added = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: '${me}ed',
+        body: {'name': 'Woolies', 'parentId': parent.json['id']});
+    expect(added.status, 201, reason: '${added.json}');
+    final denied = await h.call(
+        'PATCH', '/api/streams/${s.a}/categories/${coles.json['id']}',
+        as: '${me}ed', body: {'parentId': null});
+    expect(denied.status, 403);
+    expect(
+        (await h.call('POST', '/api/streams/${s.a}/categories/reorder',
+                as: '${me}ed',
+                body: {
+              'parentId': parent.json['id'],
+              'ids': [coles.json['id']]
+            }))
+            .status,
+        403);
   });
 }

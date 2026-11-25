@@ -73,6 +73,7 @@ class FakeCategoryRepository extends CategoryRepository {
     String streamId, {
     required String name,
     String? color,
+    String? parentId,
   }) async {
     calls.add('create $name');
     final existing = await list(streamId);
@@ -84,6 +85,8 @@ class FakeCategoryRepository extends CategoryRepository {
       streamId: streamId,
       name: normalizeCategoryName(name),
       color: color ?? '#3D6FD8',
+      parentId: parentId,
+      depth: parentId == null ? 0 : 1,
     );
     (extra[streamId] ??= []).add(c);
     return c;
@@ -96,24 +99,83 @@ class FakeCategoryRepository extends CategoryRepository {
     String? name,
     String? color,
     bool? hidden,
+    String? parentId,
+    bool clearParent = false,
+    int? sortOrder,
   }) async {
     calls.add('update $id ${name ?? ''} ${color ?? ''} ${hidden ?? ''}');
     final c = (await list(streamId)).firstWhere((c) => c.id == id);
-    return edits[id] = c.copyWith(name: name, color: color, hidden: hidden);
+    return edits[id] = c.copyWith(
+      name: name,
+      color: color,
+      hidden: hidden,
+      parentId: parentId,
+      clearParent: clearParent,
+      sortOrder: sortOrder,
+    );
   }
 
   @override
-  Future<({int events, int counterparts})> deletePreview(
+  Future<List<Category>> reorder(
+    String streamId, {
+    String? parentId,
+    required List<String> ids,
+  }) async {
+    calls.add('reorder ${parentId ?? 'top'} ${ids.join(',')}');
+    var i = 0;
+    for (final id in ids) {
+      final c = (await list(streamId)).firstWhere((c) => c.id == id);
+      edits[id] = c.copyWith(
+        parentId: parentId,
+        clearParent: parentId == null,
+        sortOrder: i++,
+        depth: parentId == null ? 0 : 1,
+      );
+    }
+    return list(streamId);
+  }
+
+  @override
+  Future<({int events, int counterparts, int children})> deletePreview(
     String streamId,
     String id,
   ) async {
     final c = (await list(streamId)).firstWhere((c) => c.id == id);
-    return (events: c.eventCount, counterparts: 0);
+    final children = (await list(streamId))
+        .where((x) => x.parentId == id)
+        .length;
+    return (events: c.eventCount, counterparts: 0, children: children);
+  }
+
+  final favorites = <String, List<String>>{};
+
+  @override
+  Future<List<String>> listFavorites(String streamId) async =>
+      List.of(favorites[streamId] ?? const []);
+
+  @override
+  Future<List<String>> addFavorite(String streamId, String id) async {
+    final list = favorites[streamId] ??= [];
+    if (!list.contains(id)) list.add(id);
+    return List.of(list);
+  }
+
+  @override
+  Future<List<String>> removeFavorite(String streamId, String id) async {
+    (favorites[streamId] ??= []).remove(id);
+    return List.of(favorites[streamId] ?? const []);
   }
 
   @override
   Future<void> delete(String streamId, String id) async {
     calls.add('delete $id');
+    final kids = (await list(streamId)).where((c) => c.parentId == id);
+    if (kids.isNotEmpty) {
+      throw ApiException(
+        'Move or delete its subcategories first',
+        statusCode: 409,
+      );
+    }
     deletedIds.add(id);
   }
 

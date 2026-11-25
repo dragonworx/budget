@@ -1464,7 +1464,11 @@ class Category {
     required this.color,
     this.hidden = false,
     this.eventCount = 0,
+    this.eventCountSubtree = 0,
     this.version,
+    this.parentId,
+    this.sortOrder = 0,
+    this.depth = 0,
   });
 
   final String id;
@@ -1479,7 +1483,17 @@ class Category {
 
   /// Events in it when listed (the live count comes from the events).
   final int eventCount;
+
+  /// [eventCount] plus events in every child.
+  final int eventCountSubtree;
   final int? version;
+
+  /// Null: a top-level category.
+  final String? parentId;
+  final int sortOrder;
+
+  /// 0 at the top, 1 under a parent.
+  final int depth;
 
   factory Category.fromJson(Map<String, dynamic> j) => Category(
     id: j['id'] as String,
@@ -1488,17 +1502,38 @@ class Category {
     color: normalizeEventColor(j['color']) ?? '#3D6FD8',
     hidden: (j['hidden'] as bool?) ?? false,
     eventCount: (j['eventCount'] as num?)?.toInt() ?? 0,
+    eventCountSubtree:
+        (j['eventCountSubtree'] as num?)?.toInt() ??
+        (j['eventCount'] as num?)?.toInt() ??
+        0,
     version: (j['version'] as num?)?.toInt(),
+    parentId: j['parentId'] as String?,
+    sortOrder: (j['sortOrder'] as num?)?.toInt() ?? 0,
+    depth: (j['depth'] as num?)?.toInt() ?? (j['parentId'] == null ? 0 : 1),
   );
 
-  Category copyWith({String? name, String? color, bool? hidden}) => Category(
+  Category copyWith({
+    String? name,
+    String? color,
+    bool? hidden,
+    int? eventCount,
+    int? eventCountSubtree,
+    String? parentId,
+    bool clearParent = false,
+    int? sortOrder,
+    int? depth,
+  }) => Category(
     id: id,
     streamId: streamId,
     name: name ?? this.name,
     color: color ?? this.color,
     hidden: hidden ?? this.hidden,
-    eventCount: eventCount,
+    eventCount: eventCount ?? this.eventCount,
+    eventCountSubtree: eventCountSubtree ?? this.eventCountSubtree,
     version: version,
+    parentId: clearParent ? null : (parentId ?? this.parentId),
+    sortOrder: sortOrder ?? this.sortOrder,
+    depth: depth ?? this.depth,
   );
 }
 

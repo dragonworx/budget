@@ -112,11 +112,15 @@ void main() {
     ]);
     final cats = await c.execute('SELECT owner_id::text, name, color, hidden '
         'FROM categories ORDER BY owner_id, name');
+    // 031 also inserts Housing / Income parents where Rent / Wages map.
     expect([
       for (final r in cats) r.toList()
     ], [
+      [_o1, 'Housing', isA<String>(), false],
+      [_o1, 'Income', isA<String>(), false],
       [_o1, 'Rent', '#5B7A2A', false],
       [_o1, 'Wages', isA<String>(), false],
+      [_o2, 'Housing', isA<String>(), false],
       [_o2, 'Rent', '#3D6FD8', false],
     ]);
     Future<List<Object?>> catOf(String id) async => (await c
@@ -141,8 +145,8 @@ void main() {
     final fresh = await ev(_s1, 'Fuel');
     expect((await catOf(fresh))[0], _o1);
     // Another owner's category is refused.
-    final o2Rent = (await c
-            .execute("SELECT id::text FROM categories WHERE owner_id = '$_o2'"))
+    final o2Rent = (await c.execute("SELECT id::text FROM categories "
+            "WHERE owner_id = '$_o2' AND name = 'Rent'"))
         .first[0];
     await expectLater(
         c.execute("UPDATE events SET category_id = '$o2Rent' "
@@ -155,6 +159,7 @@ void main() {
         throwsA(isA<ServerException>()));
     // A second run is a no-op.
     await applyMigrations(c, migrationsDir: 'migrations');
-    expect((await c.execute('SELECT count(*) FROM categories')).first[0], 4);
+    // 6 from 025+031, plus Fuel created after the first apply.
+    expect((await c.execute('SELECT count(*) FROM categories')).first[0], 7);
   });
 }

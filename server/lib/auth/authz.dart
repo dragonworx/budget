@@ -126,6 +126,8 @@ const policies = <Policy>[
   Policy('GET', 'streams/:a/categories', Scope.stream),
   Policy('POST', 'streams/:a/categories', Scope.stream,
       min: _e, event: 'category.created'),
+  Policy('POST', 'streams/:a/categories/reorder', Scope.stream,
+      min: _o, event: 'category.updated'),
   Policy('PATCH', 'streams/:a/categories/:c', Scope.stream,
       min: _o, event: 'category.updated'),
   Policy('GET', 'streams/:a/categories/:c/delete-preview', Scope.stream),
@@ -133,6 +135,13 @@ const policies = <Policy>[
       min: _o, event: 'category.deleted'),
   Policy('DELETE', 'streams/:a/categories/:c/events', Scope.stream,
       min: _o, event: 'category.events_deleted'),
+  Policy('GET', 'streams/:a/category-favorites', Scope.stream),
+  Policy('PATCH', 'streams/:a/category-favorites', Scope.stream,
+      event: 'category.favorite_updated'),
+  Policy('PUT', 'streams/:a/categories/:c/favorite', Scope.stream,
+      event: 'category.favorite_updated'),
+  Policy('DELETE', 'streams/:a/categories/:c/favorite', Scope.stream,
+      event: 'category.favorite_updated'),
   // Variables (spec 010): the stream owner's set; members list and
   // reference, only the owner manages (D3).
   Policy('GET', 'streams/:a/variables', Scope.stream),

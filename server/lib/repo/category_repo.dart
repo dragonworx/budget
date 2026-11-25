@@ -18,6 +18,17 @@ class CategoryNameException implements Exception {
   String toString() => message;
 }
 
+/// Parent / depth / delete-with-children constraints.
+class CategoryConstraintException implements Exception {
+  CategoryConstraintException(this.message, {this.code = 'invalid_parent'});
+  final String message;
+
+  /// `category_has_children`, `max_depth`, `sync_nested`, `invalid_parent`.
+  final String code;
+  @override
+  String toString() => message;
+}
+
 /// Trimmed, single-spaced [raw]; throws [CategoryNameException] when blank
 /// or too long.
 String normalizeCategoryName(Object? raw) {
@@ -31,10 +42,12 @@ String normalizeCategoryName(Object? raw) {
   return v;
 }
 
-/// Categories, one global set per owner (migrations 024, 025): every stream
-/// the owner has uses it. Names are unique in the set, case-insensitively;
-/// events keep `events.name` equal to their category's name through DB
-/// triggers.
+bool isSyncName(String name) => name.trim().toLowerCase() == 'sync';
+
+/// Categories, one global set per owner (migrations 024, 025, 031): every
+/// stream the owner has uses it. Names are unique in the set,
+/// case-insensitively; events keep `events.name` equal to their category's
+/// name through DB triggers. Optional parent_id (max depth 2).
 class CategoryRepo {
   CategoryRepo(this._conn);
 
@@ -42,7 +55,14 @@ class CategoryRepo {
 
   static const _cols = '''
     c.id::text, c.owner_id::text, c.name, c.color, c.hidden, c.created_at,
-    c.version, (SELECT count(*) FROM events e WHERE e.category_id = c.id)::int''';
+    c.version,
+    (SELECT count(*) FROM events e WHERE e.category_id = c.id)::int,
+    (SELECT count(*) FROM events e
+      WHERE e.category_id = c.id
+         OR e.category_id IN (SELECT ch.id FROM categories ch
+                               WHERE ch.parent_id = c.id))::int,
+    c.parent_id::text, c.sort_order,
+    CASE WHEN c.parent_id IS NULL THEN 0 ELSE 1 END''';
 
   Category _fromRow(ResultRow r) => Category(
         id: r[0] as String,
@@ -53,6 +73,10 @@ class CategoryRepo {
         createdAt: (r[5] as DateTime).toUtc(),
         version: r[6] as int,
         eventCount: r[7] as int,
+        eventCountSubtree: r[8] as int,
+        parentId: r[9] as String?,
+        sortOrder: r[10] as int,
+        depth: r[11] as int,
       );
 
   /// The owner of [streamId] (whose categories its events use).
@@ -65,11 +89,12 @@ class CategoryRepo {
     return rows.isEmpty ? null : rows.first[0] as String;
   }
 
-  /// [ownerId]'s categories, oldest first (the order they were made).
+  /// [ownerId]'s categories, sibling order then name.
   Future<List<Category>> listByOwner(String ownerId) async {
     final rows = await _conn.execute(
       Sql.named('SELECT $_cols FROM categories c '
-          'WHERE c.owner_id = @o::uuid ORDER BY c.created_at, c.name'),
+          'WHERE c.owner_id = @o::uuid '
+          'ORDER BY c.sort_order, c.name, c.created_at'),
       parameters: {'o': ownerId},
     );
     return rows.map(_fromRow).toList();
@@ -101,6 +126,15 @@ class CategoryRepo {
     return rows.isEmpty ? null : _fromRow(rows.first);
   }
 
+  Future<int> childCount(String id) async {
+    final r = await _conn.execute(
+      Sql.named(
+          'SELECT count(*)::int FROM categories WHERE parent_id = @id::uuid'),
+      parameters: {'id': id},
+    );
+    return r.first[0] as int;
+  }
+
   Future<void> _checkFree(String ownerId, String name, {String? except}) async {
     final other = await byName(ownerId, name);
     if (other != null && other.id != except) {
@@ -110,18 +144,86 @@ class CategoryRepo {
     }
   }
 
+  Future<int> _nextSort(String ownerId, String? parentId) async {
+    final rows = await _conn.execute(
+      Sql.named('SELECT coalesce(max(sort_order), -1) + 1 FROM categories '
+          'WHERE owner_id = @o::uuid '
+          'AND parent_id IS NOT DISTINCT FROM @p::uuid'),
+      parameters: {'o': ownerId, 'p': parentId},
+    );
+    return rows.first[0] as int;
+  }
+
+  Future<void> _assertParent(String ownerId, String? parentId,
+      {String? childId}) async {
+    if (parentId == null) return;
+    if (!uuidRe.hasMatch(parentId)) {
+      throw CategoryConstraintException('parentId is not a valid category');
+    }
+    if (childId != null && parentId == childId) {
+      throw CategoryConstraintException('category cannot be its own parent');
+    }
+    final parent = await get(parentId);
+    if (parent == null || parent.ownerId != ownerId) {
+      throw CategoryConstraintException(
+          'parentId is not a category of this owner');
+    }
+    if (parent.parentId != null) {
+      throw CategoryConstraintException(
+          'categories can only nest one level deep',
+          code: 'max_depth');
+    }
+    if (isSyncName(parent.name)) {
+      throw CategoryConstraintException('Sync cannot have children',
+          code: 'sync_nested');
+    }
+    if (childId != null) {
+      final child = await get(childId);
+      if (child != null && isSyncName(child.name)) {
+        throw CategoryConstraintException('Sync cannot be nested',
+            code: 'sync_nested');
+      }
+      if (child != null && await childCount(childId) > 0) {
+        throw CategoryConstraintException(
+            'a category with children must stay top-level',
+            code: 'max_depth');
+      }
+    }
+  }
+
   /// Adds a category to [ownerId]'s set.
   Future<Category> create(String ownerId,
-      {required String name, String? color, bool hidden = false}) async {
+      {required String name,
+      String? color,
+      bool hidden = false,
+      String? parentId}) async {
     final n = normalizeCategoryName(name);
+    if (parentId != null && isSyncName(n)) {
+      throw CategoryConstraintException('Sync cannot be nested',
+          code: 'sync_nested');
+    }
     await _checkFree(ownerId, n);
+    await _assertParent(ownerId, parentId);
     color ??= await _unusedColor(ownerId);
-    final rows = await _conn.execute(
-      Sql.named('INSERT INTO categories (owner_id, name, color, hidden) '
-          'VALUES (@o::uuid, @n, @c, @h) RETURNING id::text'),
-      parameters: {'o': ownerId, 'n': n, 'c': color, 'h': hidden},
-    );
-    return (await get(rows.first[0] as String))!;
+    final sort = await _nextSort(ownerId, parentId);
+    try {
+      final rows = await _conn.execute(
+        Sql.named(
+            'INSERT INTO categories (owner_id, name, color, hidden, parent_id, sort_order) '
+            'VALUES (@o::uuid, @n, @c, @h, @p::uuid, @s) RETURNING id::text'),
+        parameters: {
+          'o': ownerId,
+          'n': n,
+          'c': color,
+          'h': hidden,
+          'p': parentId,
+          's': sort,
+        },
+      );
+      return (await get(rows.first[0] as String))!;
+    } on ServerException catch (e) {
+      throw _mapConstraint(e);
+    }
   }
 
   /// The first lane palette colour no category of [ownerId] uses (the
@@ -138,42 +240,150 @@ class CategoryRepo {
     return categoryPalette[rows.length % categoryPalette.length];
   }
 
-  /// Renames / recolours / hides [id]. A rename renames its events too
-  /// (trigger).
+  /// Renames / recolours / hides / reparents [id]. A rename renames its
+  /// events too (trigger). Pass [parentId] to nest, [clearParent] to
+  /// un-nest; omit both to leave the parent alone.
   Future<Category?> update(String id,
-      {String? name, String? color, bool? hidden}) async {
+      {String? name,
+      String? color,
+      bool? hidden,
+      String? parentId,
+      bool clearParent = false,
+      int? sortOrder}) async {
     final c = await get(id);
     if (c == null) return null;
     final n = name == null ? c.name : normalizeCategoryName(name);
     if (name != null) await _checkFree(c.ownerId, n, except: id);
-    await _conn.execute(
-      Sql.named('UPDATE categories SET name = @n, color = @c, hidden = @h '
-          'WHERE id = @id::uuid'),
-      parameters: {
-        'id': id,
-        'n': n,
-        'c': color ?? c.color,
-        'h': hidden ?? c.hidden,
-      },
-    );
+    final nextParent = clearParent ? null : (parentId ?? c.parentId);
+    if (clearParent || parentId != null) {
+      await _assertParent(c.ownerId, nextParent, childId: id);
+    }
+    if (nextParent != null && isSyncName(n)) {
+      throw CategoryConstraintException('Sync cannot be nested',
+          code: 'sync_nested');
+    }
+    var nextSort = sortOrder ?? c.sortOrder;
+    if ((clearParent || parentId != null) && nextParent != c.parentId) {
+      nextSort = sortOrder ?? await _nextSort(c.ownerId, nextParent);
+    }
+    try {
+      await _conn.execute(
+        Sql.named('UPDATE categories SET name = @n, color = @c, hidden = @h, '
+            'parent_id = @p::uuid, sort_order = @s '
+            'WHERE id = @id::uuid'),
+        parameters: {
+          'id': id,
+          'n': n,
+          'c': color ?? c.color,
+          'h': hidden ?? c.hidden,
+          'p': nextParent,
+          's': nextSort,
+        },
+      );
+    } on ServerException catch (e) {
+      throw _mapConstraint(e);
+    }
     return get(id);
   }
 
+  /// Sets the sibling order of [ids] under [parentId] (null = top-level).
+  /// Every id must belong to [ownerId] and end up with that parent.
+  Future<void> reorder(
+      String ownerId, String? parentId, List<String> ids) async {
+    if (ids.isEmpty) return;
+    for (final id in ids) {
+      if (!uuidRe.hasMatch(id)) {
+        throw CategoryConstraintException('invalid category id');
+      }
+    }
+    await _assertParent(ownerId, parentId);
+    final unique = ids.toSet();
+    if (unique.length != ids.length) {
+      throw CategoryConstraintException('duplicate category id in order');
+    }
+    for (final id in ids) {
+      final c = await get(id);
+      if (c == null || c.ownerId != ownerId) {
+        throw CategoryConstraintException(
+            'category is not in this owner\'s set');
+      }
+      if (parentId != null && parentId == id) {
+        throw CategoryConstraintException('category cannot be its own parent');
+      }
+      if (c.parentId != parentId) {
+        await _assertParent(ownerId, parentId, childId: id);
+      }
+    }
+    // Two-phase so the unique sibling order cannot collide mid-update.
+    var i = 0;
+    for (final id in ids) {
+      i++;
+      await _conn.execute(
+        Sql.named('UPDATE categories SET parent_id = @p::uuid, sort_order = @s '
+            'WHERE id = @id::uuid'),
+        parameters: {'id': id, 'p': parentId, 's': -100000 - i},
+      );
+    }
+    i = 0;
+    for (final id in ids) {
+      await _conn.execute(
+        Sql.named('UPDATE categories SET sort_order = @s WHERE id = @id::uuid'),
+        parameters: {'id': id, 's': i++},
+      );
+    }
+  }
+
+  Never _mapConstraint(ServerException e) {
+    final name = e.constraintName ?? '';
+    final msg = e.message;
+    if (name == 'categories_max_depth' ||
+        msg.contains('one level deep') ||
+        msg.contains('must stay top-level')) {
+      throw CategoryConstraintException(
+          'categories can only nest one level deep',
+          code: 'max_depth');
+    }
+    if (name == 'categories_sync_top_level' || msg.contains('Sync cannot')) {
+      throw CategoryConstraintException(
+          msg.contains('children')
+              ? 'Sync cannot have children'
+              : 'Sync cannot be nested',
+          code: 'sync_nested');
+    }
+    if (name == 'categories_parent_ck' || msg.contains('own parent')) {
+      throw CategoryConstraintException('category cannot be its own parent');
+    }
+    if (name == 'categories_parent_owner_ck' ||
+        name == 'categories_parent_id_fkey') {
+      throw CategoryConstraintException(
+          'parentId is not a category of this owner');
+    }
+    throw CategoryConstraintException(
+        msg.isEmpty ? 'invalid category parent' : msg);
+  }
+
   /// What deleting [id] removes: its events and their transfer
-  /// counterparts in other streams.
-  Future<({int events, int counterparts})> deleteCounts(String id) async {
+  /// counterparts in other streams, plus how many children block a
+  /// category delete.
+  Future<({int events, int counterparts, int children})> deleteCounts(
+      String id) async {
     final r = await _conn.execute(
       Sql.named('''
         SELECT count(*)::int,
           (SELECT count(*)::int FROM events p
              JOIN events e ON e.transfer_id = p.transfer_id AND p.id <> e.id
             WHERE e.category_id = @id::uuid AND e.transfer_id IS NOT NULL
-              AND p.category_id <> @id::uuid)
+              AND p.category_id <> @id::uuid),
+          (SELECT count(*)::int FROM categories ch WHERE ch.parent_id = @id::uuid)
         FROM events WHERE category_id = @id::uuid
       '''),
       parameters: {'id': id},
     );
-    return (events: r.first[0] as int, counterparts: r.first[1] as int);
+    return (
+      events: r.first[0] as int,
+      counterparts: r.first[1] as int,
+      children: r.first[2] as int,
+    );
   }
 
   /// Deletes every event in [id] in ALL the owner's streams (and each
@@ -199,10 +409,16 @@ class CategoryRepo {
 
   /// Deletes [id] with every event in it (see [deleteEvents]; the events'
   /// batch is not offered for undo since the category itself is gone).
-  /// Null when the category does not exist.
+  /// Null when the category does not exist. Throws
+  /// [CategoryConstraintException] when it still has children.
   Future<({String? batchId, List<String> deleted, Set<String> peerStreams})?>
       delete(String id,
           {required String streamId, required String userId}) async {
+    if (await childCount(id) > 0) {
+      throw CategoryConstraintException(
+          'Move or delete its subcategories first',
+          code: 'category_has_children');
+    }
     final r = await deleteEvents(id, streamId: streamId, userId: userId);
     if (r == null) return null;
     await _conn.execute(
@@ -224,6 +440,84 @@ class CategoryRepo {
       throw FormatException('categoryId is not a category of this stream');
     }
     return c.name;
+  }
+
+  /// [userId]'s favourite categories that belong to [ownerId], in order.
+  Future<List<Map<String, Object?>>> listFavorites(
+      String userId, String ownerId) async {
+    final rows = await _conn.execute(
+      Sql.named('''
+        SELECT f.category_id::text, f.sort_order, f.created_at
+        FROM category_favorites f
+        JOIN categories c ON c.id = f.category_id
+        WHERE f.user_id = @u::uuid AND c.owner_id = @o::uuid
+        ORDER BY f.sort_order, f.created_at, c.name
+      '''),
+      parameters: {'u': userId, 'o': ownerId},
+    );
+    return [
+      for (final r in rows)
+        {
+          'categoryId': r[0] as String,
+          'sortOrder': r[1] as int,
+          'createdAt': (r[2] as DateTime).toUtc().toIso8601String(),
+        }
+    ];
+  }
+
+  Future<void> addFavorite(String userId, String categoryId,
+      {required String ownerId}) async {
+    final c = await get(categoryId);
+    if (c == null || c.ownerId != ownerId) {
+      throw CategoryConstraintException('category not found');
+    }
+    final next = await _conn.execute(
+      Sql.named('SELECT coalesce(max(sort_order), -1) + 1 '
+          'FROM category_favorites WHERE user_id = @u::uuid'),
+      parameters: {'u': userId},
+    );
+    await _conn.execute(
+      Sql.named(
+          'INSERT INTO category_favorites (user_id, category_id, sort_order) '
+          'VALUES (@u::uuid, @c::uuid, @s) '
+          'ON CONFLICT (user_id, category_id) DO NOTHING'),
+      parameters: {
+        'u': userId,
+        'c': categoryId,
+        's': next.first[0] as int,
+      },
+    );
+  }
+
+  Future<void> removeFavorite(String userId, String categoryId) async {
+    await _conn.execute(
+      Sql.named('DELETE FROM category_favorites '
+          'WHERE user_id = @u::uuid AND category_id = @c::uuid'),
+      parameters: {'u': userId, 'c': categoryId},
+    );
+  }
+
+  Future<void> reorderFavorites(String userId, List<String> ids) async {
+    var i = 0;
+    for (final id in ids) {
+      if (!uuidRe.hasMatch(id)) {
+        throw CategoryConstraintException('invalid category id');
+      }
+      i++;
+      await _conn.execute(
+        Sql.named('UPDATE category_favorites SET sort_order = @s '
+            'WHERE user_id = @u::uuid AND category_id = @id::uuid'),
+        parameters: {'u': userId, 'id': id, 's': -100000 - i},
+      );
+    }
+    i = 0;
+    for (final id in ids) {
+      await _conn.execute(
+        Sql.named('UPDATE category_favorites SET sort_order = @s '
+            'WHERE user_id = @u::uuid AND category_id = @id::uuid'),
+        parameters: {'u': userId, 'id': id, 's': i++},
+      );
+    }
   }
 }
 

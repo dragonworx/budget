@@ -395,10 +395,11 @@ class CategoryRepository {
     String streamId, {
     required String name,
     String? color,
+    String? parentId,
   }) async {
     final data = await _api.post(
       '/api/streams/$streamId/categories',
-      body: {'name': name, 'color': ?color},
+      body: {'name': name, 'color': ?color, 'parentId': ?parentId},
     );
     return Category.fromJson(data as Map<String, dynamic>);
   }
@@ -409,17 +410,44 @@ class CategoryRepository {
     String? name,
     String? color,
     bool? hidden,
+    String? parentId,
+    bool clearParent = false,
+    int? sortOrder,
   }) async {
     final data = await _api.patch(
       '/api/streams/$streamId/categories/$id',
-      body: {'name': ?name, 'color': ?color, 'hidden': ?hidden},
+      body: {
+        'name': ?name,
+        'color': ?color,
+        'hidden': ?hidden,
+        if (clearParent) 'parentId': null,
+        if (!clearParent) 'parentId': ?parentId,
+        'sortOrder': ?sortOrder,
+      },
     );
     return Category.fromJson(data as Map<String, dynamic>);
   }
 
+  /// Sets the sibling order of [ids] under [parentId] (null = top-level).
+  Future<List<Category>> reorder(
+    String streamId, {
+    String? parentId,
+    required List<String> ids,
+  }) async {
+    final data = await _api.post(
+      '/api/streams/$streamId/categories/reorder',
+      body: {'parentId': parentId, 'ids': ids},
+    ) as Map<String, dynamic>;
+    final raw = data['categories'];
+    return [
+      for (final j in (raw as List?) ?? const [])
+        Category.fromJson(Map<String, dynamic>.from(j as Map)),
+    ];
+  }
+
   /// How many events deleting [id] removes (`events` in it, `counterparts`:
   /// transfers' other sides in other streams).
-  Future<({int events, int counterparts})> deletePreview(
+  Future<({int events, int counterparts, int children})> deletePreview(
     String streamId,
     String id,
   ) async {
@@ -429,6 +457,7 @@ class CategoryRepository {
     return (
       events: (data['events'] as num?)?.toInt() ?? 0,
       counterparts: (data['counterparts'] as num?)?.toInt() ?? 0,
+      children: (data['children'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -452,6 +481,37 @@ class CategoryRepository {
           x as String,
       ],
     );
+  }
+
+  Future<List<String>> listFavorites(String streamId) async {
+    final data = await _api.get('/api/streams/$streamId/category-favorites');
+    final raw = data is Map ? data['favorites'] : data;
+    return [
+      for (final j in (raw as List?) ?? const [])
+        (j is Map ? (j['categoryId'] ?? '') : j).toString(),
+    ].where((id) => id.isNotEmpty).toList();
+  }
+
+  Future<List<String>> addFavorite(String streamId, String id) async {
+    final data = await _api.put(
+      '/api/streams/$streamId/categories/$id/favorite',
+    );
+    final raw = data is Map ? data['favorites'] : data;
+    return [
+      for (final j in (raw as List?) ?? const [])
+        (j is Map ? (j['categoryId'] ?? '') : j).toString(),
+    ].where((id) => id.isNotEmpty).toList();
+  }
+
+  Future<List<String>> removeFavorite(String streamId, String id) async {
+    final data = await _api.delete(
+      '/api/streams/$streamId/categories/$id/favorite',
+    );
+    final raw = data is Map ? data['favorites'] : data;
+    return [
+      for (final j in (raw as List?) ?? const [])
+        (j is Map ? (j['categoryId'] ?? '') : j).toString(),
+    ].where((id) => id.isNotEmpty).toList();
   }
 }
 

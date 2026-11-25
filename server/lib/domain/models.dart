@@ -335,6 +335,10 @@ class Category {
     required this.createdAt,
     this.version = 1,
     this.eventCount = 0,
+    this.eventCountSubtree = 0,
+    this.parentId,
+    this.sortOrder = 0,
+    this.depth = 0,
   });
 
   final String id;
@@ -349,6 +353,16 @@ class Category {
   /// delete removes, before transfer counterparts).
   final int eventCount;
 
+  /// [eventCount] plus events in every child (max depth 2).
+  final int eventCountSubtree;
+
+  /// Null: a top-level category.
+  final String? parentId;
+  final int sortOrder;
+
+  /// 0 at the top, 1 under a parent. Max depth is 2.
+  final int depth;
+
   Map<String, Object?> toJson() => {
         'id': id,
         'ownerId': ownerId,
@@ -356,6 +370,10 @@ class Category {
         'color': color,
         'hidden': hidden,
         'eventCount': eventCount,
+        'eventCountSubtree': eventCountSubtree,
+        'parentId': parentId,
+        'sortOrder': sortOrder,
+        'depth': depth,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'version': version,
       };

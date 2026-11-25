@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:budget_client/boot/page_stub.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/category_dropdown.dart';
@@ -206,6 +207,7 @@ final _rent = fakeCategoryId('Rent');
 final _groc = fakeCategoryId('Groceries');
 
 void main() {
+  setUp(clearLocal);
   test('names: trimmed, single-spaced, unique ignoring case, ≤60; a free '
       'default; new colours prefer unused palette ones', () {
     expect(normalizeCategoryName('  Big   shop '), 'Big shop');
@@ -623,13 +625,13 @@ void main() {
   });
 
   testWidgets('the default: the event\'s own category, else the last used, '
-      'else the first by name', (tester) async {
+      'else the previous transaction, else the first visible', (tester) async {
     final (store, _) = await _pump(tester);
     await openEditor(tester);
-    // Nothing used yet: the first in the list as loaded (unchanged rule;
-    // the fake lists Wages first), whatever the menu's name order.
-    expect(fieldText(tester), contains('Wages'));
-    await pickCategory(tester, _groc);
+    // Nothing stored yet: the most recently created event (last in the
+    // list; the fake ends with Groceries).
+    expect(fieldText(tester), contains('Groceries'));
+    await pickCategory(tester, _wages);
     await tester.enterText(_field('editor-amount'), '3');
     await tester.tap(find.byKey(const ValueKey('editor-save')));
     await tester.pumpAndSettle();
@@ -637,7 +639,7 @@ void main() {
     // A new one: the last used.
     await tester.tap(find.byKey(const ValueKey('panel-new-event')));
     await tester.pumpAndSettle();
-    expect(fieldText(tester), contains('Groceries'));
+    expect(fieldText(tester), contains('Wages'));
     await tester.tap(find.byKey(const ValueKey('editor-close')));
     await tester.pumpAndSettle();
     // An existing event: its own (Rent), not the last used.

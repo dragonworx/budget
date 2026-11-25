@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/api_client.dart';
+import '../../data/category_tree.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
@@ -113,6 +114,13 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
   String? _newError;
   String? _lastCreated;
   String? _error;
+
+  /// Expanded parents in the tree (all start open).
+  final Set<String> _expanded = {};
+  bool _expandedReady = false;
+
+  /// Parent for the dashed "new category" row (null = top-level).
+  String? _newParentId;
 
   /// The row whose name is being edited in place.
   String? _editingId;
@@ -274,6 +282,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
       final c = await _notifier.create(
         normalizeCategoryName(_newName.text),
         color: _newColor ?? pickCategoryColor(_list),
+        parentId: _newParentId,
       );
       if (!mounted) return;
       setState(() {
@@ -316,6 +325,26 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
       : '';
 
   Future<void> _delete(Category c, int n) async {
+    int children = 0;
+    try {
+      final p = await ref
+          .read(categoryRepositoryProvider)
+          .deletePreview(widget.streamId, c.id);
+      children = p.children;
+    } catch (_) {}
+    if (!mounted) return;
+    if (children > 0) {
+      final label = children == 1 ? '1 subcategory' : '$children subcategories';
+      await showConfirmDialog(
+        context,
+        title: 'Move or delete subcategories first',
+        message:
+            '"${c.name}" has $label. Move them to another category or '
+            'the top level, or delete them, before deleting this one.',
+        confirmLabel: 'OK',
+      );
+      return;
+    }
     final others = n == 0 ? 0 : await _counterparts(c);
     if (!mounted) return;
     final ok = await showConfirmDialog(
@@ -332,7 +361,9 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     await _run(() async {
       await _notifier.delete(c.id);
       final last = lastCategoryProvider(widget.streamId);
-      if (ref.read(last) == c.id) ref.read(last.notifier).state = null;
+      if (ref.read(last) == c.id) {
+        rememberLastCategory(ref, widget.streamId, null);
+      }
     });
   }
 
@@ -387,6 +418,91 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     }
   }
 
+  Future<void> _toggleFavorite(Category c) async {
+    await _run(
+      () => ref
+          .read(categoryFavoritesProvider(widget.streamId).notifier)
+          .toggle(c.id),
+    );
+  }
+
+  Future<void> _move(Category c, String? parentId) async {
+    await _run(
+      () => _notifier.edit(
+        c.id,
+        parentId: parentId,
+        clearParent: parentId == null,
+      ),
+    );
+  }
+
+  Future<void> _shiftSibling(Category c, int delta) async {
+    final sibs = c.parentId == null
+        ? rootCategories(_list)
+        : childCategories(_list, c.parentId!);
+    final i = sibs.indexWhere((x) => x.id == c.id);
+    final j = i + delta;
+    if (i < 0 || j < 0 || j >= sibs.length) return;
+    final ids = [for (final x in sibs) x.id];
+    ids.removeAt(i);
+    ids.insert(j, c.id);
+    await _run(() => _notifier.reorder(parentId: c.parentId, ids: ids));
+  }
+
+  Future<void> _moveToSheet(Category c) async {
+    final targets = [
+      for (final r in rootCategories(_list))
+        if (canMoveToParent(_list, c, r)) r,
+    ];
+    final choice = await showModalBottomSheet<String?>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            key: ValueKey('category-move-sheet-${c.id}'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Text(
+                  'Move "${c.name}" to…',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              if (c.parentId != null)
+                ListTile(
+                  key: ValueKey('category-move-top-${c.id}'),
+                  leading: const Icon(Icons.vertical_align_top_rounded),
+                  title: const Text('Top level'),
+                  onTap: () => Navigator.pop(context, ''),
+                ),
+              for (final t in targets)
+                ListTile(
+                  key: ValueKey('category-move-to-${t.id}'),
+                  leading: categoryDot(colorFromHex(t.color)),
+                  title: Text(t.name),
+                  onTap: () => Navigator.pop(context, t.id),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    await _move(c, choice.isEmpty ? null : choice);
+  }
+
+  void _startSubcategory(Category parent) {
+    setState(() {
+      _newParentId = parent.id;
+      _expanded.add(parent.id);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _newFocus.requestFocus();
+    });
+  }
+
   // ---- layout ----
 
   double get _button => _touch ? 40 : 36;
@@ -397,8 +513,15 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     final theme = Theme.of(context);
     final async = ref.watch(categoriesProvider(widget.streamId));
     final counts = categoryEventCounts(ref, widget.streamId);
-    // By name; a rename re-sorts on commit (the list only changes then).
-    final list = sortedCategories(async.valueOrNull ?? const <Category>[]);
+    final raw = async.valueOrNull ?? const <Category>[];
+    if (!_expandedReady && raw.isNotEmpty) {
+      _expanded.addAll(rootCategories(raw).map((c) => c.id));
+      _expandedReady = true;
+    }
+    final list = [
+      for (final c in flattenedTree(raw))
+        if (c.parentId == null || _expanded.contains(c.parentId)) c,
+    ];
     final manage = _canManage;
     final narrow = MediaQuery.sizeOf(context).width < 420;
     final muted = theme.textTheme.bodySmall?.copyWith(
@@ -462,7 +585,8 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                   : manage
                   ? 'Shared by all your streams: counts and deletes cover '
                         'every stream. Tap a name to rename it, a dot to '
-                        'recolour.'
+                        'recolour. Drag to nest or reorder on desktop; '
+                        'on a phone use the arrows and Move to…'
                   : 'Shared by all the owner\'s streams. You can add '
                         'categories; only the owner renames or deletes them.',
               style: muted,
@@ -502,7 +626,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                     _headerRow(muted, manage),
                     const Divider(height: 1),
                     for (final c in list) ...[
-                      _row(c, counts[c.id] ?? 0, manage),
+                      _row(c, manage, counts, narrow),
                       const Divider(height: 1),
                     ],
                   ],
@@ -584,11 +708,25 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     );
   }
 
-  Widget _row(Category c, int n, bool manage) {
+  Widget _row(Category c, bool manage, Map<String, int> counts, bool narrow) {
     final theme = Theme.of(context);
     final color = colorFromHex(c.color) ?? laneColor(0);
     final editing = manage && _editingId == c.id;
     final b = _button;
+    final kids = childCategories(_list, c.id);
+    final direct = counts[c.id] ?? c.eventCount;
+    final n = kids.isEmpty
+        ? direct
+        : direct +
+              kids.fold<int>(0, (a, k) => a + (counts[k.id] ?? k.eventCount));
+    final favs =
+        ref.watch(categoryFavoritesProvider(widget.streamId)).valueOrNull ??
+        const <String>[];
+    final isFav = favs.contains(c.id);
+    final sibs = c.parentId == null
+        ? rootCategories(_list)
+        : childCategories(_list, c.parentId!);
+    final sibIndex = sibs.indexWhere((x) => x.id == c.id);
     final Widget swatch = manage
         ? _ColorDotMenu(
             key: ValueKey('category-color-${c.id}'),
@@ -694,7 +832,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
               ),
             ),
           );
-    return Semantics(
+    final body = Semantics(
       // Global: the row keeps its state as it moves to its sorted place,
       // and a renamed row can be scrolled back into view.
       key: _rowKeys.putIfAbsent(c.id, GlobalKey.new),
@@ -710,6 +848,45 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                 ? CrossAxisAlignment.start
                 : CrossAxisAlignment.center,
             children: [
+              if (manage && !_touch && !narrow)
+                Draggable<Category>(
+                  data: c,
+                  feedback: Material(
+                    elevation: 3,
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(c.name),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.drag_indicator_rounded,
+                    key: ValueKey('category-drag-${c.id}'),
+                    size: 20,
+                    color: AppTheme.textMuted,
+                  ),
+                ),
+              SizedBox(width: 16.0 * (c.parentId == null ? 0 : 1)),
+              SizedBox(
+                width: kids.isEmpty ? 8 : b,
+                height: b,
+                child: kids.isEmpty
+                    ? const SizedBox.shrink()
+                    : IconButton(
+                        key: ValueKey('category-expand-${c.id}'),
+                        tooltip: _expanded.contains(c.id)
+                            ? 'Collapse'
+                            : 'Expand',
+                        padding: EdgeInsets.zero,
+                        onPressed: () => setState(() {
+                          if (!_expanded.add(c.id)) _expanded.remove(c.id);
+                        }),
+                        icon: Icon(
+                          _expanded.contains(c.id)
+                              ? Icons.expand_more_rounded
+                              : Icons.chevron_right_rounded,
+                        ),
+                      ),
+              ),
               swatch,
               const SizedBox(width: 4),
               Expanded(child: name),
@@ -718,13 +895,20 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                 height: b,
                 child: Align(
                   alignment: Alignment.centerRight,
-                  child: Text(
-                    '$n',
-                    semanticsLabel: '${_events(n)} in all streams',
-                    key: ValueKey('category-count-${c.id}'),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: AppTheme.textMuted,
-                      fontFeatures: const [FontFeature.tabularFigures()],
+                  child: Tooltip(
+                    message: kids.isEmpty
+                        ? '${_events(n)} in all streams'
+                        : '${_events(n)} in this category and its children (${_events(direct)} direct)',
+                    child: Text(
+                      '$n',
+                      semanticsLabel: kids.isEmpty
+                          ? '${_events(n)} in all streams'
+                          : '${_events(n)} in this category and its children',
+                      key: ValueKey('category-count-${c.id}'),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppTheme.textMuted,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
                     ),
                   ),
                 ),
@@ -733,25 +917,105 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                 const SizedBox(width: 6),
                 _action(
                   key: ValueKey('category-delete-events-${c.id}'),
-                  tooltip: n == 0
+                  tooltip: direct == 0
                       ? 'No events to delete'
-                      : 'Delete ${_events(n)} in all streams (keep category)',
+                      : 'Delete ${_events(direct)} in all streams (keep category)',
                   icon: Icons.playlist_remove_rounded,
-                  onPressed: _busy || n == 0 ? null : () => _deleteEvents(c, n),
+                  onPressed: _busy || direct == 0
+                      ? null
+                      : () => _deleteEvents(c, direct),
                 ),
                 _action(
                   key: ValueKey('category-delete-${c.id}'),
-                  tooltip: n == 0
+                  tooltip: kids.isNotEmpty
+                      ? 'Move or delete subcategories first'
+                      : direct == 0
                       ? 'Delete category'
-                      : 'Delete category and its ${_events(n)}',
+                      : 'Delete category and its ${_events(direct)}',
                   icon: Icons.delete_outline_rounded,
                   danger: true,
-                  onPressed: _busy ? null : () => _delete(c, n),
+                  onPressed: _busy ? null : () => _delete(c, direct),
+                ),
+                MenuAnchor(
+                  menuChildren: [
+                    MenuItemButton(
+                      key: ValueKey('category-star-${c.id}'),
+                      leadingIcon: Icon(
+                        isFav ? Icons.star_rounded : Icons.star_border_rounded,
+                      ),
+                      onPressed: _busy ? null : () => _toggleFavorite(c),
+                      child: Text(
+                        isFav ? 'Remove from favourites' : 'Add to favourites',
+                      ),
+                    ),
+                    if (widget.canEdit && c.parentId == null)
+                      MenuItemButton(
+                        key: ValueKey('category-add-child-${c.id}'),
+                        leadingIcon: const Icon(
+                          Icons.subdirectory_arrow_right_rounded,
+                        ),
+                        onPressed: _busy ? null : () => _startSubcategory(c),
+                        child: const Text('New subcategory'),
+                      ),
+                    if (manage)
+                      MenuItemButton(
+                        key: ValueKey('category-move-${c.id}'),
+                        leadingIcon: const Icon(Icons.drive_file_move_outline),
+                        onPressed: _busy ? null : () => _moveToSheet(c),
+                        child: const Text('Move to…'),
+                      ),
+                    if (manage && (_touch || narrow)) ...[
+                      MenuItemButton(
+                        key: ValueKey('category-up-${c.id}'),
+                        leadingIcon: const Icon(
+                          Icons.keyboard_arrow_up_rounded,
+                        ),
+                        onPressed: _busy || sibIndex <= 0
+                            ? null
+                            : () => _shiftSibling(c, -1),
+                        child: const Text('Move up'),
+                      ),
+                      MenuItemButton(
+                        key: ValueKey('category-down-${c.id}'),
+                        leadingIcon: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                        ),
+                        onPressed:
+                            _busy || sibIndex < 0 || sibIndex >= sibs.length - 1
+                            ? null
+                            : () => _shiftSibling(c, 1),
+                        child: const Text('Move down'),
+                      ),
+                    ],
+                  ],
+                  builder: (context, controller, _) => _action(
+                    key: ValueKey('category-more-${c.id}'),
+                    tooltip: 'More',
+                    icon: Icons.more_vert_rounded,
+                    onPressed: () => controller.isOpen
+                        ? controller.close()
+                        : controller.open(),
+                  ),
                 ),
               ],
             ],
           ),
         ),
+      ),
+    );
+    return DragTarget<Category>(
+      onWillAcceptWithDetails: (d) =>
+          d.data.id != c.id && canMoveToParent(_list, d.data, c),
+      onAcceptWithDetails: (d) => _move(d.data, c.id),
+      builder: (context, pending, _) => DecoratedBox(
+        decoration: pending.isNotEmpty
+            ? BoxDecoration(
+                color: AppTheme.accent.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppTheme.accent),
+              )
+            : const BoxDecoration(),
+        child: body,
       ),
     );
   }
@@ -801,8 +1065,10 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                     focusNode: _newFocus,
                     maxLength: maxCategoryNameLength,
                     textInputAction: TextInputAction.done,
-                    decoration: const InputDecoration(
-                      hintText: 'New category name',
+                    decoration: InputDecoration(
+                      hintText: _newParentId == null
+                          ? 'New category name'
+                          : 'New subcategory of ${categoryById(_list, _newParentId)?.name ?? ''}',
                       isDense: true,
                       counterText: '',
                       border: InputBorder.none,
@@ -835,6 +1101,17 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
             ),
           ),
         ),
+        if (_newParentId != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 4),
+            child: TextButton(
+              key: const ValueKey('category-new-parent-clear'),
+              onPressed: () => setState(() => _newParentId = null),
+              child: Text(
+                'Top level instead of ${categoryById(_list, _newParentId)?.name ?? 'parent'}',
+              ),
+            ),
+          ),
         if (_newError != null)
           Padding(
             padding: const EdgeInsets.only(top: 6, left: 4),
@@ -1080,6 +1357,9 @@ class CategoryPicker extends ConsumerWidget {
         ),
       );
     } else {
+      final favIds =
+          ref.watch(categoryFavoritesProvider(streamId)).valueOrNull ??
+          const <String>[];
       field = CategoryDropdown(
         categories: list,
         selectedId: selectedId,
@@ -1092,6 +1372,13 @@ class CategoryPicker extends ConsumerWidget {
         errorText: errorText,
         errorKey: const ValueKey('editor-category-error'),
         enabled: enabled,
+        hideHiddenBranches: true,
+        favoriteIds: favIds,
+        onToggleFavorite: enabled
+            ? (c) => ref
+                  .read(categoryFavoritesProvider(streamId).notifier)
+                  .toggle(c.id)
+            : null,
         footer: CategoryDropdownAction(
           key: const ValueKey('editor-manage-categories'),
           icon: Icons.tune_rounded,

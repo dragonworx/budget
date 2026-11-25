@@ -1403,6 +1403,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                           series: shown!,
                                           seedDate: stream.seedDate,
                                           highlightEvent: _hoverEvent,
+                                          categories:
+                                              ref
+                                                  .watch(
+                                                    categoriesProvider(
+                                                      stream.id,
+                                                    ),
+                                                  )
+                                                  .valueOrNull ??
+                                              const [],
                                           // Combined: no opening diamond (the
                                           // line is a sum, not this seed).
                                           seedBalance: combo != null

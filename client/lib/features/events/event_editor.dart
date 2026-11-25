@@ -17,6 +17,8 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../widgets/conflict_dialog.dart';
 import '../../state/realtime_providers.dart';
+import '../../data/last_category.dart';
+import '../../state/auth_providers.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/stream_picker.dart';
@@ -419,8 +421,17 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       final named = list.where((c) => c.name.toLowerCase() == key).firstOrNull;
       if (named != null) return named;
     }
-    return by(ref.read(lastCategoryProvider(widget.streamId))) ??
-        list.firstOrNull;
+    final userId = ref.read(authProvider).valueOrNull?.user?.id;
+    final preferred =
+        sessionOrStoredLastCategory(ref, widget.streamId) ??
+        readStoredLastCategory(widget.streamId, userId: userId);
+    final events =
+        ref.read(eventsProvider(widget.streamId)).valueOrNull ?? const [];
+    return defaultNewEventCategory(
+      categories: list,
+      preferredId: preferred,
+      recentEvents: events,
+    );
   }
 
   /// The header's colour: the category's.
@@ -2230,8 +2241,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         saved = draft;
       }
       if (saved.categoryId != null) {
-        ref.read(lastCategoryProvider(widget.streamId).notifier).state =
-            saved.categoryId;
+        rememberLastCategory(ref, widget.streamId, saved.categoryId);
       }
       if (fromServer != null) _resolvedNote(fromServer!);
       if (mounted) {

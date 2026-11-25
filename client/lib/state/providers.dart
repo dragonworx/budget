@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/api_client.dart';
 import '../data/models.dart';
+import '../data/last_category.dart';
 import '../features/planning/goal_models.dart';
 import '../data/repositories.dart';
 import '../data/sharing.dart';
@@ -91,8 +92,17 @@ class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
   CategoryRepository get _repo => ref.read(categoryRepositoryProvider);
 
   /// Throws [ApiException] 409 when the name is taken.
-  Future<Category> create(String name, {String? color}) async {
-    final c = await _repo.create(arg, name: name, color: color);
+  Future<Category> create(
+    String name, {
+    String? color,
+    String? parentId,
+  }) async {
+    final c = await _repo.create(
+      arg,
+      name: name,
+      color: color,
+      parentId: parentId,
+    );
     state = AsyncData([...state.valueOrNull ?? const <Category>[], c]);
     _refetchAll();
     return c;
@@ -105,6 +115,9 @@ class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
     String? name,
     String? color,
     bool? hidden,
+    String? parentId,
+    bool clearParent = false,
+    int? sortOrder,
   }) async {
     final c = await _repo.update(
       arg,
@@ -112,6 +125,9 @@ class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
       name: name,
       color: color,
       hidden: hidden,
+      parentId: parentId,
+      clearParent: clearParent,
+      sortOrder: sortOrder,
     );
     state = AsyncData([
       for (final x in state.valueOrNull ?? const <Category>[])
@@ -162,6 +178,57 @@ class CategoriesNotifier extends FamilyAsyncNotifier<List<Category>, String> {
   /// Every stream of the owner lists this same set: refetch them all
   /// (this one included; it keeps its value while reloading).
   void _refetchAll() => ref.invalidate(categoriesProvider);
+
+  Future<void> reorder({String? parentId, required List<String> ids}) async {
+    final list = await _repo.reorder(arg, parentId: parentId, ids: ids);
+    state = AsyncData(list);
+    _refetchAll();
+  }
+}
+
+/// Session + device-local last category used in [streamId] for a new event.
+String? sessionOrStoredLastCategory(WidgetRef ref, String streamId) {
+  final session = ref.read(lastCategoryProvider(streamId));
+  if (session != null && session.isNotEmpty) return session;
+  final userId = ref.read(authProvider).valueOrNull?.user?.id;
+  return readStoredLastCategory(streamId, userId: userId);
+}
+
+/// Remembers [id] as the last category used in [streamId] (this session
+/// and this device, so a reload still defaults to it).
+void rememberLastCategory(WidgetRef ref, String streamId, String? id) {
+  ref.read(lastCategoryProvider(streamId).notifier).state = id;
+  final userId = ref.read(authProvider).valueOrNull?.user?.id;
+  storeLastCategory(streamId, id, userId: userId);
+}
+
+/// This user's favourite category ids for [streamId]'s owner, in order.
+final categoryFavoritesProvider =
+    AsyncNotifierProvider.family<
+      CategoryFavoritesNotifier,
+      List<String>,
+      String
+    >(CategoryFavoritesNotifier.new);
+
+class CategoryFavoritesNotifier
+    extends FamilyAsyncNotifier<List<String>, String> {
+  @override
+  Future<List<String>> build(String streamId) {
+    return ref.read(categoryRepositoryProvider).listFavorites(streamId);
+  }
+
+  Future<void> setFavorite(String id, bool fav) async {
+    final repo = ref.read(categoryRepositoryProvider);
+    final list = fav
+        ? await repo.addFavorite(arg, id)
+        : await repo.removeFavorite(arg, id);
+    state = AsyncData(list);
+  }
+
+  Future<void> toggle(String id) async {
+    final have = state.valueOrNull?.contains(id) ?? false;
+    await setFavorite(id, !have);
+  }
 }
 
 /// Every stream I can open: mine first (display order), then those shared

@@ -8,24 +8,74 @@ import '../repo/category_repo.dart';
 import 'streams.dart' show notifyPeers;
 import 'json_helpers.dart';
 
-// Categories (migrations 024, 025), mounted under `/api/streams`: the
+// Categories (migrations 024, 025, 031), mounted under `/api/streams`: the
 // stream OWNER's global set (shared by all their streams). Editors of a
-// shared stream may list and add; renaming, recolouring, hiding and
-// deleting (which reach every stream of the owner) are the owner's.
-//   GET    /<a>/categories            list (with eventCount)
-//   POST   /<a>/categories            {name, color?, hidden?} -> 201
-//   PATCH  /<a>/categories/<c>        {name?, color?, hidden?}
-//   GET    /<a>/categories/<c>/delete-preview  {events, counterparts}
+// shared stream may list and add; renaming, recolouring, hiding,
+// reparenting, reordering and deleting (which reach every stream of the
+// owner) are the owner's. Favourites are per user: any stream member may
+// star or unstar for themselves.
+//   GET    /<a>/categories            list (parentId, sortOrder, counts)
+//   POST   /<a>/categories            {name, color?, hidden?, parentId?}
+//   POST   /<a>/categories/reorder    {parentId, ids} sibling order
+//   PATCH  /<a>/categories/<c>        {name?, color?, hidden?, parentId?, sortOrder?}
+//   GET    /<a>/categories/<c>/delete-preview  {events, counterparts, children}
 //   DELETE /<a>/categories/<c>        deletes it and all its events
 //   DELETE /<a>/categories/<c>/events deletes all its events, keeps it
+//   GET    /<a>/category-favorites
+//   PUT    /<a>/categories/<c>/favorite
+//   DELETE /<a>/categories/<c>/favorite
+//   PATCH  /<a>/category-favorites    {ids}
 // Names are unique in the owner's set (case-insensitive): a taken name is
-// a 409.
+// a 409. Deleting a parent that still has children is a 409.
 void attachCategoryRoutes(Router router, Session conn) {
   const nameError = categoryNameError;
+
+  Response constraintError(CategoryConstraintException e) =>
+      jsonError(e.code == 'category_has_children' ? 409 : 400, e.message,
+          details: {'code': e.code});
+
+  String? optionalParentId(Map<String, dynamic> body) {
+    if (!body.containsKey('parentId')) return null;
+    final v = body['parentId'];
+    if (v == null) return null;
+    if (v is! String || v.isEmpty) {
+      throw FormatException('parentId must be a category id');
+    }
+    return v;
+  }
+
+  List<String> idList(Object? raw, String field) {
+    if (raw is! List) throw FormatException('$field must be a list of ids');
+    return [
+      for (final x in raw)
+        if (x is String)
+          x
+        else
+          throw FormatException('$field must be a list of ids')
+    ];
+  }
 
   router.get('/<a>/categories', (Request r, String a) async {
     final list = await CategoryRepo(conn).listByStream(a);
     return jsonOk({'categories': list.map((c) => c.toJson()).toList()});
+  });
+
+  router.post('/<a>/categories/reorder', (Request r, String a) async {
+    try {
+      final body = await readJsonObject(r);
+      final owner = await CategoryRepo(conn).ownerOfStream(a);
+      if (owner == null) return jsonError(404, 'stream not found');
+      final parentId = optionalParentId(body);
+      final ids = idList(body['ids'], 'ids');
+      await txOf(conn).runTx((tx) => CategoryRepo(tx)
+          .reorder(owner, body.containsKey('parentId') ? parentId : null, ids));
+      final list = await CategoryRepo(conn).listByStream(a);
+      return jsonOk({'categories': list.map((c) => c.toJson()).toList()});
+    } on CategoryConstraintException catch (e) {
+      return constraintError(e);
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
   });
 
   router.post('/<a>/categories', (Request r, String a) async {
@@ -36,10 +86,13 @@ void attachCategoryRoutes(Router router, Session conn) {
       final c = await txOf(conn).runTx((tx) => CategoryRepo(tx).create(owner,
           name: body['name'] is String ? body['name'] as String : '',
           color: parseEventColor(body['color']),
-          hidden: optionalBool(body, 'hidden') ?? false));
+          hidden: optionalBool(body, 'hidden') ?? false,
+          parentId: optionalParentId(body)));
       return jsonOk(c.toJson(), status: 201);
     } on CategoryNameException catch (e) {
       return nameError(e);
+    } on CategoryConstraintException catch (e) {
+      return constraintError(e);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }
@@ -62,14 +115,29 @@ void attachCategoryRoutes(Router router, Session conn) {
       if (body.containsKey('color') && parseEventColor(body['color']) == null) {
         return jsonError(400, 'color must be "#RRGGBB"');
       }
+      int? sortOrder;
+      if (body.containsKey('sortOrder')) {
+        final s = body['sortOrder'];
+        if (s is! num || s.toInt() != s) {
+          return jsonError(400, 'sortOrder must be an integer');
+        }
+        sortOrder = s.toInt();
+      }
       final updated = await txOf(conn).runTx((tx) => CategoryRepo(tx).update(c,
           name:
               body.containsKey('name') ? (body['name'] ?? '').toString() : null,
           color: parseEventColor(body['color']),
-          hidden: optionalBool(body, 'hidden')));
+          hidden: optionalBool(body, 'hidden'),
+          parentId: body.containsKey('parentId') && body['parentId'] != null
+              ? optionalParentId(body)
+              : null,
+          clearParent: body.containsKey('parentId') && body['parentId'] == null,
+          sortOrder: sortOrder));
       return jsonOk(updated!.toJson());
     } on CategoryNameException catch (e) {
       return nameError(e);
+    } on CategoryConstraintException catch (e) {
+      return constraintError(e);
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }
@@ -81,7 +149,11 @@ void attachCategoryRoutes(Router router, Session conn) {
       return jsonError(404, 'category not found');
     }
     final n = await CategoryRepo(conn).deleteCounts(c);
-    return jsonOk({'events': n.events, 'counterparts': n.counterparts});
+    return jsonOk({
+      'events': n.events,
+      'counterparts': n.counterparts,
+      'children': n.children,
+    });
   });
 
   router.delete('/<a>/categories/<c>/events',
@@ -104,11 +176,83 @@ void attachCategoryRoutes(Router router, Session conn) {
       return jsonError(404, 'category not found');
     }
     final me = requireAuth(r).user.id;
-    final res = await txOf(conn)
-        .runTx((tx) => CategoryRepo(tx).delete(c, streamId: a, userId: me));
-    if (res == null) return jsonError(404, 'category not found');
-    await notifyPeers(conn, r, me, res.peerStreams, 'events.deleted');
-    return jsonOk({'id': c, 'deletedEvents': res.deleted});
+    try {
+      final res = await txOf(conn)
+          .runTx((tx) => CategoryRepo(tx).delete(c, streamId: a, userId: me));
+      if (res == null) return jsonError(404, 'category not found');
+      await notifyPeers(conn, r, me, res.peerStreams, 'events.deleted');
+      return jsonOk({'id': c, 'deletedEvents': res.deleted});
+    } on CategoryConstraintException catch (e) {
+      final n = await CategoryRepo(conn).deleteCounts(c);
+      return jsonError(409, e.message, details: {
+        'code': e.code,
+        'events': n.events,
+        'counterparts': n.counterparts,
+        'children': n.children,
+      });
+    }
+  });
+
+  router.get('/<a>/category-favorites', (Request r, String a) async {
+    final repo = CategoryRepo(conn);
+    final owner = await repo.ownerOfStream(a);
+    if (owner == null) return jsonError(404, 'stream not found');
+    final me = requireAuth(r).user.id;
+    final list = await repo.listFavorites(me, owner);
+    return jsonOk({'favorites': list});
+  });
+
+  router.patch('/<a>/category-favorites', (Request r, String a) async {
+    try {
+      final body = await readJsonObject(r);
+      final owner = await CategoryRepo(conn).ownerOfStream(a);
+      if (owner == null) return jsonError(404, 'stream not found');
+      final me = requireAuth(r).user.id;
+      final ids = idList(body['ids'], 'ids');
+      await txOf(conn)
+          .runTx((tx) => CategoryRepo(tx).reorderFavorites(me, ids));
+      final list = await CategoryRepo(conn).listFavorites(me, owner);
+      await notifyPeers(conn, r, me, {a}, 'category.favorite_updated');
+      return jsonOk({'favorites': list});
+    } on CategoryConstraintException catch (e) {
+      return constraintError(e);
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+  router.put('/<a>/categories/<c>/favorite',
+      (Request r, String a, String c) async {
+    if (await inStream(conn, a, c) == null) {
+      return jsonError(404, 'category not found');
+    }
+    final repo = CategoryRepo(conn);
+    final owner = await repo.ownerOfStream(a);
+    if (owner == null) return jsonError(404, 'stream not found');
+    final me = requireAuth(r).user.id;
+    try {
+      await txOf(conn)
+          .runTx((tx) => CategoryRepo(tx).addFavorite(me, c, ownerId: owner));
+    } on CategoryConstraintException catch (e) {
+      return constraintError(e);
+    }
+    await notifyPeers(conn, r, me, {a}, 'category.favorite_updated');
+    final list = await CategoryRepo(conn).listFavorites(me, owner);
+    return jsonOk({'favorites': list});
+  });
+
+  router.delete('/<a>/categories/<c>/favorite',
+      (Request r, String a, String c) async {
+    if (await inStream(conn, a, c) == null) {
+      return jsonError(404, 'category not found');
+    }
+    final owner = await CategoryRepo(conn).ownerOfStream(a);
+    if (owner == null) return jsonError(404, 'stream not found');
+    final me = requireAuth(r).user.id;
+    await txOf(conn).runTx((tx) => CategoryRepo(tx).removeFavorite(me, c));
+    await notifyPeers(conn, r, me, {a}, 'category.favorite_updated');
+    final list = await CategoryRepo(conn).listFavorites(me, owner);
+    return jsonOk({'favorites': list});
   });
 }
 
@@ -134,7 +278,8 @@ Future<String?> resolveEventCategory(
     if (owner == null) throw FormatException('stream not found');
     final c = await repo.create(owner,
         name: nc['name'] is String ? nc['name'] as String : '',
-        color: parseEventColor(nc['color']));
+        color: parseEventColor(nc['color']),
+        parentId: nc['parentId'] is String ? nc['parentId'] as String : null);
     return c.name;
   }
   return repo.nameFor(streamId, body['categoryId'], legacyName);

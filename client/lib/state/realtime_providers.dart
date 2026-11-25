@@ -186,6 +186,7 @@ class RealtimeController {
       case 'category':
         if (aid != null) {
           ref.invalidate(categoriesProvider(aid));
+          ref.invalidate(categoryFavoritesProvider(aid));
           ref.invalidate(streamProvider(aid));
           _stream(aid);
         }

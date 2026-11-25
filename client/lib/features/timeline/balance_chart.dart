@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:clock/clock.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -221,6 +221,7 @@ class BalanceChart extends StatefulWidget {
     this.selectDayToken = 0,
     this.dataEditToken = 0,
     this.eventNames = const {},
+    this.categories = const [],
     this.highlightEvent,
     this.dataFrom,
     this.dataThrough,
@@ -420,6 +421,9 @@ class BalanceChart extends StatefulWidget {
   /// Occurrence event id to display name. Missing ids are left unlabeled.
   final Map<String, String> eventNames;
 
+  /// Owner categories, used to roll up the group breakdown.
+  final List<Category> categories;
+
   /// The event hovered in the Events list (desktop mouse): its lane is
   /// emphasised and the others dimmed. Paint only: the view and data stay.
   final ValueListenable<String?>? highlightEvent;
@@ -585,6 +589,7 @@ class _BalanceChartState extends State<BalanceChart>
           ? pointIndexOf(widget.series.points)
                 .alertCrossings(_threshold, (v) => belowAlert(v, _threshold))
           : const [],
+      categories: widget.categories,
     );
   }
 
