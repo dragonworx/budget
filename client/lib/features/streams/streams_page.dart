@@ -86,7 +86,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
             icon: const Icon(Icons.refresh_rounded),
           ),
           const UserMenu(),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
         ],
       ),
       body: deciding && !streamsAsync.hasError
@@ -143,7 +143,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
             ref.watch(myInvitesProvider).valueOrNull ?? const <Invite>[];
         if (streams.isEmpty) {
           return ListView(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             children: [
               for (final i in invites) _PendingInviteTile(invite: i),
               EmptyState(
@@ -180,8 +180,8 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                 : c.maxWidth >= 600
                 ? 2
                 : 1;
-            const gap = 16.0;
-            final w = (c.maxWidth - 48 - gap * (cols - 1)) / cols;
+            const gap = 10.0;
+            final w = (c.maxWidth - 32 - gap * (cols - 1)) / cols;
             Widget grid(List<BudgetStream> list) => Wrap(
               spacing: gap,
               runSpacing: gap,
@@ -207,7 +207,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
             );
             Widget heading(String t, String key) => Padding(
               key: ValueKey(key),
-              padding: const EdgeInsets.fromLTRB(2, 14, 0, 8),
+              padding: const EdgeInsets.fromLTRB(2, 8, 0, 4),
               child: Text(
                 t,
                 style: Theme.of(context).textTheme.labelLarge
@@ -215,7 +215,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
               ),
             );
             return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -353,7 +353,7 @@ class _StreamCard extends ConsumerWidget {
         key: ValueKey('stream-card-${stream.id}'),
         onTap: onOpen,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -362,7 +362,7 @@ class _StreamCard extends ConsumerWidget {
                   const IconTile.glyph(
                     StreamIcon(key: ValueKey('stream-icon')),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Tooltip(
                       message: stream.name,
@@ -395,8 +395,15 @@ class _StreamCard extends ConsumerWidget {
                     PopupMenuButton<_StreamAction>(
                       tooltip: 'Stream actions',
                       padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 44,
+                        minHeight: 44,
+                      ),
                       style: const ButtonStyle(
-                        visualDensity: VisualDensity.compact,
+                        visualDensity: VisualDensity.standard,
+                        minimumSize: WidgetStatePropertyAll(Size(44, 44)),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: WidgetStatePropertyAll(EdgeInsets.zero),
                       ),
                       iconSize: 20,
                       icon: const Icon(Icons.more_vert_rounded),
@@ -465,7 +472,7 @@ class _StreamCard extends ConsumerWidget {
                   ],
                 ),
               ],
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               Text(
                 'BALANCE TODAY',
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -496,9 +503,9 @@ class _StreamCard extends ConsumerWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               const Divider(height: 1),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Padding(
                 padding: EdgeInsets.zero,
                 child: Row(
@@ -522,13 +529,15 @@ class _StreamCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Row(
                 children: [
                   const Spacer(),
                   TextButton.icon(
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(44, 44),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     onPressed: onOpen,
                     iconAlignment: IconAlignment.end,
