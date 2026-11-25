@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/api_client.dart';
+import 'package:budget_client/data/auth_repository.dart';
 import 'package:budget_client/features/events/import_dialog.dart';
 import 'package:budget_client/features/events/event_editor.dart';
 import 'package:budget_client/data/models.dart';
@@ -17,6 +18,7 @@ import 'package:budget_client/features/timeline/occurrence_info.dart';
 import 'package:budget_client/features/timeline/selection_period.dart';
 import 'package:budget_client/features/timeline/timeline_page.dart';
 import 'package:budget_client/theme/app_theme.dart';
+import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:decimal/decimal.dart';
 import 'package:flutter/foundation.dart'
@@ -36,6 +38,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'chip_taps.dart';
 
+import 'support/fake_auth.dart';
 import 'support/fake_categories.dart';
 
 final _today = DateTime.now();
@@ -277,6 +280,7 @@ Future<_Store> _pump(
   WidgetTester tester, {
   Size size = const Size(1440, 900),
   void Function(_Store store)? setup,
+  AuthUser? user,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -291,6 +295,9 @@ Future<_Store> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        authRepositoryProvider.overrideWithValue(
+          FakeAuthRepository(user: user),
+        ),
         streamRepositoryProvider.overrideWithValue(_StreamRepo(store)),
         categoryRepositoryProvider.overrideWith(
           (ref) => FakeCategoryRepository(ref.watch(eventRepositoryProvider)),
@@ -1820,14 +1827,15 @@ void main() {
       expect(find.text('No other streams'), findsNothing);
       if (!compact) {
         // The fit modes stay as keyboard shortcuts, listed in the sheet
-        // (More ▸ Gestures & shortcuts).
-        await tester.tap(find.byKey(const ValueKey('timeline-more')));
-        await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('shortcuts-help')));
+        // opened with ?.
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shift);
+        await tester.sendKeyEvent(LogicalKeyboardKey.slash);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shift);
         await tester.pumpAndSettle();
         expect(find.text('Fit balance to what is in view'), findsOneWidget);
         expect(find.text('Fit all data'), findsOneWidget);
         expect(find.text('Fit all data horizontally'), findsOneWidget);
+        expect(find.text('Show this sheet'), findsOneWidget);
         await tester.tap(find.text('Got it'));
         await tester.pumpAndSettle();
       }
@@ -1844,15 +1852,16 @@ void main() {
   ]) {
     testWidgets(
       '${size.width.toInt()}x${size.height.toInt()} header: Tab goes Reminders '
-      '→ Events${mid ? ' → Stream settings' : ''} → View → More',
+      '→ Events${mid ? ' → Stream settings' : ''} → View → More → Avatar',
       (tester) async {
-        await _pump(tester, size: size);
+        await _pump(tester, size: size, user: adminUser);
         final order = [
           'open-reminders',
           'open-events',
           if (mid) 'stream-settings',
           'fit-menu',
           'timeline-more',
+          'user-menu',
         ];
         String? focused() {
           String? hit;
@@ -1913,11 +1922,11 @@ void main() {
   ]) {
     testWidgets('${size.width.toInt()}x${size.height.toInt()} header: every '
         'action in the top row, '
-        'Reminders · Events (plain list) · View · More at the right '
-        'end; the chart fills the body under it (no date range or tips '
-        'rows)', (tester) async {
+        'Reminders · Events (plain list) · View · More · Avatar at the '
+        'right end; the chart fills the body under it (no date range or '
+        'tips rows)', (tester) async {
       final w = size.width;
-      await _pump(tester, size: size);
+      await _pump(tester, size: size, user: adminUser);
       expect(tester.takeException(), isNull);
       final bar = tester.getRect(find.byType(AppBar));
       Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
@@ -1928,9 +1937,10 @@ void main() {
           )
           .evaluate()
           .isNotEmpty;
-      // More is the rightmost item of the header row.
-      final more = r('timeline-more');
+      // The avatar is the rightmost item of the header row.
+      final avatar = r('user-menu');
       expect(inBar('timeline-more'), isTrue);
+      expect(inBar('user-menu'), isTrue);
       for (final e
           in find
               .descendant(
@@ -1941,13 +1951,13 @@ void main() {
               )
               .evaluate()) {
         final rect = tester.getRect(find.byWidget(e.widget));
-        expect(rect.right, lessThanOrEqualTo(more.right + 0.5));
+        expect(rect.right, lessThanOrEqualTo(avatar.right + 0.5));
       }
-      expect(more.right, lessThanOrEqualTo(w));
-      expect(more.right, greaterThan(w - 16));
+      expect(avatar.right, lessThanOrEqualTo(w));
+      expect(avatar.right, greaterThan(w - 16));
       // Right end, in order: Reminders · Events ·
-      // Stream settings (≥960) · View · More, at every width (320
-      // included: Events never hides in More); neighbours after
+      // Stream settings (≥960) · View · More · Avatar, at every width
+      // (320 included: Events never hides in More); neighbours after
       // Reminders touch (even spacing, no stray gaps).
       expect(inBar('fit-menu'), isTrue);
       expect(inBar('open-reminders'), isTrue);
@@ -1965,6 +1975,7 @@ void main() {
           if (mid) 'stream-settings',
           'fit-menu',
           'timeline-more',
+          'user-menu',
         ];
         for (var i = 1; i < row.length; i++) {
           final gap = r(row[i]).left - r(row[i - 1]).right;
@@ -2136,7 +2147,10 @@ void main() {
       expect(find.text('Share stream'), findsOneWidget);
       expect(find.byKey(const ValueKey('more-share')), findsOneWidget);
       expect(find.text('Import events'), findsOneWidget);
-      expect(find.text('Gestures & shortcuts'), findsOneWidget);
+      expect(find.text('Gestures & shortcuts'), findsNothing);
+      expect(find.text('Manage categories…'), findsNothing);
+      expect(find.text('Edit variables'), findsNothing);
+      expect(find.byKey(const ValueKey('more-categories')), findsNothing);
       // Events is never duplicated in More.
       expect(find.byKey(const ValueKey('more-events')), findsNothing);
       expect(find.text('Events (2)'), findsNothing);
@@ -2160,7 +2174,7 @@ void main() {
         'header between Reminders and View, the name keeps room', (
       tester,
     ) async {
-      await _pump(tester, size: Size(w, 800));
+      await _pump(tester, size: Size(w, 800), user: adminUser);
       expect(tester.takeException(), isNull);
       Rect r(String key) => tester.getRect(find.byKey(ValueKey(key)));
       final tx = r('open-events');
@@ -2168,6 +2182,7 @@ void main() {
       expect(tx.right, lessThanOrEqualTo(r('fit-menu').left + 0.5));
       expect(tx.width, greaterThanOrEqualTo(40));
       expect(r('timeline-more').right, lessThanOrEqualTo(w));
+      expect(r('user-menu').right, lessThanOrEqualTo(w));
       expect(r('header-stream-picker').width, greaterThan(40));
       expect(r('header-stream-picker').right, lessThanOrEqualTo(tx.left));
       // One sync dot, on the logo's top-right, overlapping it slightly.

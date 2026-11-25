@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -56,9 +57,9 @@ import 'saved_view.dart';
 import 'span_header.dart';
 import 'view_units.dart';
 import 'zoom_level.dart';
-import '../variables/variables_manager.dart';
 import 'occurrence_info.dart';
-import '../../widgets/formula/variable_icon.dart';
+import '../../widgets/user_menu.dart';
+import 'shortcuts_help.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
   const TimelinePage({super.key, required this.streamId, this.openEventId});
@@ -1305,281 +1306,294 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
         final width = MediaQuery.sizeOf(context).width;
         final compact = width < 600;
-        return _withImportUndo(
-          _withFullPlan(
-            context,
-            Scaffold(
-              appBar: AppBar(
-                toolbarHeight: compact ? 56 : 60,
-                // Below 360 the back button's slot tightens (56 → 44) so the
-                // stream name keeps room next to the full action row.
-                leadingWidth: width < 400 ? 44 : null,
-                leading: IconButton(
-                  key: const ValueKey('timeline-back'),
-                  tooltip: 'All streams',
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  onPressed: () => _goBack(context),
-                ),
-                titleSpacing: compact ? 0 : 4,
-                title: Row(
-                  children: [
-                    _HeaderBrand(compact: compact, tight: width < 360),
-                    // The picker takes all the room up to the actions: its
-                    // arrow sits at the far right and the empty space after
-                    // the name opens it too.
-                    Expanded(
-                      child: _StreamHeader(
-                        stream: stream,
-                        compact: compact,
-                        tight: width < 360,
-                      ),
-                    ),
-                  ],
-                ),
-                actions: _headerActions(context, stream, width, events),
-              ),
-              body: _withPlanPanel(
-                context,
-                compact: compact,
-                child: _withDockedList(
-                  context,
-                  stream,
-                  Column(
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.slash, shift: true): () =>
+                showShortcutsHelp(context),
+            const SingleActivator(LogicalKeyboardKey.question): () =>
+                showShortcutsHelp(context),
+          },
+          child: _withImportUndo(
+            _withFullPlan(
+              context,
+              Scaffold(
+                appBar: AppBar(
+                  toolbarHeight: compact ? 56 : 60,
+                  // Below 360 the back button's slot tightens (56 → 44) so the
+                  // stream name keeps room next to the full action row.
+                  leadingWidth: width < 400 ? 44 : null,
+                  leading: IconButton(
+                    key: const ValueKey('timeline-back'),
+                    tooltip: 'All streams',
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    onPressed: () => _goBack(context),
+                  ),
+                  titleSpacing: compact ? 0 : 4,
+                  title: Row(
                     children: [
-                      // First / last visible day and the view's length.
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          compact ? 12 : 22,
-                          compact ? 2 : 4,
-                          compact ? 12 : 22,
-                          0,
-                        ),
-                        child: VisibleSpanHeader(view: _viewListenable),
-                      ),
+                      _HeaderBrand(compact: compact, tight: width < 360),
+                      // The picker takes all the room up to the actions: its
+                      // arrow sits at the far right and the empty space after
+                      // the name opens it too.
                       Expanded(
-                        child: Padding(
-                          // The chart takes the rest of the body under the
-                          // header and span strip, clear of the home
-                          // indicator.
-                          padding: EdgeInsets.fromLTRB(
-                            compact ? 8 : 16,
-                            compact ? 2 : 4,
-                            compact ? 8 : 16,
-                            (compact ? 8 : 12) +
-                                MediaQuery.viewPaddingOf(context).bottom,
-                          ),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: AppTheme.surface,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppTheme.border),
-                            ),
-                            child: ClipRRect(
-                              key: _chartAreaKey,
-                              borderRadius: BorderRadius.circular(15),
-                              child: series == null
-                                  ? balanceAsync.when(
-                                      loading: () => const Center(
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                      error: (error, _) => _BalanceError(
-                                        message: friendlyError(error),
-                                        onRetry: _invalidateBalance,
-                                      ),
-                                      data: (_) => const SizedBox.shrink(),
-                                    )
-                                  : Stack(
-                                      children: [
-                                        BalanceChart(
-                                          key: ValueKey(stream.id),
-                                          fitToken: _fitToken,
-                                          combineKey: combo == null
-                                              ? ''
-                                              : (combo.streams.keys.toList()
-                                                      ..sort())
-                                                    .join(','),
-                                          zeroToken: _zeroToken,
-                                          onFitRequested: (mode) =>
-                                              _fit(mode, stream),
-                                          onZoomStep: _zoomStep,
-                                          onShift: _shift,
-                                          series: shown!,
-                                          seedDate: stream.seedDate,
-                                          highlightEvent: _hoverEvent,
-                                          categories:
-                                              ref
-                                                  .watch(
-                                                    categoriesProvider(
-                                                      stream.id,
-                                                    ),
-                                                  )
-                                                  .valueOrNull ??
-                                              const [],
-                                          // Combined: no opening diamond (the
-                                          // line is a sum, not this seed).
-                                          seedBalance: combo != null
-                                              ? null
-                                              : stream.seedBalance.toDouble(),
-                                          lineStart: combo?.lineStart,
-                                          combinedStreams:
-                                              combo?.streams ?? const {},
-                                          otherEvents:
-                                              combo?.events ?? const {},
-                                          onOpenOtherEvent: (other, t, date) =>
-                                              _openOther(
-                                                context,
-                                                other,
-                                                t,
-                                                date,
-                                              ),
-                                          lossThreshold: stream.lossThreshold
-                                              .toDouble(),
-                                          alerts: !loanStream,
-                                          loanPayoffs: loanPayoffs,
-                                          planDisabledReason: loanStream
-                                              ? loanPlanningMessage
-                                              : null,
-                                          currencyScale: stream.currencyScale
-                                              .toDouble(),
-                                          viewStart: _viewStart,
-                                          visibleDays: _visibleDays,
-                                          onViewportChanged: _onChartViewport,
-                                          restoreYRange: _restoreY,
-                                          yRestoreToken: _yRestoreToken,
-                                          onYRangeChanged: _onChartY,
-                                          onPinnedDayChanged: _onPinnedDay,
-                                          selectDay: _selectDay,
-                                          selectDayToken: _selectDayToken,
-                                          dataEditToken: _dataEditToken,
-                                          onCreateOnDay: (day) =>
-                                              stream.role.canEdit
-                                              ? _createOnceOnDay(context, day)
-                                              : _viewOnlyToast(context),
-                                          onTrimDay: (day) =>
-                                              _trimDay(context, day),
-                                          trimDayBlock: (day) =>
-                                              !stream.role.canEdit
-                                              ? 'View only: you can\'t end events'
-                                              : planEndAllOn(
-                                                  events,
-                                                  day,
-                                                ).isEmpty
-                                              ? 'Nothing runs past '
-                                                    '${formatOccurrenceDate(day)}'
-                                              : null,
-                                          onTrimOccurrence: stream.role.canEdit
-                                              ? (t, day) =>
-                                                    _trimAt(context, t, day)
-                                              : null,
-                                          onNewOnDay: stream.role.canEdit
-                                              ? (day) => _openEditor(
-                                                  context,
-                                                  stream,
-                                                  initialDate: day,
-                                                )
-                                              : null,
-                                          onEditEvent: stream.role.canEdit
-                                              ? (t, date) => _openEditor(
-                                                  context,
-                                                  stream,
-                                                  existing: t,
-                                                  focusDate: date,
-                                                )
-                                              : null,
-                                          eventNames: eventNames,
-                                          // Same flag as the list's eye:
-                                          // shown again from the list.
-                                          onHideEvent: stream.role.canEdit
-                                              ? (t) => _hideEvent(context, t)
-                                              : null,
-                                          laneOrder: stream.eventOrder,
-                                          otherLaneOrder: combo == null
-                                              ? const []
-                                              : _otherLaneOrder(combo),
-                                          events: {
-                                            for (final t in events) t.id: t,
-                                          },
-                                          dataFrom: _seriesCacheQuery?.from,
-                                          dataThrough: _seriesCacheQuery?.to,
-                                          ghosts: _ghosts,
-                                          target: _goalActive
-                                              ? _goalTarget
-                                              : null,
-                                          targetMode:
-                                              _goalActive && _targetMode,
-                                          onTargetChanged: _onTargetDrag,
-                                          onAddForPeriod: stream.role.canEdit
-                                              ? (start, end) => _openEditor(
-                                                  context,
-                                                  stream,
-                                                  initialDate: start,
-                                                  initialEndDate: end,
-                                                )
-                                              : null,
-                                          onPlanPeriod: (p) => _planPeriod(
-                                            p,
-                                            stream.lossThreshold.toDouble(),
-                                          ),
-                                        ),
-                                        if (stream.role.canEdit)
-                                          Positioned(
-                                            top: 12,
-                                            right: 12,
-                                            child: _timelineAddButton(
-                                              context,
-                                              stream,
-                                            ),
-                                          ),
-                                        if (_goalActive)
-                                          Positioned(
-                                            top: combo != null ? 44 : 8,
-                                            right: stream.role.canEdit ? 76 : 8,
-                                            child: FilterChip(
-                                              key: const ValueKey(
-                                                'target-tool',
-                                              ),
-                                              avatar: const Icon(
-                                                Icons.my_location_rounded,
-                                                size: 16,
-                                              ),
-                                              label: Text(
-                                                _targetMode
-                                                    ? 'Tap or drag to set target'
-                                                    : 'Set target',
-                                              ),
-                                              tooltip: 'Target tool: tap or drag on the chart to set the goal balance and date',
-                                              selected: _targetMode,
-                                              onSelected: (on) => setState(
-                                                () => _targetMode = on,
-                                              ),
-                                            ),
-                                          ),
-                                        if (combo != null)
-                                          Positioned(
-                                            top: 8,
-                                            right: stream.role.canEdit ? 76 : 8,
-                                            child: _CombinedLegend(
-                                              combo: combo,
-                                              streamName: stream.name,
-                                            ),
-                                          ),
-                                        if (balanceAsync.isLoading ||
-                                            (combo?.loading ?? false))
-                                          const Positioned(
-                                            top: 0,
-                                            left: 0,
-                                            right: 0,
-                                            child: LinearProgressIndicator(
-                                              minHeight: 2,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                            ),
-                          ),
+                        child: _StreamHeader(
+                          stream: stream,
+                          compact: compact,
+                          tight: width < 360,
                         ),
                       ),
                     ],
+                  ),
+                  actions: _headerActions(context, stream, width, events),
+                ),
+                body: _withPlanPanel(
+                  context,
+                  compact: compact,
+                  child: _withDockedList(
+                    context,
+                    stream,
+                    Column(
+                      children: [
+                        // First / last visible day and the view's length.
+                        Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            compact ? 12 : 22,
+                            compact ? 2 : 4,
+                            compact ? 12 : 22,
+                            0,
+                          ),
+                          child: VisibleSpanHeader(view: _viewListenable),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            // The chart takes the rest of the body under the
+                            // header and span strip, clear of the home
+                            // indicator.
+                            padding: EdgeInsets.fromLTRB(
+                              compact ? 8 : 16,
+                              compact ? 2 : 4,
+                              compact ? 8 : 16,
+                              (compact ? 8 : 12) +
+                                  MediaQuery.viewPaddingOf(context).bottom,
+                            ),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: AppTheme.surface,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: AppTheme.border),
+                              ),
+                              child: ClipRRect(
+                                key: _chartAreaKey,
+                                borderRadius: BorderRadius.circular(15),
+                                child: series == null
+                                    ? balanceAsync.when(
+                                        loading: () => const Center(
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                        error: (error, _) => _BalanceError(
+                                          message: friendlyError(error),
+                                          onRetry: _invalidateBalance,
+                                        ),
+                                        data: (_) => const SizedBox.shrink(),
+                                      )
+                                    : Stack(
+                                        children: [
+                                          BalanceChart(
+                                            key: ValueKey(stream.id),
+                                            fitToken: _fitToken,
+                                            combineKey: combo == null
+                                                ? ''
+                                                : (combo.streams.keys.toList()
+                                                        ..sort())
+                                                      .join(','),
+                                            zeroToken: _zeroToken,
+                                            onFitRequested: (mode) =>
+                                                _fit(mode, stream),
+                                            onZoomStep: _zoomStep,
+                                            onShift: _shift,
+                                            series: shown!,
+                                            seedDate: stream.seedDate,
+                                            highlightEvent: _hoverEvent,
+                                            categories:
+                                                ref
+                                                    .watch(
+                                                      categoriesProvider(
+                                                        stream.id,
+                                                      ),
+                                                    )
+                                                    .valueOrNull ??
+                                                const [],
+                                            // Combined: no opening diamond (the
+                                            // line is a sum, not this seed).
+                                            seedBalance: combo != null
+                                                ? null
+                                                : stream.seedBalance.toDouble(),
+                                            lineStart: combo?.lineStart,
+                                            combinedStreams:
+                                                combo?.streams ?? const {},
+                                            otherEvents:
+                                                combo?.events ?? const {},
+                                            onOpenOtherEvent:
+                                                (other, t, date) => _openOther(
+                                                  context,
+                                                  other,
+                                                  t,
+                                                  date,
+                                                ),
+                                            lossThreshold: stream.lossThreshold
+                                                .toDouble(),
+                                            alerts: !loanStream,
+                                            loanPayoffs: loanPayoffs,
+                                            planDisabledReason: loanStream
+                                                ? loanPlanningMessage
+                                                : null,
+                                            currencyScale: stream.currencyScale
+                                                .toDouble(),
+                                            viewStart: _viewStart,
+                                            visibleDays: _visibleDays,
+                                            onViewportChanged: _onChartViewport,
+                                            restoreYRange: _restoreY,
+                                            yRestoreToken: _yRestoreToken,
+                                            onYRangeChanged: _onChartY,
+                                            onPinnedDayChanged: _onPinnedDay,
+                                            selectDay: _selectDay,
+                                            selectDayToken: _selectDayToken,
+                                            dataEditToken: _dataEditToken,
+                                            onCreateOnDay: (day) =>
+                                                stream.role.canEdit
+                                                ? _createOnceOnDay(context, day)
+                                                : _viewOnlyToast(context),
+                                            onTrimDay: (day) =>
+                                                _trimDay(context, day),
+                                            trimDayBlock: (day) =>
+                                                !stream.role.canEdit
+                                                ? 'View only: you can\'t end events'
+                                                : planEndAllOn(
+                                                    events,
+                                                    day,
+                                                  ).isEmpty
+                                                ? 'Nothing runs past '
+                                                      '${formatOccurrenceDate(day)}'
+                                                : null,
+                                            onTrimOccurrence:
+                                                stream.role.canEdit
+                                                ? (t, day) =>
+                                                      _trimAt(context, t, day)
+                                                : null,
+                                            onNewOnDay: stream.role.canEdit
+                                                ? (day) => _openEditor(
+                                                    context,
+                                                    stream,
+                                                    initialDate: day,
+                                                  )
+                                                : null,
+                                            onEditEvent: stream.role.canEdit
+                                                ? (t, date) => _openEditor(
+                                                    context,
+                                                    stream,
+                                                    existing: t,
+                                                    focusDate: date,
+                                                  )
+                                                : null,
+                                            eventNames: eventNames,
+                                            // Same flag as the list's eye:
+                                            // shown again from the list.
+                                            onHideEvent: stream.role.canEdit
+                                                ? (t) => _hideEvent(context, t)
+                                                : null,
+                                            laneOrder: stream.eventOrder,
+                                            otherLaneOrder: combo == null
+                                                ? const []
+                                                : _otherLaneOrder(combo),
+                                            events: {
+                                              for (final t in events) t.id: t,
+                                            },
+                                            dataFrom: _seriesCacheQuery?.from,
+                                            dataThrough: _seriesCacheQuery?.to,
+                                            ghosts: _ghosts,
+                                            target: _goalActive
+                                                ? _goalTarget
+                                                : null,
+                                            targetMode:
+                                                _goalActive && _targetMode,
+                                            onTargetChanged: _onTargetDrag,
+                                            onAddForPeriod: stream.role.canEdit
+                                                ? (start, end) => _openEditor(
+                                                    context,
+                                                    stream,
+                                                    initialDate: start,
+                                                    initialEndDate: end,
+                                                  )
+                                                : null,
+                                            onPlanPeriod: (p) => _planPeriod(
+                                              p,
+                                              stream.lossThreshold.toDouble(),
+                                            ),
+                                          ),
+                                          if (stream.role.canEdit)
+                                            Positioned(
+                                              top: 12,
+                                              right: 12,
+                                              child: _timelineAddButton(
+                                                context,
+                                                stream,
+                                              ),
+                                            ),
+                                          if (_goalActive)
+                                            Positioned(
+                                              top: combo != null ? 44 : 8,
+                                              right: stream.role.canEdit
+                                                  ? 76
+                                                  : 8,
+                                              child: FilterChip(
+                                                key: const ValueKey(
+                                                  'target-tool',
+                                                ),
+                                                avatar: const Icon(
+                                                  Icons.my_location_rounded,
+                                                  size: 16,
+                                                ),
+                                                label: Text(
+                                                  _targetMode
+                                                      ? 'Tap or drag to set target'
+                                                      : 'Set target',
+                                                ),
+                                                tooltip: 'Target tool: tap or drag on the chart to set the goal balance and date',
+                                                selected: _targetMode,
+                                                onSelected: (on) => setState(
+                                                  () => _targetMode = on,
+                                                ),
+                                              ),
+                                            ),
+                                          if (combo != null)
+                                            Positioned(
+                                              top: 8,
+                                              right: stream.role.canEdit
+                                                  ? 76
+                                                  : 8,
+                                              child: _CombinedLegend(
+                                                combo: combo,
+                                                streamName: stream.name,
+                                              ),
+                                            ),
+                                          if (balanceAsync.isLoading ||
+                                              (combo?.loading ?? false))
+                                            const Positioned(
+                                              top: 0,
+                                              left: 0,
+                                              right: 0,
+                                              child: LinearProgressIndicator(
+                                                minHeight: 2,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1725,7 +1739,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// Every timeline action lives in the header row, right of the stream
   /// name, all icon-only, left to right: Reminders (plain icon) · Events
   /// (plain list icon) · Stream settings (≥960px) · View (eye: Go to
-  /// today / seed date / date…, Combine, Categories) · More (⋮, rightmost).
+  /// today / seed date / date…, Combine, Categories) · More (⋮) · the
+  /// signed-in user's avatar (rightmost).
   /// Adding an event is the circular button on the chart, not a header icon.
   ///
   /// Share stream is always in More; below 960px Stream settings is too.
@@ -1795,34 +1810,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
             title: Text('Import events'),
           ),
         ),
-      // Everyone opens it (viewers read only); categories are shared by
-      // all the owner's streams.
-      const PopupMenuItem(
-        key: ValueKey('more-categories'),
-        value: 'categories',
-        child: ListTile(
-          leading: Icon(Icons.tune_rounded),
-          title: Text('Manage categories…'),
-        ),
-      ),
-      // The owner's variables (spec 012); read-only for editors and viewers.
-      if (ServerFeatures.variables)
-        const PopupMenuItem(
-          key: ValueKey('more-variables'),
-          value: 'variables',
-          child: ListTile(
-            leading: VariableGlyph(),
-            title: Text('Edit variables'),
-          ),
-        ),
-      const PopupMenuItem(
-        key: ValueKey('shortcuts-help'),
-        value: 'shortcuts',
-        child: ListTile(
-          leading: Icon(Icons.keyboard_rounded),
-          title: Text('Gestures & shortcuts'),
-        ),
-      ),
     ];
 
     return [
@@ -1851,7 +1838,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         ),
       // View (eye): icon-only at every width, named by its tooltip.
       _fitMenu(stream, compact: !desk, tight: tiny, style: slim),
-      // Always the rightmost item.
+      // More, then the signed-in avatar (rightmost).
       PopupMenuButton<String>(
         key: const ValueKey('timeline-more'),
         tooltip: 'More',
@@ -1865,21 +1852,18 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
               _editStream(context, stream);
             case 'loanSummary':
               showLoanSummary(context, stream);
-            case 'shortcuts':
-              _showShortcuts(context);
             case 'share':
               _share(context, stream);
-            case 'categories':
-              showCategoriesManager(
-                context,
-                streamId: widget.streamId,
-                canEdit: canEdit,
-              );
-            case 'variables':
-              showVariablesManager(context, streamId: widget.streamId);
           }
         },
         itemBuilder: (context) => more,
+      ),
+      // Avatar menu: Variables, Categories, Admin (if admin), Sign out.
+      UserMenu(
+        streamId: stream.id,
+        canEdit: canEdit,
+        showRealtimeDot: false,
+        compact: width < 420,
       ),
       SizedBox(width: desk ? 8 : (tiny ? 0 : 2)),
     ];
@@ -2010,90 +1994,6 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
     if (picked == null || !mounted) return;
     _goToAndSelect(dateOnly(picked));
-  }
-
-  Future<void> _showShortcuts(BuildContext context) {
-    Widget row(List<String> keys, String what) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 170,
-            child: Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              children: [for (final k in keys) KeyCap(k)],
-            ),
-          ),
-          Expanded(child: Text(what)),
-        ],
-      ),
-    );
-    Widget head(String t) => Padding(
-      padding: const EdgeInsets.only(top: 12, bottom: 4),
-      child: Text(
-        t.toUpperCase(),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          letterSpacing: 1,
-          fontWeight: FontWeight.w700,
-          color: AppTheme.textFaint,
-        ),
-      ),
-    );
-    return showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Timeline shortcuts'),
-        content: SizedBox(
-          width: 480,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                head('Navigate'),
-                row(['Drag'], 'Pan time and balance (on the chart)'),
-                row(['Pinch'], 'Zoom time (touch, or trackpad at the cursor)'),
-                row(['Double-tap'], 'Zoom in there and centre its balance'),
-                row(['←', '→'], 'Pan time'),
-                row(['↑', '↓'], 'Pan balance'),
-                row(['Scroll'], 'Pan balance (sideways or Shift: time)'),
-                row(['⌘ / ⌥ / Ctrl', 'Scroll'], 'Zoom at the cursor'),
-                row(['+', '−'], 'Smaller / larger view unit'),
-                row(['View', 'Go to date…'], 'Show a day from the left edge'),
-                row(['[', ']'], 'Back / forward one unit'),
-                head('Fit'),
-                row(['F'], 'Fit balance to what is in view'),
-                row(['A'], 'Fit all data'),
-                row(['H'], 'Fit all data horizontally'),
-                head('Events'),
-                row(
-                  ['Tap', 'Click'],
-                  'Tap or click an event line for actions (new event, '
-                  'trim or edit from that day)',
-                ),
-                row(['Net chip'], 'That day’s events'),
-                row(['Hover day', '+'], 'Add a one-off on that day'),
-                row(['Drag dates'], 'Drag along the date axis, release to add'),
-                row(['Tap dates'], 'Add a one-off on that day'),
-                row(
-                  ['Tap dates', '✂'],
-                  'End every event on that day (events starting later are '
-                  'deleted; one Undo)',
-                ),
-                row(['Ctrl', 'Enter'], 'Save in the editor'),
-                row(['Esc'], 'Cancel a date drag / close the editor'),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
   }
 
   // ----------------------------------------------------------- events

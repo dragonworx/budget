@@ -120,6 +120,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('musicartscience@gmail.com'), findsOneWidget);
     expect(find.byKey(const ValueKey('admin-badge')), findsOneWidget);
+    expect(find.byKey(const ValueKey('menu-admin')), findsOneWidget);
+    expect(find.byKey(const ValueKey('menu-help')), findsOneWidget);
+    expect(find.text('Help'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
+    expect(find.text('Gestures & shortcuts'), findsNothing);
+    expect(find.textContaining('Build '), findsNothing);
+    // No stream is open on first sign-in, so Categories is hidden.
+    expect(find.byKey(const ValueKey('menu-categories')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('sign-out')));
     await tester.pumpAndSettle();
     expect(auth.logouts, 1);

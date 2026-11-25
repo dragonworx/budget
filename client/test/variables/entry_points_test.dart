@@ -1,6 +1,6 @@
-// Where the variables manager is reached from (spec 012): the user menu,
-// the timeline's More menu, FormulaField's Manage / Create actions, and
-// the usages list's `?event=` link back into a timeline.
+// Where the variables manager is reached from (spec 012): the user
+// (avatar) menu, FormulaField's Manage / Create actions, and the usages
+// list's `?event=` link back into a timeline.
 import 'package:budget_client/data/api_client.dart';
 import 'package:budget_client/data/models.dart';
 import 'package:budget_client/data/repositories.dart';
@@ -77,6 +77,9 @@ Future<FakeVars> _timeline(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        authRepositoryProvider.overrideWithValue(
+          FakeAuthRepository(user: adminUser),
+        ),
         streamRepositoryProvider.overrideWithValue(_Streams(role)),
         eventRepositoryProvider.overrideWithValue(events),
         categoryRepositoryProvider.overrideWithValue(
@@ -140,18 +143,27 @@ void main() {
     });
   });
 
-  group('timeline More menu', () {
+  group('timeline user menu', () {
     for (final role in [Role.owner, Role.viewer]) {
-      testWidgets('Edit variables (${role.name}) opens the owner\'s set', (
+      testWidgets('Variables (${role.name}) opens the owner\'s set', (
         tester,
       ) async {
-        ServerFeatures.variables = true;
         final vars = await _timeline(tester, role: role);
-        await tester.tap(k('timeline-more'));
+        // Auth config applies the server flag; set it after the pump.
+        ServerFeatures.variables = true;
+        await tester.tap(k('user-menu'));
         await tester.pumpAndSettle();
-        final cats = tester.getTopLeft(k('more-categories')).dy;
-        expect(tester.getTopLeft(k('more-variables')).dy, greaterThan(cats));
-        await tester.tap(k('more-variables'));
+        // Order: Variables, Categories, Admin, Help, Sign out.
+        final varsY = tester.getTopLeft(k('menu-variables')).dy;
+        final catsY = tester.getTopLeft(k('menu-categories')).dy;
+        final adminY = tester.getTopLeft(k('menu-admin')).dy;
+        final helpY = tester.getTopLeft(k('menu-help')).dy;
+        final outY = tester.getTopLeft(k('sign-out')).dy;
+        expect(varsY, lessThan(catsY));
+        expect(catsY, lessThan(adminY));
+        expect(adminY, lessThan(helpY));
+        expect(helpY, lessThan(outY));
+        await tester.tap(k('menu-variables'));
         await tester.pumpAndSettle();
         expect(k('variables-manager'), findsOneWidget);
         expect(vars.reads, contains('list acc'));
@@ -164,10 +176,23 @@ void main() {
 
     testWidgets('absent without the server feature', (tester) async {
       await _timeline(tester);
-      await tester.tap(k('timeline-more'));
+      await tester.tap(k('user-menu'));
       await tester.pumpAndSettle();
-      expect(k('more-categories'), findsOneWidget);
-      expect(k('more-variables'), findsNothing);
+      expect(k('menu-categories'), findsOneWidget);
+      expect(k('menu-variables'), findsNothing);
+      expect(k('menu-help'), findsOneWidget);
+      expect(find.text('Help'), findsOneWidget);
+      expect(find.text('Gestures & shortcuts'), findsNothing);
+    });
+
+    testWidgets('Help opens gestures and shortcuts', (tester) async {
+      await _timeline(tester);
+      await tester.tap(k('user-menu'));
+      await tester.pumpAndSettle();
+      await tester.tap(k('menu-help'));
+      await tester.pumpAndSettle();
+      expect(find.text('Timeline shortcuts'), findsOneWidget);
+      expect(find.text('Show this sheet'), findsOneWidget);
     });
   });
 

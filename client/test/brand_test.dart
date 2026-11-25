@@ -172,9 +172,7 @@ void main() {
         find.byKey(const ValueKey('open-reminders')),
       );
       expect(first.left - r.right, greaterThan(40));
-      final last = tester.getRect(
-        find.byKey(ValueKey(width < 960 ? 'timeline-more' : 'open-reminders')),
-      );
+      final last = tester.getRect(find.byKey(const ValueKey('user-menu')));
       expect(last.right, lessThanOrEqualTo(width));
     });
   }
