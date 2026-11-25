@@ -1563,21 +1563,14 @@ class _ColorDotMenu extends StatelessWidget {
         constraints: BoxConstraints.tightFor(width: size, height: size),
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),
-        icon: Container(
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
-            color: c,
-            shape: BoxShape.circle,
-            border: Border.all(color: laneTextColor, width: 2),
-          ),
-        ),
+        icon: categoryDot(c, size: 22),
       ),
     );
   }
 }
 
-/// The 12 palette colours as tappable swatches ([selected] ticked).
+/// The 12 palette colours as tappable swatches. A check mark marks
+/// the [selected] swatch; the dots themselves are a plain fill.
 class PaletteSwatches extends StatelessWidget {
   const PaletteSwatches({
     super.key,
@@ -1614,10 +1607,6 @@ class PaletteSwatches extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: laneColors[i],
                       shape: BoxShape.circle,
-                      border: Border.all(
-                        color: si == i ? laneTextColor : Colors.transparent,
-                        width: 2.5,
-                      ),
                     ),
                     child: si == i
                         ? const Icon(

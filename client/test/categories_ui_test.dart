@@ -467,6 +467,60 @@ void main() {
     );
   });
 
+  testWidgets('category colour dots are a plain fill with no ring', (
+    tester,
+  ) async {
+    await _pump(tester);
+    await _openManager(tester);
+
+    BoxDecoration? circleOf(Finder root) {
+      for (final w in tester.widgetList<Container>(
+        find.descendant(of: root, matching: find.byType(Container)),
+      )) {
+        final d = w.decoration;
+        if (d is BoxDecoration && d.shape == BoxShape.circle) return d;
+      }
+      return null;
+    }
+
+    void expectPlainFill(Finder root, {required String because}) {
+      final d = circleOf(root);
+      expect(d, isNotNull, reason: because);
+      expect(d!.color, isNotNull, reason: because);
+      final b = d.border;
+      expect(
+        b == null || b.dimensions == EdgeInsets.zero,
+        isTrue,
+        reason: '$because: $b',
+      );
+    }
+
+    expectPlainFill(
+      find.byKey(ValueKey('category-color-$_rent')),
+      because: 'manager row',
+    );
+    expectPlainFill(
+      find.byKey(const ValueKey('category-new-color')),
+      because: 'new-category row',
+    );
+
+    await tester.tap(find.byKey(ValueKey('category-color-$_rent')));
+    await tester.pumpAndSettle();
+    var checks = 0;
+    for (var i = 0; i < laneColors.length; i++) {
+      final swatch = find.byKey(ValueKey('category-swatch-$i'));
+      expect(swatch, findsOneWidget);
+      expectPlainFill(swatch, because: 'swatch $i');
+      if (find
+          .descendant(of: swatch, matching: find.byIcon(Icons.check_rounded))
+          .evaluate()
+          .isNotEmpty) {
+        checks++;
+      }
+    }
+    expect(checks, 1, reason: 'selected swatch keeps a check, not a ring');
+  });
+
   testWidgets('the last row creates: add is disabled until the name is '
       'valid and unique; Enter creates; colour defaults random, changeable', (
     tester,
