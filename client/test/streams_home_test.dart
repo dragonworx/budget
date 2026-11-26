@@ -426,4 +426,102 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('P7: phone header is a 22/28 title, count, and compact + New '
+      'on one row; the list starts near 110dp', (tester) async {
+    final repo = FakeStreamRepository(
+      streams: [testStream('a1', 'Everyday'), testStream('a2', 'Savings')],
+      lastStreamId: 'gone',
+    );
+    await _app(tester, repo, size: const Size(390, 844));
+
+    expect(find.text('2 streams'), findsOneWidget);
+    expect(find.textContaining('open one to plan'), findsNothing);
+    expect(find.textContaining('Plan each stream'), findsNothing);
+
+    final title = tester.widget<Text>(
+      find.byKey(const ValueKey('streams-title')),
+    );
+    expect(title.style?.fontSize, 22);
+    expect(title.style?.height, closeTo(28 / 22, 0.001));
+
+    expect(find.text('New'), findsOneWidget);
+    expect(find.text('New stream'), findsNothing);
+    final newBtn = find.byKey(const ValueKey('new-stream'));
+    expect(newBtn, findsOneWidget);
+    final filled = find.descendant(
+      of: newBtn,
+      matching: find.byType(FilledButton),
+    );
+    expect(tester.getSize(filled).height, 36);
+
+    final listTop = tester
+        .getRect(find.byKey(const ValueKey('mine-heading')))
+        .top;
+    expect(listTop, closeTo(112, 8));
+
+    final heading = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mine-heading')),
+        matching: find.text('My streams · balance today'),
+      ),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('mine-heading'))).height,
+      32,
+    );
+    expect(heading.style?.fontSize, 13);
+    expect(heading.style?.fontWeight, FontWeight.w600);
+    expect(heading.style?.color, AppTheme.textMuted);
+  });
+
+  testWidgets('P7: desktop title is 24/32; a single stream is singular', (
+    tester,
+  ) async {
+    final repo = FakeStreamRepository(
+      streams: [testStream('a1', 'Everyday')],
+      lastStreamId: 'gone',
+    );
+    await _app(tester, repo, size: const Size(1440, 900));
+    final title = tester.widget<Text>(
+      find.byKey(const ValueKey('streams-title')),
+    );
+    expect(title.style?.fontSize, 24);
+    expect(title.style?.height, closeTo(32 / 24, 0.001));
+    expect(find.text('1 stream'), findsOneWidget);
+    expect(find.text('1 streams'), findsNothing);
+  });
+
+  testWidgets('P7: the explainer lives in the empty state, not the header', (
+    tester,
+  ) async {
+    await _app(tester, FakeStreamRepository());
+    expect(find.byKey(const ValueKey('streams-empty')), findsOneWidget);
+    expect(find.byKey(const ValueKey('streams-count')), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('streams-empty')),
+        matching: find.textContaining("Plan each stream's balance over time"),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('new-stream')), findsOneWidget);
+  });
+
+  testWidgets('P7: section headers stay pinned while the list scrolls', (
+    tester,
+  ) async {
+    final repo = FakeStreamRepository(
+      streams: [for (var i = 0; i < 8; i++) testStream('a$i', 'Stream $i')],
+      lastStreamId: 'gone',
+    );
+    await _app(tester, repo, size: const Size(390, 500));
+    final heading = find.byKey(const ValueKey('mine-heading'));
+    final before = tester.getRect(heading).top;
+    expect(before, closeTo(112, 8));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -280));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(heading).top, closeTo(before, 1));
+    expect(find.text('My streams · balance today'), findsOneWidget);
+  });
 }

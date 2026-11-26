@@ -97,24 +97,11 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  PageHeading(
-                    title: 'Streams',
-                    subtitle: count == null || count == 0
-                        ? 'Plan each stream\'s balance over time'
-                        : '$count stream${count == 1 ? '' : 's'} · open one to plan its balance over time',
-                    actions: [
-                      if (count != null && count > 0)
-                        KbHotspot(
-                          id: 'home-new-stream',
-                          kind: 'text',
-                          child: FilledButton.icon(
-                            key: const ValueKey('new-stream'),
-                            onPressed: () => _create(context),
-                            icon: const Icon(Icons.add_rounded, size: 20),
-                            label: const Text('New stream'),
-                          ),
-                        ),
-                    ],
+                  _StreamsHeader(
+                    count: count,
+                    onNew: count != null && count > 0
+                        ? () => _create(context)
+                        : null,
                   ),
                   Expanded(child: _body(context, streamsAsync)),
                 ],
@@ -152,7 +139,11 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                 key: const ValueKey('streams-empty'),
                 glyph: const StreamIcon(key: ValueKey('stream-icon')),
                 title: 'No streams yet',
-                message: 'Create a stream with a starting (seed) balance, then plan its events on the timeline. Streams others share with you show up here too.',
+                message:
+                    "Plan each stream's balance over time. Create a stream "
+                    'with a starting (seed) balance, then add its events on '
+                    'the timeline. Streams others share with you show up here '
+                    'too.',
                 action: KbHotspot(
                   id: 'home-new-stream-empty',
                   kind: 'text',
@@ -207,34 +198,66 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                   ),
               ],
             );
-            Widget heading(String t, String key) => Padding(
-              key: ValueKey(key),
-              padding: const EdgeInsets.fromLTRB(2, 8, 0, 4),
-              child: Text(
-                t,
-                style: Theme.of(context).textTheme.labelLarge
-                    ?.copyWith(color: AppTheme.textMuted),
-              ),
-            );
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (invites.isNotEmpty) ...[
-                    heading('Invitations for you', 'invites-heading'),
-                    for (final i in invites) _PendingInviteTile(invite: i),
-                  ],
-                  if (mine.isNotEmpty) ...[
-                    heading('My streams · balance today', 'mine-heading'),
-                    grid(mine),
-                  ],
-                  if (shared.isNotEmpty) ...[
-                    heading('Shared with me · balance today', 'shared-heading'),
-                    grid(shared),
-                  ],
+            final bg = Theme.of(context).scaffoldBackgroundColor;
+            return CustomScrollView(
+              slivers: [
+                if (invites.isNotEmpty) ...[
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _StickySectionDelegate(
+                        label: 'Invitations for you',
+                        headerKey: 'invites-heading',
+                        color: bg,
+                      ),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate([
+                        for (final i in invites) _PendingInviteTile(invite: i),
+                      ]),
+                    ),
+                  ),
                 ],
-              ),
+                if (mine.isNotEmpty) ...[
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _StickySectionDelegate(
+                        label: 'My streams · balance today',
+                        headerKey: 'mine-heading',
+                        color: bg,
+                      ),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverToBoxAdapter(child: grid(mine)),
+                  ),
+                ],
+                if (shared.isNotEmpty) ...[
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _StickySectionDelegate(
+                        label: 'Shared with me · balance today',
+                        headerKey: 'shared-heading',
+                        color: bg,
+                      ),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    sliver: SliverToBoxAdapter(child: grid(shared)),
+                  ),
+                ] else
+                  const SliverToBoxAdapter(child: SizedBox(height: 16)),
+              ],
             );
           },
         );
@@ -736,4 +759,150 @@ String? offsetIndicator(BudgetStream s) {
     return 'Offset for ${s.offsetFor.map(name).join(', ')}';
   }
   return null;
+}
+
+/// P7: "Streams" and a compact + New on one row; the count is a short
+/// "N streams" beside the title, not a wrapping explainer.
+class _StreamsHeader extends StatelessWidget {
+  const _StreamsHeader({this.count, this.onNew});
+
+  final int? count;
+  final VoidCallback? onNew;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final phone = MediaQuery.sizeOf(context).shortestSide < 600;
+    final titleStyle = theme.textTheme.headlineSmall?.copyWith(
+      fontSize: phone ? 22 : 24,
+      height: phone ? 28 / 22 : 32 / 24,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Text(
+                    'Streams',
+                    key: const ValueKey('streams-title'),
+                    style: titleStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (count != null && count! > 0) ...[
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        _streamCountLabel(count!),
+                        key: const ValueKey('streams-count'),
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (onNew != null) _CompactNewStreamButton(onPressed: onNew!),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _streamCountLabel(int count) =>
+    count == 1 ? '1 stream' : '$count streams';
+
+/// 36dp tall label inside a 44dp hit area.
+class _CompactNewStreamButton extends StatelessWidget {
+  const _CompactNewStreamButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = FilledButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.add_rounded, size: 18),
+      label: const Text('New'),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size(0, 36),
+        maximumSize: const Size(double.infinity, 36),
+        padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+    );
+    return KbHotspot(
+      id: 'home-new-stream',
+      kind: 'text',
+      child: Tooltip(
+        message: 'New stream',
+        child: Semantics(
+          button: true,
+          label: 'New stream',
+          child: SizedBox(
+            key: const ValueKey('new-stream'),
+            height: 44,
+            child: Center(child: SizedBox(height: 36, child: button)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StickySectionDelegate extends SliverPersistentHeaderDelegate {
+  _StickySectionDelegate({
+    required this.label,
+    required this.headerKey,
+    required this.color,
+  });
+
+  final String label;
+  final String headerKey;
+  final Color color;
+
+  @override
+  double get minExtent => 32;
+
+  @override
+  double get maxExtent => 32;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Material(
+      color: color,
+      child: Container(
+        key: ValueKey(headerKey),
+        height: 32,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 2),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            height: 1,
+            color: AppTheme.textMuted,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _StickySectionDelegate old) =>
+      label != old.label || color != old.color || headerKey != old.headerKey;
 }
