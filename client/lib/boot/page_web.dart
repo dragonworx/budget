@@ -155,7 +155,6 @@ void _listen(String type, {bool prime = false, bool armOnly = false}) {
     ((web.Event e) {
       final point = _eventPoint(e);
       final hit = point == null ? null : _hitHotspot(point.x, point.y);
-      final kind = hit?.kind ?? (prime ? _armedKind : null);
       if (armOnly) {
         // A miss starts a new gesture: do not prime later events from
         // a leftover kind (that used to open the keyboard on a tap
@@ -167,20 +166,24 @@ void _listen(String type, {bool prime = false, bool armOnly = false}) {
           return;
         }
         _armViewFocusBlock();
-        _armedKind = kind;
+        _armedKind = hit.kind;
         // Set inputmode now so the proxy is already decimal (or text)
         // before touchend focus().
-        _ensurePrimer(decimal: kind == 'decimal');
+        _ensurePrimer(decimal: hit.kind == 'decimal');
         // Suppress compatibility mouse events that would blur the
         // proxy after the touchend focus.
         if (e.cancelable) e.preventDefault();
         return;
       }
-      if (kind == null) return;
+      // Prime only if THIS gesture started on a New / FAB hotspot.
+      // Never retarget a later click onto a hotspot that appeared under
+      // the finger after the Transactions overlay opened: on a phone the
+      // + New button sits where the list-icon tap was, and the
+      // compatibility click would otherwise focus the hidden decimal
+      // proxy and raise the number pad on an empty list.
       if (prime) {
-        _armViewFocusBlock();
-        _armedKind = kind;
-        primeSoftKeyboard(decimal: kind == 'decimal', via: type);
+        if (_armedKind == null) return;
+        primeSoftKeyboard(decimal: _armedKind == 'decimal', via: type);
       }
     }).toJS,
     true.toJS,

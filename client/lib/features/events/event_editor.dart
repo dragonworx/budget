@@ -374,15 +374,18 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       if (!mounted) return;
       if (!_readOnly && widget.existing == null) {
         // First frame: still close to the opening tap, so iOS / Android
-        // web can raise the keyboard (see [primeSoftKeyboard]).
+        // web can raise the keyboard (see [primeSoftKeyboard]). Only
+        // for an explicit New event, never when opening an existing one.
         _focusAmount();
         // Again once the panel / switcher has actually finished, unless
         // the user has already moved focus inside the editor. Something
         // closing in the same frame (the New ▾ menu restoring its focus)
         // or the opening route can otherwise take it away.
         _openWait.schedule(context, _focusAmountIfIdle);
-      } else if (!_scope.hasFocus) {
-        _scope.requestFocus();
+      } else if (!coarsePointer) {
+        // Existing / read-only: take shortcut focus on desktop only,
+        // on a non-text node so Amount is not autofocused.
+        _shortcutFocus.requestFocus();
       }
     });
   }
@@ -455,8 +458,16 @@ class _EventEditorState extends ConsumerState<EventEditor> {
 
   final _scope = FocusScopeNode(debugLabel: 'EventEditor');
 
-  /// Amount comes first (focused on open), then the type, the category
-  /// and the schedule.
+  /// Desktop shortcut focus when editing an existing event (Esc,
+  /// Ctrl+Enter) without landing on Amount, which would raise the
+  /// number pad.
+  final _shortcutFocus = FocusNode(
+    debugLabel: 'editor-shortcuts',
+    skipTraversal: true,
+  );
+
+  /// Amount comes first (focused on open of a *new* event only), then
+  /// the type, the category and the schedule.
   final _amountFocus = FocusNode(debugLabel: 'editor-amount');
 
   void _focusAmount() {
@@ -529,6 +540,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     _interval.dispose();
     _count.dispose();
     _scope.dispose();
+    _shortcutFocus.dispose();
     _openWait.cancel();
     _amountFocus.dispose();
     _principalFocus.dispose();
@@ -866,50 +878,56 @@ class _EventEditorState extends ConsumerState<EventEditor> {
           const SingleActivator(LogicalKeyboardKey.enter, control: true): _save,
           const SingleActivator(LogicalKeyboardKey.enter, meta: true): _save,
         },
-        child: FocusScope(
-          node: _scope,
-          autofocus: true,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _header(theme, title),
-                const Divider(),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                    children: [
-                      ?_remoteBanner(theme),
-                      // A loan has no per-date skip / override (spec 003).
-                      if (widget.focusDate != null &&
-                          !_isNew &&
-                          !_isLoan &&
-                          !_isSync) ...[
-                        _focusBanner(theme),
+        child: Focus(
+          focusNode: _shortcutFocus,
+          skipTraversal: true,
+          child: FocusScope(
+            node: _scope,
+            // New events focus Amount explicitly; existing ones must
+            // not autofocus any field (that raised the iOS number pad).
+            autofocus: false,
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _header(theme, title),
+                  const Divider(),
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                      children: [
+                        ?_remoteBanner(theme),
+                        // A loan has no per-date skip / override (spec 003).
+                        if (widget.focusDate != null &&
+                            !_isNew &&
+                            !_isLoan &&
+                            !_isSync) ...[
+                          _focusBanner(theme),
+                          const SizedBox(height: 12),
+                        ],
+                        if (widget.readOnly) ...[
+                          const _ViewOnlyNote(),
+                          const SizedBox(height: 12),
+                        ],
+                        _ro(_detailsSection(theme)),
                         const SizedBox(height: 12),
+                        if (_syncMode)
+                          _ro(_syncSection(theme))
+                        else if (_loanMode)
+                          _loanSections(theme)
+                        else
+                          _ro(_scheduleSection(theme)),
+                        // Just Details and Schedule, new or edited: Include in
+                        // balance is the list row's switch, skips / once-offs
+                        // are kept as they are (saving never resets them).
                       ],
-                      if (widget.readOnly) ...[
-                        const _ViewOnlyNote(),
-                        const SizedBox(height: 12),
-                      ],
-                      _ro(_detailsSection(theme)),
-                      const SizedBox(height: 12),
-                      if (_syncMode)
-                        _ro(_syncSection(theme))
-                      else if (_loanMode)
-                        _loanSections(theme)
-                      else
-                        _ro(_scheduleSection(theme)),
-                      // Just Details and Schedule, new or edited: Include in
-                      // balance is the list row's switch, skips / once-offs
-                      // are kept as they are (saving never resets them).
-                    ],
+                    ),
                   ),
-                ),
-                const Divider(),
-                _footer(theme),
-              ],
+                  const Divider(),
+                  _footer(theme),
+                ],
+              ),
             ),
           ),
         ),

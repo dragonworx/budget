@@ -89,6 +89,27 @@ void main() {
     expect(page.primeSoftKeyboardCalls, primed);
     expect(find.byKey(const ValueKey('events-panel-body')), findsOneWidget);
 
+    // Opening an existing transaction must not prime or focus Amount.
+    await tester.tap(find.text('Rent'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(page.primeSoftKeyboardCalls, primed);
+    final amount = find.descendant(
+      of: find.byKey(const ValueKey('editor-amount')),
+      matching: find.byType(EditableText),
+    );
+    expect(amount, findsOneWidget);
+    expect(tester.widget<EditableText>(amount).focusNode!.hasFocus, isFalse);
+
+    // Back to the list, then New may still prime / focus Amount.
+    final back = find.byKey(const ValueKey('editor-back'));
+    if (back.evaluate().isNotEmpty) {
+      await tester.tap(back);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
+    expect(find.byKey(const ValueKey('events-panel-body')), findsOneWidget);
+
     await tester.tap(find.byKey(const ValueKey('panel-new-event')));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));

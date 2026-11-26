@@ -1558,6 +1558,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(page.primeSoftKeyboardCalls, primed);
     expect(nameFocused(tester), isFalse);
+    expect(
+      tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(const ValueKey('editor-amount')),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .focusNode!
+          .hasFocus,
+      isFalse,
+    );
     expect(_phrase(tester), 'Every 3 months');
     expect(_intervalText(tester), '3');
     // Editing is just Details and Schedule too (no Occurrences / Options),
