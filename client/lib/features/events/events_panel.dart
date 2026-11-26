@@ -689,7 +689,10 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text('Events', style: theme.textTheme.headlineSmall),
+                    child: Text(
+                      'Transactions',
+                      style: theme.textTheme.headlineSmall,
+                    ),
                   ),
                   if (_readOnly) ...[
                     const Padding(

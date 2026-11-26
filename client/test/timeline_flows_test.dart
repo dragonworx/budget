@@ -694,7 +694,7 @@ void main() {
     tester,
   ) async {
     final store = await _pump(tester);
-    expect(find.byTooltip('Events (2)'), findsOneWidget);
+    expect(find.byTooltip('Transactions (2)'), findsOneWidget);
     await _editFromPanel(tester, 'Rent');
     await tester.tap(find.byKey(const ValueKey('editor-delete')));
     await tester.pumpAndSettle();
@@ -709,11 +709,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.calls, contains('delete rent'));
     expect(find.text('Deleted “Rent”'), findsOneWidget);
-    expect(find.byTooltip('Events (1)'), findsOneWidget);
+    expect(find.byTooltip('Transactions (1)'), findsOneWidget);
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(store.calls, contains('create Rent'));
-    expect(find.byTooltip('Events (2)'), findsOneWidget);
+    expect(find.byTooltip('Transactions (2)'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
   });
 
@@ -775,7 +775,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.calls, contains('create Rent'));
     expect(find.text('Created “Rent”'), findsOneWidget);
-    expect(find.byTooltip('Events (3)'), findsOneWidget);
+    expect(find.byTooltip('Transactions (3)'), findsOneWidget);
     await tester.pump(const Duration(seconds: 6));
   });
 
@@ -2019,7 +2019,7 @@ void main() {
           tester.getSize(find.byKey(const ValueKey('open-events'))).height,
           greaterThanOrEqualTo(40),
         );
-        expect(find.byTooltip('Events (2)'), findsOneWidget);
+        expect(find.byTooltip('Transactions (2)'), findsOneWidget);
       }
       // Reminders is the first button: nothing between the stream
       // area and it (Share stream lives in More at every width).
@@ -2151,7 +2151,7 @@ void main() {
       expect(find.byKey(const ValueKey('more-categories')), findsNothing);
       // Events is never duplicated in More.
       expect(find.byKey(const ValueKey('more-events')), findsNothing);
-      expect(find.text('Events (2)'), findsNothing);
+      expect(find.text('Transactions (2)'), findsNothing);
       expect(find.text('Plan a payment'), findsNothing);
       if (tiny) {
         await tester.tapAt(const Offset(4, 4));

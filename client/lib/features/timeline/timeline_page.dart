@@ -1927,7 +1927,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     final docked = _dockable(context) && _dockOpen;
     return IconButton(
       key: const ValueKey('open-events'),
-      tooltip: 'Events ($count)',
+      tooltip: 'Transactions ($count)',
       style: style,
       constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       color: docked ? AppTheme.accent : null,
