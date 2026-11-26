@@ -4,6 +4,7 @@ import '../loans/loan_summary_sheet.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:clock/clock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +28,7 @@ import '../../state/realtime_providers.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/stream_dialog.dart';
+import '../../widgets/bar_chart_glyph.dart';
 import '../../widgets/list_glyph.dart';
 import '../../widgets/stream_picker.dart';
 import '../../widgets/ui.dart';
@@ -34,6 +36,8 @@ import '../events/editor_outcome.dart';
 import '../events/import_dialog.dart';
 import '../planning/goal_models.dart';
 import '../planning/scenarios_panel.dart' show scenarioColor;
+import 'category_charts_sheet.dart';
+import 'category_totals.dart';
 import 'date_range.dart';
 import 'selection_period.dart';
 import '../planning/goal_panel.dart';
@@ -216,6 +220,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     final h = _hiddenHandle;
     if (h != null) page.offPageHidden(h);
     _viewAnim.dispose();
+    _chartsTick.dispose();
     super.dispose();
   }
 
@@ -648,6 +653,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     if (range != _dateRange) {
       setState(() => _dateRange = range);
       saveDateRange(range);
+      _bumpCharts();
     }
     if (zoom && !range.isAllTime) _zoomToRange(range);
   }
@@ -668,6 +674,75 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     );
     _setUnit(ViewUnit.nearest(span.$2));
     _onViewport(span.$1, span.$2);
+  }
+
+  bool _chartsOpen = false;
+  final _chartsTick = ValueNotifier(0);
+  BalanceSeries? _chartsSeries;
+  Map<String, BudgetEvent> _chartsEvents = const {};
+  List<Category> _chartsCategories = const [];
+
+  void _bumpCharts() {
+    if (_chartsOpen) _chartsTick.value++;
+  }
+
+  CategoryTotals _chartsTotals() {
+    final series = _chartsSeries;
+    if (series == null) return CategoryTotals.empty;
+    return summarizeCategories(
+      occurrences: series.occurrences,
+      start: _dateRange.start,
+      end: _dateRange.end,
+      events: _chartsEvents,
+      categories: _chartsCategories,
+    );
+  }
+
+  bool _chartsHasEvents() => _chartsEvents.isNotEmpty;
+
+  void _extendForAllTimeCharts(BudgetStream stream, List<BudgetEvent> events) {
+    final today = dateOnly(clock.now());
+    final r = streamDataRange(
+      seedDate: stream.seedDate,
+      events: events,
+      today: today,
+      openEndedHorizon: 1825,
+    );
+    var from = r.first;
+    var to = r.last;
+    if (to.difference(from).inDays > maxDataWindowDays) {
+      to = addCalendarDays(from, maxDataWindowDays);
+    }
+    if (from.isBefore(_dataFrom) || to.isAfter(_dataTo)) {
+      setState(() {
+        if (from.isBefore(_dataFrom)) _dataFrom = from;
+        if (to.isAfter(_dataTo)) _dataTo = to;
+      });
+    }
+  }
+
+  Future<void> _openCategoryCharts(
+    BuildContext context,
+    BudgetStream stream,
+    List<BudgetEvent> events,
+  ) async {
+    if (_dateRange.isAllTime) {
+      _extendForAllTimeCharts(stream, [...events, ..._chartsEvents.values]);
+    }
+    setState(() => _chartsOpen = true);
+    _chartsTick.value++;
+    try {
+      await showCategoryCharts(
+        context: context,
+        tick: _chartsTick,
+        rangeOf: () => _dateRange,
+        onRangeChanged: (r) => _setDateRange(r, zoom: !r.isAllTime),
+        totalsOf: _chartsTotals,
+        hasEvents: _chartsHasEvents,
+      );
+    } finally {
+      if (mounted) setState(() => _chartsOpen = false);
+    }
   }
 
   /// Server-side "last opened" (the stream may come from cache, so the GET
@@ -1338,6 +1413,17 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
         final events =
             ref.watch(eventsProvider(widget.streamId)).valueOrNull ??
             const <BudgetEvent>[];
+        final categories =
+            ref.watch(categoriesProvider(stream.id)).valueOrNull ??
+            const <Category>[];
+        _chartsSeries = shown;
+        _chartsEvents = {for (final t in events) t.id: t, ...?combo?.events};
+        _chartsCategories = categories;
+        if (_chartsOpen) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _chartsOpen) _chartsTick.value++;
+          });
+        }
         _maybeOpenLinkedEvent(stream);
         // Loan streams (spec 003 §9–§14): lanes to the payoff, a "Paid off"
         // marker, no alerts, no planner.
@@ -1881,6 +1967,15 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       // Always in the header, at every width (320 included): below 360 the
       // left side and View tighten instead so it fits.
       _eventsButton(context, stream, count: events.length, style: slim),
+      IconButton(
+        key: const ValueKey('open-category-charts'),
+        tooltip: 'Category charts',
+        style: slim,
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+        color: _chartsOpen ? AppTheme.accent : null,
+        onPressed: () => _openCategoryCharts(context, stream, events),
+        icon: const BarChartGlyph(),
+      ),
       if (mid && canEdit)
         icon(
           'stream-settings',

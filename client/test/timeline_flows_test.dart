@@ -25,6 +25,7 @@ import 'package:flutter/foundation.dart'
     show debugDefaultTargetPlatformOverride;
 import 'package:flutter/gestures.dart';
 import 'package:budget_client/state/realtime_providers.dart';
+import 'package:budget_client/widgets/bar_chart_glyph.dart';
 import 'package:budget_client/widgets/list_glyph.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1864,12 +1865,13 @@ void main() {
   ]) {
     testWidgets(
       '${size.width.toInt()}x${size.height.toInt()} header: Tab goes Reminders '
-      '→ Events${mid ? ' → Stream settings' : ''} → View → More',
+      '→ Events → Category charts${mid ? ' → Stream settings' : ''} → View → More',
       (tester) async {
         await _pump(tester, size: size);
         final order = [
           'open-reminders',
           'open-events',
+          'open-category-charts',
           if (mid) 'stream-settings',
           'fit-menu',
           'timeline-more',
@@ -1933,7 +1935,7 @@ void main() {
   ]) {
     testWidgets('${size.width.toInt()}x${size.height.toInt()} header: every '
         'action in the top row, '
-        'Reminders · Events (plain list) · View · More at the right '
+        'Reminders · Events (plain list) · Charts · View · More at the right '
         'end; the chart fills the body under it (no date range or tips '
         'rows)', (tester) async {
       final w = size.width;
@@ -1966,9 +1968,9 @@ void main() {
       }
       expect(more.right, lessThanOrEqualTo(w));
       expect(more.right, greaterThan(w - 16));
-      // Right end, in order: Reminders · Events ·
+      // Right end, in order: Reminders · Events · Charts ·
       // Stream settings (≥960) · View · More, at every width (320
-      // included: Events never hides in More); neighbours after
+      // included: Charts never hides in More); neighbours after
       // Reminders touch (even spacing, no stray gaps).
       expect(inBar('fit-menu'), isTrue);
       expect(inBar('open-reminders'), isTrue);
@@ -1983,6 +1985,7 @@ void main() {
         final row = [
           'open-reminders',
           'open-events',
+          'open-category-charts',
           if (mid) 'stream-settings',
           'fit-menu',
           'timeline-more',
@@ -2032,6 +2035,24 @@ void main() {
           greaterThanOrEqualTo(40),
         );
         expect(find.byTooltip('Transactions (2)'), findsOneWidget);
+        expect(inBar('open-category-charts'), isTrue);
+        expect(find.byTooltip('Category charts'), findsOneWidget);
+        final charts = tester.widget<IconButton>(
+          find.byKey(const ValueKey('open-category-charts')),
+        );
+        expect(charts.icon, isA<BarChartGlyph>());
+        expect(
+          tester
+              .getSize(find.byKey(const ValueKey('open-category-charts')))
+              .height,
+          greaterThanOrEqualTo(40),
+        );
+        expect(
+          tester
+              .getSize(find.byKey(const ValueKey('open-category-charts')))
+              .width,
+          greaterThanOrEqualTo(40),
+        );
       }
       // Reminders is the first button: nothing between the stream
       // area and it (Share stream lives in More at every width).

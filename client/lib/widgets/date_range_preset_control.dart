@@ -26,62 +26,56 @@ class DateRangePresetControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = range.preset.label;
     final dates = _dateSuffix(range);
-    return Semantics(
-      button: true,
-      label: 'Date range',
-      value: label,
-      child: PopupMenuButton<DateRangePreset>(
-        key: const ValueKey('date-range-preset'),
-        tooltip: 'Date range',
-        initialValue: range.preset == DateRangePreset.custom
-            ? null
-            : range.preset,
-        offset: const Offset(0, 36),
-        onSelected: (preset) => onChanged(DateRange.fromPreset(preset)),
-        itemBuilder: (context) => [
-          for (final p in DateRangePreset.menu)
-            PopupMenuItem(value: p, child: Text(p.label)),
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+    return LayoutBuilder(
+      builder: (context, c) {
+        final style = Theme.of(context).textTheme.bodyMedium;
+        final muted = style?.copyWith(color: AppTheme.textMuted);
+        final suffix = dates == null ? '' : '  $dates';
+        final fullW = _textWidth('$label$suffix', style);
+        final bounded = c.maxWidth.isFinite;
+        final show =
+            showDates && dates != null && bounded && c.maxWidth >= fullW + 22;
+        final text = Text.rich(
+          TextSpan(
             children: [
-              Flexible(
-                child: showDates
-                    ? LayoutBuilder(
-                        builder: (context, c) {
-                          final style = Theme.of(context).textTheme.bodyMedium;
-                          final muted = style?.copyWith(
-                            color: AppTheme.textMuted,
-                          );
-                          final suffix = dates == null ? '' : '  $dates';
-                          final fullW = _textWidth('$label$suffix', style);
-                          final show =
-                              dates != null &&
-                              (c.maxWidth.isInfinite ||
-                                  c.maxWidth >= fullW + 22);
-                          return Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(text: label, style: style),
-                                if (show) TextSpan(text: suffix, style: muted),
-                              ],
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            softWrap: false,
-                          );
-                        },
-                      )
-                    : Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-              ),
-              const SizedBox(width: 2),
-              const Icon(Icons.expand_more_rounded, size: 18),
+              TextSpan(text: label, style: style),
+              if (show) TextSpan(text: suffix, style: muted),
             ],
           ),
-        ),
-      ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
+        );
+        return Semantics(
+          button: true,
+          label: 'Date range',
+          value: label,
+          child: PopupMenuButton<DateRangePreset>(
+            key: const ValueKey('date-range-preset'),
+            tooltip: 'Date range',
+            initialValue: range.preset == DateRangePreset.custom
+                ? null
+                : range.preset,
+            offset: const Offset(0, 36),
+            onSelected: (preset) => onChanged(DateRange.fromPreset(preset)),
+            itemBuilder: (context) => [
+              for (final p in DateRangePreset.menu)
+                PopupMenuItem(value: p, child: Text(p.label)),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Row(
+                mainAxisSize: bounded ? MainAxisSize.max : MainAxisSize.min,
+                children: [
+                  if (bounded) Expanded(child: text) else text,
+                  const SizedBox(width: 2),
+                  const Icon(Icons.expand_more_rounded, size: 18),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

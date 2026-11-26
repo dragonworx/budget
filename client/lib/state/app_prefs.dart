@@ -79,4 +79,7 @@ abstract final class PrefKeys {
 
   /// Inclusive end of a Custom range (`YYYY-MM-DD`).
   static const dateRangeCustomTo = 'timeline.dateRangeCustomTo';
+
+  /// Category charts: `pie` or `bar` (default pie).
+  static const categoryChartMode = 'timeline.categoryChartMode';
 }
