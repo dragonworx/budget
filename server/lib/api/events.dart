@@ -122,6 +122,9 @@ Router eventsRouter(Session conn) {
           color: parseEventColor(body['color']),
           clearColor: body.containsKey('color') &&
               parseEventColor(body['color']) == null,
+          label: parseEventLabel(body['label']),
+          clearLabel: body.containsKey('label') &&
+              parseEventLabel(body['label']) == null,
           loan: loanTerms,
           offsetStreamIds: offsetIds,
           exprs: prep.exprs,
@@ -310,6 +313,11 @@ Router eventsRouter(Session conn) {
             color: parseEventColor(body['color']),
             clearColor: body.containsKey('color') &&
                 parseEventColor(body['color']) == null,
+            label: body.containsKey('label')
+                ? parseEventLabel(body['label'])
+                : existing.label,
+            clearLabel: body.containsKey('label') &&
+                parseEventLabel(body['label']) == null,
             exprs: prep.exprs);
         await VariableService(tx)
             .afterEventWrite([id, if (r.created != null) r.created!.id]);
@@ -348,10 +356,12 @@ class ParsedEventBody {
     this.occurrenceCount,
     required this.enabled,
     this.color,
+    this.label,
     this.days = const [],
   });
 
   final String? color;
+  final String? label;
   final List<int> days;
   final String name;
   final Direction direction;
@@ -404,6 +414,7 @@ ParsedEventBody parseEventBody(Map<String, dynamic> body) {
     occurrenceCount: optionalInt(body, 'occurrenceCount'),
     enabled: optionalBool(body, 'enabled') ?? true,
     color: parseEventColor(body['color']),
+    label: parseEventLabel(body['label']),
   );
 }
 

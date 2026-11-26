@@ -455,6 +455,7 @@ class BudgetEvent {
     this.occurrenceCountExpr,
     this.exprErrors,
     this.resolvedDifferently = false,
+    this.label,
   });
 
   /// A write's response said a formula resolved to another value than the
@@ -571,6 +572,11 @@ class BudgetEvent {
   final String id;
   final String streamId;
   final String name;
+
+  /// Optional extra context under the category, shown as
+  /// `"<category>: <label>"` on the timeline and in the list; null if none.
+  final String? label;
+
   final EventDirection direction;
 
   /// Set when this series is one side of a transfer between streams.
@@ -685,6 +691,7 @@ class BudgetEvent {
       occurrenceCountExpr: json['occurrenceCountExpr'] as String?,
       exprErrors: _jsonMap(json['exprErrors']),
       resolvedDifferently: json['formulaResolvedDifferently'] == true,
+      label: _optionalLabel(json['label']),
       overrides: {
         for (final o in (json['overrides'] as List?) ?? const [])
           parseDate((o as Map)['date']): OccurrenceOverride(
@@ -701,6 +708,7 @@ class BudgetEvent {
     'id': id,
     'streamId': streamId,
     'name': name,
+    'label': label,
     'direction': direction.toJson(),
     'amount': moneyToJson(amount),
     'startDate': formatDate(startDate),
@@ -742,6 +750,7 @@ class BudgetEvent {
 
   Map<String, dynamic> _createJson() => {
     'name': name,
+    'label': label,
     'direction': direction.toJson(),
     'amount': moneyToJson(amount),
     'startDate': formatDate(startDate),
@@ -810,6 +819,8 @@ class BudgetEvent {
     String? amountExpr,
     String? intervalExpr,
     String? occurrenceCountExpr,
+    String? label,
+    bool clearLabel = false,
   }) {
     // Formula texts are not carried over: a copy is an edit draft, and a
     // plain edit must clear the formula (spec 010 rule 2). Pass them to
@@ -832,6 +843,7 @@ class BudgetEvent {
       id: id ?? this.id,
       streamId: streamId ?? this.streamId,
       name: name ?? this.name,
+      label: clearLabel ? null : (label ?? this.label),
       direction: direction ?? this.direction,
       amount: amount ?? this.amount,
       startDate: startDate ?? this.startDate,
@@ -937,14 +949,33 @@ String transferPhrase(BudgetEvent t) {
   return '$dir: ${link.streamLabel}';
 }
 
+String? _optionalLabel(Object? raw) {
+  if (raw is! String) return null;
+  final v = raw.trim();
+  return v.isEmpty ? null : v;
+}
+
+/// Category name plus optional ": <label>". [empty] is used when the
+/// category name is blank (timeline lanes use `'Event'`, list rows
+/// `'Untitled'`).
+String eventTitle(BudgetEvent t, {String empty = ''}) {
+  final name = t.name.trim();
+  final base = name.isEmpty ? empty : name;
+  final extra = (t.label ?? '').trim();
+  if (extra.isEmpty) return base;
+  return base.isEmpty ? extra : '$base: $extra';
+}
+
 /// Timeline / popup label: transfers add the other stream, e.g.
 /// "Top up · From: Everyday" (in) / "Top up · To: Savings" (out); an
-/// unnamed transfer is just "From: Everyday".
+/// unnamed transfer is just "From: Everyday". A user label is inserted
+/// after the category ("Salary: Bonus", or "Save: Bonus · To: Ops").
 String eventLabel(BudgetEvent t) {
-  if (t.transfer == null) return t.name;
-  final name = t.name.trim();
+  final title = eventTitle(t);
+  if (t.transfer == null) return title;
   final tail = transferPhrase(t);
-  return name.isEmpty ? tail : '$name · $tail';
+  final head = title.trim();
+  return head.isEmpty ? tail : '$head · $tail';
 }
 
 class BalancePoint {

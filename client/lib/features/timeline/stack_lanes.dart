@@ -161,11 +161,11 @@ LaneSet buildLaneSet({
             loanLaneEnd(t, payoff: loanPayoffs[id]) ?? dateOnly(t.startDate),
           )
         : _span(t);
-    final name = t.name.trim();
+    final name = eventTitle(t, empty: 'Event');
     lanes.add(
       StackLane(
         id: id,
-        name: name.isEmpty ? 'Event' : name,
+        name: name,
         credit: t.direction == EventDirection.credit,
         amount: t.signedAmount.toDouble(),
         amountText: loanLabel(t),

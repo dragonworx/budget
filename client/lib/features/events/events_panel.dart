@@ -1064,7 +1064,7 @@ class _TxRow extends StatelessWidget {
     final credit = t.direction == EventDirection.credit;
     final amount = t.amount.toDouble() * (credit ? 1 : -1);
     final touch = MediaQuery.sizeOf(context).width < 600;
-    final name = t.name.isEmpty ? 'Untitled' : t.name;
+    final name = eventTitle(t, empty: 'Untitled');
     // Swipe left to delete (undo in the snackbar, so no confirm). Needs a
     // long, deliberate swipe so a scroll or tap never deletes.
     return Dismissible(

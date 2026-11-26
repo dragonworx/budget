@@ -22,7 +22,8 @@ const _enrichedCols = '''
   t.kind AS t_kind, t.loan AS t_loan,
   t.offset_stream_ids::text[] AS t_offsets,
   t.amount_expr AS t_amount_expr, t.interval_expr AS t_interval_expr,
-  t.count_expr AS t_count_expr, t.expr_errors AS t_expr_errors''';
+  t.count_expr AS t_count_expr, t.expr_errors AS t_expr_errors,
+  t.label AS t_label''';
 const _peerJoin = '''
   LEFT JOIN categories c ON c.id = t.category_id
   LEFT JOIN events p
@@ -239,6 +240,8 @@ class EventRepo {
     bool? enabled,
     String? color,
     bool clearColor = false,
+    String? label,
+    bool clearLabel = false,
     EventExprWrite? exprs,
   }) async {
     final t = await get(id);
@@ -265,6 +268,8 @@ class EventRepo {
           enabled: enabled,
           color: color,
           clearColor: clearColor,
+          label: label,
+          clearLabel: clearLabel,
           exprs: exprs))!;
       await clearOverrides(id, date: d);
       await syncPeer(updated);
@@ -294,6 +299,7 @@ class EventRepo {
       occurrenceCount: remaining,
       enabled: enabled ?? t.enabled,
       color: clearColor ? null : (color ?? t.color),
+      label: clearLabel ? null : (label ?? t.label),
       // A kept interval keeps its formula; the remaining count is a number.
       exprs: EventExprWrite(
           {
@@ -385,6 +391,7 @@ class EventRepo {
     LoanTerms? loan,
     List<String> offsetStreamIds = const [],
     EventExprWrite? exprs,
+    String? label,
   }) async {
     final f = _validateShape(
       recurrenceMode: recurrenceMode,
@@ -406,14 +413,14 @@ class EventRepo {
           recurrence_mode, interval, unit, end_mode, end_date,
           occurrence_count, enabled, transfer_id, color,
           freq_rule, freq_interval, freq_days, kind, loan, offset_stream_ids,
-          amount_expr, interval_expr, count_expr
+          amount_expr, interval_expr, count_expr, label
         ) VALUES (
           @id, @streamId, @name, @direction, @amount, @startDate,
           @recurrenceMode, @interval, @unit, @endMode, @endDate,
           @occurrenceCount, @enabled, @transferId::uuid, @color,
           @freqRule, @freqInterval, @freqDays::int[]::smallint[],
           @kind, @loan::jsonb, @offsets::text[]::uuid[],
-          @amountExpr, @intervalExpr, @countExpr
+          @amountExpr, @intervalExpr, @countExpr, @label
         )
         RETURNING id, stream_id, name, direction, amount, start_date,
                   recurrence_mode, interval, unit, end_mode, end_date,
@@ -441,6 +448,7 @@ class EventRepo {
         'amountExpr': exprs?.columns['amount_expr'],
         'intervalExpr': exprs?.columns['interval_expr'],
         'countExpr': exprs?.columns['count_expr'],
+        'label': label,
       },
     );
 
@@ -481,6 +489,8 @@ class EventRepo {
     LoanTerms? loan,
     List<String>? offsetStreamIds,
     EventExprWrite? exprs,
+    String? label,
+    bool clearLabel = false,
   }) async {
     final existing = await get(id);
     if (existing == null) return null;
@@ -527,6 +537,7 @@ class EventRepo {
           occurrence_count = @occurrenceCount,
           enabled = @enabled,
           color = @color,
+          label = @label,
           loan = COALESCE(@loan::jsonb, loan),
           offset_stream_ids =
             COALESCE(@offsets::text[]::uuid[], offset_stream_ids)$exprSets
@@ -549,6 +560,7 @@ class EventRepo {
         'occurrenceCount': nextCount,
         'enabled': enabled ?? existing.enabled,
         'color': clearColor ? null : (color ?? existing.color),
+        'label': clearLabel ? null : (label ?? existing.label),
         'loan': loan == null ? null : jsonEncode(loan.toJson()),
         'offsets': offsetStreamIds,
         ...exprParams,
@@ -670,12 +682,12 @@ class EventRepo {
           INSERT INTO events (
             id, stream_id, name, direction, amount, start_date,
             recurrence_mode, interval, unit, end_mode, end_date,
-            occurrence_count, enabled, color,
+            occurrence_count, enabled, color, label,
             freq_rule, freq_interval, freq_days, amount_expr, kind
           ) VALUES (
             @id, @streamId, @name, @direction, @amount, @startDate,
             @recurrenceMode, @interval, @unit, @endMode, @endDate,
-            @occurrenceCount, @enabled, @color,
+            @occurrenceCount, @enabled, @color, @label,
             @freqRule, @freqInterval, @freqDays::int[]::smallint[], @amountExpr,
             @kind
           )
@@ -693,6 +705,7 @@ class EventRepo {
           'occurrenceCount': item.occurrenceCount,
           'enabled': item.enabled,
           'color': item.color,
+          'label': item.label,
           'amountExpr': item.amountExpr,
           'kind': item.kind.name,
         },
@@ -890,6 +903,7 @@ class EventRepo {
               loanRaw is String ? jsonDecode(loanRaw) : loanRaw),
       days: days,
       color: cols['t_color'] as String?,
+      label: cols['t_label'] as String?,
       categoryId: cols['t_category_id'] as String?,
       categoryHidden: cols['t_category_hidden'] as bool? ?? false,
       version: version is int ? version : 1,
@@ -948,6 +962,7 @@ class EventRepo {
       enabled: source.enabled,
       transferId: transferId,
       color: source.color,
+      label: source.label,
       exprs: EventExprWrite({
         'amount_expr': source.amountExpr,
         'interval_expr': source.intervalExpr,
@@ -993,6 +1008,7 @@ class EventRepo {
           freq_days = s.freq_days,
           occurrence_count = s.occurrence_count, enabled = s.enabled,
           color = (SELECT color FROM categories WHERE id = s.category_id),
+          label = s.label,
           amount_expr = s.amount_expr, interval_expr = s.interval_expr,
           count_expr = s.count_expr, expr_errors = s.expr_errors
         FROM events s

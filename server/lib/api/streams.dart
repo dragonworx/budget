@@ -154,6 +154,7 @@ Router buildStreamsApi(Session conn) {
           occurrenceCount: parsed.occurrenceCount,
           enabled: parsed.enabled,
           color: parsed.color,
+          label: parsed.label,
           kind: loanKind.kind,
           loan: loanTerms,
           offsetStreamIds: offsetIds ?? const [],

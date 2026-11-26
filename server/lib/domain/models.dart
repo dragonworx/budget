@@ -101,6 +101,7 @@ class BudgetEvent {
     this.intervalExpr,
     this.countExpr,
     this.exprErrors,
+    this.label,
   });
 
   final int version;
@@ -176,6 +177,11 @@ class BudgetEvent {
   final String id;
   final String streamId;
   final String name;
+
+  /// Optional extra context under the category name (max 60 chars);
+  /// null when none.
+  final String? label;
+
   final Direction direction;
   final Decimal amount;
   final DateTime startDate;
@@ -197,6 +203,7 @@ class BudgetEvent {
         'id': id,
         'streamId': streamId,
         'name': name,
+        'label': label,
         'direction': direction.name,
         'amount': amount.toString(),
         'startDate': formatDate(startDate),
@@ -253,11 +260,14 @@ class BudgetEvent {
     bool clearOccurrenceCount = false,
     String? color,
     bool clearColor = false,
+    String? label,
+    bool clearLabel = false,
     List<int>? days,
   }) {
     return BudgetEvent(
       days: days ?? this.days,
       color: clearColor ? null : (color ?? this.color),
+      label: clearLabel ? null : (label ?? this.label),
       id: id ?? this.id,
       streamId: streamId ?? this.streamId,
       name: name ?? this.name,
@@ -293,6 +303,7 @@ class BudgetEvent {
       BudgetEvent(
         days: days,
         color: color,
+        label: label,
         id: id,
         streamId: streamId,
         name: name,
@@ -560,4 +571,21 @@ String? parseEventColor(Object? raw) {
   final m = _hexColor.firstMatch(v);
   if (m == null) throw FormatException('color must be "#RRGGBB"');
   return '#${m.group(1)!.toUpperCase()}';
+}
+
+/// Largest accepted event label (characters).
+const maxEventLabelLength = 60;
+
+/// Optional event label: trimmed text, empty / null → null, at most
+/// [maxEventLabelLength] characters. Throws [FormatException] otherwise.
+String? parseEventLabel(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! String) throw FormatException('label must be text');
+  final v = raw.trim();
+  if (v.isEmpty) return null;
+  if (v.length > maxEventLabelLength) {
+    throw FormatException(
+        'label must be at most $maxEventLabelLength characters');
+  }
+  return v;
 }

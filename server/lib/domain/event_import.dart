@@ -6,7 +6,7 @@ import 'package:decimal/decimal.dart';
 
 import 'enums.dart';
 import 'formulas.dart';
-import 'models.dart' show parseEventColor;
+import 'models.dart' show parseEventColor, parseEventLabel;
 
 // Import format (see the /transaction skill, named before the rename): every date is a whole number
 // of calendar days relative to a date root — the day the user selected on
@@ -79,6 +79,7 @@ class ImportItem {
     this.endOffset,
     this.skippedOffsets = const [],
     this.color,
+    this.label,
     this.days = const [],
     this.amountExpr,
     this.kind = EventKind.standard,
@@ -114,6 +115,9 @@ class ImportItem {
   /// "#RRGGBB" or null (the positional lane colour).
   final String? color;
 
+  /// Optional extra context; null when absent.
+  final String? label;
+
   Map<String, dynamic> toJson() => {
         'index': index,
         'id': id,
@@ -141,6 +145,7 @@ class ImportItem {
         if (amountExpr != null) 'amountExpr': amountExpr,
         'skippedOffsets': skippedOffsets,
         'color': color,
+        'label': label,
         if (kind == EventKind.sync) 'kind': kind.name,
       };
 }
@@ -260,6 +265,7 @@ List<ImportItem> parseImport(String raw,
       'color',
       // British spelling, accepted as an alias of color.
       'colour',
+      'label',
     };
     // Absolute dates from the old format: rejected with a pointer to the
     // offset field that replaces them.
@@ -529,6 +535,13 @@ List<ImportItem> parseImport(String raw,
           'must be a "#RRGGBB" hex colour');
     }
 
+    String? label;
+    try {
+      label = parseEventLabel(m['label']);
+    } on FormatException catch (e) {
+      bad('label', e.message);
+    }
+
     final skipped = <DateTime>[];
     final skippedOffsets = <int>[];
     final sk = m['skippedOffsets'];
@@ -571,6 +584,7 @@ List<ImportItem> parseImport(String raw,
         endOffset: endOffset,
         skippedOffsets: skippedOffsets,
         color: color,
+        label: label,
         amountExpr: amountExpr,
       ));
     }
@@ -597,7 +611,8 @@ ImportItem? _parseSyncItem(
     'amount',
     'amountExpr',
     'startOffset',
-    'enabled'
+    'enabled',
+    'label',
   };
   for (final k in m.keys) {
     if (k == 'startDate') {
@@ -661,6 +676,13 @@ ImportItem? _parseSyncItem(
   if (enabledRaw != null && enabledRaw is! bool) {
     bad('enabled', 'must be true or false');
   }
+  String? label;
+  try {
+    label = parseEventLabel(m['label']);
+  } on FormatException catch (e) {
+    bad('label', e.message);
+  }
+
   if (amount == null || startDate == null) return null;
   return ImportItem(
     index: i,
@@ -676,6 +698,7 @@ ImportItem? _parseSyncItem(
     skippedDates: const [],
     startOffset: startOffset!,
     color: '#5AA9A3',
+    label: label,
     amountExpr: amountExpr,
   );
 }

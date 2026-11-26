@@ -228,6 +228,9 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   /// [FormulaEditingController.formula] instead of parsing the text.
   late final FormulaEditingController _amount;
 
+  /// Optional extra context under the category (no autofocus, no primer).
+  late final TextEditingController _label;
+
   /// N and the end-after count take formulas too (spec 013).
   late final FormulaEditingController _interval;
   late final FormulaEditingController _count;
@@ -277,6 +280,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     _openedEvent = id == null ? null : ref.read(remoteChangesProvider)[id]?.id;
     final existing = widget.existing;
     _categoryId = existing?.categoryId;
+    _label = TextEditingController(text: existing?.label ?? '');
     // A formula event shows its formula, not the number it resolves to.
     final expr = ServerFeatures.variables ? existing?.amountExpr : null;
     _amount = FormulaEditingController(
@@ -489,6 +493,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     final d = _draft();
     return [
       _categoryId,
+      _label.text.trim(),
       d.direction,
       _amount.text.trim(),
       d.startDate,
@@ -505,6 +510,11 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   }
 
   bool get _dirty => _signature() != _initialSignature;
+
+  String? get _trimmedLabel {
+    final v = _label.text.trim();
+    return v.isEmpty ? null : v;
+  }
 
   EditorOutcome? _outcome(
     EditorAction? action, [
@@ -535,6 +545,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   void dispose() {
     setSoftKeyboardTextHandler(null);
     _amount.dispose();
+    _label.dispose();
     _balance.dispose();
     _syncPreviewTimer?.cancel();
     _interval.dispose();
@@ -667,6 +678,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         endMode: EndMode.never,
         enabled: _enabled,
         color: _category?.color ?? widget.existing?.color,
+        label: _trimmedLabel,
         kind: 'loan',
         loan: loan.toJson(),
         offsetStreamIds: loan.offsetIds,
@@ -702,6 +714,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       enabled: _enabled,
       transfer: _transferMode ? _transfer : null,
       color: _category?.color ?? widget.existing?.color,
+      label: _trimmedLabel,
     );
   }
 
@@ -1330,6 +1343,23 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                 _categoryId = c.id;
                 _categoryError = null;
               }),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('editor-label'),
+              controller: _label,
+              enabled: !_readOnly,
+              autofocus: false,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.done,
+              maxLength: 60,
+              onSubmitted: (_) => _save(),
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'Label',
+                hintText: 'Optional detail',
+                counterText: '',
+              ),
             ),
           ],
         ],

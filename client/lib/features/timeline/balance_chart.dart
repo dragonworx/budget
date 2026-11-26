@@ -195,6 +195,43 @@ void Function(String row, String text, Rect rect)? debugAxisLabel;
 @visibleForTesting
 void Function(String label, DateTime date, double x)? debugDateMarker;
 
+/// Test hook: the Today marker's top label (text and its chip), after
+/// the optional today's-balance amount is added.
+@visibleForTesting
+void Function(String text, Color? amountColor, Rect rect)?
+debugTodayMarkerLabel;
+
+/// Closing balance on [day], or the last point on or before it; null
+/// when every point is after [day] (or the series is empty).
+double? closingBalanceOnDay(Iterable<BalancePoint> points, DateTime day) {
+  final d = dateOnly(day);
+  double? last;
+  DateTime? lastDate;
+  for (final p in points) {
+    final pd = dateOnly(p.date);
+    if (pd.isAfter(d)) continue;
+    if (lastDate == null || !pd.isBefore(lastDate)) {
+      lastDate = pd;
+      last = p.closingBalance.toDouble();
+    }
+  }
+  return last;
+}
+
+/// The amount shown after "Today · " on the marker. Cents stay (like the
+/// home card) except on a narrow chart at $10,000 and up.
+String todayMarkerAmount(num balance, {required double plotWidth}) {
+  final dropCents = plotWidth < 600 && balance.abs() >= 10000;
+  return formatMoneyAmount(balance, decimalDigits: dropCents ? 0 : 2);
+}
+
+/// Full Today-marker label: "Today", or "Today · $6,400.00" when a
+/// balance is known. Always sits at the top of the today line.
+String todayMarkerText(num? balance, {required double plotWidth}) {
+  if (balance == null) return 'Today';
+  return 'Today · ${todayMarkerAmount(balance, plotWidth: plotWidth)}';
+}
+
 /// Test hook: where the $0 line was painted, and the plot it sits in.
 @visibleForTesting
 void Function(double y, Rect plot)? debugZeroLine;
@@ -5940,6 +5977,16 @@ class _BalanceChartPainter extends CustomPainter {
     // Labels point away from each other: the earlier marker's label goes
     // left, the later one's right (seed left when they coincide).
     final todayFirst = today.isBefore(seed);
+    // Today's closing balance (same figure as the home card) sits in the
+    // existing "Today" label at the top of the line, not at the bottom.
+    final todayBal = closingBalanceOnDay(series.points, today);
+    final todayAmount = todayBal == null
+        ? null
+        : todayMarkerAmount(todayBal, plotWidth: layout.plot.width);
+    final todayAmountColor =
+        todayBal != null && belowAlert(todayBal, lossThreshold)
+        ? AppTheme.debitColor
+        : const Color(0xF2FFFFFF);
     _paintVertical(
       canvas,
       layout,
@@ -5948,6 +5995,8 @@ class _BalanceChartPainter extends CustomPainter {
       color: AppTheme.mint.withValues(alpha: 0.9),
       label: 'Today',
       labelColor: AppTheme.mint,
+      amountText: todayAmount,
+      amountColor: todayAmountColor,
       // Solid, unlike the dashed dot crosshair and seed marker.
       dashed: false,
       alignLeft: todayFirst,
@@ -5988,6 +6037,8 @@ class _BalanceChartPainter extends CustomPainter {
     required Color color,
     required String label,
     required Color labelColor,
+    String? amountText,
+    Color? amountColor,
     bool dashed = false,
     bool alignLeft = false,
     double offset = 0,
@@ -6014,15 +6065,64 @@ class _BalanceChartPainter extends CustomPainter {
         y += 7;
       }
     }
-    final painter = _axisText.get(label, laneStyle.copyWith(color: labelColor));
-    final dx = alignLeft ? x - painter.width - 4 : x + 4;
-    painter.paint(
-      canvas,
-      Offset(
-        dx.clamp(layout.plot.left, layout.plot.right - painter.width),
-        layout.plot.top + 2,
-      ),
+    // The name (and optional amount) always sit at the top of the marker
+    // line, never the footer / date lanes.
+    final title = _axisText.get(label, laneStyle.copyWith(color: labelColor));
+    final maxChip = math.max(48.0, layout.plot.width * 0.55);
+    TextPainter? amount;
+    if (amountText != null && amountText.isNotEmpty) {
+      final sep = _axisText.get(' · ', laneStyle.copyWith(color: labelColor));
+      final amountMax = math.max(24.0, maxChip - title.width - sep.width - 8);
+      amount = _axisText.get(
+        amountText,
+        laneStyle.copyWith(
+          color: amountColor ?? labelColor,
+          fontWeight: FontWeight.w700,
+        ),
+        maxLines: 1,
+        ellipsis: '…',
+        maxWidth: amountMax,
+      );
+    }
+    final textW =
+        title.width +
+        (amount == null
+            ? 0
+            : amount.width + _axisText.get(' · ', laneStyle).width);
+    final dx = alignLeft ? x - textW - 4 : x + 4;
+    final left = dx
+        .clamp(layout.plot.left + 2, layout.plot.right - textW - 2)
+        .toDouble();
+    final top = layout.plot.top + 2;
+    final padX = amount == null ? 0.0 : 4.0;
+    final padY = amount == null ? 0.0 : 1.5;
+    final rect = Rect.fromLTWH(
+      left - padX,
+      top - padY,
+      textW + padX * 2,
+      math.max(title.height, amount?.height ?? title.height) + padY * 2,
     );
+    if (amount != null) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+        Paint()..color = _plotBg.withValues(alpha: 0.82),
+      );
+    }
+    title.paint(canvas, Offset(left, top));
+    if (amount != null) {
+      final sep = _axisText.get(' · ', laneStyle.copyWith(color: labelColor));
+      sep.paint(canvas, Offset(left + title.width, top));
+      amount.paint(canvas, Offset(left + title.width + sep.width, top));
+    }
+    if (label == 'Today') {
+      debugTodayMarkerLabel?.call(
+        amount == null
+            ? label
+            : 'Today · ${amount.text?.toPlainText() ?? amountText}',
+        amount == null ? null : amountColor,
+        rect,
+      );
+    }
   }
 
   void _paintSeries(
@@ -8486,7 +8586,12 @@ class _BalanceChartPainter extends CustomPainter {
     final today = dateOnly(DateTime.now());
     final seedDay = dateOnly(seedDate);
     final todayFirst = today.isBefore(seedDay);
-    add(today, 'Today', alignLeft: todayFirst);
+    final todayBal = closingBalanceOnDay(series.points, today);
+    add(
+      today,
+      todayMarkerText(todayBal, plotWidth: layout.plot.width),
+      alignLeft: todayFirst,
+    );
     add(seedDay, 'Seed', alignLeft: !todayFirst);
     for (final p in payoffDates) {
       add(p, 'Paid off');
