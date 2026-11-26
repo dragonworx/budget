@@ -26,6 +26,36 @@ import '../sharing/share_dialog.dart';
 import '../../data/repositories.dart' show StreamDeleteTransfers;
 import 'delete_stream_dialog.dart';
 
+/// P4/P6/P9: compact 112dp stream cards on a responsive grid.
+const double kStreamCardExtent = 112;
+const double kStreamContentMaxWidth = 1280;
+const double kStreamWideMaxWidth = 1600;
+
+double streamContentMaxWidth(double width) =>
+    width >= 1600 ? kStreamWideMaxWidth : kStreamContentMaxWidth;
+
+/// Column counts follow viewport width. Under 600dp the home stays a
+/// one-column compact grid; list mode is a later phase.
+int streamGridColumns(Size size) {
+  final w = size.width;
+  if (w >= 1600) return 5;
+  if (w >= 1200) return 4;
+  if (w >= 900) return 3;
+  if (w >= 600) return 2;
+  return 1;
+}
+
+/// 16 under 600, 24 from 600 to 1199, 32 from 1200 up.
+double streamPagePadding(Size size) {
+  final w = size.width;
+  if (w >= 1200) return 32;
+  if (w >= 600) return 24;
+  return 16;
+}
+
+/// P9: 8 on phone, 12 on desktop.
+double streamGridGap(Size size) => size.shortestSide < 600 ? 8 : 12;
+
 /// Opens the new-stream dialog; the stream is created inside it (errors
 /// keep it open). Resolves to the created stream.
 Future<BudgetStream?> createStream(BuildContext context) {
@@ -94,6 +124,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
       body: deciding && !streamsAsync.hasError
           ? const Center(child: CircularProgressIndicator())
           : PageBody(
+              maxWidth: streamContentMaxWidth(MediaQuery.sizeOf(context).width),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -132,7 +163,12 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
             ref.watch(myInvitesProvider).valueOrNull ?? const <Invite>[];
         if (streams.isEmpty) {
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: EdgeInsets.fromLTRB(
+              streamPagePadding(MediaQuery.sizeOf(context)),
+              0,
+              streamPagePadding(MediaQuery.sizeOf(context)),
+              24,
+            ),
             children: [
               for (final i in invites) _PendingInviteTile(invite: i),
               EmptyState(
@@ -166,100 +202,91 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
           for (final a in streams)
             if (a.shared) a,
         ];
-        return LayoutBuilder(
-          builder: (context, c) {
-            final cols = c.maxWidth >= 900
-                ? 3
-                : c.maxWidth >= 600
-                ? 2
-                : 1;
-            const gap = 10.0;
-            final w = (c.maxWidth - 32 - gap * (cols - 1)) / cols;
-            Widget grid(List<BudgetStream> list) => Wrap(
-              spacing: gap,
-              runSpacing: gap,
-              children: [
-                for (final stream in list)
-                  SizedBox(
-                    width: w,
-                    child: _StreamCard(
-                      stream: stream,
-                      canDelete: stream.role.isOwner,
-                      canShare: stream.role.isOwner,
-                      onShare: () => showShareDialog(
-                        context,
-                        ShareTarget.stream(stream.id, stream.name),
-                      ),
-                      onOpen: () =>
-                          context.go('/streams/${stream.id}/timeline'),
-                      onEdit: () => _edit(context, stream),
-                      onDelete: () => _delete(context, stream),
-                    ),
-                  ),
-              ],
+        final size = MediaQuery.sizeOf(context);
+        final cols = streamGridColumns(size);
+        final gap = streamGridGap(size);
+        final pad = streamPagePadding(size);
+        final bg = Theme.of(context).scaffoldBackgroundColor;
+
+        SliverGrid gridOf(List<BudgetStream> list) => SliverGrid(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: cols,
+            mainAxisExtent: kStreamCardExtent,
+            crossAxisSpacing: gap,
+            mainAxisSpacing: gap,
+          ),
+          delegate: SliverChildBuilderDelegate((context, i) {
+            final stream = list[i];
+            return _StreamCard(
+              stream: stream,
+              canDelete: stream.role.isOwner,
+              canShare: stream.role.isOwner,
+              onShare: () => showShareDialog(
+                context,
+                ShareTarget.stream(stream.id, stream.name),
+              ),
+              onOpen: () => context.go('/streams/${stream.id}/timeline'),
+              onEdit: () => _edit(context, stream),
+              onDelete: () => _delete(context, stream),
             );
-            final bg = Theme.of(context).scaffoldBackgroundColor;
-            return CustomScrollView(
-              slivers: [
-                if (invites.isNotEmpty) ...[
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _StickySectionDelegate(
-                        label: 'Invitations for you',
-                        headerKey: 'invites-heading',
-                        color: bg,
-                      ),
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverList(
-                      delegate: SliverChildListDelegate([
-                        for (final i in invites) _PendingInviteTile(invite: i),
-                      ]),
-                    ),
-                  ),
-                ],
-                if (mine.isNotEmpty) ...[
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _StickySectionDelegate(
-                        label: 'My streams · balance today',
-                        headerKey: 'mine-heading',
-                        color: bg,
-                      ),
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverToBoxAdapter(child: grid(mine)),
-                  ),
-                ],
-                if (shared.isNotEmpty) ...[
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _StickySectionDelegate(
-                        label: 'Shared with me · balance today',
-                        headerKey: 'shared-heading',
-                        color: bg,
-                      ),
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    sliver: SliverToBoxAdapter(child: grid(shared)),
-                  ),
-                ] else
-                  const SliverToBoxAdapter(child: SizedBox(height: 16)),
-              ],
-            );
-          },
+          }, childCount: list.length),
+        );
+
+        Widget sectionHeader({
+          required String label,
+          required String headerKey,
+        }) => SliverPersistentHeader(
+          pinned: true,
+          delegate: _StickySectionDelegate(
+            label: label,
+            headerKey: headerKey,
+            color: bg,
+            padding: EdgeInsets.symmetric(horizontal: pad),
+          ),
+        );
+
+        return CustomScrollView(
+          slivers: [
+            if (invites.isNotEmpty) ...[
+              sectionHeader(
+                label: 'Invitations for you',
+                headerKey: 'invites-heading',
+              ),
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(pad, 0, pad, 16),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    for (final i in invites) _PendingInviteTile(invite: i),
+                  ]),
+                ),
+              ),
+            ],
+            if (mine.isNotEmpty) ...[
+              sectionHeader(
+                label: 'My streams · balance today',
+                headerKey: 'mine-heading',
+              ),
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  pad,
+                  0,
+                  pad,
+                  shared.isNotEmpty ? 16 : 24,
+                ),
+                sliver: gridOf(mine),
+              ),
+            ],
+            if (shared.isNotEmpty) ...[
+              sectionHeader(
+                label: 'Shared with me · balance today',
+                headerKey: 'shared-heading',
+              ),
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(pad, 0, pad, 24),
+                sliver: gridOf(shared),
+              ),
+            ],
+          ],
         );
       },
     );
@@ -471,205 +498,251 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
             ),
           );
 
+    final phone = MediaQuery.sizeOf(context).shortestSide < 600;
+    final pad = phone ? 12.0 : 16.0;
+    final subtitle = [?sharedBy, ?offset].join(' · ');
+
+    const nameStyle = TextStyle(
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
+      height: 20 / 15,
+      leadingDistribution: TextLeadingDistribution.even,
+      color: AppTheme.text,
+    );
+    final balanceStyle = TextStyle(
+      fontSize: 22,
+      fontWeight: FontWeight.w600,
+      height: 1,
+      color: low ? AppTheme.debitColor : AppTheme.text,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    const metaStyle = TextStyle(
+      fontSize: 12,
+      height: 16 / 12,
+      color: AppTheme.cardMeta,
+    );
+
+    final icon = Container(
+      key: ValueKey('stream-card-icon-${stream.id}'),
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: AppTheme.accent.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Center(
+        child: StreamIcon(
+          key: ValueKey('stream-icon'),
+          size: 20,
+          color: AppTheme.accent,
+        ),
+      ),
+    );
+
+    final nameText = Tooltip(
+      message: stream.name,
+      waitDuration: const Duration(milliseconds: 500),
+      child: Text(
+        stream.name,
+        style: subtitle.isEmpty
+            ? nameStyle
+            : nameStyle.copyWith(height: 16 / 15),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+    final badges = <Widget>[
+      if (!stream.role.isOwner) ...[
+        const SizedBox(width: 8),
+        RoleChip(stream.role),
+      ] else if (ownedStreamShared(ref, stream)) ...[
+        const SizedBox(width: 8),
+        const Tooltip(
+          message: 'Shared with others',
+          child: Icon(
+            Icons.people_alt_outlined,
+            key: ValueKey('owned-shared-badge'),
+            size: 16,
+            color: AppTheme.accent,
+          ),
+        ),
+      ],
+    ];
+
     return Material(
       color: AppTheme.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         side: const BorderSide(color: AppTheme.border),
       ),
       clipBehavior: Clip.antiAlias,
-      child: RawGestureDetector(
-        behavior: HitTestBehavior.translucent,
-        gestures: {
-          _TouchLongPressGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<
-                _TouchLongPressGestureRecognizer
-              >(
-                () => _TouchLongPressGestureRecognizer(debugOwner: this),
-                (r) => r.onLongPress = _openMenu,
-              ),
-        },
-        child: Semantics(
-          key: ValueKey('stream-card-${stream.id}'),
-          container: true,
-          explicitChildNodes: true,
-          button: true,
-          label: semantics,
-          onTap: widget.onOpen,
-          child: FocusableActionDetector(
-            key: ValueKey('stream-card-focus-${stream.id}'),
-            shortcuts: const {
-              SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-              SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+      child: Stack(
+        children: [
+          RawGestureDetector(
+            behavior: HitTestBehavior.translucent,
+            gestures: {
+              _TouchLongPressGestureRecognizer:
+                  GestureRecognizerFactoryWithHandlers<
+                    _TouchLongPressGestureRecognizer
+                  >(
+                    () => _TouchLongPressGestureRecognizer(debugOwner: this),
+                    (r) => r.onLongPress = _openMenu,
+                  ),
             },
-            actions: {
-              ActivateIntent: CallbackAction<ActivateIntent>(
-                onInvoke: (_) {
-                  widget.onOpen();
-                  return null;
-                },
-              ),
-            },
-            child: InkWell(
+            child: Semantics(
+              key: ValueKey('stream-card-${stream.id}'),
+              container: true,
+              explicitChildNodes: true,
+              button: true,
+              label: semantics,
               onTap: widget.onOpen,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              child: FocusableActionDetector(
+                key: ValueKey('stream-card-focus-${stream.id}'),
+                shortcuts: const {
+                  SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+                  SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+                },
+                actions: {
+                  ActivateIntent: CallbackAction<ActivateIntent>(
+                    onInvoke: (_) {
+                      widget.onOpen();
+                      return null;
+                    },
+                  ),
+                },
+                child: InkWell(
+                  onTap: widget.onOpen,
+                  child: Padding(
+                    padding: EdgeInsets.all(pad),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: ExcludeSemantics(
-                            child: Row(
-                              children: [
-                                const IconTile.glyph(
-                                  StreamIcon(key: ValueKey('stream-icon')),
+                        SizedBox(
+                          height: 32,
+                          child: Row(
+                            children: [
+                              icon,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ExcludeSemantics(
+                                  child: subtitle.isEmpty
+                                      ? Row(
+                                          children: [
+                                            Expanded(child: nameText),
+                                            ...badges,
+                                          ],
+                                        )
+                                      : Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            SizedBox(
+                                              height: 16,
+                                              child: Row(
+                                                children: [
+                                                  Expanded(child: nameText),
+                                                  ...badges,
+                                                ],
+                                              ),
+                                            ),
+                                            SizedBox(
+                                              height: 16,
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: Text(
+                                                  subtitle,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    height: 1,
+                                                    color: AppTheme.textMuted,
+                                                    leadingDistribution:
+                                                        TextLeadingDistribution
+                                                            .even,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                 ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Tooltip(
-                                    message: stream.name,
-                                    waitDuration: const Duration(
-                                      milliseconds: 500,
+                              ),
+                              const SizedBox(width: 8),
+                              ExcludeSemantics(
+                                child: IgnorePointer(
+                                  child: Icon(
+                                    Icons.chevron_right_rounded,
+                                    key: ValueKey(
+                                      'stream-card-chevron-${stream.id}',
                                     ),
-                                    child: Text(
-                                      stream.name,
-                                      style: theme.textTheme.titleMedium,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                    size: 16,
+                                    color: AppTheme.textMuted,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                if (!stream.role.isOwner) ...[
-                                  RoleChip(stream.role),
-                                  const SizedBox(width: 6),
-                                ] else if (ownedStreamShared(ref, stream)) ...[
-                                  const Tooltip(
-                                    message: 'Shared with others',
-                                    child: Icon(
-                                      Icons.people_alt_outlined,
-                                      key: ValueKey('owned-shared-badge'),
-                                      size: 18,
-                                      color: AppTheme.accent,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                ],
-                              ],
-                            ),
+                              ),
+                              if (menu != null) const SizedBox(width: 52),
+                            ],
                           ),
                         ),
-                        ?menu,
+                        const SizedBox(height: 4),
                         ExcludeSemantics(
-                          child: IgnorePointer(
-                            child: Icon(
-                              Icons.chevron_right_rounded,
-                              key: ValueKey('stream-card-chevron-${stream.id}'),
-                              size: 16,
-                              color: AppTheme.textMuted,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 40),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  balanceText,
+                                  style: balanceStyle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        meta,
+                                        key: ValueKey(
+                                          'stream-card-meta-${stream.id}',
+                                        ),
+                                        style: metaStyle,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (alertText != null) ...[
+                                      const SizedBox(width: 8),
+                                      _AlertChip(
+                                        key: ValueKey(
+                                          'stream-card-alert-${stream.id}',
+                                        ),
+                                        label: alertText,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
                         ),
                       ],
                     ),
-                    ExcludeSemantics(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (sharedBy != null) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              sharedBy,
-                              style: theme.textTheme.bodySmall,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                          if (offset != null) ...[
-                            const SizedBox(height: 6),
-                            Row(
-                              key: const ValueKey('stream-offset-indicator'),
-                              children: [
-                                const Icon(
-                                  Icons.savings_outlined,
-                                  size: 14,
-                                  color: AppTheme.textFaint,
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Text(
-                                    offset,
-                                    style: theme.textTheme.bodySmall,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            height: 34,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                balanceText,
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: low
-                                      ? AppTheme.debitColor
-                                      : AppTheme.text,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  meta,
-                                  key: ValueKey(
-                                    'stream-card-meta-${stream.id}',
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    height: 16 / 12,
-                                    color: AppTheme.cardMeta,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (alertText != null) ...[
-                                const SizedBox(width: 8),
-                                _AlertChip(
-                                  key: ValueKey(
-                                    'stream-card-alert-${stream.id}',
-                                  ),
-                                  label: alertText,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+          if (menu != null) Positioned(top: 0, right: 0, child: menu),
+        ],
       ),
     );
   }
 }
 
-/// 20dp chip: 12px bell + "Alert < $0".
+/// 16dp chip: 12px bell + "Alert < $0".
 class _AlertChip extends StatelessWidget {
   const _AlertChip({super.key, required this.label});
   final String label;
@@ -677,7 +750,7 @@ class _AlertChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 20,
+      height: 16,
       padding: const EdgeInsets.symmetric(horizontal: 6),
       alignment: Alignment.center,
       decoration: BoxDecoration(
@@ -733,7 +806,7 @@ class _PendingInviteTile extends StatelessWidget {
     final by = invite.invitedBy;
     return Card(
       key: ValueKey('my-invite-${invite.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         leading: by == null
             ? const Icon(Icons.mail_outline_rounded)
@@ -778,8 +851,9 @@ class _StreamsHeader extends StatelessWidget {
       height: phone ? 28 / 22 : 32 / 24,
       leadingDistribution: TextLeadingDistribution.even,
     );
+    final pad = streamPagePadding(MediaQuery.sizeOf(context));
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      padding: EdgeInsets.fromLTRB(pad, 6, pad, 6),
       child: SizedBox(
         height: 44,
         child: Row(
@@ -864,11 +938,13 @@ class _StickySectionDelegate extends SliverPersistentHeaderDelegate {
     required this.label,
     required this.headerKey,
     required this.color,
+    this.padding = EdgeInsets.zero,
   });
 
   final String label;
   final String headerKey;
   final Color color;
+  final EdgeInsets padding;
 
   @override
   double get minExtent => 32;
@@ -888,7 +964,7 @@ class _StickySectionDelegate extends SliverPersistentHeaderDelegate {
         key: ValueKey(headerKey),
         height: 32,
         alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.only(left: 2),
+        padding: padding,
         child: Text(
           label,
           style: const TextStyle(
@@ -904,5 +980,8 @@ class _StickySectionDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(covariant _StickySectionDelegate old) =>
-      label != old.label || color != old.color || headerKey != old.headerKey;
+      label != old.label ||
+      color != old.color ||
+      headerKey != old.headerKey ||
+      padding != old.padding;
 }

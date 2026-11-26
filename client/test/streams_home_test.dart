@@ -170,13 +170,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(_path(c), streamsPath);
       expect(find.byKey(const ValueKey('stream-card-a1')), findsOneWidget);
-      // Stream cards lead with the painted stream icon (20px in its 40px tile).
+      // Stream cards lead with the painted stream icon (20px in its 32px tile).
       final cardIcon = find.descendant(
         of: find.byKey(const ValueKey('stream-card-a1')),
         matching: find.byType(StreamIcon),
       );
       expect(cardIcon, findsOneWidget);
       expect(tester.getSize(cardIcon), const Size(20, 20));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('stream-card-icon-a1'))),
+        const Size(32, 32),
+      );
       expect(find.byIcon(Icons.account_balance_wallet_rounded), findsNothing);
     });
   }
@@ -336,7 +340,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('stream-card-alert-a1'))).height,
-      20,
+      16,
     );
 
     final chevron = find.byKey(const ValueKey('stream-card-chevron-a1'));
@@ -523,5 +527,185 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getRect(heading).top, closeTo(before, 1));
     expect(find.text('My streams · balance today'), findsOneWidget);
+  });
+
+  testWidgets(
+    'P4: the compact card is 112dp with 15/600 name and 22/600 tabular balance',
+    (tester) async {
+      final repo = FakeStreamRepository(
+        streams: [testStream('a1', 'Everyday')],
+        lastStreamId: 'gone',
+      );
+      await _app(tester, repo, size: const Size(390, 844));
+      final card = find.byKey(const ValueKey('stream-card-a1'));
+      expect(tester.getSize(card).height, 112);
+
+      final material = tester.widget<Material>(
+        find.ancestor(of: card, matching: find.byType(Material)).first,
+      );
+      final shape = material.shape as RoundedRectangleBorder;
+      expect(shape.borderRadius, BorderRadius.circular(12));
+
+      final name = tester.widget<Text>(
+        find.descendant(of: card, matching: find.text('Everyday')).first,
+      );
+      expect(name.style?.fontSize, 15);
+      expect(name.style?.fontWeight, FontWeight.w600);
+      expect(name.maxLines, 1);
+      expect(name.overflow, TextOverflow.ellipsis);
+
+      final balance = tester.widget<Text>(
+        find
+            .descendant(
+              of: card,
+              matching: find.byWidgetPredicate(
+                (w) =>
+                    w is Text &&
+                    w.style?.fontSize == 22 &&
+                    w.style?.fontWeight == FontWeight.w600,
+              ),
+            )
+            .first,
+      );
+      expect(
+        balance.style?.fontFeatures,
+        contains(const FontFeature.tabularFigures()),
+      );
+      expect(balance.maxLines, 1);
+      expect(balance.overflow, TextOverflow.ellipsis);
+
+      // Phone padding 12: the 32dp icon sits 12 in from the card top-left.
+      final cardRect = tester.getRect(card);
+      final iconRect = tester.getRect(
+        find.byKey(const ValueKey('stream-card-icon-a1')),
+      );
+      expect(iconRect.left, closeTo(cardRect.left + 12, 0.5));
+      expect(iconRect.top, closeTo(cardRect.top + 12, 0.5));
+
+      final menu = tester.getRect(find.byTooltip('Stream actions').first);
+      final chevron = tester.getRect(
+        find.byKey(const ValueKey('stream-card-chevron-a1')),
+      );
+      expect(menu.width, 44);
+      expect(menu.height, 44);
+      expect(menu.right, closeTo(cardRect.right, 0.5));
+      expect(menu.top, closeTo(cardRect.top, 0.5));
+      expect(menu.left, greaterThanOrEqualTo(chevron.right + 8 - 0.5));
+    },
+  );
+
+  testWidgets(
+    'P4: long names and balances ellipsize at 320px without overflowing',
+    (tester) async {
+      final repo = FakeStreamRepository(
+        streams: [
+          testStream(
+            'a1',
+            'A very long stream name that must ellipsize on a narrow phone',
+          ),
+        ],
+        lastStreamId: 'gone',
+      );
+      await _app(tester, repo, size: const Size(320, 640));
+      final card = find.byKey(const ValueKey('stream-card-a1'));
+      expect(card, findsOneWidget);
+      expect(tester.getSize(card).height, 112);
+      expect(tester.takeException(), isNull);
+      final name = tester.widget<Text>(
+        find.descendant(of: card, matching: find.byType(Text)).first,
+      );
+      expect(name.maxLines, 1);
+      expect(name.overflow, TextOverflow.ellipsis);
+    },
+  );
+
+  testWidgets(
+    'P6/P9: grid columns, page padding and gaps follow the breakpoints',
+    (tester) async {
+      final cases = <(Size, int, double, double, double)>[
+        // size, columns, page pad, grid gap, content inset (PageBody sides)
+        (const Size(320, 640), 1, 16, 8, 0),
+        (const Size(412, 915), 1, 16, 8, 0),
+        (const Size(599, 800), 1, 16, 8, 0),
+        (const Size(600, 800), 2, 24, 12, 0),
+        (const Size(899, 800), 2, 24, 12, 0),
+        (const Size(900, 800), 3, 24, 12, 0),
+        (const Size(1024, 768), 3, 24, 12, 0),
+        (const Size(1199, 800), 3, 24, 12, 0),
+        (const Size(1200, 800), 4, 32, 12, 0),
+        (const Size(1440, 900), 4, 32, 12, (1440 - 1280) / 2),
+        (const Size(1600, 900), 5, 32, 12, 0),
+      ];
+      for (final (size, cols, pad, gap, inset) in cases) {
+        final repo = FakeStreamRepository(
+          streams: [
+            for (var i = 0; i < 10; i++) testStream('a$i', 'Stream $i'),
+          ],
+          lastStreamId: 'gone',
+        );
+        await _app(tester, repo, size: size);
+        final row = [
+          for (var i = 0; i < cols; i++)
+            tester.getRect(find.byKey(ValueKey('stream-card-a$i'))),
+        ]..sort((a, b) => a.left.compareTo(b.left));
+        expect(row.first.height, 112, reason: '${size.width} card height');
+        expect(row.length, cols, reason: '${size.width} columns');
+        expect(
+          row.first.left,
+          closeTo(inset + pad, 1),
+          reason: '${size.width} left padding',
+        );
+        if (row.length >= 2) {
+          expect(
+            row[1].left - row[0].right,
+            closeTo(gap, 1),
+            reason: '${size.width} grid gap',
+          );
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+
+  testWidgets(
+    'P6: phone landscape (width 915) is 3 compact columns, not a list',
+    (tester) async {
+      final repo = FakeStreamRepository(
+        streams: [for (var i = 0; i < 6; i++) testStream('a$i', 'Stream $i')],
+        lastStreamId: 'gone',
+      );
+      await _app(tester, repo, size: const Size(915, 412));
+      final rects = [
+        for (var i = 0; i < 6; i++)
+          tester.getRect(find.byKey(ValueKey('stream-card-a$i'))),
+      ];
+      final firstTop = rects.first.top;
+      final row = [
+        for (final r in rects)
+          if ((r.top - firstTop).abs() < 1) r,
+      ];
+      expect(row.length, 3);
+      expect(rects.first.height, 112);
+      // Phone gap 8 even in landscape (shortest side 412).
+      final sorted = [...row]..sort((a, b) => a.left.compareTo(b.left));
+      expect(sorted[1].left - sorted[0].right, closeTo(8, 1));
+    },
+  );
+
+  testWidgets('P4: desktop card uses 16dp padding', (tester) async {
+    final repo = FakeStreamRepository(
+      streams: [testStream('a1', 'Everyday')],
+      lastStreamId: 'gone',
+    );
+    await _app(tester, repo, size: const Size(1440, 900));
+    final cardRect = tester.getRect(
+      find.byKey(const ValueKey('stream-card-a1')),
+    );
+    final iconRect = tester.getRect(
+      find.byKey(const ValueKey('stream-card-icon-a1')),
+    );
+    expect(iconRect.left, closeTo(cardRect.left + 16, 0.5));
+    expect(iconRect.top, closeTo(cardRect.top + 16, 0.5));
+    expect(cardRect.height, 112);
   });
 }
