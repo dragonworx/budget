@@ -26,7 +26,10 @@ void main() {
     final paint = tester.widget<CustomPaint>(
       find.descendant(of: p, matching: find.byType(CustomPaint)),
     );
-    expect((paint.painter! as BucketPainter).color, const Color(0xFF123456));
+    expect(
+      (paint.painter! as StreamGlyphPainter).color,
+      const Color(0xFF123456),
+    );
   });
 
   testWidgets('explicit size/colour win; defaults to 24', (tester) async {
@@ -39,16 +42,23 @@ void main() {
     expect(tester.getSize(find.byKey(const ValueKey('p'))), const Size(24, 24));
   });
 
-  testWidgets('the bucket paints a handle, rim and body with no throws', (
-    tester,
-  ) async {
+  testWidgets('the wave paints a centred curve with no throws', (tester) async {
     final recorder = PictureRecorder();
-    const BucketPainter(Color(0xFFFFFFFF))
+    const StreamGlyphPainter(Color(0xFFFFFFFF))
         .paint(Canvas(recorder), const Size(20, 20));
     recorder.endRecording();
+    // 16px still uses a 2-unit viewBox stroke (not thinned).
+    final small = PictureRecorder();
+    const StreamGlyphPainter(Color(0xFFFFFFFF))
+        .paint(Canvas(small), const Size(16, 16));
+    small.endRecording();
+    // Dropping the baseline, the wave is shifted so it centres in the 24 box.
+    final bounds = StreamGlyphPainter.wavePath().getBounds();
+    expect(bounds.center.dx, closeTo(12, 0.01));
+    expect(bounds.center.dy, closeTo(12, 0.01));
     expect(
-      const BucketPainter(Color(0xFFFFFFFF))
-          .shouldRepaint(const BucketPainter(Color(0xFF000000))),
+      const StreamGlyphPainter(Color(0xFFFFFFFF))
+          .shouldRepaint(const StreamGlyphPainter(Color(0xFF000000))),
       isTrue,
     );
   });
@@ -76,7 +86,7 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('tile'))),
-      const Size(22, 22),
+      const Size(20, 20),
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('empty'))),

@@ -341,7 +341,7 @@ class IconTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
     ),
     child: IconTheme(
-      data: IconThemeData(color: color, size: 22),
+      data: IconThemeData(color: color, size: 20),
       child: Center(child: glyph ?? Icon(icon)),
     ),
   );

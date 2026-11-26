@@ -110,7 +110,7 @@ void main() {
     final c = await _app(tester, repo);
     expect(_path(c), '/');
     expect(find.byKey(const ValueKey('streams-empty')), findsOneWidget);
-    // The empty state shows the bucket stream icon at 30px.
+    // The empty state shows the painted stream icon at 30px.
     final emptyIcon = find.descendant(
       of: find.byKey(const ValueKey('streams-empty')),
       matching: find.byType(StreamIcon),
@@ -170,13 +170,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(_path(c), streamsPath);
       expect(find.byKey(const ValueKey('stream-card-a1')), findsOneWidget);
-      // Stream cards lead with the bucket stream icon (22px in its tile).
+      // Stream cards lead with the painted stream icon (20px in its 40px tile).
       final cardIcon = find.descendant(
         of: find.byKey(const ValueKey('stream-card-a1')),
         matching: find.byType(StreamIcon),
       );
       expect(cardIcon, findsOneWidget);
-      expect(tester.getSize(cardIcon), const Size(22, 22));
+      expect(tester.getSize(cardIcon), const Size(20, 20));
       expect(find.byIcon(Icons.account_balance_wallet_rounded), findsNothing);
     });
   }
