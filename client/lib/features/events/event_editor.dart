@@ -474,6 +474,16 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   /// the type, the category and the schedule.
   final _amountFocus = FocusNode(debugLabel: 'editor-amount');
 
+  /// Lets a tap on Amount (or the loan principal / sync balance)
+  /// unstick a blocked iOS primer handoff; see [onSoftKeyboardFieldPointer].
+  Widget _keyboardField(Widget field) {
+    return Listener(
+      behavior: HitTestBehavior.deferToChild,
+      onPointerDown: (_) => onSoftKeyboardFieldPointer(),
+      child: field,
+    );
+  }
+
   void _focusAmount() {
     if (_readOnly) return;
     (_loanMode && !_syncMode ? _principalFocus : _amountFocus).requestFocus();
@@ -544,6 +554,10 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   @override
   void dispose() {
     setSoftKeyboardTextHandler(null);
+    // Drop a leftover primer / focus patch so the next New event can
+    // take Amount again (FAB / date-bubble closes have no list to
+    // call [releaseSoftKeyboard] from).
+    releaseSoftKeyboard();
     _amount.dispose();
     _label.dispose();
     _balance.dispose();
@@ -1277,52 +1291,56 @@ class _EventEditorState extends ConsumerState<EventEditor> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (_syncMode) ...[
-            FormulaField(
-              key: const ValueKey('editor-sync-balance'),
-              spec: fieldSpecs['event.syncBalance']!,
-              scope: _amountScope(),
-              controller: _balance,
-              focusNode: _amountFocus,
-              autofocus: !_readOnly && widget.existing == null,
-              label: 'Actual balance',
-              prefixText: symbol.isEmpty ? null : '$symbol ',
-              hintText: '0.00',
-              helperText: syncBalanceHint,
-              formulasEnabled: ServerFeatures.variables,
-              legacyKeyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+            _keyboardField(
+              FormulaField(
+                key: const ValueKey('editor-sync-balance'),
+                spec: fieldSpecs['event.syncBalance']!,
+                scope: _amountScope(),
+                controller: _balance,
+                focusNode: _amountFocus,
+                autofocus: !_readOnly && widget.existing == null,
+                label: 'Actual balance',
+                prefixText: symbol.isEmpty ? null : '$symbol ',
+                hintText: '0.00',
+                helperText: syncBalanceHint,
+                formulasEnabled: ServerFeatures.variables,
+                legacyKeyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _save(),
+                onChanged: (_) {
+                  setState(() {});
+                  _scheduleSyncPreview();
+                },
               ),
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _save(),
-              onChanged: (_) {
-                setState(() {});
-                _scheduleSyncPreview();
-              },
             ),
             ?_calculatedLine(theme),
             const SizedBox(height: 12),
           ] else if (!_loanMode) ...[
-            FormulaField(
-              key: const ValueKey('editor-amount'),
-              spec: fieldSpecs['event.amount']!,
-              scope: _amountScope(),
-              controller: _amount,
-              focusNode: _amountFocus,
-              autofocus: !_readOnly && widget.existing == null,
-              label: _recurrenceMode == RecurrenceMode.every
-                  ? 'Amount each time'
-                  : 'Amount',
-              prefixText: symbol.isEmpty ? null : '$symbol ',
-              hintText: '0.00',
-              formulasEnabled: ServerFeatures.variables,
-              legacyKeyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+            _keyboardField(
+              FormulaField(
+                key: const ValueKey('editor-amount'),
+                spec: fieldSpecs['event.amount']!,
+                scope: _amountScope(),
+                controller: _amount,
+                focusNode: _amountFocus,
+                autofocus: !_readOnly && widget.existing == null,
+                label: _recurrenceMode == RecurrenceMode.every
+                    ? 'Amount each time'
+                    : 'Amount',
+                prefixText: symbol.isEmpty ? null : '$symbol ',
+                hintText: '0.00',
+                formulasEnabled: ServerFeatures.variables,
+                legacyKeyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                // Type and category always have a value: Enter / the
+                // keyboard's Done saves (only when no suggestion is open).
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _save(),
+                onChanged: (_) => setState(() {}),
               ),
-              // Type and category always have a value: Enter / the
-              // keyboard's Done saves (only when no suggestion is open).
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _save(),
-              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
           ],

@@ -21,6 +21,8 @@ void main() {
   setUp(() {
     page.kbHotspots.clear();
     page.primeSoftKeyboardCalls = 0;
+    page.releaseSoftKeyboardCalls = 0;
+    page.softKeyboardFieldPointerCalls = 0;
   });
 
   testWidgets('a hotspot covered by an overlay is unregistered', (
@@ -115,6 +117,61 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(page.primeSoftKeyboardCalls, primed + 1);
   });
+
+  // DEV-12: after adding (or abandoning) one new transaction, Amount
+  // must still accept focus and text the next time New is opened.
+  testWidgets(
+    'opening New a second time still focuses Amount and accepts text',
+    (tester) async {
+      await _pumpPhone(tester);
+      await tester.tap(find.byKey(const ValueKey('open-events')));
+      await tester.pumpAndSettle();
+
+      Finder amount() => find.descendant(
+        of: find.byKey(const ValueKey('editor-amount')),
+        matching: find.byType(EditableText),
+      );
+
+      Future<void> openNew() async {
+        await tester.tap(find.byKey(const ValueKey('panel-new-event')));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.byKey(const ValueKey('editor-amount')), findsOneWidget);
+        expect(
+          tester.widget<EditableText>(amount()).focusNode!.hasFocus,
+          isTrue,
+        );
+      }
+
+      await openNew();
+      await tester.enterText(amount(), '12.50');
+      await tester.pump();
+      expect(tester.widget<EditableText>(amount()).controller!.text, '12.50');
+
+      final released = page.releaseSoftKeyboardCalls;
+      await tester.tap(find.byKey(const ValueKey('editor-back')));
+      await tester.pumpAndSettle();
+      final discard = find.text('Discard');
+      if (discard.evaluate().isNotEmpty) {
+        await tester.tap(discard);
+        await tester.pumpAndSettle();
+      }
+      expect(find.byKey(const ValueKey('events-panel-body')), findsOneWidget);
+      expect(page.releaseSoftKeyboardCalls, greaterThan(released));
+
+      await openNew();
+      await tester.enterText(amount(), '33.00');
+      await tester.pump();
+      expect(tester.widget<EditableText>(amount()).controller!.text, '33.00');
+      expect(tester.widget<EditableText>(amount()).focusNode!.hasFocus, isTrue);
+
+      // A tap on Amount is forwarded so a stuck iOS focus patch can drop.
+      final pointers = page.softKeyboardFieldPointerCalls;
+      await tester.tap(amount());
+      await tester.pump();
+      expect(page.softKeyboardFieldPointerCalls, greaterThan(pointers));
+    },
+  );
 }
 
 final _now = DateTime.now();

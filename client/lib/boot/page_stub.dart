@@ -105,8 +105,18 @@ void registerKbHotspot({
 /// Web: drop a previously registered hotspot.
 void unregisterKbHotspot(String id) => kbHotspots.remove(id);
 
+/// Tests: how many times the keyboard proxy was released.
+int releaseSoftKeyboardCalls = 0;
+
 /// Web: blur the keyboard proxy. No-op in tests.
-void releaseSoftKeyboard() {}
+void releaseSoftKeyboard() => releaseSoftKeyboardCalls++;
+
+/// Tests: taps on Amount that would unstick a blocked primer handoff.
+int softKeyboardFieldPointerCalls = 0;
+
+/// Web: a pointer on Amount drops a stuck focus patch so the field can
+/// take focus. No-op in tests besides the counter.
+void onSoftKeyboardFieldPointer() => softKeyboardFieldPointerCalls++;
 
 /// Web: receive text typed into the keyboard proxy so Amount/Name stay in sync.
 void setSoftKeyboardTextHandler(void Function(String text)? handler) {}

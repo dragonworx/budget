@@ -326,7 +326,9 @@ void _installFocusPatch() {
 }
 
 void _armViewFocusBlock() {
-  if (_viewFocusBlocked) return;
+  // A new hotspot gesture always starts a fresh handoff cycle, even
+  // if the previous editor left the block armed or `_handoffDone` set.
+  _handoffDone = false;
   _viewFocusBlocked = true;
   web.document.documentElement?.setAttribute('data-kb-block', '1');
 }
@@ -379,6 +381,22 @@ void _lockHandoffInputMode(web.Element el, String mode) {
 
 void setSoftKeyboardTextHandler(void Function(String text)? handler) {
   _proxyTextHandler = handler;
+}
+
+/// A pointer landed on Amount (or another editor text field). If the
+/// primer handoff is stuck with the focus patch still armed, drop the
+/// patch so this gesture can focus Flutter's input. iOS will raise the
+/// keyboard because `focus()` happens inside the tap.
+void onSoftKeyboardFieldPointer() {
+  if (!_shouldPrimeKeyboard) return;
+  if (_handoffDone && !_viewFocusBlocked) return;
+  if (_tryHandoff()) return;
+  // Keep the patch until the keyboard is up or the handoff timer has
+  // given up, so a leftover click from the opening tap cannot steal
+  // focus from the primer before iOS has raised the pad.
+  if (_keyboardIsUp() || _handoffTries >= 16) {
+    _disarmViewFocusBlock();
+  }
 }
 
 void _noteViewport() {
@@ -521,7 +539,9 @@ void handoffSoftKeyboard() {
     // desktop / WebKit emulation (no visualViewport shrink) still
     // reaches the Flutter field.
     if (_handoffTries >= 16) {
-      _tryHandoff();
+      // If no Flutter field could take focus, drop the patch so a
+      // later tap on Amount is not blocked forever (DEV-12).
+      if (!_tryHandoff()) _abandonHandoff();
       t.cancel();
       _handoffRafPending = false;
     }
@@ -544,16 +564,55 @@ bool _isFlutterField(web.Element el) {
   return false;
 }
 
-web.Element? _findFlutterField() {
+/// Flutter text-editing inputs, excluding the primer and fields marked
+/// stale after a previous editor closed.
+Iterable<web.Element> _flutterFields() sync* {
   final list = web.document.querySelectorAll(_flutterInputSelector);
   for (var i = 0; i < list.length; i++) {
     final node = list.item(i);
     if (node == null || node.nodeName == '#text') continue;
     final el = node as web.Element;
     if (_isPrimer(el)) continue;
-    return el;
+    if (el.getAttribute('data-kb-stale') == '1') continue;
+    yield el;
   }
-  return null;
+}
+
+web.Element? _findFlutterField() {
+  final candidates = _handoffCandidates();
+  return candidates.isEmpty ? null : candidates.first;
+}
+
+/// Usable handoff targets, topmost first. Amount sits above Label, and
+/// a "newest in the DOM" pick was handing the decimal primer to Label
+/// so typed amounts appeared in the wrong field (DEV-12).
+List<web.Element> _handoffCandidates() {
+  final want = _keyboardPrimer?.inputMode ?? '';
+  final usable = [
+    for (final el in _flutterFields())
+      if (_isCandidateHandoffTarget(el)) el,
+  ];
+  int top(web.Element el) =>
+      (el as web.HTMLElement).getBoundingClientRect().top.round();
+  usable.sort((a, b) {
+    final dy = top(a) - top(b);
+    if (dy != 0) return dy;
+    if (want.isEmpty) return 0;
+    final am = (a as web.HTMLElement).inputMode == want;
+    final bm = (b as web.HTMLElement).inputMode == want;
+    if (am == bm) return 0;
+    return am ? -1 : 1;
+  });
+  return usable;
+}
+
+bool _isCandidateHandoffTarget(web.Element el) {
+  if (!el.isConnected) return false;
+  if (el.getAttribute('disabled') != null) return false;
+  if (el.getAttribute('data-kb-stale') == '1') return false;
+  final st = web.window.getComputedStyle(el as web.HTMLElement);
+  if (st.display == 'none' || st.visibility == 'hidden') return false;
+  return true;
 }
 
 /// Make the semantics input a keyboard-worthy target (attached, not
@@ -577,27 +636,33 @@ bool _prepareHandoffTarget(web.Element el) {
 bool _tryHandoff() {
   if (_handoffDone || _keyboardPrimer == null) return true;
   final active = web.document.activeElement;
-  if (active != null && _isFlutterField(active)) {
+  if (active != null &&
+      _isFlutterField(active) &&
+      active.getAttribute('data-kb-stale') != '1') {
     final mode = _keyboardPrimer?.inputMode ?? '';
     if (mode.isNotEmpty) _lockHandoffInputMode(active, mode);
     scheduleMicrotask(_dropPrimer);
     return true;
   }
-  final next = _findFlutterField();
-  if (next == null) return false;
-  if (!_prepareHandoffTarget(next)) return false;
-  // Copy anything already typed on the proxy, then allow this field
-  // through the focus patch (block=handoff) and move focus directly.
+  // Copy anything already typed on the proxy once, then try each
+  // usable Flutter field (never get stuck on a hidden leftover from
+  // the previous editor).
   final typed = _keyboardPrimer?.value ?? '';
   if (typed.isNotEmpty) _onProxyTyped(typed);
-  web.document.documentElement?.setAttribute('data-kb-block', 'handoff');
-  (next as web.HTMLElement).focus(web.FocusOptions(preventScroll: true));
   final mode = _keyboardPrimer?.inputMode ?? '';
-  final now = web.document.activeElement;
-  if (now != null && _isFlutterField(now)) {
-    if (mode.isNotEmpty) _lockHandoffInputMode(now, mode);
-    scheduleMicrotask(_dropPrimer);
-    return true;
+  for (final next in _handoffCandidates()) {
+    if (!_prepareHandoffTarget(next)) continue;
+    // Allow this field through the focus patch and move focus directly.
+    web.document.documentElement?.setAttribute('data-kb-block', 'handoff');
+    (next as web.HTMLElement).focus(web.FocusOptions(preventScroll: true));
+    final now = web.document.activeElement;
+    if (now != null &&
+        _isFlutterField(now) &&
+        now.getAttribute('data-kb-stale') != '1') {
+      if (mode.isNotEmpty) _lockHandoffInputMode(now, mode);
+      scheduleMicrotask(_dropPrimer);
+      return true;
+    }
   }
   return false;
 }
@@ -621,6 +686,42 @@ void _dropPrimer() {
 ///
 /// Disarms the focus patch first: while `data-kb-block` is set, the
 /// patched `blur()` on the proxy is a no-op.
+/// Drop the focus patch without marking the handoff complete, so a
+/// later `_tryHandoff` (or a tap on Amount) can still take the field.
+void _abandonHandoff() {
+  _handoffTimer?.cancel();
+  _handoffTimer = null;
+  _handoffRafPending = false;
+  _disarmViewFocusBlock();
+}
+
+/// Hide leftover Flutter editing inputs from a closed editor so they
+/// cannot swallow taps or win the next handoff.
+void _neutralizeStaleEditingInputs() {
+  final list = web.document.querySelectorAll(_flutterInputSelector);
+  for (var i = 0; i < list.length; i++) {
+    final node = list.item(i);
+    if (node == null || node.nodeName == '#text') continue;
+    final el = node as web.Element;
+    if (_isPrimer(el)) continue;
+    el.setAttribute('data-kb-stale', '1');
+    final he = el as web.HTMLElement;
+    he.style.pointerEvents = 'none';
+    he.blur();
+  }
+}
+
+/// Replace the standing proxy with a fresh, already-laid-out input so
+/// the next first tap does not have to focus a node that iOS has
+/// already used for a previous keyboard session.
+void _recyclePrimer() {
+  final old = _keyboardPrimer;
+  final decimal = old?.inputMode == 'decimal';
+  _keyboardPrimer = null;
+  old?.remove();
+  _ensurePrimer(decimal: decimal);
+}
+
 void releaseSoftKeyboard() {
   _handoffTimer?.cancel();
   _handoffTimer = null;
@@ -628,10 +729,13 @@ void releaseSoftKeyboard() {
   _handoffRafPending = false;
   _handoffDone = true;
   _disarmViewFocusBlock();
+  _neutralizeStaleEditingInputs();
   final input = _keyboardPrimer;
-  if (input == null) return;
-  input.value = '';
-  input.blur();
+  if (input != null) {
+    input.value = '';
+    input.blur();
+  }
+  _recyclePrimer();
 }
 
 bool get _shouldPrimeKeyboard {
