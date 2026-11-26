@@ -42,7 +42,9 @@ void main() {
     expect(tester.getSize(find.byKey(const ValueKey('p'))), const Size(24, 24));
   });
 
-  testWidgets('the wave paints a centred curve with no throws', (tester) async {
+  testWidgets('the wave paints a curve and a today-dot with no throws', (
+    tester,
+  ) async {
     final recorder = PictureRecorder();
     const StreamGlyphPainter(Color(0xFFFFFFFF))
         .paint(Canvas(recorder), const Size(20, 20));
@@ -52,10 +54,13 @@ void main() {
     const StreamGlyphPainter(Color(0xFFFFFFFF))
         .paint(Canvas(small), const Size(16, 16));
     small.endRecording();
-    // Dropping the baseline, the wave is shifted so it centres in the 24 box.
+    // Option A as drawn: wave from (2.5, 17.5) to (16.5, 10.5),
+    // filled today-dot at (19.5, 6.5) r=2 (kept at that radius at 16px).
     final bounds = StreamGlyphPainter.wavePath().getBounds();
-    expect(bounds.center.dx, closeTo(12, 0.01));
-    expect(bounds.center.dy, closeTo(12, 0.01));
+    expect(bounds.left, closeTo(2.5, 0.05));
+    expect(bounds.right, closeTo(16.5, 0.05));
+    expect(StreamGlyphPainter.dotCenter, const Offset(19.5, 6.5));
+    expect(StreamGlyphPainter.dotRadius, 2);
     expect(
       const StreamGlyphPainter(Color(0xFFFFFFFF))
           .shouldRepaint(const StreamGlyphPainter(Color(0xFF000000))),
