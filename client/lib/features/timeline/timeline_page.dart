@@ -221,6 +221,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     if (h != null) page.offPageHidden(h);
     _viewAnim.dispose();
     _chartsTick.dispose();
+    _dateRangeListenable.dispose();
     super.dispose();
   }
 
@@ -638,6 +639,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _dataFrom = addCalendarDays(_viewStart, -30);
     _dataTo = addCalendarDays(today, 120);
     _dateRange = loadDateRange();
+    _dateRangeListenable.value = _dateRange;
     if (!_dateRange.isAllTime) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _zoomToRange(_dateRange);
@@ -646,12 +648,14 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   }
 
   DateRange _dateRange = DateRange.allTime;
+  final _dateRangeListenable = ValueNotifier(DateRange.allTime);
 
   /// Shared setter: drag / clear do not zoom; named presets and a
   /// restored custom range do (All time never changes the zoom).
   void _setDateRange(DateRange range, {bool zoom = false}) {
     if (range != _dateRange) {
       setState(() => _dateRange = range);
+      _dateRangeListenable.value = range;
       saveDateRange(range);
       _bumpCharts();
     }
@@ -2510,6 +2514,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     VoidCallback? close,
   }) => EventsPanel(
     stream: stream,
+    rangeListenable: _dateRangeListenable,
+    onRangeChanged: (r) => _setDateRange(r, zoom: !r.isAllTime),
     skipsFor: _skipsFor,
     onClose: docked ? _toggleDock : null,
     onPanelClosed: (outcome) {

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:budget_recurrence/budget_recurrence.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +18,8 @@ import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/category_dropdown.dart';
+import '../../widgets/date_range_preset_control.dart';
+import '../timeline/date_range.dart';
 import '../../widgets/money_text.dart';
 import '../../widgets/ui.dart';
 import '../timeline/occurrence_dates.dart';
@@ -37,13 +40,30 @@ List<BudgetEvent> filterEvents(
   List<BudgetEvent> items,
   Set<EventType> types, {
   String? category,
+  DateTime? rangeStart,
+  DateTime? rangeEnd,
 }) {
   return [
     for (final t in items)
       if ((category == null || t.categoryId == category) &&
-          (types.isEmpty || types.contains(eventTypeOf(t))))
+          (types.isEmpty || types.contains(eventTypeOf(t))) &&
+          eventFiresInRange(t, rangeStart, rangeEnd))
         t,
   ];
+}
+
+/// True when [t] has at least one scheduled date in [rangeStart]..[rangeEnd]
+/// (inclusive). Both null is All time (every event). Uses the recurrence
+/// schedule, not skip / enabled / hidden-category flags.
+bool eventFiresInRange(
+  BudgetEvent t,
+  DateTime? rangeStart,
+  DateTime? rangeEnd,
+) {
+  if (rangeStart == null && rangeEnd == null) return true;
+  final lo = rangeStart ?? rangeEnd!;
+  final hi = rangeEnd ?? rangeStart!;
+  return occurrenceDatesIn(t, lo, hi).isNotEmpty;
 }
 
 /// The next occurrence on or after [today] (or the last one if all past).
@@ -121,7 +141,17 @@ class EventsPanel extends ConsumerStatefulWidget {
     this.onPlan,
     this.onClose,
     this.onHoverEvent,
+    this.rangeListenable,
+    this.onRangeChanged,
   });
+
+  /// Shared timeline / charts / list date range. Null: All time (tests
+  /// that do not lift it).
+  final ValueListenable<DateRange>? rangeListenable;
+
+  /// Picking a preset (or clearing the date filter) writes the shared
+  /// range. Null: the dropdown is display-only.
+  final ValueChanged<DateRange>? onRangeChanged;
 
   final BudgetStream stream;
 
@@ -150,6 +180,10 @@ class EventsPanel extends ConsumerStatefulWidget {
 
 class _EventsPanelState extends ConsumerState<EventsPanel> {
   bool get _readOnly => !widget.stream.role.canEdit;
+
+  DateRange get _range => widget.rangeListenable?.value ?? DateRange.allTime;
+
+  bool get _dateFiltered => !_range.isAllTime;
 
   /// A loan stream: the planner is off (spec 003 §14).
   bool get _planBlocked => streamHasLoan(
@@ -740,6 +774,17 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
                 ],
               ),
             ),
+            if (widget.rangeListenable != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: ValueListenableBuilder<DateRange>(
+                  valueListenable: widget.rangeListenable!,
+                  builder: (context, range, _) => DateRangePresetControl(
+                    range: range,
+                    onChanged: (r) => widget.onRangeChanged?.call(r),
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: _categoryDropdown(),
@@ -777,11 +822,22 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
             ),
             const Divider(height: 1),
             Expanded(
-              child: async.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text(friendlyError(e))),
-                data: (items) => _list(context, items),
-              ),
+              child: widget.rangeListenable == null
+                  ? async.when(
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (e, _) => Center(child: Text(friendlyError(e))),
+                      data: (items) => _list(context, items),
+                    )
+                  : ValueListenableBuilder<DateRange>(
+                      valueListenable: widget.rangeListenable!,
+                      builder: (context, _, _) => async.when(
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (e, _) => Center(child: Text(friendlyError(e))),
+                        data: (items) => _list(context, items),
+                      ),
+                    ),
             ),
             // Below the list (not beside the filters) so hiding the first
             // event never shifts the rows under the pointer mid-drag.
@@ -838,7 +894,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   /// Spec 015: with two syncs on one day, the list order decides which
   /// applies (shown while the list can be reordered).
   Widget? _syncOrderHint(List<BudgetEvent>? items) {
-    if (_readOnly || !_allTypes || _activeCategory() != null) {
+    if (_readOnly || !_allTypes || _activeCategory() != null || _dateFiltered) {
       return null;
     }
     final days = <DateTime>{};
@@ -897,27 +953,47 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     }
     final ordered = _ordered(items);
     final cat = _activeCategory();
-    final shown = filterEvents(ordered, _types, category: cat?.id);
-    final canReorder = !_readOnly && _allTypes && cat == null;
+    final range = _range;
+    final shown = filterEvents(
+      ordered,
+      _types,
+      category: cat?.id,
+      rangeStart: range.start,
+      rangeEnd: range.end,
+    );
+    final canReorder = !_readOnly && _allTypes && cat == null && !_dateFiltered;
     if (shown.isEmpty) {
+      final dateIsOnlyFilter = _dateFiltered && _allTypes && cat == null;
       return EmptyState(
         key: const ValueKey('events-no-matches'),
         icon: Icons.filter_alt_off_rounded,
         title: 'No matches',
-        message: cat == null
+        message: dateIsOnlyFilter
+            ? 'No events in this range.'
+            : cat == null
             ? 'No events match the filter.'
             : 'No events in category ${cat.name} match the filter.',
         action: TextButton(
           key: const ValueKey('events-clear-filters'),
-          onPressed: () => setState(() {
-            _types = const {};
-            _catFilter = null;
-          }),
-          child: Text(cat == null ? 'Clear filter' : 'Clear filters'),
+          onPressed: () {
+            setState(() {
+              _types = const {};
+              _catFilter = null;
+            });
+            if (_dateFiltered) {
+              widget.onRangeChanged?.call(DateRange.allTime);
+            }
+          },
+          child: Text(
+            dateIsOnlyFilter || (cat == null && !_dateFiltered)
+                ? 'Clear filter'
+                : 'Clear filters',
+          ),
         ),
       );
     }
     _shown = shown;
+    // Range / count announcement is applied on the list below.
     _rowKeys.removeWhere((id, _) => !shown.any((t) => t.id == id));
     // Each row's colour bar wears its graph line's colour (an excluded
     // event has no lane: its own colour, else faint).
@@ -953,37 +1029,47 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       onToggle: (v) => _toggleOne(t, v),
       onPaintStart: (down) => _paintStart(t, down),
     );
+    Widget announce(Widget child) => Semantics(
+      container: true,
+      liveRegion: true,
+      label: '${shown.length} events, ${range.preset.label}',
+      child: child,
+    );
     if (!canReorder) {
-      return KeyedSubtree(
-        key: _listKey,
-        child: ListView.builder(
-          controller: _listScroll,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: shown.length,
-          itemBuilder: (context, i) => row(i, shown[i]),
+      return announce(
+        KeyedSubtree(
+          key: _listKey,
+          child: ListView.builder(
+            controller: _listScroll,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: shown.length,
+            itemBuilder: (context, i) => row(i, shown[i]),
+          ),
         ),
       );
     }
-    return KeyedSubtree(
-      key: _listKey,
-      child: ReorderableListView.builder(
-        scrollController: _listScroll,
-        buildDefaultDragHandles: false,
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: shown.length,
-        onReorderItem: (oldIndex, newIndex) async {
-          final ids = shown.map((s) => s.id).toList();
-          ids.insert(newIndex, ids.removeAt(oldIndex));
-          try {
-            await ref
-                .read(eventsProvider(widget.stream.id).notifier)
-                .reorder(ids);
-            widget.onChanged();
-          } catch (e) {
-            _error(e);
-          }
-        },
-        itemBuilder: (context, i) => row(i, shown[i]),
+    return announce(
+      KeyedSubtree(
+        key: _listKey,
+        child: ReorderableListView.builder(
+          scrollController: _listScroll,
+          buildDefaultDragHandles: false,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: shown.length,
+          onReorderItem: (oldIndex, newIndex) async {
+            final ids = shown.map((s) => s.id).toList();
+            ids.insert(newIndex, ids.removeAt(oldIndex));
+            try {
+              await ref
+                  .read(eventsProvider(widget.stream.id).notifier)
+                  .reorder(ids);
+              widget.onChanged();
+            } catch (e) {
+              _error(e);
+            }
+          },
+          itemBuilder: (context, i) => row(i, shown[i]),
+        ),
       ),
     );
   }

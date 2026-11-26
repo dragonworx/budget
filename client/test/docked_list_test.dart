@@ -565,4 +565,52 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  testWidgets(
+    'a preset chosen in the docked list updates the list, and closing '
+    'the selection card sets All time',
+    (tester) async {
+      await _pump(tester, const Size(1440, 900));
+      expect(
+        find.descendant(of: _docked, matching: find.text('Rent')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: _docked, matching: find.text('All time')),
+        findsWidgets,
+      );
+      await tester.tap(
+        find.descendant(
+          of: _docked,
+          matching: find.byKey(const ValueKey('date-range-preset')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Last month').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: _docked, matching: find.text('Last month')),
+        findsWidgets,
+      );
+      expect(
+        find.descendant(of: _docked, matching: find.text('Rent')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('selection-close')), findsOneWidget);
+      final close = tester.widget<IconButton>(
+        find.byKey(const ValueKey('selection-close')),
+      );
+      close.onPressed!();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('selection-close')), findsNothing);
+      expect(
+        find.descendant(of: _docked, matching: find.text('All time')),
+        findsWidgets,
+      );
+      expect(
+        find.descendant(of: _docked, matching: find.text('Rent')),
+        findsOneWidget,
+      );
+    },
+  );
 }
