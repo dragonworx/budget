@@ -34,6 +34,7 @@ import '../events/editor_outcome.dart';
 import '../events/import_dialog.dart';
 import '../planning/goal_models.dart';
 import '../planning/scenarios_panel.dart' show scenarioColor;
+import 'date_range.dart';
 import 'selection_period.dart';
 import '../planning/goal_panel.dart';
 import '../planning/plan_panel.dart';
@@ -302,9 +303,23 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// horizontal centre of the date window. A restore is not a change.
   void _applySavedView(SavedView v) {
     final centered = centerViewOnToday(v);
-    _viewStart = centered.startDate;
-    _visibleDays = centered.days;
-    _unit = centered.unit ?? ViewUnit.nearest(centered.days);
+    final range = _dateRange;
+    if (!range.isAllTime && range.start != null && range.end != null) {
+      final w = _chartWidth;
+      final span = viewForRange(
+        range.start!,
+        range.end!,
+        w,
+        stripWidth: ChartLayout.laneNameWidth(w),
+      );
+      _viewStart = span.$1;
+      _visibleDays = span.$2;
+      _unit = ViewUnit.nearest(span.$2);
+    } else {
+      _viewStart = centered.startDate;
+      _visibleDays = centered.days;
+      _unit = centered.unit ?? ViewUnit.nearest(centered.days);
+    }
     final (from, to) = _dataWindowFor(_viewStart, _visibleDays);
     _dataFrom = from;
     _dataTo = to;
@@ -617,6 +632,42 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     _viewStart = addCalendarDays(today, -7);
     _dataFrom = addCalendarDays(_viewStart, -30);
     _dataTo = addCalendarDays(today, 120);
+    _dateRange = loadDateRange();
+    if (!_dateRange.isAllTime) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _zoomToRange(_dateRange);
+      });
+    }
+  }
+
+  DateRange _dateRange = DateRange.allTime;
+
+  /// Shared setter: drag / clear do not zoom; named presets and a
+  /// restored custom range do (All time never changes the zoom).
+  void _setDateRange(DateRange range, {bool zoom = false}) {
+    if (range != _dateRange) {
+      setState(() => _dateRange = range);
+      saveDateRange(range);
+    }
+    if (zoom && !range.isAllTime) _zoomToRange(range);
+  }
+
+  void _onChartRangeChanged(DateRange range) =>
+      _setDateRange(range, zoom: false);
+
+  void _zoomToRange(DateRange range) {
+    final start = range.start, end = range.end;
+    if (start == null || end == null) return;
+    final w = _chartWidth;
+    if (w <= 0) return;
+    final span = viewForRange(
+      start,
+      end,
+      w,
+      stripWidth: ChartLayout.laneNameWidth(w),
+    );
+    _setUnit(ViewUnit.nearest(span.$2));
+    _onViewport(span.$1, span.$2);
   }
 
   /// Server-side "last opened" (the stream may come from cache, so the GET
@@ -1500,6 +1551,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
                                             onHideEvent: stream.role.canEdit
                                                 ? (t) => _hideEvent(context, t)
                                                 : null,
+                                            range: _dateRange,
+                                            onRangeChanged:
+                                                _onChartRangeChanged,
                                             laneOrder: stream.eventOrder,
                                             otherLaneOrder: combo == null
                                                 ? const []

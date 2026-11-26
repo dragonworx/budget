@@ -70,4 +70,13 @@ String? legacyLocalKey(String key) {
 abstract final class PrefKeys {
   /// Docked Events list width, logical px.
   static const dockedListWidth = 'timeline.dockedListWidth';
+
+  /// Shared timeline / charts / Events list date-range preset (enum name).
+  static const dateRangePreset = 'timeline.dateRangePreset';
+
+  /// Inclusive start of a Custom range (`YYYY-MM-DD`).
+  static const dateRangeCustomFrom = 'timeline.dateRangeCustomFrom';
+
+  /// Inclusive end of a Custom range (`YYYY-MM-DD`).
+  static const dateRangeCustomTo = 'timeline.dateRangeCustomTo';
 }

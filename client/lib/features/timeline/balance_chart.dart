@@ -20,6 +20,7 @@ import 'duration_format.dart';
 import 'fit_ranges.dart';
 import 'ghost_line.dart';
 import 'occurrence_info.dart';
+import 'date_range.dart';
 import 'selection_period.dart';
 import 'stack_lanes.dart';
 import '../../boot/kb_hotspot.dart';
@@ -288,7 +289,19 @@ class BalanceChart extends StatefulWidget {
     this.laneOrder = const [],
     this.otherLaneOrder = const [],
     this.onHideEvent,
+    this.range,
+    this.onRangeChanged,
   });
+
+  /// Shared inclusive selection (null / All time = no band). When
+  /// [onRangeChanged] is set, this is the source of truth and must not
+  /// diverge from the local handles during a gesture (local edges are
+  /// kept until the gesture ends).
+  final DateRange? range;
+
+  /// Creating, editing or clearing the band. Null: the chart keeps
+  /// private selection state (tests that do not lift it).
+  final ValueChanged<DateRange>? onRangeChanged;
 
   /// "Hide" in a lane's tap menu (the whole series): the same flag as the
   /// Events list's eye (hidden from the timeline and excluded from the
@@ -771,6 +784,7 @@ class _BalanceChartState extends State<BalanceChart>
   @override
   void initState() {
     super.initState();
+    _adoptRange(widget.range);
     _restoreY();
   }
 
@@ -811,6 +825,19 @@ class _BalanceChartState extends State<BalanceChart>
   @override
   void didUpdateWidget(covariant BalanceChart oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.range != oldWidget.range && !_selecting) {
+      final incoming = widget.range;
+      if (incoming == null || incoming.isAllTime) {
+        if (_selA != null) _adoptRange(incoming);
+      } else if (_selA == null || _selB == null) {
+        _adoptRange(incoming);
+      } else {
+        final (lo, hi) = orderedDays(_selA!, _selB!);
+        if (incoming.start != lo || incoming.end != hi) {
+          _adoptRange(incoming);
+        }
+      }
+    }
     _sentView = null;
     if (oldWidget.viewStart != widget.viewStart ||
         oldWidget.visibleDays != widget.visibleDays ||
@@ -1185,6 +1212,30 @@ class _BalanceChartState extends State<BalanceChart>
   DateTime? _selA;
   DateTime? _selB;
 
+  void _adoptRange(DateRange? range) {
+    if (range == null || range.isAllTime) {
+      _selA = null;
+      _selB = null;
+    } else {
+      _selA = range.start;
+      _selB = range.end;
+    }
+  }
+
+  /// Writes the working edges and notifies the owner with ordered dates
+  /// (or All time). Call from inside [setState] or alongside it.
+  void _setSel(DateTime? a, DateTime? b) {
+    _selA = a;
+    _selB = b;
+    final notify = widget.onRangeChanged;
+    if (notify == null) return;
+    if (a == null || b == null) {
+      notify(DateRange.allTime);
+    } else {
+      notify(DateRange.fromDates(a, b));
+    }
+  }
+
   /// Where the user dragged the selection card (top-left, chart coords);
   /// null = default placement. Kept while the selection exists.
   Offset? _cardPos;
@@ -1304,8 +1355,7 @@ class _BalanceChartState extends State<BalanceChart>
     final day = _dayAt(pos.dx);
     setState(() {
       _mode = _Gesture.select;
-      _selA = day;
-      _selB = day;
+      _setSel(day, day);
       _cardPos = null; // a new selection gets the default card placement
       _selecting = true;
     });
@@ -1315,8 +1365,7 @@ class _BalanceChartState extends State<BalanceChart>
     if (_selA == null && !_selecting) return;
     final apply = mounted;
     void clear() {
-      _selA = null;
-      _selB = null;
+      _setSel(null, null);
       _cardPos = null;
       _selecting = false;
     }
@@ -1361,7 +1410,7 @@ class _BalanceChartState extends State<BalanceChart>
           _layout.plot.right - 0.5,
         ),
       );
-      if (day != _selB) setState(() => _selB = day);
+      if (day != _selB) setState(() => _setSel(_selA ?? day, day));
       return;
     }
     final origin = _downPos;
@@ -3030,10 +3079,7 @@ class _BalanceChartState extends State<BalanceChart>
             final day = _dayAt(
               _selDragX.clamp(layout.plot.left, layout.plot.right - 0.5),
             );
-            setState(() {
-              _selA = _selDragA;
-              _selB = day;
-            });
+            setState(() => _setSel(_selDragA, day));
           },
           child: Center(
             child: Container(
@@ -3102,10 +3148,12 @@ class _BalanceChartState extends State<BalanceChart>
                 onPanUpdate: (d) {
                   _selDragX += d.delta.dx;
                   final shift = (_selDragX / math.max(dayPx, 0.001)).round();
-                  setState(() {
-                    _selA = addCalendarDays(_selDragA!, shift);
-                    _selB = addCalendarDays(_selDragB!, shift);
-                  });
+                  setState(
+                    () => _setSel(
+                      addCalendarDays(_selDragA!, shift),
+                      addCalendarDays(_selDragB!, shift),
+                    ),
+                  );
                 },
               ),
             ),
