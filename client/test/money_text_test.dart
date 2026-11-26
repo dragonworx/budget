@@ -50,4 +50,12 @@ void main() {
     expect(parseMoneyInput('1e3'), isNull);
     expect(parseMoneyInput(''), isNull);
   });
+
+  test('formatHomeBalance drops cents from \$10,000 up', () {
+    expect(formatHomeBalance(6400), '\$6,400.00');
+    expect(formatHomeBalance(9999.99), '\$9,999.99');
+    expect(formatHomeBalance(10000), '\$10,000');
+    expect(formatHomeBalance(-395139.85), '-\$395,140');
+    expect(formatHomeBalance(18550), '\$18,550');
+  });
 }

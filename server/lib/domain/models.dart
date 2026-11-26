@@ -20,6 +20,7 @@ class BudgetStream {
     this.seedBalanceExpr,
     this.lossThresholdExpr,
     this.exprErrors,
+    this.color,
   });
 
   /// Formulas (spec 010) [seedBalance] / [lossThreshold] were resolved
@@ -35,6 +36,10 @@ class BudgetStream {
 
   /// The stream holds a loan event (enabled or not; migration 026).
   final bool hasLoan;
+
+  /// Palette colour as "#RRGGBB" (the Home wave icon and tile).
+  /// Null only on a row written before migration 034.
+  final String? color;
 
   /// Allowed y-axis units (currency units per grid step).
   static const currencyScales = [1, 10, 100, 1000, 10000, 100000, 1000000];
@@ -64,6 +69,7 @@ class BudgetStream {
         'eventOrder': eventOrder,
         'version': version,
         'hasLoan': hasLoan,
+        if (color != null) 'color': color,
         // Formula keys only when set, so a plain stream's JSON is unchanged.
         if (seedBalanceExpr != null) 'seedBalanceExpr': seedBalanceExpr,
         if (lossThresholdExpr != null) 'lossThresholdExpr': lossThresholdExpr,

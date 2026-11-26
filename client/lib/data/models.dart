@@ -108,6 +108,7 @@ class BudgetStream {
     this.seedBalanceExpr,
     this.lossThresholdExpr,
     this.exprErrors,
+    this.color,
   });
 
   /// Formula texts (spec 010); null when plain. Like the event's, not
@@ -129,6 +130,11 @@ class BudgetStream {
   /// The stream holds a loan event (its balance can run far negative by
   /// design, so it gets no red alert badge).
   final bool hasLoan;
+
+  /// Palette colour as "#RRGGBB" (the Home wave icon and tile). Null
+  /// when an older payload has none; the UI then falls back to a
+  /// stable palette colour from the stream id.
+  final String? color;
 
   /// Effective role: owner for my own streams, else the share's role.
   final Role role;
@@ -207,6 +213,7 @@ class BudgetStream {
       seedBalanceExpr: json['seedBalanceExpr'] as String?,
       lossThresholdExpr: json['lossThresholdExpr'] as String?,
       exprErrors: _jsonMap(json['exprErrors']),
+      color: normalizeEventColor(json['color']),
     );
   }
 
@@ -231,6 +238,7 @@ class BudgetStream {
     if (seedBalanceExpr != null) 'seedBalanceExpr': seedBalanceExpr,
     if (lossThresholdExpr != null) 'lossThresholdExpr': lossThresholdExpr,
     if (exprErrors != null) 'exprErrors': exprErrors,
+    if (color != null) 'color': color,
   };
 
   Map<String, dynamic> toCreateJson() => {
@@ -239,6 +247,7 @@ class BudgetStream {
     'seedDate': formatDate(seedDate),
     'lossThreshold': moneyToJson(lossThreshold),
     'currencyScale': currencyScale,
+    if (color != null) 'color': color,
     ..._exprJson,
   };
 
@@ -250,6 +259,7 @@ class BudgetStream {
     'currencyScale': currencyScale,
     'eventOrder': eventOrder,
     if (version != null) 'version': version,
+    if (color != null) 'color': color,
     ..._exprJson,
   };
 
@@ -268,6 +278,7 @@ class BudgetStream {
     Role? role,
     String? seedBalanceExpr,
     String? lossThresholdExpr,
+    String? color,
   }) {
     return BudgetStream(
       seedBalanceExpr: seedBalanceExpr,
@@ -279,6 +290,7 @@ class BudgetStream {
       hasLoan: hasLoan,
       offset: offset,
       offsetFor: offsetFor,
+      color: color ?? this.color,
       id: id ?? this.id,
       ownerId: ownerId ?? this.ownerId,
       name: name ?? this.name,
@@ -311,6 +323,7 @@ extension StreamSharing on BudgetStream {
     hasLoan: hasLoan,
     offset: from.offset,
     offsetFor: from.offsetFor,
+    color: color,
   );
 }
 
@@ -336,6 +349,7 @@ extension StreamOffsetLinks on BudgetStream {
           hasLoan: hasLoan,
           offset: from.offset,
           offsetFor: from.offsetFor,
+          color: color,
         );
 }
 

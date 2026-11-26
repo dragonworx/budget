@@ -11,6 +11,8 @@ import '../data/models.dart';
 import 'after_transition.dart';
 import 'formula/formula_field.dart';
 import 'money_text.dart';
+import '../features/categories/categories_manager.dart' show PaletteSwatches;
+import '../features/streams/stream_home_layout.dart';
 import '../theme/app_theme.dart';
 
 /// New / edit stream dialog (name, seed balance + date, loss
@@ -24,6 +26,7 @@ Future<BudgetStream?> showStreamDialog(
   BudgetStream? existing,
   Future<BudgetStream> Function(BudgetStream draft)? onSave,
   int? eventCount,
+  Iterable<String> usedColors = const [],
 }) {
   // Still inside the tap: lets iOS / Android web raise the keyboard for
   // the Name field that focuses once the dialog is built.
@@ -40,12 +43,19 @@ Future<BudgetStream?> showStreamDialog(
       existing: existing,
       onSave: onSave,
       eventCount: eventCount,
+      usedColors: usedColors,
     ),
   );
 }
 
 class StreamDialog extends StatefulWidget {
-  const StreamDialog({super.key, this.existing, this.onSave, this.eventCount});
+  const StreamDialog({
+    super.key,
+    this.existing,
+    this.onSave,
+    this.eventCount,
+    this.usedColors = const [],
+  });
 
   /// Events in the stream (for the seed-move note); defaults to the
   /// stream's event order length.
@@ -53,6 +63,10 @@ class StreamDialog extends StatefulWidget {
 
   final BudgetStream? existing;
   final Future<BudgetStream> Function(BudgetStream draft)? onSave;
+
+  /// Colours already used by the owner's other streams, so a new
+  /// stream can default to a distinct palette entry.
+  final Iterable<String> usedColors;
 
   @override
   State<StreamDialog> createState() => _StreamDialogState();
@@ -85,6 +99,7 @@ class _StreamDialogState extends State<StreamDialog> {
   /// New streams start at Hundreds ([Stream.defaultCurrencyScale]); only
   /// Edit stream (Stream settings) offers the picker.
   late int _currencyScale;
+  late String _color;
   final _nameFocus = FocusNode(debugLabel: 'stream-name');
   String? _nameError;
   String? _balanceError;
@@ -139,6 +154,7 @@ class _StreamDialogState extends State<StreamDialog> {
     _seedDate = existing?.seedDate ?? DateTime.now();
     _currencyScale =
         existing?.currencyScale ?? BudgetStream.defaultCurrencyScale;
+    _color = existing?.color ?? pickStreamColor(widget.usedColors);
     // New: Name on the first frame (still close to the opening tap, so
     // iOS / Android web can raise the keyboard) and again once the
     // dialog has actually finished opening, unless the user already
@@ -218,6 +234,45 @@ class _StreamDialogState extends State<StreamDialog> {
               ),
               autofocus: true,
             ),
+
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Colour',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              key: const ValueKey('stream-color'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                StreamGlyphTile(
+                  size: 32,
+                  glyphSize: 20,
+                  color: streamTintOf(
+                    BudgetStream(
+                      id: widget.existing?.id ?? 'new',
+                      name: 'preview',
+                      seedBalance: Decimal.zero,
+                      seedDate: DateTime(2026, 1, 1),
+                      lossThreshold: Decimal.zero,
+                      color: _color,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: PaletteSwatches(
+                    selected: _color,
+                    swatchKeyPrefix: 'stream-swatch',
+                    onPicked: (c) => setState(() => _color = c),
+                  ),
+                ),
+              ],
+            ),
+
             const SizedBox(height: 12),
             // The owner's variables; a new stream is mine.
             VariableScopeBuilder(
@@ -406,6 +461,7 @@ class _StreamDialogState extends State<StreamDialog> {
       currencyScale: _currencyScale,
       version: existing?.version,
       role: existing?.role ?? Role.owner,
+      color: _color,
     );
     final onSave = widget.onSave;
     if (onSave == null) {

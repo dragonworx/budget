@@ -1,6 +1,10 @@
 import 'package:decimal/decimal.dart';
 import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/models.dart';
+import 'package:budget_client/features/timeline/stack_lanes.dart';
+
+import 'support/fake_streams.dart';
+
 import 'package:budget_client/widgets/stream_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -192,4 +196,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('All 3 events will move 7 days later'), findsOneWidget);
   });
+
+  testWidgets(
+    'P11: Stream settings reuses the palette picker and keeps the colour',
+    (tester) async {
+      final existing = testStream('s1', 'Wages', color: '#3D6FD8');
+      final result = await _open(tester, existing: existing);
+      expect(find.byKey(const ValueKey('stream-color')), findsOneWidget);
+      expect(find.byKey(const ValueKey('stream-swatch-0')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('stream-swatch-4')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('stream-save')));
+      await tester.pumpAndSettle();
+      final saved = await result;
+      expect(saved?.color, colorToHex(laneColors[4]));
+    },
+  );
 }

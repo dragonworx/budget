@@ -65,6 +65,13 @@ Router buildStreamsApi(Session conn) {
       final lossThreshold = body.containsKey('lossThreshold')
           ? parseDecimal(body['lossThreshold'])
           : Decimal.zero;
+      String? color;
+      if (body.containsKey('color')) {
+        color = parseEventColor(body['color']);
+        if (color == null) {
+          return jsonError(400, 'color must be "#RRGGBB"');
+        }
+      }
       final stream = await streams.create(
         ownerId: me,
         name: name,
@@ -76,6 +83,7 @@ Router buildStreamsApi(Session conn) {
         currencyScale:
             parseCurrencyScale(body) ?? BudgetStream.defaultCurrencyScale,
         exprs: prep.exprs,
+        color: color,
       );
       await VariableRefIndex(conn).reindexStreams([stream.id]);
       return jsonOk(
@@ -446,6 +454,13 @@ Router buildStreamsApi(Session conn) {
         final repo = StreamRepo(tx);
         final before = await repo.get(id);
         if (before == null) return null;
+        String? color;
+        if (body.containsKey('color')) {
+          color = parseEventColor(body['color']);
+          if (color == null) {
+            throw const FormatException('color must be "#RRGGBB"');
+          }
+        }
         final updated = await repo.update(
           id,
           name: optionalString(body, 'name'),
@@ -459,6 +474,7 @@ Router buildStreamsApi(Session conn) {
           displayOrder: optionalInt(body, 'displayOrder'),
           currencyScale: parseCurrencyScale(body),
           exprs: prep.exprs,
+          color: color,
         );
         if (prep.exprs.columns.isNotEmpty) {
           await VariableService(tx).afterStreamWrite(id);

@@ -25,6 +25,23 @@ class StreamExprWrite {
   static const columnNames = {'seed_balance_expr', 'loss_threshold_expr'};
 }
 
+/// The client's lane palette (stack_lanes.dart laneColors;
+/// budget_lane_color in SQL). Used when a create does not send a colour.
+const streamPalette = [
+  '#3D6FD8',
+  '#9250C8',
+  '#B36A12',
+  '#2B8AA8',
+  '#B8488E',
+  '#5B7A2A',
+  '#6A62D6',
+  '#A0602C',
+  '#3C8A6E',
+  '#8E5A9E',
+  '#4A78A8',
+  '#9C7A1E',
+];
+
 class StreamRepo {
   StreamRepo(this._conn);
 
@@ -46,7 +63,8 @@ class StreamRepo {
                        AND e.kind = 'loan') AS has_loan,
                a.seed_balance_expr AS s_seed_expr,
                a.loss_threshold_expr AS s_threshold_expr,
-               a.expr_errors AS s_expr_errors
+               a.expr_errors AS s_expr_errors,
+               a.color
         FROM streams a
         JOIN users u ON u.id = a.owner_id
         LEFT JOIN stream_shares s
@@ -140,7 +158,7 @@ class StreamRepo {
         SELECT id, owner_id, name, seed_balance, seed_date,
                loss_threshold, display_order, event_order, currency_scale, version,
                EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan,
-                  $_exprCols
+                  $_exprCols, color
         FROM streams WHERE id = @id
       '''),
       parameters: {'id': id},
@@ -158,23 +176,25 @@ class StreamRepo {
     int displayOrder = 0,
     int currencyScale = BudgetStream.defaultCurrencyScale,
     StreamExprWrite? exprs,
+    String? color,
   }) async {
     final id = _uuid.v4();
+    final chosen = color ?? await _nextColor(ownerId);
     final rows = await _conn.execute(
       Sql.named('''
         INSERT INTO streams (
           id, owner_id, name, seed_balance, seed_date,
           loss_threshold, display_order, currency_scale, created_by,
-          seed_balance_expr, loss_threshold_expr
+          seed_balance_expr, loss_threshold_expr, color
         ) VALUES (
           @id, @ownerId::uuid, @name, @seedBalance, @seedDate,
           @lossThreshold, @displayOrder, @currencyScale, @ownerId::uuid,
-          @seedExpr, @thresholdExpr
+          @seedExpr, @thresholdExpr, @color
         )
         RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, event_order, currency_scale, version,
                   EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan,
-                  $_exprCols
+                  $_exprCols, color
       '''),
       parameters: {
         'id': id,
@@ -187,6 +207,7 @@ class StreamRepo {
         'currencyScale': currencyScale,
         'seedExpr': exprs?.columns['seed_balance_expr'],
         'thresholdExpr': exprs?.columns['loss_threshold_expr'],
+        'color': chosen,
       },
     );
     return _fromRow(rows.first);
@@ -201,6 +222,7 @@ class StreamRepo {
     int? displayOrder,
     int? currencyScale,
     StreamExprWrite? exprs,
+    String? color,
   }) async {
     final existing = await get(id);
     if (existing == null) return null;
@@ -227,12 +249,13 @@ class StreamRepo {
           seed_date = @seedDate,
           loss_threshold = @lossThreshold,
           display_order = @displayOrder,
-          currency_scale = @currencyScale$exprSets
+          currency_scale = @currencyScale,
+          color = @color$exprSets
         WHERE id = @id
         RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, event_order, currency_scale, version,
                   EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan,
-                  $_exprCols
+                  $_exprCols, color
       '''),
       parameters: {
         'id': id,
@@ -248,6 +271,7 @@ class StreamRepo {
             : DateTime.utc(seedDate.year, seedDate.month, seedDate.day),
         'displayOrder': displayOrder ?? existing.displayOrder,
         'currencyScale': currencyScale ?? existing.currencyScale,
+        'color': color ?? existing.color,
         ...exprParams,
       },
     );
@@ -338,7 +362,7 @@ class StreamRepo {
         RETURNING id, owner_id, name, seed_balance, seed_date,
                   loss_threshold, display_order, event_order, currency_scale, version,
                   EXISTS (SELECT 1 FROM events e WHERE e.stream_id = streams.id AND e.kind = 'loan') AS has_loan,
-                  $_exprCols
+                  $_exprCols, color
       '''),
       parameters: {
         'id': id,
@@ -447,6 +471,32 @@ class StreamRepo {
     );
   }
 
+  /// Least-used palette colour among [ownerId]'s streams; ties go to
+  /// the earlier palette entry so creates are deterministic.
+  Future<String> _nextColor(String ownerId) async {
+    final rows = await _conn.execute(
+      Sql.named(
+        'SELECT color FROM streams '
+        'WHERE owner_id = @o::uuid AND color IS NOT NULL',
+      ),
+      parameters: {'o': ownerId},
+    );
+    final uses = List<int>.filled(streamPalette.length, 0);
+    for (final r in rows) {
+      final i = streamPalette.indexOf(r[0] as String);
+      if (i >= 0) uses[i]++;
+    }
+    var least = uses.first;
+    var pick = 0;
+    for (var i = 1; i < uses.length; i++) {
+      if (uses[i] < least) {
+        least = uses[i];
+        pick = i;
+      }
+    }
+    return streamPalette[pick];
+  }
+
   BudgetStream _fromRow(ResultRow row) {
     final seedBalanceRaw = row[3];
     final eventOrderRaw = row[7];
@@ -476,6 +526,7 @@ class StreamRepo {
       seedBalanceExpr: cols['s_seed_expr'] as String?,
       lossThresholdExpr: cols['s_threshold_expr'] as String?,
       exprErrors: _jsonMap(cols['s_expr_errors']),
+      color: cols['color'] as String?,
     );
   }
 }

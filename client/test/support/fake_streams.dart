@@ -11,6 +11,7 @@ BudgetStream testStream(
   bool shared = false,
   Role role = Role.owner,
   String ownerName = 'Me',
+  String? color,
 }) => BudgetStream(
   id: id,
   ownerId: shared ? 'other' : 'u1',
@@ -18,6 +19,7 @@ BudgetStream testStream(
   seedBalance: Decimal.zero,
   seedDate: DateTime(2026, 1, 1),
   lossThreshold: Decimal.zero,
+  color: color,
   role: shared ? role : Role.owner,
   shared: shared,
   owner: UserRef(

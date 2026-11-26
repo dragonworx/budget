@@ -16,6 +16,11 @@ String formatMoneyAmount(num amount, {int? decimalDigits}) {
   ).format(amount);
 }
 
+/// Compact-card and list-mode home balances: drop cents from \$10,000 up
+/// (e.g. -\$395,139.85 → -\$395,140). The timeline keeps the full value.
+String formatHomeBalance(num amount) =>
+    formatMoneyAmount(amount, decimalDigits: amount.abs() >= 10000 ? 0 : 2);
+
 /// A single event's amount, signed by direction: "+\$1,830" for a
 /// credit, "−\$22.99" for a debit. Compact ("+\$1.36M") from a million up.
 String formatSignedAmount(num signedAmount) {

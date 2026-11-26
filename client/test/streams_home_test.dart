@@ -4,6 +4,7 @@
 import 'package:budget_client/app.dart';
 import 'package:budget_client/boot/page_stub.dart' as page;
 import 'package:budget_client/data/models.dart';
+import 'package:decimal/decimal.dart';
 import 'package:budget_client/state/auth_providers.dart';
 import 'package:budget_client/state/providers.dart';
 import 'package:budget_client/theme/app_theme.dart';
@@ -13,6 +14,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:budget_client/widgets/stream_icon.dart';
+import 'package:budget_client/features/streams/stream_home_layout.dart';
+import 'package:budget_client/features/timeline/stack_lanes.dart';
 
 import 'support/fake_streams.dart';
 import 'support/fake_auth.dart';
@@ -21,16 +24,23 @@ Future<ProviderContainer> _app(
   WidgetTester tester,
   FakeStreamRepository repo, {
   Size size = const Size(390, 844),
+  String? layout,
+  Map<String, Decimal>? todayBalances,
+  bool clearLocal = true,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  if (clearLocal) page.clearLocal();
+  if (layout != null) writeStreamHomeLayout(layout);
   final c = ProviderContainer(
     overrides: [
       authRepositoryProvider.overrideWithValue(
         FakeAuthRepository(user: adminUser),
       ),
       streamRepositoryProvider.overrideWithValue(repo),
+      if (todayBalances != null)
+        todayBalanceProvider.overrideWith((ref, id) async => todayBalances[id]),
     ],
   );
   addTearDown(c.dispose);
@@ -142,7 +152,7 @@ void main() {
         ],
         lastStreamId: 'a1',
       );
-      final c = await _app(tester, repo, size: size);
+      final c = await _app(tester, repo, size: size, layout: 'grid');
       expect(_path(c), '/streams/a1/timeline');
       await tester.tap(find.byKey(const ValueKey('header-stream-picker')));
       await tester.pumpAndSettle();
@@ -317,7 +327,12 @@ void main() {
     final repo = FakeStreamRepository(
       streams: [testStream('a1', 'Everyday'), testStream('a2', 'Savings')],
     );
-    final c = await _app(tester, repo, size: const Size(390, 844));
+    final c = await _app(
+      tester,
+      repo,
+      size: const Size(390, 844),
+      layout: 'grid',
+    );
     expect(_path(c), '/');
 
     expect(find.text('Open timeline'), findsNothing);
@@ -327,7 +342,10 @@ void main() {
 
     final meta = find.byKey(const ValueKey('stream-card-meta-a1'));
     expect(meta, findsOneWidget);
-    expect(tester.widget<Text>(meta).data, 'Seed \$0 · 1 Jan 2026');
+    expect(
+      tester.widget<Text>(meta).data,
+      anyOf('Seed \$0 · 1 Jan 2026', 'Seed \$0 · 1 Jan'),
+    );
     expect(tester.widget<Text>(meta).style?.color, AppTheme.cardMeta);
     expect(tester.widget<Text>(meta).style?.fontSize, 12);
     expect(find.byKey(const ValueKey('stream-card-alert-a1')), findsOneWidget);
@@ -376,7 +394,7 @@ void main() {
     expect(sem.label, contains('Everyday'));
     expect(sem.label, contains('Balance today'));
     expect(sem.label, contains('Open timeline'));
-    expect(sem.label, contains('Seed \$0 · 1 Jan 2026'));
+    expect(sem.label, contains('Seed \$0 · 1 Jan'));
     expect(sem.label, contains('Alert < \$0'));
 
     // Enter / Space on a focused card opens the timeline.
@@ -419,7 +437,7 @@ void main() {
       ],
       lastStreamId: 'gone',
     );
-    await _app(tester, repo);
+    await _app(tester, repo, layout: 'grid');
     expect(find.text('My streams · balance today'), findsOneWidget);
     expect(find.text('Shared with me · balance today'), findsOneWidget);
     expect(find.text('Shared by Sam'), findsOneWidget);
@@ -472,9 +490,9 @@ void main() {
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mine-heading'))).height,
-      32,
+      44,
     );
-    expect(heading.style?.fontSize, 13);
+    expect(heading.style?.fontSize, 12);
     expect(heading.style?.fontWeight, FontWeight.w600);
     expect(heading.style?.color, AppTheme.textMuted);
   });
@@ -536,7 +554,7 @@ void main() {
         streams: [testStream('a1', 'Everyday')],
         lastStreamId: 'gone',
       );
-      await _app(tester, repo, size: const Size(390, 844));
+      await _app(tester, repo, size: const Size(390, 844), layout: 'grid');
       final card = find.byKey(const ValueKey('stream-card-a1'));
       expect(tester.getSize(card).height, 112);
 
@@ -606,7 +624,7 @@ void main() {
         ],
         lastStreamId: 'gone',
       );
-      await _app(tester, repo, size: const Size(320, 640));
+      await _app(tester, repo, size: const Size(320, 640), layout: 'grid');
       final card = find.byKey(const ValueKey('stream-card-a1'));
       expect(card, findsOneWidget);
       expect(tester.getSize(card).height, 112);
@@ -643,7 +661,7 @@ void main() {
           ],
           lastStreamId: 'gone',
         );
-        await _app(tester, repo, size: size);
+        await _app(tester, repo, size: size, layout: 'grid');
         final row = [
           for (var i = 0; i < cols; i++)
             tester.getRect(find.byKey(ValueKey('stream-card-a$i'))),
@@ -707,5 +725,233 @@ void main() {
     expect(iconRect.left, closeTo(cardRect.left + 16, 0.5));
     expect(iconRect.top, closeTo(cardRect.top + 16, 0.5));
     expect(cardRect.height, 112);
+  });
+
+  testWidgets(
+    'P5: phones default to list mode; rows are 64 with a chip and hide the seed',
+    (tester) async {
+      final repo = FakeStreamRepository(
+        streams: [testStream('a1', 'Everyday'), testStream('a2', 'Savings')],
+        lastStreamId: 'gone',
+      );
+      await _app(tester, repo, size: const Size(412, 915));
+      expect(find.byKey(const ValueKey('streams-layout-toggle')), findsWidgets);
+      final card = find.byKey(const ValueKey('stream-card-a1'));
+      expect(tester.getSize(card).height, 64);
+      expect(find.byKey(const ValueKey('stream-card-meta-a1')), findsNothing);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('stream-card-icon-a1'))),
+        const Size(28, 28),
+      );
+      final balance = tester.widget<Text>(
+        find
+            .descendant(
+              of: card,
+              matching: find.byWidgetPredicate(
+                (w) =>
+                    w is Text &&
+                    w.style?.fontSize == 16 &&
+                    w.style?.fontWeight == FontWeight.w600,
+              ),
+            )
+            .first,
+      );
+      expect(
+        balance.style?.fontFeatures,
+        contains(const FontFeature.tabularFigures()),
+      );
+      expect(
+        find.byKey(const ValueKey('stream-card-alert-a1')),
+        findsOneWidget,
+      );
+      final name = tester.getRect(
+        find.descendant(of: card, matching: find.text('Everyday')).first,
+      );
+      final chip = tester.getRect(
+        find.byKey(const ValueKey('stream-card-alert-a1')),
+      );
+      expect(chip.top, greaterThan(name.bottom - 1));
+    },
+  );
+
+  testWidgets(
+    'P5: the section-header toggle switches to grid and is remembered',
+    (tester) async {
+      final repo = FakeStreamRepository(
+        streams: [testStream('a1', 'Everyday'), testStream('a2', 'Savings')],
+        lastStreamId: 'gone',
+      );
+      await _app(tester, repo, size: const Size(412, 915));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('stream-card-a1'))).height,
+        64,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('streams-layout-toggle')).first,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byKey(const ValueKey('stream-card-a1'))).height,
+        112,
+      );
+      expect(find.byKey(const ValueKey('stream-card-meta-a1')), findsOneWidget);
+      expect(page.localGet(kStreamHomeLayoutKey), 'grid');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _app(tester, repo, size: const Size(412, 915), clearLocal: false);
+      // Preference was written; a fresh app at phone width stays on grid.
+      expect(
+        tester.getSize(find.byKey(const ValueKey('stream-card-a1'))).height,
+        112,
+      );
+    },
+  );
+
+  testWidgets(
+    'P5: desktop defaults to grid; list mode still opens the timeline and menu',
+    (tester) async {
+      final repo = FakeStreamRepository(
+        streams: [testStream('a1', 'Everyday')],
+        lastStreamId: 'gone',
+      );
+      final c = await _app(tester, repo, size: const Size(1440, 900));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('stream-card-a1'))).height,
+        112,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('streams-layout-toggle')).first,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byKey(const ValueKey('stream-card-a1'))).height,
+        64,
+      );
+      expect(find.byKey(const ValueKey('stream-card-meta-a1')), findsNothing);
+
+      final menu = find.byTooltip('Stream actions');
+      await tester.tap(menu.first);
+      await tester.pumpAndSettle();
+      expect(find.text('Stream settings'), findsOneWidget);
+      expect(_path(c), '/');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('stream-card-a1')));
+      await tester.pumpAndSettle();
+      expect(_path(c), '/streams/a1/timeline');
+    },
+  );
+
+  testWidgets('P5: a 915px-tall phone in list mode fits about 11 streams', (
+    tester,
+  ) async {
+    final repo = FakeStreamRepository(
+      streams: [for (var i = 0; i < 14; i++) testStream('a$i', 'Stream $i')],
+      lastStreamId: 'gone',
+    );
+    await _app(tester, repo, size: const Size(412, 915));
+    final screen = tester.view.physicalSize;
+    var fully = 0;
+    for (var i = 0; i < 14; i++) {
+      final f = find.byKey(ValueKey('stream-card-a$i'));
+      if (f.evaluate().isEmpty) continue;
+      final r = tester.getRect(f);
+      if (r.top >= 56 && r.bottom <= screen.height + 0.5) fully++;
+    }
+    expect(fully, greaterThanOrEqualTo(11));
+  });
+
+  testWidgets(
+    'P8/P10: 10k+ drops cents; red only with a crossed alert, chip included',
+    (tester) async {
+      final wages = testStream('wages', 'Wages');
+      final loanStream = BudgetStream(
+        id: 'loan',
+        name: 'Mortgage',
+        seedBalance: Decimal.zero,
+        seedDate: DateTime(2026, 1, 1),
+        lossThreshold: Decimal.zero,
+        hasLoan: true,
+      );
+      final ok = testStream('ok', 'Everyday');
+      final repo = FakeStreamRepository(
+        streams: [wages, loanStream, ok],
+        lastStreamId: 'gone',
+      );
+      await _app(
+        tester,
+        repo,
+        size: const Size(1440, 900),
+        layout: 'grid',
+        todayBalances: {
+          'wages': Decimal.parse('-1980'),
+          'loan': Decimal.parse('-395139.85'),
+          'ok': Decimal.parse('6400'),
+        },
+      );
+
+      Color? balanceColor(String id) {
+        final t = tester.widget<Text>(
+          find
+              .descendant(
+                of: find.byKey(ValueKey('stream-card-$id')),
+                matching: find.byWidgetPredicate(
+                  (w) => w is Text && w.style?.fontSize == 22,
+                ),
+              )
+              .first,
+        );
+        return t.style?.color;
+      }
+
+      // Wages is below its $0 threshold (testStream default): red + red chip.
+      expect(balanceColor('wages'), AppTheme.debitColor);
+      expect(find.text('-\$1,980.00'), findsOneWidget);
+      final wagesChip = tester.widget<StreamAlertChip>(
+        find.byKey(const ValueKey('stream-card-alert-wages')),
+      );
+      expect(wagesChip.alert, isTrue);
+
+      // Mortgage is a loan: large negative stays neutral, no chip, cents dropped.
+      expect(balanceColor('loan'), AppTheme.text);
+      expect(find.text('-\$395,140'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('stream-card-alert-loan')),
+        findsNothing,
+      );
+
+      expect(balanceColor('ok'), AppTheme.text);
+      expect(find.text('\$6,400.00'), findsOneWidget);
+      final okChip = tester.widget<StreamAlertChip>(
+        find.byKey(const ValueKey('stream-card-alert-ok')),
+      );
+      expect(okChip.alert, isFalse);
+    },
+  );
+
+  test('P11: pickStreamColor prefers an unused palette entry', () {
+    expect(pickStreamColor(const []), colorToHex(laneColors[0]));
+    expect(
+      pickStreamColor([colorToHex(laneColors[0]), colorToHex(laneColors[2])]),
+      colorToHex(laneColors[1]),
+    );
+  });
+
+  testWidgets('P11: the stream colour tints the wave icon and its tile', (
+    tester,
+  ) async {
+    const hex = '#B8488E';
+    final repo = FakeStreamRepository(
+      streams: [testStream('pink', 'Wages', color: hex)],
+      lastStreamId: 'gone',
+    );
+    await _app(tester, repo, size: const Size(1440, 900), layout: 'grid');
+    final icon = tester.widget<StreamIcon>(
+      find.descendant(
+        of: find.byKey(const ValueKey('stream-card-icon-pink')),
+        matching: find.byType(StreamIcon),
+      ),
+    );
+    expect(icon.color, colorFromHex(hex));
   });
 }

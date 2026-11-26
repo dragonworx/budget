@@ -1576,10 +1576,14 @@ class PaletteSwatches extends StatelessWidget {
     super.key,
     required this.selected,
     required this.onPicked,
+    this.swatchKeyPrefix = 'category-swatch',
   });
 
   final String selected;
   final ValueChanged<String> onPicked;
+
+  /// ValueKey prefix for each swatch (category-swatch-N by default).
+  final String swatchKeyPrefix;
 
   @override
   Widget build(BuildContext context) {
@@ -1596,7 +1600,7 @@ class PaletteSwatches extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(4),
               child: InkResponse(
-                key: ValueKey('category-swatch-$i'),
+                key: ValueKey('$swatchKeyPrefix-$i'),
                 radius: 22,
                 onTap: () => onPicked(colorToHex(laneColors[i])),
                 child: Tooltip(

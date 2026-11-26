@@ -25,6 +25,7 @@ import '../../widgets/user_menu.dart';
 import '../sharing/share_dialog.dart';
 import '../../data/repositories.dart' show StreamDeleteTransfers;
 import 'delete_stream_dialog.dart';
+import 'stream_home_layout.dart';
 
 /// P4/P6/P9: compact 112dp stream cards on a responsive grid.
 const double kStreamCardExtent = 112;
@@ -34,8 +35,7 @@ const double kStreamWideMaxWidth = 1600;
 double streamContentMaxWidth(double width) =>
     width >= 1600 ? kStreamWideMaxWidth : kStreamContentMaxWidth;
 
-/// Column counts follow viewport width. Under 600dp the home stays a
-/// one-column compact grid; list mode is a later phase.
+/// Column counts follow viewport width when the home is in grid mode.
 int streamGridColumns(Size size) {
   final w = size.width;
   if (w >= 1600) return 5;
@@ -59,11 +59,15 @@ double streamGridGap(Size size) => size.shortestSide < 600 ? 8 : 12;
 /// Opens the new-stream dialog; the stream is created inside it (errors
 /// keep it open). Resolves to the created stream.
 Future<BudgetStream?> createStream(BuildContext context) {
-  final notifier = ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(streamsProvider.notifier);
-  return showStreamDialog(context, onSave: notifier.create);
+  final container = ProviderScope.containerOf(context, listen: false);
+  final notifier = container.read(streamsProvider.notifier);
+  final used = [
+    for (final s
+        in container.read(streamsProvider).valueOrNull ??
+            const <BudgetStream>[])
+      if (s.color != null) s.color!,
+  ];
+  return showStreamDialog(context, onSave: notifier.create, usedColors: used);
 }
 
 /// Streams home: my streams, then those shared with me, and New stream.
@@ -81,6 +85,19 @@ class StreamsPage extends ConsumerStatefulWidget {
 
 class _StreamsPageState extends ConsumerState<StreamsPage> {
   bool _jumping = false;
+  String? _layoutPref;
+
+  @override
+  void initState() {
+    super.initState();
+    _layoutPref = readStreamHomeLayout();
+  }
+
+  void _setLayout(bool list) {
+    final v = list ? 'list' : 'grid';
+    writeStreamHomeLayout(v);
+    setState(() => _layoutPref = v);
+  }
 
   /// On the landing route, once per session: go to the last-used stream.
   void _maybeLand(List<BudgetStream> streams) {
@@ -207,30 +224,49 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
         final gap = streamGridGap(size);
         final pad = streamPagePadding(size);
         final bg = Theme.of(context).scaffoldBackgroundColor;
-
-        SliverGrid gridOf(List<BudgetStream> list) => SliverGrid(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cols,
-            mainAxisExtent: kStreamCardExtent,
-            crossAxisSpacing: gap,
-            mainAxisSpacing: gap,
-          ),
-          delegate: SliverChildBuilderDelegate((context, i) {
-            final stream = list[i];
-            return _StreamCard(
-              stream: stream,
-              canDelete: stream.role.isOwner,
-              canShare: stream.role.isOwner,
-              onShare: () => showShareDialog(
-                context,
-                ShareTarget.stream(stream.id, stream.name),
-              ),
-              onOpen: () => context.go('/streams/${stream.id}/timeline'),
-              onEdit: () => _edit(context, stream),
-              onDelete: () => _delete(context, stream),
-            );
-          }, childCount: list.length),
+        final listMode = streamHomeIsList(size.width, _layoutPref);
+        final toggle = StreamLayoutToggle(
+          list: listMode,
+          onChanged: _setLayout,
         );
+
+        Widget cardOf(BudgetStream stream, {required bool last}) => _StreamCard(
+          stream: stream,
+          listMode: listMode,
+          showDivider: listMode && !last,
+          canDelete: stream.role.isOwner,
+          canShare: stream.role.isOwner,
+          onShare: () => showShareDialog(
+            context,
+            ShareTarget.stream(stream.id, stream.name),
+          ),
+          onOpen: () => context.go('/streams/${stream.id}/timeline'),
+          onEdit: () => _edit(context, stream),
+          onDelete: () => _delete(context, stream),
+        );
+
+        Widget listOf(List<BudgetStream> list) {
+          if (listMode) {
+            return SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => cardOf(list[i], last: i == list.length - 1),
+                childCount: list.length,
+              ),
+            );
+          }
+          return SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              mainAxisExtent: kStreamCardExtent,
+              crossAxisSpacing: gap,
+              mainAxisSpacing: gap,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, i) => cardOf(list[i], last: i == list.length - 1),
+              childCount: list.length,
+            ),
+          );
+        }
 
         Widget sectionHeader({
           required String label,
@@ -242,6 +278,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
             headerKey: headerKey,
             color: bg,
             padding: EdgeInsets.symmetric(horizontal: pad),
+            trailing: toggle,
           ),
         );
 
@@ -273,7 +310,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                   pad,
                   shared.isNotEmpty ? 16 : 24,
                 ),
-                sliver: gridOf(mine),
+                sliver: listOf(mine),
               ),
             ],
             if (shared.isNotEmpty) ...[
@@ -283,7 +320,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
               ),
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(pad, 0, pad, 24),
-                sliver: gridOf(shared),
+                sliver: listOf(shared),
               ),
             ],
           ],
@@ -374,11 +411,15 @@ class _StreamCard extends ConsumerStatefulWidget {
     required this.onShare,
     this.canDelete = true,
     this.canShare = true,
+    this.listMode = false,
+    this.showDivider = false,
   });
 
   final VoidCallback onShare;
   final bool canDelete;
   final bool canShare;
+  final bool listMode;
+  final bool showDivider;
   final BudgetStream stream;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
@@ -407,23 +448,19 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final today = ref.watch(todayBalanceProvider(stream.id));
     final value = today.valueOrNull;
-    // A loan stream runs far below zero by design: no red alert badge.
-    final low =
-        !stream.hasLoan &&
-        value != null &&
-        belowAlert(value, stream.lossThreshold);
-    String money(num v) => formatMoneyAmount(v, decimalDigits: 2);
+    final low = streamBalanceIsAlert(
+      hasLoan: stream.hasLoan,
+      balance: value?.toDouble(),
+      threshold: stream.lossThreshold.toDouble(),
+    );
     final balanceText = today.isLoading && value == null
         ? '—'
         : value == null
         ? 'No data'
-        : money(value.toDouble());
+        : formatHomeBalance(value.toDouble());
     final seedText = _compactMoney(stream.seedBalance.toDouble());
-    final seedDate = DateFormat('d MMM y').format(stream.seedDate);
-    final meta = 'Seed $seedText · $seedDate';
     final showAlert = !stream.hasLoan;
     final alertText = showAlert
         ? 'Alert < ${_compactMoney(stream.lossThreshold.toDouble())}'
@@ -432,12 +469,14 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
         ? 'Shared by ${stream.owner!.displayName}'
         : null;
     final offset = offsetIndicator(stream);
+    final seedLine =
+        'Seed $seedText · ${DateFormat('d MMM y').format(stream.seedDate)}';
     final semantics = [
       stream.name,
       ?sharedBy,
       ?offset,
       'Balance today $balanceText',
-      meta,
+      if (!widget.listMode) seedLine,
       ?alertText,
       'Open timeline',
     ].join('. ');
@@ -501,52 +540,23 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
     final phone = MediaQuery.sizeOf(context).shortestSide < 600;
     final pad = phone ? 12.0 : 16.0;
     final subtitle = [?sharedBy, ?offset].join(' · ');
-
-    const nameStyle = TextStyle(
-      fontSize: 15,
-      fontWeight: FontWeight.w600,
-      height: 20 / 15,
-      leadingDistribution: TextLeadingDistribution.even,
-      color: AppTheme.text,
-    );
-    final balanceStyle = TextStyle(
-      fontSize: 22,
-      fontWeight: FontWeight.w600,
-      height: 1,
-      color: low ? AppTheme.debitColor : AppTheme.text,
-      fontFeatures: const [FontFeature.tabularFigures()],
-    );
-    const metaStyle = TextStyle(
-      fontSize: 12,
-      height: 16 / 12,
-      color: AppTheme.cardMeta,
-    );
-
-    final icon = Container(
-      key: ValueKey('stream-card-icon-${stream.id}'),
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        color: AppTheme.accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Center(
-        child: StreamIcon(
-          key: ValueKey('stream-icon'),
-          size: 20,
-          color: AppTheme.accent,
-        ),
-      ),
-    );
+    final tint = streamTintOf(stream);
+    final chip = alertText == null
+        ? null
+        : StreamAlertChip(
+            key: ValueKey('stream-card-alert-${stream.id}'),
+            label: alertText,
+            alert: low,
+          );
 
     final nameText = Tooltip(
       message: stream.name,
       waitDuration: const Duration(milliseconds: 500),
       child: Text(
         stream.name,
-        style: subtitle.isEmpty
-            ? nameStyle
-            : nameStyle.copyWith(height: 16 / 15),
+        style: subtitle.isEmpty || widget.listMode
+            ? kStreamNameStyle
+            : kStreamNameStyle.copyWith(height: 16 / 15),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -569,13 +579,170 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
       ],
     ];
 
-    return Material(
-      color: AppTheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: AppTheme.border),
+    final chevron = ExcludeSemantics(
+      child: IgnorePointer(
+        child: Icon(
+          Icons.chevron_right_rounded,
+          key: ValueKey('stream-card-chevron-${stream.id}'),
+          size: 16,
+          color: AppTheme.textMuted,
+        ),
       ),
-      clipBehavior: Clip.antiAlias,
+    );
+
+    final Widget body;
+    final double menuTop;
+    if (widget.listMode) {
+      final rowH = chip != null
+          ? kStreamListRowWithAlert
+          : kStreamListRowExtent;
+      menuTop = (rowH - 44) / 2;
+      body = SizedBox(
+        height: rowH,
+        child: Row(
+          children: [
+            StreamGlyphTile(
+              tileKey: ValueKey('stream-card-icon-${stream.id}'),
+              size: 28,
+              glyphSize: 16,
+              color: tint,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ExcludeSemantics(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: nameText),
+                        ...badges,
+                      ],
+                    ),
+                    if (chip != null) ...[const SizedBox(height: 4), chip],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ExcludeSemantics(
+              child: Text(
+                balanceText,
+                style: streamListBalanceStyle(alert: low),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            chevron,
+            if (menu != null) const SizedBox(width: 52),
+          ],
+        ),
+      );
+    } else {
+      menuTop = 0;
+      body = Padding(
+        padding: EdgeInsets.all(pad),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 32,
+              child: Row(
+                children: [
+                  StreamGlyphTile(
+                    tileKey: ValueKey('stream-card-icon-${stream.id}'),
+                    size: 32,
+                    glyphSize: 20,
+                    color: tint,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ExcludeSemantics(
+                      child: subtitle.isEmpty
+                          ? Row(
+                              children: [
+                                Expanded(child: nameText),
+                                ...badges,
+                              ],
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  height: 16,
+                                  child: Row(
+                                    children: [
+                                      Expanded(child: nameText),
+                                      ...badges,
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(
+                                  height: 16,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      subtitle,
+                                      style: kStreamMetaStyle.copyWith(
+                                        height: 1,
+                                        leadingDistribution:
+                                            TextLeadingDistribution.even,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  chevron,
+                  if (menu != null) const SizedBox(width: 52),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            ExcludeSemantics(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 40),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      balanceText,
+                      style: streamCardBalanceStyle(alert: low),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    SeedMetaRow(
+                      metaKey: ValueKey('stream-card-meta-${stream.id}'),
+                      seedText: 'Seed $seedText',
+                      seedDate: stream.seedDate,
+                      chip: chip,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final material = Material(
+      color: widget.listMode ? Colors.transparent : AppTheme.surface,
+      shape: widget.listMode
+          ? const RoundedRectangleBorder()
+          : RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: AppTheme.border),
+            ),
+      clipBehavior: widget.listMode ? Clip.none : Clip.antiAlias,
       child: Stack(
         children: [
           RawGestureDetector(
@@ -610,179 +777,32 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
                     },
                   ),
                 },
-                child: InkWell(
-                  onTap: widget.onOpen,
-                  child: Padding(
-                    padding: EdgeInsets.all(pad),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          height: 32,
-                          child: Row(
-                            children: [
-                              icon,
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: ExcludeSemantics(
-                                  child: subtitle.isEmpty
-                                      ? Row(
-                                          children: [
-                                            Expanded(child: nameText),
-                                            ...badges,
-                                          ],
-                                        )
-                                      : Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            SizedBox(
-                                              height: 16,
-                                              child: Row(
-                                                children: [
-                                                  Expanded(child: nameText),
-                                                  ...badges,
-                                                ],
-                                              ),
-                                            ),
-                                            SizedBox(
-                                              height: 16,
-                                              child: Align(
-                                                alignment: Alignment.centerLeft,
-                                                child: Text(
-                                                  subtitle,
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    height: 1,
-                                                    color: AppTheme.textMuted,
-                                                    leadingDistribution:
-                                                        TextLeadingDistribution
-                                                            .even,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ExcludeSemantics(
-                                child: IgnorePointer(
-                                  child: Icon(
-                                    Icons.chevron_right_rounded,
-                                    key: ValueKey(
-                                      'stream-card-chevron-${stream.id}',
-                                    ),
-                                    size: 16,
-                                    color: AppTheme.textMuted,
-                                  ),
-                                ),
-                              ),
-                              if (menu != null) const SizedBox(width: 52),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        ExcludeSemantics(
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 40),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  balanceText,
-                                  style: balanceStyle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        meta,
-                                        key: ValueKey(
-                                          'stream-card-meta-${stream.id}',
-                                        ),
-                                        style: metaStyle,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (alertText != null) ...[
-                                      const SizedBox(width: 8),
-                                      _AlertChip(
-                                        key: ValueKey(
-                                          'stream-card-alert-${stream.id}',
-                                        ),
-                                        label: alertText,
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                child: InkWell(onTap: widget.onOpen, child: body),
               ),
             ),
           ),
-          if (menu != null) Positioned(top: 0, right: 0, child: menu),
+          if (menu != null) Positioned(top: menuTop, right: 0, child: menu),
         ],
       ),
     );
-  }
-}
 
-/// 16dp chip: 12px bell + "Alert < $0".
-class _AlertChip extends StatelessWidget {
-  const _AlertChip({super.key, required this.label});
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 16,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      alignment: Alignment.center,
+    if (!widget.listMode) return material;
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: AppTheme.overlay,
-        borderRadius: BorderRadius.circular(6),
+        border: widget.showDivider
+            ? Border(
+                bottom: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  width: 1,
+                ),
+              )
+            : null,
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.notifications_none_rounded,
-            size: 12,
-            color: AppTheme.cardMeta,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              height: 1,
-              color: AppTheme.cardMeta,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
+      child: material,
     );
   }
 }
 
-/// Long-press opens the card's ⋮ menu, but only for a finger (or stylus)
-/// so a mouse click on desktop is not delayed by the long-press arena.
 class _TouchLongPressGestureRecognizer extends LongPressGestureRecognizer {
   _TouchLongPressGestureRecognizer({super.debugOwner});
 
@@ -874,7 +894,7 @@ class _StreamsHeader extends StatelessWidget {
                       child: Text(
                         _streamCountLabel(count!),
                         key: const ValueKey('streams-count'),
-                        style: theme.textTheme.bodySmall,
+                        style: kStreamMetaStyle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -939,18 +959,20 @@ class _StickySectionDelegate extends SliverPersistentHeaderDelegate {
     required this.headerKey,
     required this.color,
     this.padding = EdgeInsets.zero,
+    this.trailing,
   });
 
   final String label;
   final String headerKey;
   final Color color;
   final EdgeInsets padding;
+  final Widget? trailing;
 
   @override
-  double get minExtent => 32;
+  double get minExtent => kStreamSectionHeaderExtent;
 
   @override
-  double get maxExtent => 32;
+  double get maxExtent => kStreamSectionHeaderExtent;
 
   @override
   Widget build(
@@ -962,17 +984,26 @@ class _StickySectionDelegate extends SliverPersistentHeaderDelegate {
       color: color,
       child: Container(
         key: ValueKey(headerKey),
-        height: 32,
+        height: kStreamSectionHeaderExtent,
         alignment: Alignment.centerLeft,
         padding: padding,
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            height: 1,
-            color: AppTheme.textMuted,
-          ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  height: 1,
+                  color: AppTheme.textMuted,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            ?trailing,
+          ],
         ),
       ),
     );
@@ -983,5 +1014,6 @@ class _StickySectionDelegate extends SliverPersistentHeaderDelegate {
       label != old.label ||
       color != old.color ||
       headerKey != old.headerKey ||
-      padding != old.padding;
+      padding != old.padding ||
+      trailing != old.trailing;
 }
