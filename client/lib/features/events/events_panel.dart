@@ -720,6 +720,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     });
     final theme = Theme.of(context);
     final async = ref.watch(eventsProvider(widget.stream.id));
+    final narrow = MediaQuery.sizeOf(context).width < 360;
     return Material(
       color: AppTheme.surface,
       child: SafeArea(
@@ -728,13 +729,22 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+              padding: EdgeInsets.fromLTRB(
+                narrow ? 12 : 20,
+                16,
+                narrow ? 4 : 12,
+                8,
+              ),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
                       'Transactions',
-                      style: theme.textTheme.headlineSmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: narrow
+                          ? theme.textTheme.titleMedium
+                          : theme.textTheme.headlineSmall,
                     ),
                   ),
                   if (_readOnly) ...[
@@ -969,7 +979,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
         icon: Icons.filter_alt_off_rounded,
         title: 'No matches',
         message: dateIsOnlyFilter
-            ? 'No events in this range.'
+            ? 'No transactions in this range.'
             : cat == null
             ? 'No events match the filter.'
             : 'No events in category ${cat.name} match the filter.',
@@ -1032,7 +1042,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
     Widget announce(Widget child) => Semantics(
       container: true,
       liveRegion: true,
-      label: '${shown.length} events, ${range.preset.label}',
+      label: '${shown.length} transactions, ${range.preset.label}',
       child: child,
     );
     if (!canReorder) {

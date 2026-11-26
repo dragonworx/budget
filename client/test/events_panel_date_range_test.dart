@@ -329,7 +329,7 @@ void main() {
         range.value = r;
       },
     );
-    expect(find.text('No events in this range.'), findsOneWidget);
+    expect(find.text('No transactions in this range.'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('events-clear-filters')));
     await tester.pumpAndSettle();
     expect(got, DateRange.allTime);
@@ -363,6 +363,17 @@ void main() {
       expect(find.byKey(const ValueKey('date-range-preset')), findsOneWidget);
       expect(find.text('Transactions'), findsOneWidget);
       expect(find.byKey(const ValueKey('panel-close')), findsOneWidget);
+      final title = tester.getRect(find.text('Transactions'));
+      final close = tester.getRect(find.byKey(const ValueKey('panel-close')));
+      expect(title.height, lessThan(36));
+      expect(title.right, lessThanOrEqualTo(close.left + 0.5));
+      if (size.width < 360) {
+        final neu = tester.getRect(
+          find.byKey(const ValueKey('panel-new-event')),
+        );
+        expect(title.right, lessThanOrEqualTo(neu.left + 0.5));
+        expect(neu.right, lessThanOrEqualTo(close.left + 0.5));
+      }
     });
   }
 

@@ -116,7 +116,9 @@ void main() {
     expect(sheet.width, lessThanOrEqualTo(320.5));
   });
 
-  testWidgets('empty state at 320: no events to chart yet', (tester) async {
+  testWidgets('empty state at 320: no transactions to chart yet', (
+    tester,
+  ) async {
     await pumpSheet(
       tester,
       width: 320,
@@ -125,7 +127,7 @@ void main() {
       range: DateRange.allTime,
       hasEvents: false,
     );
-    expect(find.text('No events to chart yet.'), findsOneWidget);
+    expect(find.text('No transactions to chart yet.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -137,7 +139,7 @@ void main() {
       totals: CategoryTotals.empty,
       hasEvents: true,
     );
-    expect(find.text('No counted events in this range'), findsOneWidget);
+    expect(find.text('No counted transactions in this range'), findsOneWidget);
 
     await pumpSheet(tester, width: 320, height: 640, totals: fixtureTotals());
     await tester.tap(find.byKey(const ValueKey('charts-side-in')));

@@ -38,6 +38,8 @@ Future<void> showCategoryCharts({
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      // Theme enables a Material handle; we draw our own below.
+      showDragHandle: false,
       backgroundColor: AppTheme.surface,
       builder: (ctx) => SizedBox(
         height: MediaQuery.sizeOf(ctx).height * 0.9,
@@ -372,9 +374,9 @@ class _CategoryChartsViewState extends State<CategoryChartsView> {
 
   String _emptyMessage(CategoryTotals totals) {
     if (!widget.hasEvents && widget.range.isAllTime) {
-      return 'No events to chart yet.';
+      return 'No transactions to chart yet.';
     }
-    if (totals.isEmpty) return 'No counted events in this range';
+    if (totals.isEmpty) return 'No counted transactions in this range';
     if (_moneyOut) return 'No money out in this range';
     return 'No money in in this range';
   }
