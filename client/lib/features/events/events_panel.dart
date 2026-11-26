@@ -675,6 +675,15 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   }
 
   Widget _listView(BuildContext context) {
+    // The list has no text field. Dismiss a leftover or mistaken
+    // keyboard prime (the hidden decimal proxy) so iPhone Chrome
+    // does not keep the pad up over the Transactions list. Skipped
+    // when New has already opened the editor (_editing != null) in
+    // this frame, so DEV-1 autofocus still gets the prime.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _editing != null) return;
+      releaseSoftKeyboard();
+    });
     final theme = Theme.of(context);
     final async = ref.watch(eventsProvider(widget.stream.id));
     return Material(

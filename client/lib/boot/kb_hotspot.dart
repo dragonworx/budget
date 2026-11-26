@@ -1,4 +1,5 @@
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import 'page_stub.dart' if (dart.library.js_interop) 'page_web.dart' as page;
@@ -7,6 +8,12 @@ import 'page_stub.dart' if (dart.library.js_interop) 'page_web.dart' as page;
 /// capture-phase touchend can focus the proxy without waiting for Dart
 /// `onTap` (and without walking event.target, which on a real iPhone is
 /// the Flutter glass pane, not a labelled semantics node).
+///
+/// A hotspot covered by another route (the Transactions overlay over the
+/// timeline FAB, for example) is unregistered: the primer hit-tests raw
+/// screen rects and cannot see Flutter z-order, so a tap on the list
+/// that happens to sit over the FAB would otherwise raise the decimal
+/// pad with nothing to type into.
 class KbHotspot extends SingleChildRenderObjectWidget {
   const KbHotspot({
     super.key,
@@ -35,11 +42,9 @@ class KbHotspot extends SingleChildRenderObjectWidget {
 }
 
 class RenderKbHotspot extends RenderProxyBox {
-  RenderKbHotspot({
-    required String id,
-    required String kind,
-  }) : _id = id,
-       _kind = kind;
+  RenderKbHotspot({required String id, required String kind})
+    : _id = id,
+      _kind = kind;
 
   String _id;
   String get id => _id;
@@ -58,8 +63,26 @@ class RenderKbHotspot extends RenderProxyBox {
     _publish();
   }
 
+  var _scheduled = false;
+
   void _publish() {
-    if (!hasSize || !attached) return;
+    if (_scheduled) return;
+    _scheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      _publishNow();
+    });
+  }
+
+  void _publishNow() {
+    if (!attached || !hasSize || size.isEmpty) {
+      page.unregisterKbHotspot(_id);
+      return;
+    }
+    if (_isOccluded()) {
+      page.unregisterKbHotspot(_id);
+      return;
+    }
     final origin = localToGlobal(Offset.zero);
     page.registerKbHotspot(
       id: _id,
@@ -69,6 +92,32 @@ class RenderKbHotspot extends RenderProxyBox {
       height: size.height,
       kind: _kind,
     );
+  }
+
+  /// True when a later route / overlay would win a tap at our centre.
+  bool _isOccluded() {
+    RenderView? view;
+    for (RenderObject? n = this; n != null; n = n.parent) {
+      if (n is RenderView) {
+        view = n;
+        break;
+      }
+    }
+    if (view == null) return false;
+    final result = BoxHitTestResult();
+    view.hitTest(result, position: localToGlobal(size.center(Offset.zero)));
+    for (final entry in result.path) {
+      final t = entry.target;
+      if (t is RenderObject && _isOrUnder(t, this)) return false;
+    }
+    return true;
+  }
+
+  static bool _isOrUnder(RenderObject node, RenderObject ancestor) {
+    for (RenderObject? n = node; n != null; n = n.parent) {
+      if (identical(n, ancestor)) return true;
+    }
+    return false;
   }
 
   @override

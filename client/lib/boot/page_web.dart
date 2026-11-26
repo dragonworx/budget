@@ -149,11 +149,7 @@ void installSoftKeyboardPrimer() {
   );
 }
 
-void _listen(
-  String type, {
-  bool prime = false,
-  bool armOnly = false,
-}) {
+void _listen(String type, {bool prime = false, bool armOnly = false}) {
   web.document.addEventListener(
     type,
     ((web.Event e) {
@@ -614,6 +610,25 @@ void _dropPrimer() {
     // not have to create it inside the gesture.
     input.value = '';
   }
+}
+
+/// Drop a primed proxy so the iOS keyboard hides. Used when the
+/// Transactions list (or any view with no text field) is shown, so a
+/// leftover or mistaken prime cannot leave the decimal pad up.
+///
+/// Disarms the focus patch first: while `data-kb-block` is set, the
+/// patched `blur()` on the proxy is a no-op.
+void releaseSoftKeyboard() {
+  _handoffTimer?.cancel();
+  _handoffTimer = null;
+  _inputModeLock?.cancel();
+  _handoffRafPending = false;
+  _handoffDone = true;
+  _disarmViewFocusBlock();
+  final input = _keyboardPrimer;
+  if (input == null) return;
+  input.value = '';
+  input.blur();
 }
 
 bool get _shouldPrimeKeyboard {

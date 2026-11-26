@@ -66,6 +66,23 @@ void installSoftKeyboardPrimer() {}
 /// Web: skip the New event / New stream open animation on iOS Safari.
 bool get instantSoftKeyboardOpen => false;
 
+/// Tests: currently registered keyboard-primer hotspots, by id.
+final kbHotspots = <String, KbHotspotReg>{};
+
+class KbHotspotReg {
+  const KbHotspotReg({
+    required this.id,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+    required this.kind,
+  });
+  final String id;
+  final double left, top, width, height;
+  final String kind;
+}
+
 /// Web: screen rect of a New event / New stream / FAB / day-add control.
 void registerKbHotspot({
   required String id,
@@ -74,10 +91,22 @@ void registerKbHotspot({
   required double width,
   required double height,
   required String kind,
-}) {}
+}) {
+  kbHotspots[id] = KbHotspotReg(
+    id: id,
+    left: left,
+    top: top,
+    width: width,
+    height: height,
+    kind: kind,
+  );
+}
 
 /// Web: drop a previously registered hotspot.
-void unregisterKbHotspot(String id) {}
+void unregisterKbHotspot(String id) => kbHotspots.remove(id);
+
+/// Web: blur the keyboard proxy. No-op in tests.
+void releaseSoftKeyboard() {}
 
 /// Web: receive text typed into the keyboard proxy so Amount/Name stay in sync.
 void setSoftKeyboardTextHandler(void Function(String text)? handler) {}
