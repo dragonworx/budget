@@ -12,6 +12,7 @@ import '../../state/realtime_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/sharing_ui.dart';
+import '../../widgets/app_menu_anchor.dart';
 
 /// Opens the share dialog for a stream. Resolves true when the user left
 /// it (callers navigate away).
@@ -264,6 +265,42 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
     ),
   );
 
+
+  Widget _rolePicker({
+    required Key key,
+    required Role value,
+    required ValueChanged<Role>? onChanged,
+  }) {
+    return AppMenuAnchor(
+      key: key,
+      menuChildren: [
+        for (final role in const [Role.viewer, Role.editor])
+          MenuItemButton(
+            onPressed: onChanged == null ? null : () => onChanged(role),
+            trailingIcon: value == role
+                ? const Icon(Icons.check_rounded, size: 18)
+                : null,
+            child: Text(role.label),
+          ),
+      ],
+      builder: (context, controller, _) => InkWell(
+        onTap: onChanged == null
+            ? null
+            : () => controller.isOpen ? controller.close() : controller.open(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(value.label),
+              const Icon(Icons.arrow_drop_down, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   List<Widget> _inviteSection(ThemeData theme) => [
     Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,15 +320,10 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
           ),
         ),
         const SizedBox(width: 8),
-        DropdownButton<Role>(
+        _rolePicker(
           key: const ValueKey('share-invite-role'),
           value: _inviteRole,
-          underline: const SizedBox.shrink(),
-          items: const [
-            DropdownMenuItem(value: Role.viewer, child: Text('Viewer')),
-            DropdownMenuItem(value: Role.editor, child: Text('Editor')),
-          ],
-          onChanged: (r) => setState(() => _inviteRole = r ?? Role.viewer),
+          onChanged: (r) => setState(() => _inviteRole = r),
         ),
       ],
     ),
@@ -383,18 +415,13 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
             ),
           ),
           if (editable)
-            DropdownButton<Role>(
+            _rolePicker(
               key: ValueKey('member-role-${m.user.email}'),
               value: m.role == Role.editor ? Role.editor : Role.viewer,
-              underline: const SizedBox.shrink(),
-              items: const [
-                DropdownMenuItem(value: Role.viewer, child: Text('Viewer')),
-                DropdownMenuItem(value: Role.editor, child: Text('Editor')),
-              ],
               onChanged: _busy
                   ? null
                   : (r) {
-                      if (r == null || r == m.role) return;
+                      if (r == m.role) return;
                       _run(
                         () => _repo.setRole(on, m.userId, r),
                         done:
@@ -405,20 +432,22 @@ class _ShareDialogState extends ConsumerState<ShareDialog> {
           else
             RoleChip(m.role),
           if (editable)
-            PopupMenuButton<String>(
+            AppMenuAnchor(
               key: ValueKey('member-menu-${m.user.email}'),
-              tooltip: 'More for ${m.user.displayName}',
-              icon: const Icon(Icons.more_vert_rounded, size: 20),
-              onSelected: (_) => _remove(m, on),
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: 'remove',
-                  child: ListTile(
-                    leading: Icon(Icons.person_remove_outlined),
-                    title: Text('Remove access'),
-                  ),
+              menuChildren: [
+                MenuItemButton(
+                  leadingIcon: const Icon(Icons.person_remove_outlined),
+                  onPressed: () => _remove(m, on),
+                  child: const Text('Remove access'),
                 ),
               ],
+              builder: (context, controller, _) => IconButton(
+                tooltip: 'More for ${m.user.displayName}',
+                icon: const Icon(Icons.more_vert_rounded, size: 20),
+                onPressed: () => controller.isOpen
+                    ? controller.close()
+                    : controller.open(),
+              ),
             )
           else
             const SizedBox(width: 8),
