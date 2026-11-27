@@ -3,6 +3,7 @@ import 'package:intl/intl.dart' hide TextDirection;
 
 import '../features/timeline/date_range.dart';
 import '../theme/app_theme.dart';
+import 'app_menu_anchor.dart';
 
 /// Compact dropdown for the shared date range. The menu lists only the
 /// six named presets; Custom is only the closed label when the current
@@ -46,31 +47,44 @@ class DateRangePresetControl extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           softWrap: false,
         );
-        return Semantics(
-          button: true,
-          label: 'Date range',
-          value: label,
-          child: PopupMenuButton<DateRangePreset>(
-            key: const ValueKey('date-range-preset'),
-            tooltip: 'Date range',
-            initialValue: range.preset == DateRangePreset.custom
-                ? null
-                : range.preset,
-            offset: const Offset(0, 36),
-            onSelected: (preset) => onChanged(DateRange.fromPreset(preset)),
-            itemBuilder: (context) => [
-              for (final p in DateRangePreset.menu)
-                PopupMenuItem(value: p, child: Text(p.label)),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: Row(
-                mainAxisSize: bounded ? MainAxisSize.max : MainAxisSize.min,
-                children: [
-                  if (bounded) Expanded(child: text) else text,
-                  const SizedBox(width: 2),
-                  const Icon(Icons.expand_more_rounded, size: 18),
-                ],
+        return AppMenuAnchor(
+          key: const ValueKey('date-range-preset'),
+          menuChildren: [
+            for (final p in DateRangePreset.menu)
+              MenuItemButton(
+                onPressed: () => onChanged(DateRange.fromPreset(p)),
+                trailingIcon: range.preset == p
+                    ? const Icon(Icons.check_rounded, size: 18)
+                    : null,
+                child: Text(p.label),
+              ),
+          ],
+          builder: (context, controller, _) => Semantics(
+            button: true,
+            label: 'Date range',
+            value: label,
+            child: Tooltip(
+              message: 'Date range',
+              child: InkWell(
+                onTap: () => controller.isOpen
+                    ? controller.close()
+                    : controller.open(),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisSize: bounded
+                        ? MainAxisSize.max
+                        : MainAxisSize.min,
+                    children: [
+                      if (bounded) Expanded(child: text) else text,
+                      const SizedBox(width: 2),
+                      const Icon(Icons.expand_more_rounded, size: 18),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

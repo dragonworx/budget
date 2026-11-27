@@ -166,4 +166,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(current.preset, DateRangePreset.lastMonth);
   });
+
+  testWidgets('the menu stays inside the viewport when opened at the bottom of a 320×568 screen', (
+    tester,
+  ) async {
+    const size = Size(320, 568);
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomRight,
+            child: DateRangePresetControl(range: DateRange.allTime, onChanged: _ignore),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('date-range-preset')));
+    await tester.pumpAndSettle();
+    final panel = find.byKey(const ValueKey('app-menu-panel'));
+    expect(panel, findsOneWidget);
+    final r = tester.getRect(panel);
+    expect(r.left, greaterThanOrEqualTo(8 - 0.5));
+    expect(r.top, greaterThanOrEqualTo(8 - 0.5));
+    expect(r.right, lessThanOrEqualTo(size.width - 8 + 0.5));
+    expect(r.bottom, lessThanOrEqualTo(size.height - 8 + 0.5));
+    final anchor = tester.getRect(find.byKey(const ValueKey('date-range-preset')));
+    expect(r.bottom, lessThanOrEqualTo(anchor.top + 0.5));
+  });
 }
+
+void _ignore(DateRange _) {}
