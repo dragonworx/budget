@@ -119,7 +119,24 @@ int softKeyboardFieldPointerCalls = 0;
 void onSoftKeyboardFieldPointer() => softKeyboardFieldPointerCalls++;
 
 /// Web: receive text typed into the keyboard proxy so Amount/Name stay in sync.
-void setSoftKeyboardTextHandler(void Function(String text)? handler) {}
+void Function(String text)? softKeyboardTextHandler;
+void setSoftKeyboardTextHandler(void Function(String text)? handler) {
+  softKeyboardTextHandler = handler;
+}
+
+/// Tests: text still sitting in the keyboard proxy, applied by [flushSoftKeyboard].
+String? pendingSoftKeyboardText;
+
+/// Tests: how many times the proxy was flushed into the field.
+int flushSoftKeyboardCalls = 0;
+
+/// Web / iOS: copy the in-progress keyboard value into the field and blur.
+void flushSoftKeyboard() {
+  flushSoftKeyboardCalls++;
+  final text = pendingSoftKeyboardText;
+  pendingSoftKeyboardText = null;
+  if (text != null) softKeyboardTextHandler?.call(text);
+}
 
 /// Non-web (tests): the platform clipboard (mock it with
 /// `SystemChannels.platform`); a platform error is a [ClipboardReadException].

@@ -866,6 +866,19 @@ class _EventEditorState extends ConsumerState<EventEditor> {
     }
   }
 
+  /// Header tick: flush the in-progress Amount (iOS keyboard still up)
+  /// into the field, then do exactly what Save / Create does.
+  Future<void> _acceptFromHeader() async {
+    if (_saving || _readOnly) return;
+    flushSoftKeyboard();
+    _amountFocus.unfocus();
+    _principalFocus.unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    await _save();
+  }
+
   /// Cancel / Esc / close: confirms before discarding unsaved edits.
   Future<void> _close({bool closePanel = false}) async {
     if (_saving) return;
@@ -1082,6 +1095,13 @@ class _EventEditorState extends ConsumerState<EventEditor> {
                 ],
               ),
             ),
+            if (!_readOnly)
+              IconButton(
+                key: const ValueKey('editor-accept'),
+                tooltip: _isNew ? 'Create' : 'Save',
+                onPressed: _saving ? null : _acceptFromHeader,
+                icon: const Icon(Icons.check_rounded),
+              ),
             IconButton(
               key: const ValueKey('editor-close'),
               tooltip: widget.onClosePanel != null

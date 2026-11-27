@@ -722,6 +722,30 @@ void _recyclePrimer() {
   _ensurePrimer(decimal: decimal);
 }
 
+/// Copy any text still sitting in the keyboard proxy (or the focused
+/// Flutter field) into the registered handler, then blur so the
+/// controller holds the value currently being typed. Call this before
+/// Accept / Save when the keyboard may still be up (iOS).
+void flushSoftKeyboard() {
+  final primer = _keyboardPrimer;
+  if (primer != null && primer.value.isNotEmpty) {
+    _onProxyTyped(primer.value);
+  }
+  final active = web.document.activeElement;
+  if (active == null || !_isFlutterField(active)) return;
+  var text = '';
+  if (active.isA<web.HTMLInputElement>()) {
+    text = (active as web.HTMLInputElement).value;
+  } else if (active.isA<web.HTMLTextAreaElement>()) {
+    text = (active as web.HTMLTextAreaElement).value;
+  }
+  if (text.isNotEmpty) {
+    _proxyTextHandler?.call(text);
+    active.dispatchEvent(web.Event('input'));
+  }
+  (active as web.HTMLElement).blur();
+}
+
 void releaseSoftKeyboard() {
   _handoffTimer?.cancel();
   _handoffTimer = null;
