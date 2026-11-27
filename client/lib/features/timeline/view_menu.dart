@@ -5,6 +5,7 @@ import '../../theme/app_theme.dart';
 import '../../data/models.dart';
 import 'combined.dart';
 import 'stack_lanes.dart' show colorFromHex;
+import '../../widgets/app_menu_anchor.dart';
 
 /// The timeline's View (eye) menu: Go to today / seed date / date…, and
 /// "Combine with" (other streams as checkboxes; the
@@ -306,7 +307,7 @@ class _ViewMenuState extends State<ViewMenu> {
           ),
         ),
     ];
-    return MenuAnchor(
+    return AppMenuAnchor(
       controller: _menu,
       style: MenuStyle(
         maximumSize: WidgetStatePropertyAll(

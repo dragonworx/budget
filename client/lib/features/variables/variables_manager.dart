@@ -23,6 +23,7 @@ import '../events/editor_outcome.dart' show undoTipDuration;
 import 'variable_impact.dart';
 import 'variable_usages_dialog.dart';
 import '../../widgets/formula/variable_icon.dart';
+import '../../widgets/app_menu_anchor.dart';
 
 /// Opens the variables manager: [streamId] null = my own variables, else
 /// that stream's owner's (read-only unless I own it). [createName]
@@ -1359,7 +1360,7 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
           ? const Icon(Icons.check_rounded, size: 18, color: AppTheme.accent)
           : null,
     );
-    return MenuAnchor(
+    return AppMenuAnchor(
       menuChildren: [
         MenuItemButton(
           key: const ValueKey('variable-menu-description'),

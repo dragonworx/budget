@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
 import '../../theme/app_theme.dart';
+import '../app_menu_anchor.dart';
 
 class FormulaHelp {
   const FormulaHelp({
@@ -71,10 +72,9 @@ class FormulaHelpButton extends StatelessWidget {
   }
 
   Widget _anchor(BuildContext context, ThemeData theme, TextStyle? small) {
-    return MenuAnchor(
+    return AppMenuAnchor(
       onOpen: () => onOpenChanged?.call(true),
       onClose: () => onOpenChanged?.call(false),
-      alignmentOffset: const Offset(-280, 0),
       menuChildren: [
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 320),

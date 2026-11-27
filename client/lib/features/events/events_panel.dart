@@ -35,6 +35,7 @@ import 'event_editor.dart';
 import 'event_type_buttons.dart';
 import 'event_types.dart';
 import 'sync_format.dart';
+import '../../widgets/app_menu_anchor.dart';
 
 /// Filters [items] to the event [types] shown and [category] (an id;
 /// null: every category). [types] is a union: an event shows when its type
@@ -244,7 +245,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
           onPressed: f,
           child: Text(title),
         );
-    return MenuAnchor(
+    return AppMenuAnchor(
       alignmentOffset: const Offset(0, 4),
       style: w == null
           ? null
@@ -1861,7 +1862,7 @@ class _RowMoveMenuState extends State<_RowMoveMenu> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final iconColor = theme.iconTheme.color;
-    return MenuAnchor(
+    return AppMenuAnchor(
       controller: _controller,
       onClose: () {
         if (_reopening || !mounted) return;

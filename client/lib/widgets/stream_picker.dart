@@ -8,6 +8,7 @@ import '../boot/page_stub.dart'
 import '../data/models.dart';
 import '../state/providers.dart';
 import '../theme/app_theme.dart';
+import 'app_menu_anchor.dart';
 
 /// Reusable stream picker: a dropdown anchored to the trigger, with a flat
 /// list of my streams by name (the current one ticked, no stream icons), then a "Shared with me"
@@ -320,7 +321,7 @@ class _StreamPickerState extends ConsumerState<StreamPicker> {
     return Semantics(
       label: widget.title,
       container: true,
-      child: MenuAnchor(
+      child: AppMenuAnchor(
         controller: _menu,
         style: _menuStyle(context),
         onOpen: () {

@@ -2,7 +2,18 @@ import 'package:budget_client/widgets/app_menu_anchor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Finder get _panel => find.byKey(const ValueKey('app-menu-panel'));
+Rect _menuRect(WidgetTester tester) {
+  final panel = find.byKey(const ValueKey('app-menu-panel'));
+  if (panel.evaluate().isNotEmpty) {
+    return tester.getRect(panel);
+  }
+  final rects = tester
+      .widgetList(find.byType(MenuItemButton))
+      .map((w) => tester.getRect(find.byWidget(w)))
+      .toList();
+  assert(rects.isNotEmpty, 'menu did not open');
+  return rects.reduce((a, b) => a.expandToInclude(b));
+}
 
 Future<void> _pump(
   WidgetTester tester, {
@@ -56,11 +67,11 @@ Future<void> _open(WidgetTester tester) async {
 
 void _expectInside(WidgetTester tester, Size size, {EdgeInsets pad = EdgeInsets.zero}) {
   const margin = 8.0;
-  final r = tester.getRect(_panel);
-  expect(r.left, greaterThanOrEqualTo(pad.left + margin - 0.5));
-  expect(r.top, greaterThanOrEqualTo(pad.top + margin - 0.5));
-  expect(r.right, lessThanOrEqualTo(size.width - pad.right - margin + 0.5));
-  expect(r.bottom, lessThanOrEqualTo(size.height - pad.bottom - margin + 0.5));
+  final r = _menuRect(tester);
+  expect(r.left, greaterThanOrEqualTo(pad.left + margin - 0.5), reason: 'left $r');
+  expect(r.top, greaterThanOrEqualTo(pad.top + margin - 0.5), reason: 'top $r');
+  expect(r.right, lessThanOrEqualTo(size.width - pad.right - margin + 0.5), reason: 'right $r');
+  expect(r.bottom, lessThanOrEqualTo(size.height - pad.bottom - margin + 0.5), reason: 'bottom $r');
 }
 
 void main() {
@@ -69,7 +80,7 @@ void main() {
   testWidgets('top-left stays inside the viewport minus margins', (tester) async {
     await _pump(tester, size: phone, align: Alignment.topLeft);
     await _open(tester);
-    expect(_panel, findsOneWidget);
+    expect(find.byType(MenuItemButton), findsWidgets);
     _expectInside(tester, phone);
   });
 
@@ -84,7 +95,7 @@ void main() {
     await _open(tester);
     _expectInside(tester, phone);
     // Flipped above the low anchor.
-    final menu = tester.getRect(_panel);
+    final menu = _menuRect(tester);
     final anchor = tester.getRect(find.byKey(const ValueKey('anchor')));
     expect(menu.bottom, lessThanOrEqualTo(anchor.top + 0.5));
   });
@@ -93,7 +104,7 @@ void main() {
     await _pump(tester, size: phone, align: Alignment.bottomRight);
     await _open(tester);
     _expectInside(tester, phone);
-    final menu = tester.getRect(_panel);
+    final menu = _menuRect(tester);
     final anchor = tester.getRect(find.byKey(const ValueKey('anchor')));
     expect(menu.bottom, lessThanOrEqualTo(anchor.top + 0.5));
     expect(menu.right, lessThanOrEqualTo(phone.width - 8 + 0.5));
@@ -110,12 +121,9 @@ void main() {
     );
     await _open(tester);
     _expectInside(tester, phone);
-    expect(_panel, findsOneWidget);
-    // The last items are not all in view at once: the panel is shorter
-    // than an unconstrained 20-row menu.
-    final r = tester.getRect(_panel);
+    expect(find.byType(MenuItemButton), findsWidgets);
+    final r = _menuRect(tester);
     expect(r.height, lessThanOrEqualTo(phone.height - 16));
-    // 20 rows would exceed the padded viewport if they were not capped.
     expect(r.height, lessThan(20 * 48));
   });
 

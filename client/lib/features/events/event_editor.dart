@@ -39,6 +39,7 @@ import 'event_type_buttons.dart';
 import 'event_types.dart';
 import 'sync_format.dart';
 import '../timeline/stack_lanes.dart';
+import '../../widgets/app_menu_anchor.dart';
 
 enum EditorAction {
   created,
@@ -1859,7 +1860,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
           label: label,
         ),
         const SizedBox(width: 2),
-        MenuAnchor(
+        AppMenuAnchor(
           alignmentOffset: const Offset(-180, 4),
           menuChildren: [
             item(

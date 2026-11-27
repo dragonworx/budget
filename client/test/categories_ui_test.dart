@@ -23,6 +23,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:budget_client/boot/page_stub.dart';
+import 'package:budget_client/widgets/app_menu_anchor.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/category_dropdown.dart';
@@ -349,7 +350,7 @@ void main() {
       expect(
         find.byWidgetPredicate(
           (w) =>
-              w is MenuAnchor &&
+              w is AppMenuAnchor &&
               w.key is ValueKey &&
               (w.key! as ValueKey).value.toString().startsWith(
                 'category-menu-',

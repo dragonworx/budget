@@ -5,6 +5,7 @@ import '../data/category_tree.dart';
 import '../data/models.dart';
 import '../features/timeline/stack_lanes.dart' show colorFromHex;
 import '../theme/app_theme.dart';
+import 'app_menu_anchor.dart';
 
 /// A row at the foot of a [CategoryDropdown]'s menu, after a divider
 /// (e.g. "Manage categories…").
@@ -774,7 +775,7 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
             }
             return KeyEventResult.ignored;
           },
-          child: MenuAnchor(
+          child: AppMenuAnchor(
             controller: _menu,
             alignmentOffset: const Offset(0, 4),
             style: MenuStyle(

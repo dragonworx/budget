@@ -15,6 +15,7 @@ import '../../widgets/category_dropdown.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../events/editor_outcome.dart' show undoTipDuration;
 import '../timeline/stack_lanes.dart';
+import '../../widgets/app_menu_anchor.dart';
 
 /// Random generator for a new category's default colour (tests set it).
 math.Random? categoryColorRandom;
@@ -1309,7 +1310,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                   icon: categoryExpandIcon(open: _expanded.contains(c.id)),
                 ),
               if (manage) ...[
-                MenuAnchor(
+                AppMenuAnchor(
                   key: ValueKey('category-menu-${c.id}'),
                   menuChildren: [
                     if (manage)
@@ -1539,7 +1540,7 @@ class _ColorDotMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = colorFromHex(color) ?? laneColor(0);
     final i = laneColorIndexOf(c);
-    return MenuAnchor(
+    return AppMenuAnchor(
       style: const MenuStyle(
         padding: WidgetStatePropertyAll(EdgeInsets.all(8)),
       ),
