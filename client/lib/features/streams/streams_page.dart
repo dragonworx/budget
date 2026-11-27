@@ -22,6 +22,7 @@ import '../../widgets/money_text.dart';
 import '../../widgets/sharing_ui.dart';
 import '../../widgets/ui.dart';
 import '../../widgets/user_menu.dart';
+import '../../widgets/app_menu_anchor.dart';
 import '../sharing/share_dialog.dart';
 import '../../data/repositories.dart' show StreamDeleteTransfers;
 import 'delete_stream_dialog.dart';
@@ -400,7 +401,6 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
   }
 }
 
-enum _StreamAction { edit, delete, share }
 
 class _StreamCard extends ConsumerStatefulWidget {
   const _StreamCard({
@@ -430,7 +430,7 @@ class _StreamCard extends ConsumerStatefulWidget {
 }
 
 class _StreamCardState extends ConsumerState<_StreamCard> {
-  final _menuKey = GlobalKey<PopupMenuButtonState<_StreamAction>>();
+  final _menu = MenuController();
 
   BudgetStream get stream => widget.stream;
 
@@ -438,7 +438,11 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
 
   void _openMenu() {
     if (!_hasMenu) return;
-    _menuKey.currentState?.showButtonMenu();
+    if (_menu.isOpen) {
+      _menu.close();
+    } else {
+      _menu.open();
+    }
   }
 
   /// Whole dollars drop cents so the 12px meta line stays compact
@@ -489,50 +493,44 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
             child: SizedBox(
               width: 44,
               height: 44,
-              child: PopupMenuButton<_StreamAction>(
-                key: _menuKey,
-                tooltip: 'Stream actions',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.standard,
-                  minimumSize: WidgetStatePropertyAll(Size(44, 44)),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  padding: WidgetStatePropertyAll(EdgeInsets.zero),
-                ),
-                iconSize: 20,
-                icon: const Icon(Icons.more_vert_rounded),
-                onSelected: (action) => switch (action) {
-                  _StreamAction.edit => widget.onEdit(),
-                  _StreamAction.delete => widget.onDelete(),
-                  _StreamAction.share => widget.onShare(),
-                },
-                itemBuilder: (context) => [
+              child: AppMenuAnchor(
+                controller: _menu,
+                menuChildren: [
                   if (widget.canShare)
-                    const PopupMenuItem(
-                      value: _StreamAction.share,
-                      child: ListTile(
-                        leading: Icon(Icons.person_add_alt_1_outlined),
-                        title: Text('Share stream…'),
-                      ),
+                    MenuItemButton(
+                      leadingIcon: const Icon(Icons.person_add_alt_1_outlined),
+                      onPressed: widget.onShare,
+                      child: const Text('Share stream…'),
                     ),
                   if (stream.role.canEdit)
-                    const PopupMenuItem(
-                      value: _StreamAction.edit,
-                      child: ListTile(
-                        leading: Icon(Icons.tune_rounded),
-                        title: Text('Stream settings'),
-                      ),
+                    MenuItemButton(
+                      leadingIcon: const Icon(Icons.tune_rounded),
+                      onPressed: widget.onEdit,
+                      child: const Text('Stream settings'),
                     ),
                   if (widget.canDelete)
-                    const PopupMenuItem(
-                      value: _StreamAction.delete,
-                      child: ListTile(
-                        leading: Icon(Icons.delete_outline_rounded),
-                        title: Text('Delete stream'),
-                      ),
+                    MenuItemButton(
+                      leadingIcon: const Icon(Icons.delete_outline_rounded),
+                      onPressed: widget.onDelete,
+                      child: const Text('Delete stream'),
                     ),
                 ],
+                builder: (context, controller, _) => IconButton(
+                  tooltip: 'Stream actions',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.standard,
+                    minimumSize: WidgetStatePropertyAll(Size(44, 44)),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                  ),
+                  iconSize: 20,
+                  onPressed: () => controller.isOpen
+                      ? controller.close()
+                      : controller.open(),
+                  icon: const Icon(Icons.more_vert_rounded),
+                ),
               ),
             ),
           );
