@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'dart:js_interop';
 
 import 'package:web/web.dart' as web;
@@ -799,3 +800,35 @@ class ClipboardReadException implements Exception {
 
 /// The primary pointer is a finger (phones, tablets).
 bool get coarsePointer => web.window.matchMedia('(pointer: coarse)').matches;
+
+
+/// The browser's visible area in CSS pixels, including [VisualViewport.offsetLeft]
+/// / [VisualViewport.offsetTop] when iOS chrome or a scroll insets the layout
+/// viewport. Null only if the browser has no VisualViewport.
+Rect? visualViewportRect() {
+  final vv = web.window.visualViewport;
+  if (vv == null) return null;
+  return Rect.fromLTWH(
+    vv.offsetLeft.toDouble(),
+    vv.offsetTop.toDouble(),
+    vv.width.toDouble(),
+    vv.height.toDouble(),
+  );
+}
+
+/// [f] runs when the visual or window viewport is resized or scrolled
+/// (iOS browser bars, the soft keyboard, rotation).
+Object onVisualViewportChange(void Function() f) {
+  final handler = ((web.Event _) => f()).toJS;
+  web.window.visualViewport?.addEventListener('resize', handler);
+  web.window.visualViewport?.addEventListener('scroll', handler);
+  web.window.addEventListener('resize', handler);
+  return handler;
+}
+
+void offVisualViewportChange(Object handle) {
+  final handler = handle as JSFunction;
+  web.window.visualViewport?.removeEventListener('resize', handler);
+  web.window.visualViewport?.removeEventListener('scroll', handler);
+  web.window.removeEventListener('resize', handler);
+}

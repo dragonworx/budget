@@ -158,3 +158,12 @@ class ClipboardReadException implements Exception {
 }
 
 bool get coarsePointer => false;
+
+
+/// Non-web: no browser visual viewport; callers use MediaQuery instead.
+Rect? visualViewportRect() => null;
+
+/// No-op listener. Returns a handle for [offVisualViewportChange].
+Object onVisualViewportChange(void Function() f) => Object();
+
+void offVisualViewportChange(Object handle) {}
