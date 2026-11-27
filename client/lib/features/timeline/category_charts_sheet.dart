@@ -715,8 +715,8 @@ class _ColumnBarChart extends StatelessWidget {
                           ),
                         ),
                         Positioned(
-                          left: b.bar.center.dx,
-                          top: layout.plot.bottom + barLabelPad,
+                          left: b.labelOrigin.dx,
+                          top: b.labelOrigin.dy,
                           child: IgnorePointer(
                             child: Transform.rotate(
                               angle: barLabelAngle,

@@ -154,14 +154,37 @@ void main() {
       final labelRects = <Rect>[];
       for (final b in layout.bars) {
         final size = _textSize(b.name, style);
-        final origin = Offset(
-          b.bar.center.dx,
-          layout.plot.bottom + barLabelPad,
-        );
-        labelRects.add(rotatedLabelBounds(origin, size));
+        labelRects.add(rotatedLabelBounds(b.labelOrigin, size));
       }
       expect(anyRectsOverlap(labelRects, slop: 1), isFalse);
       expect(layout.bars.first.valueText, isNotEmpty);
+    });
+
+    test('centred tilted labels stay inside the scroll content', () {
+      final slices = [
+        bucket('r', 'Rent', -682000, count: 620),
+        bucket('m', 'Mortgage repayment', -679015, count: 977),
+        bucket('g', 'Groceries', -496800, count: 1242),
+      ];
+      final total = slices.fold(0, (s, b) => s + b.outCents.abs());
+      final layout = layoutColumnBars(
+        viewport: const Size(276, 200),
+        slices: slices,
+        total: total,
+        moneyOut: true,
+      );
+      const style = TextStyle(fontSize: 10, height: 1.1);
+      for (final b in layout.bars) {
+        expect(b.labelOrigin.dx, lessThan(b.bar.center.dx + 0.5));
+        final size = _textSize(b.name, style);
+        final rect = rotatedLabelBounds(b.labelOrigin, size);
+        expect(rect.left, greaterThanOrEqualTo(-1), reason: b.name);
+        expect(
+          rect.right,
+          lessThanOrEqualTo(layout.contentWidth + 1),
+          reason: b.name,
+        );
+      }
     });
 
     test('values sit above the columns', () {

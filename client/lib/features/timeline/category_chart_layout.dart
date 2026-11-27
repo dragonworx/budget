@@ -365,6 +365,7 @@ class ColumnBar {
     required this.bar,
     required this.color,
     required this.hairline,
+    required this.labelOrigin,
   });
 
   final String id;
@@ -374,6 +375,9 @@ class ColumnBar {
   final Rect bar;
   final Color color;
   final bool hairline;
+
+  /// Top-left of the tilted name, centred under the column.
+  final Offset labelOrigin;
 }
 
 class ColumnBarLayout {
@@ -452,7 +456,12 @@ ColumnBarLayout layoutColumnBars({
   final labelAdvance =
       longest * math.cos(barLabelAngle) + labelH * math.sin(barLabelAngle) + 8;
   final minSlot = math.max(minBarWidth + barGap, labelAdvance);
-  final trailing = longest * math.cos(barLabelAngle) + 8;
+  // Labels sit centred under the bars, so only half a name hangs past the last
+  // column (the first column still has a half-slot of room to its left).
+  final trailing =
+      (longest * math.cos(barLabelAngle) + labelH * math.sin(barLabelAngle)) /
+          2 +
+      8;
   final minContent = n * minSlot + trailing;
   final plotW = math.max(w - axisWidth, minContent);
   final slot = (plotW - trailing) / n;
@@ -480,6 +489,7 @@ ColumnBarLayout layoutColumnBars({
       height: math.max(bh, share == 0 ? 0 : 2),
     );
     final pct = categoryPercent(share, total);
+    final nameSize = _measure(b.name, lStyle, 200);
     bars.add(
       ColumnBar(
         id: b.id,
@@ -489,6 +499,10 @@ ColumnBarLayout layoutColumnBars({
         bar: bar,
         color: b.color,
         hairline: needsHairline?.call(b.color) ?? false,
+        labelOrigin: barLabelOrigin(
+          Offset(cx, plotBottom + barLabelPad),
+          nameSize,
+        ),
       ),
     );
   }
@@ -545,6 +559,16 @@ bool anyRectsOverlap(Iterable<Rect> rects, {double slop = 0.5}) {
     }
   }
   return false;
+}
+
+/// Top-left of an unrotated label so that, after a clockwise
+/// [barLabelAngle] rotation, it sits centred under [barCenter].
+Offset barLabelOrigin(Offset barCenter, Size size) {
+  final midX =
+      (size.width * math.cos(barLabelAngle) -
+          size.height * math.sin(barLabelAngle)) /
+      2;
+  return Offset(barCenter.dx - midX, barCenter.dy);
 }
 
 /// Tight world-bounds of a label rotated clockwise by [barLabelAngle]
