@@ -43,13 +43,24 @@ class AccessSet {
   bool canReadStream(String id) =>
       ownedStreams.contains(id) || sharedStreams.contains(id);
 
-  bool touches(LiveEvent e) => e.streamId != null && canReadStream(e.streamId!);
+  bool touches(LiveEvent e) =>
+      (e.streamId != null && canReadStream(e.streamId!)) ||
+      _detailStreamIds(e).any(canReadStream);
 
   /// Whether [e] may be delivered to this user.
   bool canRead(LiveEvent e) {
     if (e.subjectUserId == userId) return true;
     if (e.entity == 'admin') return isAdmin;
     final a = e.streamId;
-    return a != null && canReadStream(a);
+    if (a != null && canReadStream(a)) return true;
+    return _detailStreamIds(e).any(canReadStream);
+  }
+
+  /// The other stream on a move (or a transfer): so both sides hear about it.
+  Iterable<String> _detailStreamIds(LiveEvent e) sync* {
+    for (final key in const ['peerStreamId', 'toStreamId', 'fromStreamId']) {
+      final v = e.detail[key]?.toString();
+      if (v != null && v.isNotEmpty) yield v;
+    }
   }
 }

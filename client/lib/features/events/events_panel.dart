@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../loans/loan_display.dart';
@@ -17,6 +18,9 @@ import '../../data/api_client.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/stream_icon.dart';
+import '../../widgets/confirm_dialog.dart';
+import '../../state/realtime_providers.dart';
 import '../../widgets/category_dropdown.dart';
 import '../../widgets/date_range_preset_control.dart';
 import '../timeline/date_range.dart';
@@ -131,6 +135,22 @@ String frequencyLabel(BudgetEvent t) =>
 
 /// Side panel listing a stream's events: search, filter, toggle,
 /// delete; a row opens in the editor.
+/// Set just before jumping to the destination stream, then consumed by
+/// the destination [EventsPanel] so the tip appears in the panel's own
+/// [ScaffoldMessenger] (the root messenger sits under the list overlay).
+class PendingMovedSnack {
+  const PendingMovedSnack({
+    required this.fromId,
+    required this.dest,
+    required this.event,
+  });
+  final String fromId;
+  final BudgetStream dest;
+  final BudgetEvent event;
+}
+
+PendingMovedSnack? pendingMovedSnack;
+
 class EventsPanel extends ConsumerStatefulWidget {
   const EventsPanel({
     super.key,
@@ -143,6 +163,8 @@ class EventsPanel extends ConsumerStatefulWidget {
     this.onHoverEvent,
     this.rangeListenable,
     this.onRangeChanged,
+    this.initialHighlightId,
+    this.onMoved,
   });
 
   /// Shared timeline / charts / list date range. Null: All time (tests
@@ -166,6 +188,12 @@ class EventsPanel extends ConsumerStatefulWidget {
   /// The panel was closed from inside the editor with this outcome.
   final ValueChanged<EditorOutcome?> onPanelClosed;
   final VoidCallback onChanged;
+
+  /// Row to highlight when the list first opens (after a move).
+  final String? initialHighlightId;
+
+  /// After a successful move: jump to that stream's Transactions list.
+  final void Function(BudgetStream dest, BudgetEvent moved)? onMoved;
 
   /// "Plan" in the New split button: opens the payment / goal planner.
   final VoidCallback? onPlan;
@@ -363,6 +391,69 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   String? _highlightId;
   final _highlightKey = GlobalKey();
   Timer? _highlightTimer;
+  final _panelMessenger = GlobalKey<ScaffoldMessengerState>();
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.initialHighlightId;
+    if (id != null) {
+      _highlightId = id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _highlightKey.currentContext;
+        if (ctx != null && ctx.mounted) {
+          Scrollable.ensureVisible(
+            ctx,
+            alignment: 0.3,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+          );
+        }
+      });
+      _highlightTimer = Timer(const Duration(milliseconds: 2200), () {
+        if (mounted) setState(() => _highlightId = null);
+      });
+    }
+    _maybeOfferMovedUndo();
+  }
+
+  @override
+  void didUpdateWidget(covariant EventsPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.stream.id != widget.stream.id) {
+      _maybeOfferMovedUndo();
+    }
+  }
+
+  /// "Moved to …" with Undo, on this panel's messenger (above the scrim).
+  void _maybeOfferMovedUndo() {
+    final pending = pendingMovedSnack;
+    if (pending == null || pending.dest.id != widget.stream.id) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (pendingMovedSnack != pending) return;
+      pendingMovedSnack = null;
+      final messenger =
+          _panelMessenger.currentState ?? ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      final container = ProviderScope.containerOf(context);
+      showUndoBar(
+        messenger,
+        text: 'Moved to ${pending.dest.name}',
+        onUndo: () async {
+          await container
+              .read(eventsProvider(pending.dest.id).notifier)
+              .move(pending.event, pending.fromId);
+          final ctx = scaffoldMessengerKey.currentContext ?? context;
+          if (ctx.mounted) {
+            GoRouter.maybeOf(ctx)?.go(
+              '/streams/${pending.fromId}/timeline?transactions=${pending.event.id}',
+            );
+          }
+        },
+      );
+    });
+  }
 
   void _open(BudgetEvent? t, {bool primed = false}) {
     _clearHover();
@@ -414,6 +505,76 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       onChanged: widget.onChanged,
       orderBefore: order,
     );
+  }
+
+  /// Moves [t] onto [dest] after a confirmation, then a snackbar with Undo
+  /// and a jump to that stream's Transactions list.
+  Future<void> _moveTo(
+    BuildContext context,
+    BudgetEvent t,
+    BudgetStream dest,
+  ) async {
+    final series = t.recurrenceMode == RecurrenceMode.every;
+    final ok = await showConfirmDialog(
+      context,
+      title: 'Move to ${dest.name}?',
+      message: series
+          ? 'This moves the whole series, including every occurrence, '
+              'and keeps the same dates, amount, category and label.'
+          : 'This keeps the same date, amount, category and label.',
+      confirmLabel: 'Move',
+      isDestructive: false,
+    );
+    if (!ok || !context.mounted) return;
+    final fromId = widget.stream.id;
+    try {
+      final moved = await ref
+          .read(eventsProvider(fromId).notifier)
+          .move(t, dest.id);
+      widget.onChanged();
+      if (!context.mounted) return;
+      final messenger =
+          scaffoldMessengerKey.currentState ??
+          ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      // Capture the still-living ProviderScope now: this panel is
+      // disposed after we jump to the destination stream.
+      final container = ProviderScope.containerOf(
+        scaffoldMessengerKey.currentContext ?? context,
+      );
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Moved to ${dest.name}'),
+          duration: undoTipDuration,
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              () async {
+                try {
+                  await container
+                      .read(eventsProvider(dest.id).notifier)
+                      .move(moved, fromId);
+                  final ctx = scaffoldMessengerKey.currentContext;
+                  if (ctx != null && ctx.mounted) {
+                    GoRouter.maybeOf(ctx)?.go(
+                      '/streams/$fromId/timeline?transactions=${moved.id}',
+                    );
+                  }
+                } catch (e) {
+                  messenger.showSnackBar(
+                    SnackBar(content: Text('Could not undo: $e')),
+                  );
+                }
+              }();
+            },
+          ),
+        ),
+      );
+      widget.onMoved?.call(dest, moved);
+    } catch (e) {
+      _error(e);
+    }
   }
 
   void _editorDone(BuildContext context, EditorOutcome? outcome) {
@@ -658,6 +819,7 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
   Widget build(BuildContext context) {
     // Own messenger: snackbars show inside the panel, above the scrim.
     return ScaffoldMessenger(
+      key: _panelMessenger,
       child: Scaffold(
         backgroundColor: AppTheme.surface,
         body: Builder(
@@ -1036,6 +1198,12 @@ class _EventsPanelState extends ConsumerState<EventsPanel> {
       readOnly: _readOnly,
       onTap: () => _open(t),
       onDelete: () => _deleteFromList(context, t),
+      moveTargets: [
+        for (final a
+            in ref.watch(streamsProvider).valueOrNull ?? const <BudgetStream>[])
+          if (a.id != widget.stream.id && a.role.canEdit) a,
+      ],
+      onMoveTo: (dest) => _moveTo(context, t, dest),
       onToggle: (v) => _toggleOne(t, v),
       onPaintStart: (down) => _paintStart(t, down),
     );
@@ -1120,6 +1288,8 @@ class _TxRow extends StatelessWidget {
     required this.onTap,
     required this.onToggle,
     required this.onDelete,
+    required this.onMoveTo,
+    required this.moveTargets,
     required this.onPaintStart,
     this.color = AppTheme.textFaint,
     this.rowKey,
@@ -1149,6 +1319,8 @@ class _TxRow extends StatelessWidget {
   final VoidCallback onTap;
   final ValueChanged<bool> onToggle;
   final VoidCallback onDelete;
+  final ValueChanged<BudgetStream> onMoveTo;
+  final List<BudgetStream> moveTargets;
   final ValueChanged<PointerDownEvent> onPaintStart;
 
   /// On the row's box, so a paint-drag can find the row under the pointer.
@@ -1273,45 +1445,35 @@ class _TxRow extends StatelessWidget {
                       ),
                       const SizedBox(width: 10),
                       Expanded(child: _lines(context, t, name, amount, credit)),
-                      // Delete (editors only): a ⋮ menu on touch, an icon with
-                      // a mouse. Tapping the row opens it in the editor.
+                      // Editors: Move to… (and on touch, Delete) in a ⋮
+                      // menu. A mouse also keeps a one-click delete icon.
                       if (readOnly)
                         const SizedBox(width: 4)
-                      else if (touch)
+                      else ...[
                         SizedBox(
-                          width: 44,
-                          height: 44,
-                          child: PopupMenuButton<String>(
-                            key: ValueKey('row-menu-${t.id}'),
-                            tooltip: 'More for $name',
-                            icon: const Icon(Icons.more_vert_rounded, size: 20),
-                            color: AppTheme.overlay,
-                            onSelected: (_) => onDelete(),
-                            itemBuilder: (_) => [
-                              PopupMenuItem(
-                                value: 'delete',
-                                child: ListTile(
-                                  leading: Icon(
-                                    Icons.delete_outline_rounded,
-                                    color: AppTheme.debitColor,
-                                  ),
-                                  title: const Text('Delete'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        IconButton(
-                          key: ValueKey('row-delete-${t.id}'),
-                          tooltip: 'Delete $name',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: onDelete,
-                          icon: const Icon(
-                            Icons.delete_outline_rounded,
-                            size: 18,
+                          width: touch ? 44 : 36,
+                          height: touch ? 44 : 36,
+                          child: _RowMoveMenu(
+                            event: t,
+                            name: name,
+                            touch: touch,
+                            moveTargets: moveTargets,
+                            onMoveTo: onMoveTo,
+                            onDelete: onDelete,
                           ),
                         ),
+                        if (!touch)
+                          IconButton(
+                            key: ValueKey('row-delete-${t.id}'),
+                            tooltip: 'Delete $name',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: onDelete,
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 18,
+                            ),
+                          ),
+                      ],
                       _eyeToggle(t, name, touch),
                     ],
                   ),
@@ -1650,6 +1812,132 @@ class _TxRow extends StatelessWidget {
                 child: Center(child: button),
               ),
       ),
+    );
+  }
+}
+
+/// Overflow menu for a Transactions row. "Move to…" drills into the
+/// destination list in the same menu so it stays on-screen on a phone
+/// (a cascading [SubmenuButton] opens off the right edge).
+class _RowMoveMenu extends StatefulWidget {
+  const _RowMoveMenu({
+    required this.event,
+    required this.name,
+    required this.touch,
+    required this.moveTargets,
+    required this.onMoveTo,
+    required this.onDelete,
+  });
+
+  final BudgetEvent event;
+  final String name;
+  final bool touch;
+  final List<BudgetStream> moveTargets;
+  final ValueChanged<BudgetStream> onMoveTo;
+  final VoidCallback onDelete;
+
+  @override
+  State<_RowMoveMenu> createState() => _RowMoveMenuState();
+}
+
+class _RowMoveMenuState extends State<_RowMoveMenu> {
+  final _controller = MenuController();
+  bool _picking = false;
+  bool _reopening = false;
+
+  BudgetEvent get t => widget.event;
+
+  void _swap(bool picking) {
+    _reopening = true;
+    setState(() => _picking = picking);
+    _controller.close();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reopening = false;
+      if (mounted) _controller.open();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final iconColor = theme.iconTheme.color;
+    return MenuAnchor(
+      controller: _controller,
+      onClose: () {
+        if (_reopening || !mounted) return;
+        if (_picking) setState(() => _picking = false);
+      },
+      menuChildren: [
+        if (_picking) ...[
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => _swap(false),
+            child: const Text('Move to…'),
+          ),
+          for (final a in widget.moveTargets)
+            MenuItemButton(
+              key: ValueKey('row-move-to-${t.id}-${a.id}'),
+              leadingIcon: StreamIcon(
+                size: 18,
+                color: colorFromHex(a.color) ?? iconColor,
+              ),
+              onPressed: () {
+                _controller.close();
+                widget.onMoveTo(a);
+              },
+              child: Text(a.name),
+            ),
+        ] else ...[
+          _rootMoveItem(iconColor),
+          if (widget.touch)
+            MenuItemButton(
+              key: ValueKey('row-delete-${t.id}'),
+              leadingIcon: Icon(
+                Icons.delete_outline_rounded,
+                color: AppTheme.debitColor,
+              ),
+              onPressed: widget.onDelete,
+              child: const Text('Delete'),
+            ),
+        ],
+      ],
+      builder: (context, controller, _) => IconButton(
+        key: ValueKey('row-menu-${t.id}'),
+        tooltip: 'More for ${widget.name}',
+        visualDensity: widget.touch
+            ? VisualDensity.standard
+            : VisualDensity.compact,
+        padding: widget.touch ? null : EdgeInsets.zero,
+        icon: const Icon(Icons.more_vert_rounded, size: 20),
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
+      ),
+    );
+  }
+
+  Widget _rootMoveItem(Color? iconColor) {
+    if (t.isTransfer) {
+      return MenuItemButton(
+        key: ValueKey('row-move-${t.id}'),
+        leadingIcon: const Icon(Icons.drive_file_move_outline),
+        onPressed: null,
+        child: const Text("Transfers can't be moved"),
+      );
+    }
+    if (widget.moveTargets.isEmpty) {
+      return MenuItemButton(
+        key: ValueKey('row-move-${t.id}'),
+        leadingIcon: const Icon(Icons.drive_file_move_outline),
+        onPressed: null,
+        child: const Text('No other streams to move to'),
+      );
+    }
+    return MenuItemButton(
+      key: ValueKey('row-move-${t.id}'),
+      leadingIcon: const Icon(Icons.drive_file_move_outline),
+      trailingIcon: const Icon(Icons.chevron_right_rounded),
+      onPressed: () => _swap(true),
+      child: const Text('Move to…'),
     );
   }
 }

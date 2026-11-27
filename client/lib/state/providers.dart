@@ -432,6 +432,21 @@ class EventsNotifier extends FamilyAsyncNotifier<List<BudgetEvent>, String> {
     _categoriesMayChange();
   }
 
+  /// Moves [event] onto [toStreamId] and drops it from this stream's list.
+  Future<BudgetEvent> move(BudgetEvent event, String toStreamId) async {
+    final moved = await ref
+        .read(eventRepositoryProvider)
+        .move(event.id, toStreamId, version: event.version);
+    final current = state.valueOrNull ?? [];
+    state = AsyncData(current.where((s) => s.id != event.id).toList());
+    ref.invalidate(eventsProvider(toStreamId));
+    ref.invalidate(balanceProvider);
+    ref.invalidate(todayBalanceProvider);
+    ref.invalidate(insightsProvider);
+    _categoriesMayChange();
+    return moved;
+  }
+
   Future<void> setSkip(
     String eventId,
     DateTime date, {

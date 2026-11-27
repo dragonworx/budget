@@ -1020,6 +1020,49 @@ class EventRepo {
     await _copyOverrides(source.id, peerId);
   }
 
+  /// Moves [id] onto [streamId], keeping its calendar dates, amount,
+  /// label, skips and overrides, and fixing both streams' event_order.
+  /// Does not change category (the caller remaps it when owners differ).
+  Future<BudgetEvent> moveToStream(String id, String streamId) async {
+    final existing = await get(id);
+    if (existing == null) {
+      throw FormatException('transaction not found');
+    }
+    if (existing.streamId == streamId) {
+      throw FormatException('cannot move a transaction to the same stream');
+    }
+    if (existing.transfer != null) {
+      throw FormatException("a transfer can't be moved on its own");
+    }
+    final exists = await _conn.execute(
+      Sql.named('SELECT 1 FROM streams WHERE id = @id::uuid'),
+      parameters: {'id': streamId},
+    );
+    if (exists.isEmpty) throw FormatException('stream not found');
+    await _conn.execute(
+      Sql.named('''
+        UPDATE streams SET event_order =
+          array_remove(event_order, @e::uuid)
+        WHERE id = @old::uuid
+      '''),
+      parameters: {'e': id, 'old': existing.streamId},
+    );
+    await _conn.execute(
+      Sql.named('UPDATE events SET stream_id = @a::uuid WHERE id = @e'),
+      parameters: {'a': streamId, 'e': id},
+    );
+    await _conn.execute(
+      Sql.named('''
+        UPDATE streams SET event_order =
+          array_append(event_order, @e::uuid)
+        WHERE id = @a::uuid
+          AND NOT (@e::uuid = ANY (event_order))
+      '''),
+      parameters: {'a': streamId, 'e': id},
+    );
+    return (await get(id))!;
+  }
+
   /// Moves the peer row of a transfer into [streamId] (changing where the
   /// transfer goes), fixing both streams' event_order.
   Future<void> movePeer(BudgetEvent source, String streamId) async {

@@ -124,6 +124,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           return TimelinePage(
             streamId: streamId,
             openEventId: state.uri.queryParameters['event'],
+            openListEventId: state.uri.queryParameters['transactions'],
           );
         },
       ),

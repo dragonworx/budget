@@ -591,6 +591,19 @@ class EventRepository {
 
   Future<void> delete(String id) => _api.delete('/api/events/$id');
 
+  /// Moves the transaction onto [streamId], keeping its calendar date,
+  /// amount, category and label. The whole series moves together.
+  Future<BudgetEvent> move(String id, String streamId, {int? version}) async {
+    final data = await _api.post(
+      '/api/events/$id/move',
+      body: {
+        'streamId': streamId,
+        'version': ?version,
+      },
+    );
+    return BudgetEvent.fromJson(data as Map<String, dynamic>);
+  }
+
   /// Bulk import of a pasted `EventImport[]` (raw text; fences are
   /// stripped server-side). Its day offsets count from [root], the day
   /// selected on the timeline; the server validates and resolves them.

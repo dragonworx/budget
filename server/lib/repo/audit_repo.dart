@@ -153,6 +153,10 @@ class AuditRepo {
         if (params['d'] != null) 'date': params['d'],
         if (response?['version'] != null) 'version': response!['version'],
         if (params['peer'] != null) 'peerStreamId': params['peer'],
+        if (response?['toStreamId'] != null)
+          'peerStreamId': response!['toStreamId'],
+        if (response?['fromStreamId'] != null)
+          'fromStreamId': response!['fromStreamId'],
         if (action == 'events.imported' && response != null)
           'imported': response['imported'] ?? response['created'],
       },

@@ -13,6 +13,8 @@ import 'loan_fields.dart';
 import 'sync_fields.dart';
 import 'offset_link.dart';
 import '../repo/stream_repo.dart';
+import '../auth/authz.dart';
+import '../auth/middleware.dart';
 import 'json_helpers.dart';
 import 'formula_body.dart';
 import '../domain/variable_service.dart';
@@ -172,6 +174,54 @@ Router eventsRouter(Session conn) {
       return jsonError(e.status, e.message);
     } on CategoryConstraintException catch (e) {
       return categoryConstraintOnEvent(e);
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
+  });
+
+
+  router.post('/<id>/move', (Request request, String id) async {
+    try {
+      final body = await readJsonObject(request);
+      final toId = requireString(body, 'streamId');
+      final existing = await events.get(id);
+      if (existing == null) return jsonError(404, 'event not found');
+      final fromId = existing.streamId;
+      final auth = authOf(request);
+      if (auth == null) return jsonError(401, 'unauthenticated');
+      final destAccess = await Authz(conn).stream(toId, auth.user.id);
+      if (destAccess == null) return jsonError(404, 'stream not found');
+      if (!destAccess.role!.atLeast(Role.editor)) {
+        return jsonError(403, 'requires editor role on the destination stream');
+      }
+      final target = await StreamRepo(conn).get(toId);
+      if (target == null) return jsonError(404, 'stream not found');
+      if (existing.isLoan && target.hasLoan) {
+        return jsonError(409, streamHasLoan);
+      }
+      if (existing.isLoan) {
+        final of = await offsetLoanStreamName(conn, toId);
+        if (of != null) return jsonError(409, offsetForMessage(of));
+        if (existing.offsetStreamIds.contains(toId)) {
+          return jsonError(400, 'a loan cannot be moved onto its offset account');
+        }
+      }
+      if (existing.isSync) {
+        checkSyncDate(existing.startDate, target.seedDate);
+      }
+
+      final moved = await txOf(conn).runTx((tx) async {
+        final repo = EventRepo(tx);
+        final updated = await repo.moveToStream(id, toId);
+        await rehomeEventCategory(tx, updated, fromId: fromId, toId: toId);
+        await VariableService(tx).afterEventWrite([id]);
+        return (await repo.get(id))!;
+      });
+      return jsonOk({
+        ...moved.toJson(),
+        'fromStreamId': fromId,
+        'toStreamId': toId,
+      });
     } on FormatException catch (e) {
       return jsonError(400, e.message);
     }
@@ -454,4 +504,31 @@ ParsedEventBody parseEventBody(Map<String, dynamic> body) {
   }
   final f = Frequency.fromJson(m);
   return (frequency: f, days: f.days);
+}
+
+
+/// When [event] moves to a stream with a different owner, point it at
+/// that owner's same-named category (creating one if needed) so the
+/// name, colour and category stay.
+Future<void> rehomeEventCategory(
+    Session tx,
+    BudgetEvent event, {
+    required String fromId,
+    required String toId,
+  }) async {
+  final cats = CategoryRepo(tx);
+  final fromOwner = await cats.ownerOfStream(fromId);
+  final toOwner = await cats.ownerOfStream(toId);
+  if (fromOwner == null || toOwner == null || fromOwner == toOwner) return;
+  final id = event.categoryId;
+  if (id == null) return;
+  final current = await cats.get(id);
+  if (current == null) return;
+  var dest = await cats.byName(toOwner, current.name);
+  dest ??= await cats.create(toOwner, name: current.name, color: current.color);
+  if (dest.id == id) return;
+  await tx.execute(
+    Sql.named('UPDATE events SET category_id = @c::uuid WHERE id = @e::uuid'),
+    parameters: {'c': dest.id, 'e': event.id},
+  );
 }

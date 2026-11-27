@@ -66,12 +66,20 @@ import 'occurrence_info.dart';
 import 'shortcuts_help.dart';
 
 class TimelinePage extends ConsumerStatefulWidget {
-  const TimelinePage({super.key, required this.streamId, this.openEventId});
+  const TimelinePage({
+    super.key,
+    required this.streamId,
+    this.openEventId,
+    this.openListEventId,
+  });
 
   final String streamId;
 
   /// `?event=<id>` (spec 012): opens that event's editor once it loads.
   final String? openEventId;
+
+  /// `?transactions=<id>`: opens the Transactions list and highlights that row.
+  final String? openListEventId;
 
   @override
   ConsumerState<TimelinePage> createState() => _TimelinePageState();
@@ -1429,6 +1437,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           });
         }
         _maybeOpenLinkedEvent(stream);
+        _maybeOpenMovedList(stream);
         // Loan streams (spec 003 §9–§14): lanes to the payoff, a "Paid off"
         // marker, no alerts, no planner.
         final loanStream = streamHasLoan(stream, events);
@@ -2151,6 +2160,39 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
   /// The `?event=` this page already opened (each link opens once).
   String? _openedLink;
 
+  /// The `?transactions=` this page already opened (each link opens once).
+  String? _openedListLink;
+  String? _listHighlightId;
+
+  /// `?transactions=<id>`: once events have loaded, open the list and
+  /// highlight the moved transaction.
+  void _maybeOpenMovedList(BudgetStream stream) {
+    final id = widget.openListEventId;
+    if (id == null) return;
+    // Include the stream so Undo (same id, original stream) can open again.
+    final token = '${widget.streamId}:$id';
+    if (token == _openedListLink) return;
+    final async = ref.read(eventsProvider(widget.streamId));
+    final events = async.valueOrNull;
+    if (events == null) return;
+    if (!events.any((e) => e.id == id)) {
+      // Dest list may still be the pre-move cache while it refreshes.
+      if (async.isLoading || async.isRefreshing) return;
+      _openedListLink = token;
+      return;
+    }
+    _openedListLink = token;
+    _listHighlightId = id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_dockable(context)) {
+        if (!_dockOpen) _toggleDock();
+      } else {
+        _openEventsPanel(context, stream);
+      }
+    });
+  }
+
   /// `?event=<id>` (spec 012, from a variable's usages): once the stream's
   /// events have loaded, open that event (read-only without edit rights).
   void _maybeOpenLinkedEvent(BudgetStream stream) {
@@ -2518,6 +2560,23 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     onRangeChanged: (r) => _setDateRange(r, zoom: !r.isAllTime),
     skipsFor: _skipsFor,
     onClose: docked ? _toggleDock : null,
+    initialHighlightId: _listHighlightId,
+    onMoved: (dest, event) {
+      // On a phone the list is a modal overlay: pop it first, then go,
+      // so the pop cannot swallow the destination list. A docked list
+      // stays open and just follows the new stream.
+      pendingMovedSnack = PendingMovedSnack(
+        fromId: stream.id,
+        dest: dest,
+        event: event,
+      );
+      if (!docked) close?.call();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          context.go('/streams/${dest.id}/timeline?transactions=${event.id}');
+        }
+      });
+    },
     onPanelClosed: (outcome) {
       if (context.mounted) _report(context, outcome);
     },

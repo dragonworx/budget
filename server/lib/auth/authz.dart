@@ -181,6 +181,8 @@ const policies = <Policy>[
   Policy('PATCH', 'events/:t', Scope.event,
       min: _e, event: 'event.updated', versioned: 'events'),
   Policy('DELETE', 'events/:t', Scope.event, min: _e, event: 'event.deleted'),
+  Policy('POST', 'events/:t/move', Scope.event,
+      min: _e, event: 'event.moved', versioned: 'events'),
   Policy('PUT', 'events/:t/skips/:d', Scope.event,
       min: _e, event: 'skip.changed'),
   Policy('PUT', 'events/:t/overrides/:d', Scope.event,
