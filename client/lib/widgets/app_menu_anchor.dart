@@ -28,7 +28,8 @@ class AppMenuAnchor extends StatefulWidget {
   const AppMenuAnchor({
     super.key,
     this.controller,
-    required this.menuChildren,
+    this.menuChildren = const [],
+    this.menuChildrenBuilder,
     this.builder,
     this.child,
     this.onOpen,
@@ -42,6 +43,8 @@ class AppMenuAnchor extends StatefulWidget {
 
   final MenuController? controller;
   final List<Widget> menuChildren;
+  /// Evaluated when the panel is built so items can depend on state at open time.
+  final List<Widget> Function()? menuChildrenBuilder;
   final RawMenuAnchorChildBuilder? builder;
   final Widget? child;
   final VoidCallback? onOpen;
@@ -152,7 +155,8 @@ class _AppMenuAnchorState extends State<AppMenuAnchor>
             child: _MenuPanel(
               style: widget.style,
               children: [
-                for (final child in widget.menuChildren)
+                for (final child in widget.menuChildrenBuilder?.call() ??
+                    widget.menuChildren)
                   forceMenuItemVerticalOverflow(child, _controller),
               ],
             ),

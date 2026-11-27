@@ -12,6 +12,7 @@ import '../state/providers.dart';
 import '../state/realtime_providers.dart';
 import '../theme/app_theme.dart';
 import 'formula/variable_icon.dart';
+import 'app_menu_anchor.dart';
 
 class UserAvatar extends StatelessWidget {
   const UserAvatar({super.key, required this.user, this.radius = 15});
@@ -84,34 +85,33 @@ class UserMenu extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authProvider).valueOrNull?.user;
     if (user == null) return const SizedBox.shrink();
-    return PopupMenuButton<String>(
+    void pick(String v) {
+      switch (v) {
+        case 'sign-out':
+          ref.read(authProvider.notifier).signOut();
+        case 'admin':
+          GoRouter.of(context).go('/admin');
+        case 'variables':
+          showVariablesManager(context, streamId: streamId);
+        case 'categories':
+          final s = _stream(ref);
+          final id = streamId ?? s?.id;
+          if (id == null) return;
+          showCategoriesManager(
+            context,
+            streamId: id,
+            canEdit: canEdit ?? s?.role.canEdit ?? false,
+          );
+        case 'help':
+          showShortcutsHelp(context);
+      }
+    }
+
+    return AppMenuAnchor(
       key: const ValueKey('user-menu'),
-      tooltip: user.email,
-      offset: const Offset(0, 44),
-      onSelected: (v) {
-        switch (v) {
-          case 'sign-out':
-            ref.read(authProvider.notifier).signOut();
-          case 'admin':
-            GoRouter.of(context).go('/admin');
-          case 'variables':
-            showVariablesManager(context, streamId: streamId);
-          case 'categories':
-            final s = _stream(ref);
-            final id = streamId ?? s?.id;
-            if (id == null) return;
-            showCategoriesManager(
-              context,
-              streamId: id,
-              canEdit: canEdit ?? s?.role.canEdit ?? false,
-            );
-          case 'help':
-            showShortcutsHelp(context);
-        }
-      },
-      itemBuilder: (context) => [
-        PopupMenuItem<String>(
-          enabled: false,
+      menuChildrenBuilder: () => [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
           child: Row(
             children: [
               UserAvatar(user: user, radius: 18),
@@ -159,71 +159,51 @@ class UserMenu extends ConsumerWidget {
             ],
           ),
         ),
-        const PopupMenuDivider(),
+        const Divider(height: 8),
         // The owner's variables (spec 012); read-only for editors and viewers
         // when opened with a streamId.
         if (ServerFeatures.variables)
-          const PopupMenuItem<String>(
-            key: ValueKey('menu-variables'),
-            value: 'variables',
-            child: Row(
-              children: [
-                VariableGlyph(size: 18),
-                SizedBox(width: 10),
-                Text('Variables'),
-              ],
-            ),
+          MenuItemButton(
+            key: const ValueKey('menu-variables'),
+            onPressed: () => pick('variables'),
+            leadingIcon: const VariableGlyph(size: 18),
+            child: const Text('Variables'),
           ),
         // Everyone opens it (viewers read only); categories are shared by
         // all the owner's streams. Hidden when no stream can be resolved.
         if (_hasStream(ref))
-          const PopupMenuItem<String>(
-            key: ValueKey('menu-categories'),
-            value: 'categories',
-            child: Row(
-              children: [
-                CategoryMenuGlyph(size: 18),
-                SizedBox(width: 10),
-                Text('Categories'),
-              ],
-            ),
+          MenuItemButton(
+            key: const ValueKey('menu-categories'),
+            onPressed: () => pick('categories'),
+            leadingIcon: const CategoryMenuGlyph(size: 18),
+            child: const Text('Categories'),
           ),
         if (user.isAdmin)
-          const PopupMenuItem<String>(
-            key: ValueKey('menu-admin'),
-            value: 'admin',
-            child: Row(
-              children: [
-                Icon(Icons.admin_panel_settings_outlined, size: 18),
-                SizedBox(width: 10),
-                Text('Admin'),
-              ],
-            ),
+          MenuItemButton(
+            key: const ValueKey('menu-admin'),
+            onPressed: () => pick('admin'),
+            leadingIcon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
+            child: const Text('Admin'),
           ),
-        const PopupMenuItem<String>(
-          key: ValueKey('menu-help'),
-          value: 'help',
-          child: Row(
-            children: [
-              HelpMenuGlyph(size: 18),
-              SizedBox(width: 10),
-              Text('Help'),
-            ],
-          ),
+        MenuItemButton(
+          key: const ValueKey('menu-help'),
+          onPressed: () => pick('help'),
+          leadingIcon: const HelpMenuGlyph(size: 18),
+          child: const Text('Help'),
         ),
-        const PopupMenuItem<String>(
-          key: ValueKey('sign-out'),
-          value: 'sign-out',
-          child: Row(
-            children: [
-              Icon(Icons.logout_rounded, size: 18),
-              SizedBox(width: 10),
-              Text('Sign out'),
-            ],
-          ),
+        MenuItemButton(
+          key: const ValueKey('sign-out'),
+          onPressed: () => pick('sign-out'),
+          leadingIcon: const Icon(Icons.logout_rounded, size: 18),
+          child: const Text('Sign out'),
         ),
       ],
-      child: Padding(
+      builder: (context, controller, _) => Tooltip(
+        message: user.email,
+        child: InkWell(
+          onTap: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+          child: Padding(
         padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -231,6 +211,8 @@ class UserMenu extends ConsumerWidget {
             if (showRealtimeDot) const RealtimeDot(),
             UserAvatar(user: user, radius: compact ? 13 : 15),
           ],
+        ),
+          ),
         ),
       ),
     );

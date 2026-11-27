@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:budget_client/widgets/stream_icon.dart';
 import 'package:budget_client/features/streams/stream_home_layout.dart';
 import 'package:budget_client/features/timeline/stack_lanes.dart';
+import 'package:budget_client/widgets/app_menu_anchor.dart';
 
 import 'support/fake_streams.dart';
 import 'support/fake_auth.dart';
@@ -261,7 +262,8 @@ void main() {
             (w) =>
                 w is IconButton ||
                 w is ButtonStyleButton ||
-                w is PopupMenuButton,
+                w is PopupMenuButton ||
+                w is AppMenuAnchor,
           ),
         );
         final rights = [
