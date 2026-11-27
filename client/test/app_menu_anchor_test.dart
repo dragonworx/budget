@@ -1,5 +1,6 @@
 import 'package:budget_client/widgets/app_menu_anchor.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Rect _menuRect(WidgetTester tester) {
@@ -137,5 +138,14 @@ void main() {
     );
     await _open(tester);
     _expectInside(tester, phone, pad: pad);
+  });
+
+  testWidgets('Escape dismisses the menu', (tester) async {
+    await _pump(tester, size: const Size(320, 568), align: Alignment.topLeft);
+    await _open(tester);
+    expect(find.byKey(const ValueKey('app-menu-panel')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('app-menu-panel')), findsNothing);
   });
 }

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../boot/kb_hotspot.dart';
 import '../boot/page_stub.dart'
@@ -59,6 +60,7 @@ class _AppMenuAnchorState extends State<AppMenuAnchor>
     with WidgetsBindingObserver {
   late final MenuController _owned = MenuController();
   Object? _vvHandle;
+  var _escBound = false;
 
   MenuController get _controller => widget.controller ?? _owned;
 
@@ -72,8 +74,31 @@ class _AppMenuAnchorState extends State<AppMenuAnchor>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _unbindEscape();
     if (_vvHandle != null) offVisualViewportChange(_vvHandle!);
     super.dispose();
+  }
+
+  void _bindEscape() {
+    if (_escBound) return;
+    HardwareKeyboard.instance.addHandler(_onEscape);
+    _escBound = true;
+  }
+
+  void _unbindEscape() {
+    if (!_escBound) return;
+    HardwareKeyboard.instance.removeHandler(_onEscape);
+    _escBound = false;
+  }
+
+  bool _onEscape(KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape &&
+        _controller.isOpen) {
+      _controller.close();
+      return true;
+    }
+    return false;
   }
 
   void _relayout() {
@@ -89,8 +114,14 @@ class _AppMenuAnchorState extends State<AppMenuAnchor>
       controller: _controller,
       useRootOverlay: true,
       consumeOutsideTaps: widget.consumeOutsideTaps,
-      onOpen: widget.onOpen,
-      onClose: widget.onClose,
+      onOpen: () {
+        _bindEscape();
+        widget.onOpen?.call();
+      },
+      onClose: () {
+        _unbindEscape();
+        widget.onClose?.call();
+      },
       builder: widget.builder,
       child: widget.child,
       overlayBuilder: (overlayContext, info) {
