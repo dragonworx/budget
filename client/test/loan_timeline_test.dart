@@ -132,18 +132,20 @@ Future<void> _pump(WidgetTester tester, Size size, {required bool loan}) async {
   await tester.pumpAndSettle();
 }
 
+bool _isMoreItem(Widget w) {
+  if (w is! MenuItemButton || w.key is! ValueKey) return false;
+  final v = '${(w.key! as ValueKey).value}';
+  return v.startsWith('more-') || v.startsWith('timeline-loan');
+}
+
 List<String> _moreKeys(WidgetTester tester) {
   final items =
-      find
-          .byWidgetPredicate((w) => w is PopupMenuItem<String>)
-          .evaluate()
-          .toList()
-        ..sort(
-          (a, b) => tester
-              .getTopLeft(find.byWidget(a.widget))
-              .dy
-              .compareTo(tester.getTopLeft(find.byWidget(b.widget)).dy),
-        );
+      find.byWidgetPredicate(_isMoreItem).evaluate().toList()..sort(
+        (a, b) => tester
+            .getTopLeft(find.byWidget(a.widget))
+            .dy
+            .compareTo(tester.getTopLeft(find.byWidget(b.widget)).dy),
+      );
   return [for (final e in items) '${(e.widget.key! as ValueKey).value}'];
 }
 

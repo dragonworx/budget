@@ -32,6 +32,7 @@ import '../../widgets/bar_chart_glyph.dart';
 import '../../widgets/list_glyph.dart';
 import '../../widgets/stream_picker.dart';
 import '../../widgets/ui.dart';
+import '../../widgets/app_menu_anchor.dart';
 import '../events/editor_outcome.dart';
 import '../events/import_dialog.dart';
 import '../planning/goal_models.dart';
@@ -1922,44 +1923,36 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
 
     // More, in order: Stream settings first, then (loan streams) Loan
     // summary, then whatever overflowed.
-    final more = <PopupMenuEntry<String>>[
+    final more = <Widget>[
       if (canEdit && !mid)
-        const PopupMenuItem(
-          key: ValueKey('more-settings'),
-          value: 'settings',
-          child: ListTile(
-            leading: Icon(Icons.tune_rounded),
-            title: Text('Stream settings'),
-          ),
+        MenuItemButton(
+          key: const ValueKey('more-settings'),
+          leadingIcon: const Icon(Icons.tune_rounded),
+          onPressed: () => _editStream(context, stream),
+          child: const Text('Stream settings'),
         ),
       if (streamHasLoan(stream, events))
-        const PopupMenuItem(
-          key: ValueKey('timeline-loan-summary'),
-          value: 'loanSummary',
-          child: ListTile(
-            leading: Icon(Icons.account_balance_outlined),
-            title: Text('Loan summary'),
-          ),
+        MenuItemButton(
+          key: const ValueKey('timeline-loan-summary'),
+          leadingIcon: const Icon(Icons.account_balance_outlined),
+          onPressed: () => showLoanSummary(context, stream),
+          child: const Text('Loan summary'),
         ),
       if (owner)
-        const PopupMenuItem(
-          key: ValueKey('more-share'),
-          value: 'share',
-          child: ListTile(
-            leading: Icon(Icons.person_add_alt_1_outlined),
-            title: Text('Share stream'),
-          ),
+        MenuItemButton(
+          key: const ValueKey('more-share'),
+          leadingIcon: const Icon(Icons.person_add_alt_1_outlined),
+          onPressed: () => _share(context, stream),
+          child: const Text('Share stream'),
         ),
       // Always enabled: without a selected day it explains how to pick one
       // (a snack bar) instead of opening the import.
       if (canEdit)
-        const PopupMenuItem(
-          key: ValueKey('more-import'),
-          value: 'import',
-          child: ListTile(
-            leading: Icon(Icons.file_upload_outlined),
-            title: Text('Import events'),
-          ),
+        MenuItemButton(
+          key: const ValueKey('more-import'),
+          leadingIcon: const Icon(Icons.file_upload_outlined),
+          onPressed: () => _openImport(context, stream),
+          child: const Text('Import events'),
         ),
     ];
 
@@ -2000,24 +1993,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
       _fitMenu(stream, compact: !desk, tight: tiny, style: slim),
       // Always the rightmost item. The avatar/user menu lives on the
       // Streams home screen, not here.
-      PopupMenuButton<String>(
+      AppMenuAnchor(
         key: const ValueKey('timeline-more'),
-        tooltip: 'More',
-        style: slim,
-        icon: const Icon(Icons.more_vert_rounded),
-        onSelected: (v) {
-          switch (v) {
-            case 'import':
-              _openImport(context, stream);
-            case 'settings':
-              _editStream(context, stream);
-            case 'loanSummary':
-              showLoanSummary(context, stream);
-            case 'share':
-              _share(context, stream);
-          }
-        },
-        itemBuilder: (context) => more,
+        menuChildren: more,
+        builder: (context, controller, _) => IconButton(
+          tooltip: 'More',
+          style: slim,
+          icon: const Icon(Icons.more_vert_rounded),
+          onPressed: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+        ),
       ),
       SizedBox(width: desk ? 8 : (tiny ? 0 : 2)),
     ];

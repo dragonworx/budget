@@ -363,10 +363,10 @@ Future<void> _editFromPanel(WidgetTester tester, String name) async {
 Future<void> _expectImportBlocked(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('timeline-more')));
   await tester.pumpAndSettle();
-  final item = tester.widget<PopupMenuItem<String>>(
+  final item = tester.widget<MenuItemButton>(
     find.byKey(const ValueKey('more-import')),
   );
-  expect(item.enabled, isTrue);
+  expect(item.onPressed, isNotNull);
   // No hint / info line under the item.
   expect(find.byKey(const ValueKey('more-import-hint')), findsNothing);
   expect(find.textContaining('Dates count from'), findsNothing);
@@ -2903,15 +2903,20 @@ void main() {
     await _pump(tester, size: const Size(390, 844));
     await tester.tap(find.byKey(const ValueKey('timeline-more')));
     await tester.pumpAndSettle();
-    final items = find.byWidgetPredicate((w) => w is PopupMenuItem<String>);
-    final first = tester.widgetList<PopupMenuItem<String>>(items).toList()
+    final items = find.byWidgetPredicate(
+      (w) =>
+          w is MenuItemButton &&
+          w.key is ValueKey &&
+          '${(w.key! as ValueKey).value}'.startsWith('more-'),
+    );
+    final first = tester.widgetList<MenuItemButton>(items).toList()
       ..sort(
         (a, b) => tester
             .getTopLeft(find.byWidget(a))
             .dy
             .compareTo(tester.getTopLeft(find.byWidget(b)).dy),
       );
-    expect(first.first.value, 'settings');
+    expect((first.first.key! as ValueKey).value, 'more-settings');
     double y(String t) => tester.getTopLeft(find.text(t)).dy;
     expect(y('Stream settings'), lessThan(y('Share stream')));
     expect(y('Share stream'), lessThan(y('Import events')));
@@ -3324,11 +3329,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           tester
-              .widget<PopupMenuItem<String>>(
+              .widget<MenuItemButton>(
                 find.byKey(const ValueKey('more-import')),
               )
-              .enabled,
-          isTrue,
+              .onPressed,
+          isNotNull,
         );
         // No info line under the item; the dialog names the root.
         expect(find.textContaining('Dates count from'), findsNothing);
