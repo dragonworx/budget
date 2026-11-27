@@ -7,6 +7,7 @@ import '../../state/app_prefs.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/date_range_preset_control.dart';
 import '../../widgets/money_text.dart';
+import 'category_chart_layout.dart';
 import 'category_totals.dart';
 import 'date_range.dart';
 
@@ -353,16 +354,16 @@ class _CategoryChartsViewState extends State<CategoryChartsView> {
     return Column(
       children: [
         Flexible(
-          flex: 3,
+          flex: _pie ? 3 : 5,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
             child: _pie
                 ? _pieChart(slices, sideTotal)
-                : SingleChildScrollView(child: _barChart(slices, sideTotal)),
+                : _barChart(slices, sideTotal),
           ),
         ),
         Expanded(
-          flex: 4,
+          flex: _pie ? 4 : 3,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
             children: [for (final b in slices) _legendRow(b, sideTotal)],
@@ -384,31 +385,65 @@ class _CategoryChartsViewState extends State<CategoryChartsView> {
   Widget _pieChart(List<CategoryBucket> slices, int sideTotal) {
     return LayoutBuilder(
       builder: (context, c) {
-        final cap = c.maxWidth < 400 ? 180.0 : 280.0;
-        final maxSide = math.min(math.min(c.maxWidth, c.maxHeight), cap);
-        final size = maxSide.clamp(96.0, cap);
-        return Center(
-          child: SizedBox.square(
-            dimension: size,
-            child: GestureDetector(
-              onTapDown: (d) {
-                final id = pieHit(
-                  d.localPosition,
-                  Size(size, size),
-                  slices,
-                  sideTotal,
+        final style =
+            (Theme.of(context).textTheme.bodySmall ?? const TextStyle())
+                .copyWith(
+                  fontSize: pieLabelFontSize,
+                  height: pieLabelLineHeight,
+                  color: AppTheme.textMuted,
+                  fontWeight: FontWeight.w500,
                 );
-                _select(id);
-              },
-              child: CustomPaint(
-                painter: _PiePainter(
-                  slices: slices,
-                  total: sideTotal,
-                  highlightId: _highlightId,
-                  moneyOut: _moneyOut,
+        final layout = layoutPieChart(
+          size: Size(c.maxWidth, c.maxHeight),
+          slices: slices,
+          total: sideTotal,
+          moneyOut: _moneyOut,
+          style: style,
+        );
+        return GestureDetector(
+          onTapDown: (d) => _select(hitTestPie(d.localPosition, layout)),
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _PiePainter(
+                    layout: layout,
+                    highlightId: _highlightId,
+                  ),
                 ),
               ),
-            ),
+              for (final lab in layout.labels)
+                Positioned(
+                  left: lab.rect.left,
+                  top: lab.rect.top,
+                  width: math.max(lab.rect.width, 1),
+                  height: math.max(lab.rect.height, 1),
+                  child: Semantics(
+                    button: true,
+                    selected: _highlightId == lab.id,
+                    label: lab.caption,
+                    child: GestureDetector(
+                      key: ValueKey('charts-pie-label-${lab.id}'),
+                      onTap: () => _select(lab.id),
+                      child: Text(
+                        lab.text,
+                        maxLines: 3,
+                        overflow: TextOverflow.visible,
+                        textAlign: lab.left ? TextAlign.right : TextAlign.left,
+                        style: style.copyWith(
+                          color: _highlightId == lab.id
+                              ? AppTheme.text
+                              : AppTheme.textMuted,
+                          fontWeight: _highlightId == lab.id
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         );
       },
@@ -416,7 +451,7 @@ class _CategoryChartsViewState extends State<CategoryChartsView> {
   }
 
   Widget _barChart(List<CategoryBucket> slices, int sideTotal) {
-    return _BarChart(
+    return _ColumnBarChart(
       slices: slices,
       total: sideTotal,
       highlightId: _highlightId,
@@ -527,62 +562,28 @@ bool _needsHairline(Color color) {
   return (color.computeLuminance() - bg.computeLuminance()).abs() < 0.14;
 }
 
-/// Which slice contains [local], or null if the tap is in empty space.
-/// [slices] are already the active side (one of in/out is zero).
-String? pieHit(
-  Offset local,
-  Size size,
-  List<CategoryBucket> slices,
-  int total,
-) {
-  if (total == 0 || slices.isEmpty) return null;
-  final c = Offset(size.width / 2, size.height / 2);
-  final r = math.min(size.width, size.height) / 2 - 8;
-  final v = local - c;
-  if (v.distance > r + 12 || v.distance < 2) return null;
-  var theta = math.atan2(v.dy, v.dx) + math.pi / 2;
-  while (theta < 0) {
-    theta += 2 * math.pi;
-  }
-  var acc = 0.0;
-  for (final b in slices) {
-    final share = (b.outCents != 0 ? b.outCents : b.inCents).abs();
-    final sw = 2 * math.pi * share / total;
-    if (theta <= acc + sw) return b.id;
-    acc += sw;
-  }
-  return slices.last.id;
-}
-
 class _PiePainter extends CustomPainter {
-  _PiePainter({
-    required this.slices,
-    required this.total,
-    required this.highlightId,
-    required this.moneyOut,
-  });
+  _PiePainter({required this.layout, required this.highlightId});
 
-  final List<CategoryBucket> slices;
-  final int total;
+  final PieChartLayout layout;
   final String? highlightId;
-  final bool moneyOut;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = math.min(size.width, size.height) / 2 - 8;
+    if (layout.total == 0 || layout.slices.isEmpty) return;
+    final c = layout.center;
+    final r = layout.radius;
     var start = -math.pi / 2;
-    for (final b in slices) {
-      final share = b.centsOn(moneyOut: moneyOut).abs();
-      final sweep = 2 * math.pi * share / total;
+    for (final b in layout.slices) {
+      final share = b.centsOn(moneyOut: layout.moneyOut).abs();
+      final sweep = 2 * math.pi * share / layout.total;
       final mid = start + sweep / 2;
       final highlighted = b.id == highlightId;
       final center = highlighted
-          ? c + Offset(math.cos(mid), math.sin(mid)) * 6
+          ? c + Offset(math.cos(mid), math.sin(mid)) * 5
           : c;
       final rect = Rect.fromCircle(center: center, radius: r);
-      final paint = Paint()..color = b.color;
-      canvas.drawArc(rect, start, sweep, true, paint);
+      canvas.drawArc(rect, start, sweep, true, Paint()..color = b.color);
       if (_needsHairline(b.color) || highlighted) {
         canvas.drawArc(
           rect,
@@ -597,18 +598,35 @@ class _PiePainter extends CustomPainter {
       }
       start += sweep;
     }
+
+    final leader = Paint()
+      ..color = AppTheme.borderStrong
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (final lab in layout.labels) {
+      final path = Path()
+        ..moveTo(lab.rim.dx, lab.rim.dy)
+        ..lineTo(lab.elbow.dx, lab.elbow.dy)
+        ..lineTo(lab.anchor.dx, lab.anchor.dy);
+      canvas.drawPath(
+        path,
+        leader
+          ..color = highlightId == lab.id
+              ? AppTheme.textMuted
+              : AppTheme.borderStrong,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(covariant _PiePainter old) =>
-      old.slices != slices ||
-      old.total != total ||
-      old.highlightId != highlightId ||
-      old.moneyOut != moneyOut;
+      old.layout != layout || old.highlightId != highlightId;
 }
 
-class _BarChart extends StatelessWidget {
-  const _BarChart({
+class _ColumnBarChart extends StatelessWidget {
+  const _ColumnBarChart({
     required this.slices,
     required this.total,
     required this.highlightId,
@@ -624,115 +642,177 @@ class _BarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (final b in slices)
-          Padding(padding: const EdgeInsets.only(bottom: 8), child: _bar(b)),
-      ],
-    );
-  }
-
-  Widget _bar(CategoryBucket b) {
-    final share = b.centsOn(moneyOut: moneyOut).abs();
-    final frac = total == 0 ? 0.0 : share / total;
-    final amount = formatMoneyAmount(share / 100.0);
-    final on = highlightId == b.id;
-    return Semantics(
-      button: true,
-      selected: on,
-      label: '${b.name}, $amount, ${(frac * 100).round()}%',
-      child: Material(
-        color: on ? AppTheme.accentSoft : Colors.transparent,
-        child: InkWell(
-          key: ValueKey('charts-bar-${b.id}'),
-          onTap: () => onSelect(b.id),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        b.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+    return LayoutBuilder(
+      builder: (context, c) {
+        final valueStyle = Theme.of(context).textTheme.labelSmall
+            ?.copyWith(color: AppTheme.text, fontSize: 10);
+        final labelStyle = Theme.of(context).textTheme.labelSmall
+            ?.copyWith(color: AppTheme.textMuted, fontSize: 10);
+        final layout = layoutColumnBars(
+          viewport: Size(c.maxWidth, c.maxHeight),
+          slices: slices,
+          total: total,
+          moneyOut: moneyOut,
+          valueStyle: valueStyle,
+          labelStyle: labelStyle,
+          needsHairline: _needsHairline,
+        );
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: layout.axisWidth,
+              child: CustomPaint(
+                painter: _BarAxisPainter(layout: layout, style: valueStyle),
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: layout.contentWidth,
+                  height: c.maxHeight,
+                  child: Stack(
+                    clipBehavior: Clip.hardEdge,
+                    children: [
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _ColumnBarPainter(
+                            layout: layout,
+                            highlightId: highlightId,
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerRight,
-                        child: Text(amount, maxLines: 1),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: SizedBox(
-                    height: 10,
-                    child: CustomPaint(
-                      painter: _BarPainter(
-                        fraction: frac,
-                        color: b.color,
-                        hairline: _needsHairline(b.color),
-                      ),
-                      child: const SizedBox.expand(),
-                    ),
+                      for (final b in layout.bars) ...[
+                        Positioned(
+                          left: b.bar.left,
+                          top: layout.plot.top,
+                          width: math.max(b.bar.width, 8),
+                          height: math.max(layout.plot.height, 8),
+                          child: Semantics(
+                            button: true,
+                            selected: highlightId == b.id,
+                            label: '${b.caption}, ${b.valueText}',
+                            child: GestureDetector(
+                              key: ValueKey('charts-bar-${b.id}'),
+                              onTap: () => onSelect(b.id),
+                              behavior: HitTestBehavior.opaque,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: b.bar.center.dx - 40,
+                          top: b.bar.top - 16,
+                          width: 80,
+                          height: 16,
+                          child: IgnorePointer(
+                            child: Text(
+                              b.valueText,
+                              maxLines: 1,
+                              textAlign: TextAlign.center,
+                              style: valueStyle,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: b.bar.center.dx,
+                          top: layout.plot.bottom + barLabelPad,
+                          child: IgnorePointer(
+                            child: Transform.rotate(
+                              angle: barLabelAngle,
+                              alignment: Alignment.topLeft,
+                              child: Text(
+                                b.name,
+                                maxLines: 1,
+                                style: labelStyle,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-      ),
+          ],
+        );
+      },
     );
   }
 }
 
-class _BarPainter extends CustomPainter {
-  _BarPainter({
-    required this.fraction,
-    required this.color,
-    required this.hairline,
-  });
+class _BarAxisPainter extends CustomPainter {
+  _BarAxisPainter({required this.layout, required this.style});
 
-  final double fraction;
-  final Color color;
-  final bool hairline;
+  final ColumnBarLayout layout;
+  final TextStyle? style;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bg = Paint()..color = AppTheme.overlay;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(4)),
-      bg,
-    );
-    final w = size.width * fraction.clamp(0.0, 1.0);
-    if (w <= 0) return;
-    final rect = Rect.fromLTWH(0, 0, w, size.height);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(4)),
-      Paint()..color = color,
-    );
-    if (hairline) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(4)),
-        Paint()
-          ..color = Colors.white54
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1,
+    final tickPaint = Paint()
+      ..color = AppTheme.border
+      ..strokeWidth = 1;
+    for (final t in layout.ticks) {
+      canvas.drawLine(
+        Offset(size.width - 4, t.y),
+        Offset(size.width, t.y),
+        tickPaint,
       );
+      final tp = TextPainter(
+        text: TextSpan(text: t.label, style: style),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout(maxWidth: size.width - 6);
+      tp.paint(canvas, Offset(size.width - 6 - tp.width, t.y - tp.height / 2));
     }
   }
 
   @override
-  bool shouldRepaint(covariant _BarPainter old) =>
-      old.fraction != fraction ||
-      old.color != color ||
-      old.hairline != hairline;
+  bool shouldRepaint(covariant _BarAxisPainter old) => old.layout != layout;
+}
+
+class _ColumnBarPainter extends CustomPainter {
+  _ColumnBarPainter({required this.layout, required this.highlightId});
+
+  final ColumnBarLayout layout;
+  final String? highlightId;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final grid = Paint()
+      ..color = AppTheme.border.withValues(alpha: 0.7)
+      ..strokeWidth = 1;
+    for (final t in layout.ticks) {
+      canvas.drawLine(Offset(0, t.y), Offset(layout.plot.width, t.y), grid);
+    }
+    final axis = Paint()
+      ..color = AppTheme.borderStrong
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(0, layout.plot.bottom),
+      Offset(layout.plot.width, layout.plot.bottom),
+      axis,
+    );
+    for (final b in layout.bars) {
+      final highlighted = b.id == highlightId;
+      final rect = b.bar;
+      if (rect.height <= 0) continue;
+      final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(3));
+      canvas.drawRRect(rrect, Paint()..color = b.color);
+      if (b.hairline || highlighted) {
+        canvas.drawRRect(
+          rrect,
+          Paint()
+            ..color = Colors.white70
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = highlighted ? 2 : 1,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ColumnBarPainter old) =>
+      old.layout != layout || old.highlightId != highlightId;
 }

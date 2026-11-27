@@ -116,6 +116,60 @@ void main() {
     expect(sheet.width, lessThanOrEqualTo(320.5));
   });
 
+  testWidgets('pie labels sit outside slices, with count and percent', (
+    tester,
+  ) async {
+    await pumpSheet(tester, width: 320, height: 640, totals: fixtureTotals());
+    expect(find.byKey(const ValueKey('charts-pie-label-groc')), findsOneWidget);
+    expect(find.byKey(const ValueKey('charts-pie-label-rent')), findsOneWidget);
+    expect(find.byKey(const ValueKey('charts-pie-label-tran')), findsOneWidget);
+    // Snacks is <2% so it is already grouped into Other by totals.side.
+    expect(
+      find.byKey(const ValueKey('charts-pie-label-__other__')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Groceries'), findsWidgets);
+    expect(find.textContaining('61%'), findsWidgets);
+
+    final sheet = tester.getRect(find.byType(CategoryChartsView));
+    final keys = ['groc', 'rent', 'tran', '__other__'];
+    final rects = [
+      for (final id in keys)
+        tester.getRect(find.byKey(ValueKey('charts-pie-label-$id'))),
+    ];
+    for (final r in rects) {
+      expect(r.left, greaterThanOrEqualTo(sheet.left - 0.5));
+      expect(r.right, lessThanOrEqualTo(sheet.right + 0.5));
+      expect(r.top, greaterThanOrEqualTo(sheet.top - 0.5));
+      expect(r.bottom, lessThanOrEqualTo(sheet.bottom + 0.5));
+    }
+    for (var i = 0; i < rects.length; i++) {
+      for (var j = i + 1; j < rects.length; j++) {
+        expect(rects[i].deflate(0.5).overlaps(rects[j].deflate(0.5)), isFalse);
+      }
+    }
+
+    await tester.tap(find.byKey(const ValueKey('charts-pie-label-groc')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('bar chart has tilted bottom labels and values', (tester) async {
+    await pumpSheet(tester, width: 320, height: 640, totals: fixtureTotals());
+    await tester.tap(find.byKey(const ValueKey('charts-mode-bar')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('charts-bar-groc')), findsOneWidget);
+    expect(find.byKey(const ValueKey('charts-bar-rent')), findsOneWidget);
+    expect(find.text('Groceries'), findsWidgets);
+    expect(find.text('Rent'), findsWidgets);
+    expect(tester.takeException(), isNull);
+    final sheet = tester.getRect(find.byType(CategoryChartsView));
+    for (final name in ['Groceries', 'Rent', 'Transport']) {
+      final r = tester.getRect(find.text(name).first);
+      expect(r.bottom, lessThanOrEqualTo(sheet.bottom + 0.5));
+    }
+  });
+
   testWidgets('empty state at 320: no transactions to chart yet', (
     tester,
   ) async {
