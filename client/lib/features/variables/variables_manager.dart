@@ -1478,23 +1478,30 @@ class _VariablesManagerState extends ConsumerState<VariablesManager> {
       allowEmpty: true,
       onSubmitted: (_) => _create(),
     );
-    final unit = PopupMenuButton<String>(
+    final unit = AppMenuAnchor(
       key: const ValueKey('variable-new-unit'),
-      tooltip: 'Unit: ${_unitNames[_newUnit]}',
-      initialValue: _newUnit,
-      onSelected: (u) => setState(() => _newUnit = u),
-      itemBuilder: (_) => [
+      menuChildren: [
         for (final u in _units)
-          PopupMenuItem(
+          MenuItemButton(
             key: ValueKey('variable-new-unit-$u'),
-            value: u,
+            onPressed: () => setState(() => _newUnit = u),
+            trailingIcon: _newUnit == u
+                ? const Icon(Icons.check_rounded, size: 18)
+                : null,
             child: Text('${_unitNames[u]} (${unitBadge(_unitOf(u))})'),
           ),
       ],
-      child: SizedBox(
-        width: b,
-        height: b,
-        child: Center(child: _badge(_newUnit)),
+      builder: (context, controller, _) => Tooltip(
+        message: 'Unit: ${_unitNames[_newUnit]}',
+        child: InkWell(
+          onTap: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+          child: SizedBox(
+            width: b,
+            height: b,
+            child: Center(child: _badge(_newUnit)),
+          ),
+        ),
       ),
     );
     final add = IconButton(
