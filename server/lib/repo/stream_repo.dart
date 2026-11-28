@@ -427,8 +427,7 @@ class StreamRepo {
       parameters: {'id': id},
     );
     final rows = await _conn.execute(
-      Sql.named(
-          'DELETE FROM events WHERE stream_id = @id RETURNING id::text'),
+      Sql.named('DELETE FROM events WHERE stream_id = @id RETURNING id::text'),
       parameters: {'id': id},
     );
     return (

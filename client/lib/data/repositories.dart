@@ -80,6 +80,22 @@ class StreamRepository {
     StreamDeleteTransfers transfers = StreamDeleteTransfers.keep,
   }) => _api.delete('/api/streams/$id?transfers=${transfers.name}');
 
+  /// Permanently deletes every transaction in [id], and the far side of
+  /// each transfer in other streams. The stream itself stays.
+  Future<({int deleted, int counterparts, List<String> affectedStreams})>
+  resetEvents(String id) async {
+    final data = await _api.delete('/api/streams/$id/events');
+    final map = data as Map<String, dynamic>;
+    return (
+      deleted: (map['deleted'] as num?)?.toInt() ?? 0,
+      counterparts: (map['counterparts'] as num?)?.toInt() ?? 0,
+      affectedStreams: [
+        for (final e in (map['affectedStreams'] as List? ?? const []))
+          e.toString(),
+      ],
+    );
+  }
+
   Future<BalanceSeries> balance(
     String streamId, {
     required DateTime from,
@@ -596,10 +612,7 @@ class EventRepository {
   Future<BudgetEvent> move(String id, String streamId, {int? version}) async {
     final data = await _api.post(
       '/api/events/$id/move',
-      body: {
-        'streamId': streamId,
-        'version': ?version,
-      },
+      body: {'streamId': streamId, 'version': ?version},
     );
     return BudgetEvent.fromJson(data as Map<String, dynamic>);
   }

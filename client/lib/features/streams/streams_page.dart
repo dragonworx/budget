@@ -26,6 +26,7 @@ import '../../widgets/app_menu_anchor.dart';
 import '../sharing/share_dialog.dart';
 import '../../data/repositories.dart' show StreamDeleteTransfers;
 import 'delete_stream_dialog.dart';
+import 'reset_stream_dialog.dart';
 import 'stream_home_layout.dart';
 
 /// P4/P6/P9: compact 112dp stream cards on a responsive grid.
@@ -244,6 +245,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
           onOpen: () => context.go('/streams/${stream.id}/timeline'),
           onEdit: () => _edit(context, stream),
           onDelete: () => _delete(context, stream),
+          onReset: () => _reset(context, stream),
         );
 
         Widget listOf(List<BudgetStream> list) {
@@ -399,8 +401,10 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
       }
     }
   }
-}
 
+  Future<void> _reset(BuildContext context, BudgetStream stream) =>
+      confirmAndResetStream(context, ref, stream: stream);
+}
 
 class _StreamCard extends ConsumerStatefulWidget {
   const _StreamCard({
@@ -408,6 +412,7 @@ class _StreamCard extends ConsumerStatefulWidget {
     required this.onOpen,
     required this.onEdit,
     required this.onDelete,
+    required this.onReset,
     required this.onShare,
     this.canDelete = true,
     this.canShare = true,
@@ -424,6 +429,7 @@ class _StreamCard extends ConsumerStatefulWidget {
   final VoidCallback onOpen;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onReset;
 
   @override
   ConsumerState<_StreamCard> createState() => _StreamCardState();
@@ -508,6 +514,15 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
                       onPressed: widget.onEdit,
                       child: const Text('Stream settings'),
                     ),
+                  if (stream.role.canEdit || widget.canDelete)
+                    const Divider(height: 8),
+                  if (stream.role.canEdit)
+                    resetStreamMenuItem(
+                      key: const ValueKey('reset-stream'),
+                      context: context,
+                      enabled: true,
+                      onPressed: widget.onReset,
+                    ),
                   if (widget.canDelete)
                     MenuItemButton(
                       leadingIcon: const Icon(Icons.delete_outline_rounded),
@@ -518,7 +533,10 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
                 builder: (context, controller, _) => IconButton(
                   tooltip: 'Stream actions',
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                  constraints: const BoxConstraints(
+                    minWidth: 44,
+                    minHeight: 44,
+                  ),
                   style: const ButtonStyle(
                     visualDensity: VisualDensity.standard,
                     minimumSize: WidgetStatePropertyAll(Size(44, 44)),

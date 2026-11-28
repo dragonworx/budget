@@ -314,6 +314,20 @@ class StreamsNotifier extends AsyncNotifier<List<BudgetStream>> {
       userId: ref.read(authProvider).valueOrNull?.user?.id,
     );
   }
+
+  /// Permanently deletes every transaction in [id]. The stream stays.
+  Future<({int deleted, int counterparts, List<String> affectedStreams})>
+  resetEvents(String id) async {
+    final r = await ref.read(streamRepositoryProvider).resetEvents(id);
+    ref.invalidate(eventsProvider);
+    ref.invalidate(balanceProvider);
+    ref.invalidate(todayBalanceProvider);
+    ref.invalidate(insightsProvider);
+    ref.invalidate(streamProvider(id));
+    ref.invalidate(loanSummaryProvider(id));
+    await refresh();
+    return r;
+  }
 }
 
 /// Whether this session has already landed (sign-in opens the last-used

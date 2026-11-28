@@ -91,4 +91,9 @@ class FakeStreamRepository extends StreamRepository {
     lastStreamId = id;
     return a;
   }
+
+  @override
+  Future<({int deleted, int counterparts, List<String> affectedStreams})>
+  resetEvents(String id) async =>
+      (deleted: 0, counterparts: 0, affectedStreams: const <String>[]);
 }

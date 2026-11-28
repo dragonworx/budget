@@ -17,6 +17,7 @@ import '../../boot/page_stub.dart'
 import '../../brand/brand.dart';
 import '../../app.dart';
 import '../streams/streams_page.dart';
+import '../streams/reset_stream_dialog.dart';
 
 import '../../data/api_client.dart';
 import '../../data/models.dart';
@@ -1954,6 +1955,14 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           onPressed: () => _openImport(context, stream),
           child: const Text('Import events'),
         ),
+      if (canEdit) const Divider(height: 8),
+      if (canEdit)
+        resetStreamMenuItem(
+          key: const ValueKey('more-reset-stream'),
+          context: context,
+          enabled: events.isNotEmpty,
+          onPressed: () => _resetStream(context, stream, events),
+        ),
     ];
 
     return [
@@ -2252,6 +2261,12 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
     ref.invalidate(eventsProvider(widget.streamId));
     _invalidateBalance();
   }
+
+  Future<void> _resetStream(
+    BuildContext context,
+    BudgetStream stream,
+    List<BudgetEvent> events,
+  ) => confirmAndResetStream(context, ref, stream: stream, events: events);
 
   Future<void> _editStream(BuildContext context, BudgetStream stream) async {
     final listed = (ref.read(streamsProvider).valueOrNull ?? const [])

@@ -87,8 +87,7 @@ void main() {
     final ab = await tx('own2', a, 'A to B', amount: '100', to: b);
     final ba =
         await tx('own2', b, 'Rent from B', amount: '50', to: a, monthly: true);
-    final skip = await h.call(
-        'PUT', '/api/events/${ba['id']}/skips/2026-11-05',
+    final skip = await h.call('PUT', '/api/events/${ba['id']}/skips/2026-11-05',
         as: 'own2', body: {'skipped': true});
     expect(skip.status, lessThan(300), reason: '${skip.json}');
     final plain = await tx('own2', b, 'B own');

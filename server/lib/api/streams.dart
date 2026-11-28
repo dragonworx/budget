@@ -205,8 +205,7 @@ Router buildStreamsApi(Session conn) {
   // Reset Stream: delete every event in the stream (and each transfer's
   // far side in other streams, the same as deleting those events one by
   // one). The stream, its seed, settings and colour stay. No undo.
-  router.delete('/<streamId>/events',
-      (Request request, String streamId) async {
+  router.delete('/<streamId>/events', (Request request, String streamId) async {
     final stream = await streams.get(streamId);
     if (stream == null) return jsonError(404, 'stream not found');
     final me = requireAuth(request).user.id;
