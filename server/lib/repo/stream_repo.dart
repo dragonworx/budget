@@ -49,8 +49,9 @@ class StreamRepo {
   final _uuid = const Uuid();
 
   /// Streams [userId] owns or has been shared, with their role, owner and
-  /// whether they are shared with them. Mine first (display order, name),
-  /// then shared ones by name.
+  /// whether they are shared with them. Ordered by the caller's
+  /// [users.stream_order]; ids not in that array fall back to mine first
+  /// (display order, name), then shared ones by name.
   Future<List<Map<String, Object?>>> listAccessible(String userId) async {
     final rows = await _conn.execute(
       Sql.named('''
@@ -67,10 +68,14 @@ class StreamRepo {
                a.color
         FROM streams a
         JOIN users u ON u.id = a.owner_id
+        JOIN users me ON me.id = @u::uuid
         LEFT JOIN stream_shares s
           ON s.stream_id = a.id AND s.user_id = @u::uuid
         WHERE a.owner_id = @u::uuid OR s.user_id IS NOT NULL
-        ORDER BY (a.owner_id = @u::uuid) DESC,
+        ORDER BY CASE WHEN array_position(me.stream_order, a.id) IS NULL
+                      THEN 1 ELSE 0 END,
+                 array_position(me.stream_order, a.id),
+                 (a.owner_id = @u::uuid) DESC,
                  CASE WHEN a.owner_id = @u::uuid THEN a.display_order ELSE 0 END,
                  lower(a.name), a.id
       '''),
@@ -92,6 +97,34 @@ class StreamRepo {
     }).toList();
     await _attachOffsetLinks(out);
     return out;
+  }
+
+  /// Saves [ids] as [userId]'s home-list order. Unknown ids are rejected;
+  /// accessible streams missing from [ids] are appended in their current
+  /// order. Returns the updated [listAccessible] rows.
+  Future<List<Map<String, Object?>>> reorderAccessible(
+      String userId, List<String> ids) async {
+    if (ids.length != ids.toSet().length) {
+      throw const FormatException('ids must be unique');
+    }
+    final current = await listAccessible(userId);
+    final accessible = {for (final s in current) s['id'] as String};
+    for (final id in ids) {
+      if (!accessible.contains(id)) {
+        throw const FormatException('ids includes a stream you cannot access');
+      }
+    }
+    final missing = [
+      for (final s in current)
+        if (!ids.contains(s['id'])) s['id'] as String,
+    ];
+    final order = [...ids, ...missing];
+    await _conn.execute(
+      Sql.named(
+          'UPDATE users SET stream_order = @ids::uuid[] WHERE id = @u::uuid'),
+      parameters: {'u': userId, 'ids': order},
+    );
+    return listAccessible(userId);
   }
 
   /// Spec 004 §17: the streams list's link indicator. A loan stream gets

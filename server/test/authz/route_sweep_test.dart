@@ -92,7 +92,9 @@ void main() {
           // A per-user preference (landing stream), not shared data.
           p.path.endsWith('/opened') ||
           // Each member's own saved timeline view, likewise.
-          p.path.endsWith('/view');
+          p.path.endsWith('/view') ||
+          // The caller's own home-list order (owned and shared).
+          p.path == 'streams/reorder';
       if (mutating && !computeOnly) {
         expect(p.event, isNotNull, reason: '${p.method} ${p.path}');
       }

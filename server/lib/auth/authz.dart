@@ -98,6 +98,9 @@ const policies = <Policy>[
   // Streams
   Policy('GET', 'streams', Scope.auth),
   Policy('POST', 'streams', Scope.auth, event: 'stream.created'),
+  // The caller's own home-list order (owned and shared). Before
+  // PATCH streams/:a so "reorder" is not captured as a stream id.
+  Policy('PATCH', 'streams/reorder', Scope.auth),
   Policy('GET', 'streams/:a', Scope.stream),
   // Remember the last-opened stream (landing after sign-in). No event.
   Policy('POST', 'streams/:a/opened', Scope.stream),

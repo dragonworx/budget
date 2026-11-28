@@ -39,7 +39,8 @@ Router buildStreamsApi(Session conn) {
   final events = EventRepo(conn);
   final router = Router();
 
-  // Streams are top level: mine (owner) plus those shared with me.
+  // Streams are top level: mine (owner) plus those shared with me,
+  // in the caller's saved home-list order.
   router.get('/', (Request request) async {
     final me = requireAuth(request).user.id;
     final items = await streams.listAccessible(me);
@@ -49,6 +50,33 @@ Router buildStreamsApi(Session conn) {
       // Only when still accessible (a share may have been revoked).
       'lastStreamId': items.any((a) => a['id'] == last) ? last : null,
     });
+  });
+
+  /// `PATCH /reorder`: save the caller's home-list order (owned and
+  /// shared). Each user's order is independent.
+  router.patch('/reorder', (Request request) async {
+    try {
+      final me = requireAuth(request).user.id;
+      final body = await readJsonObject(request);
+      final raw = body['ids'];
+      if (raw is! List) {
+        return jsonError(400, 'ids must be an array');
+      }
+      final ids = raw.map((e) => e.toString()).toList();
+      for (final id in ids) {
+        if (!uuidRe.hasMatch(id)) {
+          return jsonError(400, 'ids must be UUIDs');
+        }
+      }
+      final items = await streams.reorderAccessible(me, ids);
+      final last = await streams.lastOpened(me);
+      return jsonOk({
+        'streams': items,
+        'lastStreamId': items.any((a) => a['id'] == last) ? last : null,
+      });
+    } on FormatException catch (e) {
+      return jsonError(400, e.message);
+    }
   });
 
   router.post('/', (Request request) async {
