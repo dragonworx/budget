@@ -123,6 +123,36 @@ Future<void> applyMigrations(
   }
 }
 
+/// Applies SQL files from [migrationsDir] whose names sort before the
+/// next prefix after [through] (e.g. `through: '031'` applies 000–031,
+/// not 032+). Historical migration tests should use this so a later
+/// schema change (such as 035 dropping `categories.owner_id`) does not
+/// break their post-conditions.
+Future<void> applyMigrationsThrough(
+  Connection conn, {
+  required String through,
+  String migrationsDir = 'migrations',
+  String adminEmail = Config.defaultAdminEmail,
+}) async {
+  final next = (int.parse(through) + 1).toString().padLeft(through.length, '0');
+  final tmp = Directory.systemTemp.createTempSync('mig_through_$through');
+  try {
+    for (final f in Directory(migrationsDir).listSync().whereType<File>()) {
+      final name = f.uri.pathSegments.last;
+      if (name.endsWith('.sql') && name.compareTo(next) < 0) {
+        f.copySync('${tmp.path}/$name');
+      }
+    }
+    await applyMigrations(
+      conn,
+      migrationsDir: tmp.path,
+      adminEmail: adminEmail,
+    );
+  } finally {
+    tmp.deleteSync(recursive: true);
+  }
+}
+
 final _dataMigrations = <String, Future<bool> Function(Session)>{
   '006_currency_scale_backfill': (s) async {
     await backfillCurrencyScales(s);

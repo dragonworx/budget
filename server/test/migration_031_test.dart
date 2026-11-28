@@ -131,7 +131,7 @@ void main() {
             .first
             .toList();
 
-    await applyMigrations(c, migrationsDir: 'migrations');
+    await applyMigrationsThrough(c, through: '031');
     // Idempotent: the SQL runs again cleanly.
     await c.execute(
         File('migrations/031_category_hierarchy.sql').readAsStringSync(),

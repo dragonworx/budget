@@ -87,7 +87,7 @@ void main() {
                 "WHERE id = '$before'"))
             .first[0];
 
-    await applyMigrations(c, migrationsDir: 'migrations');
+    await applyMigrationsThrough(c, through: '026');
     // Idempotent: the SQL runs again cleanly.
     await c.execute(File('migrations/026_loan_events.sql').readAsStringSync(),
         queryMode: QueryMode.simple);

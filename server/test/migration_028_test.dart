@@ -81,7 +81,7 @@ void main() {
       await snap('occurrence_overrides', "event_id = '$_e1'"),
     ];
 
-    await applyMigrations(c, migrationsDir: 'migrations');
+    await applyMigrationsThrough(c, through: '028');
     // Idempotent: the SQL runs again cleanly.
     await c.execute(File('migrations/028_variables.sql').readAsStringSync(),
         queryMode: QueryMode.simple);

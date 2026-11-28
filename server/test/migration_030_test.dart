@@ -106,7 +106,7 @@ void main() {
             .first[0];
     final beforeStd = await snap(std), beforeLoan = await snap(loan);
 
-    await applyMigrations(c, migrationsDir: 'migrations');
+    await applyMigrationsThrough(c, through: '030');
     // Idempotent: the SQL runs again cleanly.
     await c.execute(File('migrations/030_sync_events.sql').readAsStringSync(),
         queryMode: QueryMode.simple);

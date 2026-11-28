@@ -95,7 +95,7 @@ void main() {
         .first[0];
     final beforeStd = await snap(std), beforeLoan = await snap(loan);
 
-    await applyMigrations(c, migrationsDir: 'migrations');
+    await applyMigrationsThrough(c, through: '027');
     // Idempotent: the SQL runs again cleanly.
     await c.execute(File('migrations/027_loan_offsets.sql').readAsStringSync(),
         queryMode: QueryMode.simple);

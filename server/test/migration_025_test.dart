@@ -99,7 +99,7 @@ void main() {
     final versions =
         await c.execute('SELECT id::text, version FROM events ORDER BY id');
 
-    await applyMigrations(c, migrationsDir: 'migrations');
+    await applyMigrationsThrough(c, through: '034');
 
     expect((await c.execute('SELECT count(*) FROM events')).first[0],
         eventsBefore);
@@ -158,7 +158,7 @@ void main() {
             "VALUES ('$_o1', 'WAGES', '#3D6FD8')"),
         throwsA(isA<ServerException>()));
     // A second run is a no-op.
-    await applyMigrations(c, migrationsDir: 'migrations');
+    await applyMigrationsThrough(c, through: '034');
     // 6 from 025+031, plus Fuel created after the first apply.
     expect((await c.execute('SELECT count(*) FROM categories')).first[0], 7);
   });
