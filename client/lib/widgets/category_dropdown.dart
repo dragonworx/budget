@@ -344,6 +344,15 @@ class _CategoryDropdownState extends State<CategoryDropdown> {
   };
 
   bool _onKey(KeyEvent e) {
+    if (e is KeyDownEvent &&
+        e.logicalKey == LogicalKeyboardKey.escape &&
+        (_menu.isOpen || _isOpen || _holdMenu)) {
+      _holdMenu = false;
+      if (_menu.isOpen) _menu.close();
+      if (mounted && _isOpen) setState(() => _isOpen = false);
+      AppMenuAnchor.escapeHandled = true;
+      return true;
+    }
     if (e is KeyDownEvent && _isOpen && !_keyboardNav && mounted) {
       setState(() => _keyboardNav = true);
     }

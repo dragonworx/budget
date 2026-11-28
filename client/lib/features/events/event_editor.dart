@@ -881,6 +881,13 @@ class _EventEditorState extends ConsumerState<EventEditor> {
   }
 
   /// Cancel / Esc / close: confirms before discarding unsaved edits.
+  void _closeUnlessMenu() {
+    // A menu already consumed Esc. Shortcuts still receive the key
+    // after HardwareKeyboard handlers in widget tests.
+    if (AppMenuAnchor.escapeHandled) return;
+    _close();
+  }
+
   Future<void> _close({bool closePanel = false}) async {
     if (_saving) return;
     if (_dirty) {
@@ -915,7 +922,7 @@ class _EventEditorState extends ConsumerState<EventEditor> {
       },
       child: CallbackShortcuts(
         bindings: {
-          const SingleActivator(LogicalKeyboardKey.escape): _close,
+          const SingleActivator(LogicalKeyboardKey.escape): _closeUnlessMenu,
           const SingleActivator(LogicalKeyboardKey.enter, control: true): _save,
           const SingleActivator(LogicalKeyboardKey.enter, meta: true): _save,
         },

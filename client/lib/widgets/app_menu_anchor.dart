@@ -25,6 +25,12 @@ const double kAppMenuMaxWidth = 320;
 /// iOS chrome and the soft keyboard are respected; the panel is
 /// repositioned on resize or rotation.
 class AppMenuAnchor extends StatefulWidget {
+  /// Set while this widget (or another) is handling an Escape that
+  /// closed a menu, through the matching key-up, so a parent shortcut
+  /// such as the event editor does not also run. The test binding still
+  /// dispatches the key to [Shortcuts] after [HardwareKeyboard] handlers.
+  static bool escapeHandled = false;
+
   const AppMenuAnchor({
     super.key,
     this.controller,
@@ -43,6 +49,7 @@ class AppMenuAnchor extends StatefulWidget {
 
   final MenuController? controller;
   final List<Widget> menuChildren;
+
   /// Evaluated when the panel is built so items can depend on state at open time.
   final List<Widget> Function()? menuChildrenBuilder;
   final RawMenuAnchorChildBuilder? builder;
@@ -65,6 +72,12 @@ class _AppMenuAnchorState extends State<AppMenuAnchor>
   Object? _vvHandle;
   var _escBound = false;
 
+  /// After Esc closes the menu, eat the matching key-up and any
+  /// duplicate key-down (widget tests deliver both key data and a raw
+  /// event) so a parent shortcut, such as the event editor, does not
+  /// also handle the same press.
+  var _eatEscape = false;
+
   MenuController get _controller => widget.controller ?? _owned;
 
   @override
@@ -72,6 +85,7 @@ class _AppMenuAnchorState extends State<AppMenuAnchor>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _vvHandle = onVisualViewportChange(_relayout);
+    _bindEscape();
   }
 
   @override
@@ -95,10 +109,18 @@ class _AppMenuAnchorState extends State<AppMenuAnchor>
   }
 
   bool _onEscape(KeyEvent event) {
-    if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.escape &&
-        _controller.isOpen) {
+    if (event.logicalKey != LogicalKeyboardKey.escape) return false;
+    if (event is KeyDownEvent && _controller.isOpen) {
       _controller.close();
+      _eatEscape = true;
+      AppMenuAnchor.escapeHandled = true;
+      return true;
+    }
+    if (_eatEscape) {
+      if (event is KeyUpEvent) {
+        _eatEscape = false;
+        AppMenuAnchor.escapeHandled = false;
+      }
       return true;
     }
     return false;
@@ -118,11 +140,9 @@ class _AppMenuAnchorState extends State<AppMenuAnchor>
       useRootOverlay: true,
       consumeOutsideTaps: widget.consumeOutsideTaps,
       onOpen: () {
-        _bindEscape();
         widget.onOpen?.call();
       },
       onClose: () {
-        _unbindEscape();
         widget.onClose?.call();
       },
       builder: widget.builder,
@@ -155,8 +175,9 @@ class _AppMenuAnchorState extends State<AppMenuAnchor>
             child: _MenuPanel(
               style: widget.style,
               children: [
-                for (final child in widget.menuChildrenBuilder?.call() ??
-                    widget.menuChildren)
+                for (final child
+                    in widget.menuChildrenBuilder?.call() ??
+                        widget.menuChildren)
                   forceMenuItemVerticalOverflow(child, _controller),
               ],
             ),
@@ -208,11 +229,7 @@ class _MenuLayoutDelegate extends SingleChildLayoutDelegate {
     if (styleMax != null && styleMax.height.isFinite) {
       maxH = math.min(maxH, styleMax.height);
     }
-    return BoxConstraints(
-      minWidth: minW,
-      maxWidth: maxW,
-      maxHeight: maxH,
-    );
+    return BoxConstraints(minWidth: minW, maxWidth: maxW, maxHeight: maxH);
   }
 
   /// Cap the first layout pass to the side the menu will actually use
@@ -489,7 +506,8 @@ Widget forceMenuItemVerticalOverflow(Widget widget, MenuController controller) {
   }
   if (widget is Flex) {
     final children = [
-      for (final child in widget.children) forceMenuItemVerticalOverflow(child, controller),
+      for (final child in widget.children)
+        forceMenuItemVerticalOverflow(child, controller),
     ];
     if (widget is Row) {
       return Row(
