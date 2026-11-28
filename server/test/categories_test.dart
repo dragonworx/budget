@@ -1,8 +1,9 @@
-// Categories (migrations 024, 025: one global set per owner) over the full
+// Categories (migration 035: one set per stream) over the full
 // API pipeline: CRUD, unique
 // names, rename follows everywhere, hidden leaves the balance, delete with
 // transfer counterparts, delete-events-only, categoryId / newCategory /
-// legacy-name event writes, import mapping, viewer read-only. DB-backed
+// legacy-name event writes, import mapping, Move to… path remap, editor
+// write / viewer read-only. DB-backed
 // (TEST_DATABASE_URL, default local budget_test); skipped without Postgres.
 import 'package:test/test.dart';
 
@@ -13,7 +14,7 @@ void main() {
   setUpAll(() => h.open());
   tearDownAll(() => h.close());
 
-  // Each test has its own owner (categories are per owner, not per stream).
+  // Each test has its own owner (categories are per stream).
   var me = 'own';
   Future<List<Map<String, dynamic>>> cats(String a, [String? who]) async => [
         for (final c in (await h.call('GET', '/api/streams/$a/categories',
@@ -91,15 +92,21 @@ void main() {
     final moved = await h.call('PATCH', '/api/events/${e.json['id']}',
         as: me, body: {'categoryId': payId});
     expect(moved.json['name'], 'Pay');
-    // Global: another stream of the same owner uses the same set.
+    // Another stream of the same owner has its own copy, not the same ids.
     final mine2 = await h.seed(me, 'Mine 2');
-    expect((await cats(mine2.a)).map((c) => c['id']),
-        (await cats(s.a)).map((c) => c['id']));
+    expect((await cats(mine2.a)).map((c) => c['id']).toSet(),
+        isNot((await cats(s.a)).map((c) => c['id']).toSet()));
+    expect(
+        (await h.call('POST', '/api/streams/${mine2.a}/events',
+                as: me, body: {...Harness.tx('x'), 'categoryId': payId}))
+            .status,
+        400);
+    final pay2 = (await cats(mine2.a)).firstWhere((c) => c['name'] == 'Pay');
     final there = await h.call('POST', '/api/streams/${mine2.a}/events',
-        as: me, body: {...Harness.tx('x'), 'categoryId': payId});
+        as: me, body: {...Harness.tx('x'), 'categoryId': pay2['id']});
     expect(there.status, 201, reason: '${there.json}');
     expect(there.json['name'], 'Pay');
-    // Unknown / another owner's category ids are a 400.
+    // Unknown / another stream's category ids are a 400.
     final other = await h.seed('${me}x', 'Other');
     final foreign = (await cats(other.a, '${me}x')).single['id'];
     expect(
@@ -165,8 +172,7 @@ void main() {
     expect(await closing(), '-10');
   });
 
-  test('delete: the category and its events in ALL the owner\'s streams',
-      () async {
+  test('delete: the category and its events in this stream', () async {
     if (!h.ok) return markTestSkipped('no test DB');
     me = 'catdel';
     final s = await h.seed(me, 'DelA');
@@ -176,31 +182,42 @@ void main() {
     final t = await h.call('POST', '/api/streams/${s.a}/events',
         as: me, body: Harness.tx('Pay', transferTo: b.a));
     expect(t.status, 201);
-    // Both sides of the transfer use the one global "Pay".
+    // Each stream has its own Pay; transfer legs use the same path, different ids.
     final peer = await h.call(
         'GET', '/api/events/${t.json['transfer']['peerEventId']}',
         as: me);
-    final pay = (await cats(b.a)).firstWhere((c) => c['name'] == 'Pay');
-    expect(peer.json['categoryId'], pay['id']);
-    expect(t.json['categoryId'], pay['id']);
-    expect(pay['eventCount'], 4, reason: 'two seeds + both transfer sides');
+    final payA = (await cats(s.a)).firstWhere((c) => c['name'] == 'Pay');
+    final payB = (await cats(b.a)).firstWhere((c) => c['name'] == 'Pay');
+    expect(payA['id'], isNot(payB['id']));
+    expect(payA['streamId'], s.a);
+    expect(payB['streamId'], b.a);
+    expect(t.json['categoryId'], payA['id']);
+    expect(peer.json['categoryId'], payB['id']);
+    // A: seed Pay + transfer side. B: seed Pay + transfer side + Keep.
+    expect(payA['eventCount'], 2);
+    expect(payB['eventCount'], 2);
 
     final pre = await h.call(
-        'GET', '/api/streams/${s.a}/categories/${pay['id']}/delete-preview',
+        'GET', '/api/streams/${s.a}/categories/${payA['id']}/delete-preview',
         as: me);
-    expect(pre.json, {'events': 4, 'counterparts': 0, 'children': 0});
+    // This stream's two Pays, plus the transfer counterpart on B.
+    expect(pre.json, {'events': 2, 'counterparts': 1, 'children': 0});
 
     final del = await h
-        .call('DELETE', '/api/streams/${s.a}/categories/${pay['id']}', as: me);
+        .call('DELETE', '/api/streams/${s.a}/categories/${payA['id']}', as: me);
     expect(del.status, 200, reason: '${del.json}');
-    expect((del.json['deletedEvents'] as List).length, 4);
+    expect((del.json['deletedEvents'] as List).length, 3);
     expect(await evs(s.a), isEmpty);
-    expect((await evs(b.a)).map((e) => e['name']), ['Keep']);
-    expect((await cats(s.a)).map((c) => c['name']), ['Keep']);
+    // B's seed Pay and Keep stay; its transfer leg was the counterpart.
+    expect((await evs(b.a)).map((e) => e['name']).toList()..sort(),
+        ['Keep', 'Pay']);
+    expect((await cats(s.a)).map((c) => c['name']), isEmpty);
+    expect((await cats(b.a)).map((c) => c['name']).toList()..sort(),
+        ['Keep', 'Pay']);
     final aStream = await h.call('GET', '/api/streams/${s.a}', as: me);
     expect(aStream.json['eventOrder'], isEmpty);
     final bStream = await h.call('GET', '/api/streams/${b.a}', as: me);
-    expect((bStream.json['eventOrder'] as List).length, 1);
+    expect((bStream.json['eventOrder'] as List).length, 2);
   });
 
   test('delete events only: keeps the category', () async {
@@ -211,16 +228,19 @@ void main() {
         as: me, body: Harness.tx('Pay'));
     await h.call('POST', '/api/streams/${s.a}/events',
         as: me, body: Harness.tx('Keep'));
-    // Another stream of the owner: its Pay goes too (and comes back).
+    // Another stream of the owner keeps its own Pay.
     final s2 = await h.seed(me, 'DelEv 2');
     final pay = (await cats(s.a)).firstWhere((c) => c['name'] == 'Pay');
-    expect(pay['eventCount'], 3);
+    final pay2 = (await cats(s2.a)).firstWhere((c) => c['name'] == 'Pay');
+    expect(pay['id'], isNot(pay2['id']));
+    expect(pay['eventCount'], 2);
+    expect(pay2['eventCount'], 1);
     final r = await h.call(
         'DELETE', '/api/streams/${s.a}/categories/${pay['id']}/events',
         as: me);
     expect(r.status, 200, reason: '${r.json}');
-    expect((r.json['deletedEvents'] as List).length, 3);
-    expect(await evs(s2.a), isEmpty);
+    expect((r.json['deletedEvents'] as List).length, 2);
+    expect((await evs(s2.a)).map((e) => e['id']), [s2.t]);
     final after = await cats(s.a);
     expect(after.map((c) => [c['name'], c['eventCount']]), [
       ['Pay', 0],
@@ -235,10 +255,15 @@ void main() {
     expect(u.status, 200, reason: '${u.json}');
     final back = await evs(s.a);
     expect(back.map((e) => e['name']).toList()..sort(), ['Keep', 'Pay', 'Pay']);
-    expect({...back.where((e) => e['name'] == 'Pay').map((e) => e['id']), s2.t},
+    expect(back.where((e) => e['name'] == 'Pay').map((e) => e['id']).toSet(),
         (r.json['deletedEvents'] as List).toSet());
-    expect((await cats(s.a)).first['eventCount'], 3);
+    expect(
+        (await cats(s.a)).firstWhere((c) => c['name'] == 'Pay')['eventCount'],
+        2);
     expect((await evs(s2.a)).map((e) => e['id']), [s2.t]);
+    expect(
+        (await cats(s2.a)).firstWhere((c) => c['name'] == 'Pay')['eventCount'],
+        1);
   });
 
   test('import maps the name column to categories', () async {
@@ -273,8 +298,8 @@ void main() {
   });
 
   test(
-      'viewers read categories, cannot change them; editors pick and add '
-      'but only the owner renames, hides or deletes', () async {
+      'viewers read categories, cannot change them; editors may edit '
+      'this stream\'s categories', () async {
     if (!h.ok) return markTestSkipped('no test DB');
     me = 'cat7';
     final s = await h.seed(me, 'Share');
@@ -295,8 +320,8 @@ void main() {
     }
     expect((await cats(s.a)).single['hidden'], false);
 
-    // An editor of the shared stream: lists the OWNER's set, may add to it
-    // (plans), may not rename / hide / delete (they reach every stream).
+    // An editor of the shared stream may add, rename, hide and delete
+    // this stream's categories only.
     await h.login('${me}ed');
     await h.call('POST', '/api/streams/${s.a}/invites',
         as: me, body: {'email': h.email('${me}ed'), 'role': 'editor'});
@@ -306,14 +331,21 @@ void main() {
         as: '${me}ed', body: {'name': 'Editor made'});
     expect(add.status, 201, reason: '${add.json}');
     expect((await cats(s.a)).map((c) => c['name']), ['Pay', 'Editor made']);
-    for (final (m, p, b) in [
-      ('PATCH', '/api/streams/${s.a}/categories/$cid', {'hidden': true}),
-      ('DELETE', '/api/streams/${s.a}/categories/$cid', null),
-      ('DELETE', '/api/streams/${s.a}/categories/$cid/events', null),
-    ]) {
-      expect((await h.call(m, p, as: '${me}ed', body: b)).status, 403,
-          reason: 'editor $m $p');
-    }
+    final hid = await h.call('PATCH', '/api/streams/${s.a}/categories/$cid',
+        as: '${me}ed', body: {'hidden': true});
+    expect(hid.status, 200, reason: '${hid.json}');
+    expect(hid.json['hidden'], true);
+    final evDel = await h.call(
+        'DELETE', '/api/streams/${s.a}/categories/$cid/events',
+        as: '${me}ed');
+    expect(evDel.status, 200, reason: '${evDel.json}');
+    final made =
+        (await cats(s.a)).firstWhere((c) => c['name'] == 'Editor made');
+    final del = await h.call(
+        'DELETE', '/api/streams/${s.a}/categories/${made['id']}',
+        as: '${me}ed');
+    expect(del.status, 200, reason: '${del.json}');
+    expect((await cats(s.a)).map((c) => c['name']), ['Pay']);
   });
 
   test('hierarchy: nest, max depth 2, unique names, delete blocked', () async {
@@ -456,7 +488,7 @@ void main() {
     ]..sort((a, b) => (a['sortOrder'] as num).compareTo(b['sortOrder'] as num));
     expect([for (final c in kids) c['name']], ['Fuel', 'Coles']);
 
-    // Editors may add a child, not reparent or reorder.
+    // Editors may add a child, reparent and reorder (this stream only).
     await h.login('${me}ed');
     await h.call('POST', '/api/streams/${s.a}/invites',
         as: me, body: {'email': h.email('${me}ed'), 'role': 'editor'});
@@ -464,19 +496,20 @@ void main() {
         as: '${me}ed',
         body: {'name': 'Woolies', 'parentId': parent.json['id']});
     expect(added.status, 201, reason: '${added.json}');
-    final denied = await h.call(
+    final lifted = await h.call(
         'PATCH', '/api/streams/${s.a}/categories/${coles.json['id']}',
         as: '${me}ed', body: {'parentId': null});
-    expect(denied.status, 403);
+    expect(lifted.status, 200, reason: '${lifted.json}');
+    expect(lifted.json['parentId'], isNull);
     expect(
         (await h.call('POST', '/api/streams/${s.a}/categories/reorder',
                 as: '${me}ed',
                 body: {
               'parentId': parent.json['id'],
-              'ids': [coles.json['id']]
+              'ids': [fuel.json['id'], added.json['id']]
             }))
             .status,
-        403);
+        200);
   });
 
   test('adding a child moves parent events when asked; nest is blocked',
@@ -522,5 +555,72 @@ void main() {
         as: me, body: {'parentId': other.json['id']});
     expect(nest.status, 400, reason: '${nest.json}');
     expect(nest.json['details']['code'], 'category_has_events');
+  });
+
+  test('Move to… remaps the category by full path in the target stream',
+      () async {
+    if (!h.ok) return markTestSkipped('no test DB');
+    me = 'catmove';
+    final a = await h.seed(me, 'MoveA');
+    final b = await h.seed(me, 'MoveB');
+    final housing = await h.call('POST', '/api/streams/${a.a}/categories',
+        as: me, body: {'name': 'Housing', 'color': '#9250C8'});
+    expect(housing.status, 201, reason: '${housing.json}');
+    final rent = await h.call('POST', '/api/streams/${a.a}/categories',
+        as: me,
+        body: {
+          'name': 'Rent',
+          'color': '#5B7A2A',
+          'parentId': housing.json['id']
+        });
+    expect(rent.status, 201, reason: '${rent.json}');
+    final ev = await h.call('POST', '/api/streams/${a.a}/events',
+        as: me,
+        body: {...Harness.tx('ignored'), 'categoryId': rent.json['id']});
+    expect(ev.status, 201, reason: '${ev.json}');
+    final moved = await h.call('POST', '/api/events/${ev.json['id']}/move',
+        as: me, body: {'streamId': b.a});
+    expect(moved.status, 200, reason: '${moved.json}');
+    expect(moved.json['categoryId'], isNot(rent.json['id']));
+    final destCats = await cats(b.a);
+    final dest =
+        destCats.firstWhere((c) => c['id'] == moved.json['categoryId']);
+    expect(dest['name'], 'Rent');
+    expect(dest['color'], '#5B7A2A');
+    expect(dest['streamId'], b.a);
+    expect(dest['parentId'], isNotNull);
+    final parent = destCats.firstWhere((c) => c['id'] == dest['parentId']);
+    expect(parent['name'], 'Housing');
+    expect(parent['color'], '#9250C8');
+    expect(parent['id'], isNot(housing.json['id']));
+    // Source stream still has its own Housing / Rent.
+    final src = (await cats(a.a)).firstWhere((c) => c['id'] == rent.json['id']);
+    expect(src['name'], 'Rent');
+    expect(src['color'], '#5B7A2A');
+    expect(src['parentId'], housing.json['id']);
+  });
+
+  test('editor may rename a category; viewer may not', () async {
+    if (!h.ok) return markTestSkipped('no test DB');
+    me = 'catauthz';
+    final s = await h.seed(me, 'AuthzCats');
+    await h.login('cateditor');
+    await h.login('catviewer');
+    await h.call('POST', '/api/streams/${s.a}/invites',
+        as: me, body: {'email': h.email('cateditor'), 'role': 'editor'});
+    await h.call('POST', '/api/streams/${s.a}/invites',
+        as: me, body: {'email': h.email('catviewer')});
+    final pay = (await cats(s.a)).firstWhere((c) => c['name'] == 'Pay');
+    final denied = await h.call(
+        'PATCH', '/api/streams/${s.a}/categories/${pay['id']}',
+        as: 'catviewer', body: {'name': 'Salary'});
+    expect(denied.status, 403);
+    final ok = await h.call(
+        'PATCH', '/api/streams/${s.a}/categories/${pay['id']}',
+        as: 'cateditor', body: {'name': 'Salary'});
+    expect(ok.status, 200, reason: '${ok.json}');
+    expect(ok.json['name'], 'Salary');
+    expect((await cats(s.a, 'catviewer')).map((c) => c['name']),
+        contains('Salary'));
   });
 }

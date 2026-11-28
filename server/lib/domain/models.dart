@@ -345,7 +345,7 @@ class BudgetEvent {
 class Category {
   Category({
     required this.id,
-    required this.ownerId,
+    required this.streamId,
     required this.name,
     required this.color,
     required this.hidden,
@@ -359,14 +359,14 @@ class Category {
   });
 
   final String id;
-  final String ownerId;
+  final String streamId;
   final String name;
   final String color;
   final bool hidden;
   final DateTime createdAt;
   final int version;
 
-  /// Events in the category across all the owner's streams (the events a
+  /// Events in the category in this stream (the events a
   /// delete removes, before transfer counterparts).
   final int eventCount;
 
@@ -382,7 +382,7 @@ class Category {
 
   Map<String, Object?> toJson() => {
         'id': id,
-        'ownerId': ownerId,
+        'streamId': streamId,
         'name': name,
         'color': color,
         'hidden': hidden,

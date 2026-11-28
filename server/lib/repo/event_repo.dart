@@ -10,6 +10,7 @@ import '../domain/enums.dart';
 import '../domain/models.dart';
 import '../domain/event_import.dart';
 import '../engine/occurrence_gen.dart';
+import 'category_repo.dart';
 
 const _enrichedCols = '''
   t.id, t.stream_id, t.name, t.direction, t.amount, t.start_date,
@@ -944,6 +945,12 @@ class EventRepo {
       Sql.named('UPDATE events SET transfer_id = @t::uuid WHERE id = @id'),
       parameters: {'t': transferId, 'id': source.id},
     );
+    if (source.categoryId != null) {
+      final path = await CategoryRepo(_conn).pathOf(source.categoryId!);
+      if (path.isNotEmpty) {
+        await CategoryRepo(_conn).ensurePath(peerStreamId, path);
+      }
+    }
     final peer = await create(
       streamId: peerStreamId,
       name: source.name,
@@ -1018,11 +1025,18 @@ class EventRepo {
     );
     await _copySkips(source.id, peerId);
     await _copyOverrides(source.id, peerId);
+    if (source.categoryId != null && source.transfer?.peerStreamId != null) {
+      final path = await CategoryRepo(_conn).pathOf(source.categoryId!);
+      await CategoryRepo(_conn)
+          .alignEvent(peerId, source.transfer!.peerStreamId!, path);
+    }
   }
 
   /// Moves [id] onto [streamId], keeping its calendar dates, amount,
   /// label, skips and overrides, and fixing both streams' event_order.
-  /// Does not change category (the caller remaps it when owners differ).
+  /// Remaps the category to the same path in the target stream (creating
+  /// it, with the same colour, if missing) so the trigger's stream check
+  /// is satisfied in the same write.
   Future<BudgetEvent> moveToStream(String id, String streamId) async {
     final existing = await get(id);
     if (existing == null) {
@@ -1047,9 +1061,12 @@ class EventRepo {
       '''),
       parameters: {'e': id, 'old': existing.streamId},
     );
+    final destCat =
+        await CategoryRepo(_conn).destCategoryId(existing.categoryId, streamId);
     await _conn.execute(
-      Sql.named('UPDATE events SET stream_id = @a::uuid WHERE id = @e'),
-      parameters: {'a': streamId, 'e': id},
+      Sql.named('UPDATE events SET stream_id = @a::uuid, '
+          'category_id = COALESCE(@c::uuid, category_id) WHERE id = @e'),
+      parameters: {'a': streamId, 'c': destCat, 'e': id},
     );
     await _conn.execute(
       Sql.named('''
@@ -1077,9 +1094,12 @@ class EventRepo {
       '''),
       parameters: {'p': peerId, 'old': source.transfer!.peerStreamId},
     );
+    final destCat =
+        await CategoryRepo(_conn).destCategoryId(source.categoryId, streamId);
     await _conn.execute(
-      Sql.named('UPDATE events SET stream_id = @a::uuid WHERE id = @p'),
-      parameters: {'a': streamId, 'p': peerId},
+      Sql.named('UPDATE events SET stream_id = @a::uuid, '
+          'category_id = COALESCE(@c::uuid, category_id) WHERE id = @p'),
+      parameters: {'a': streamId, 'c': destCat, 'p': peerId},
     );
     await _conn.execute(
       Sql.named('''

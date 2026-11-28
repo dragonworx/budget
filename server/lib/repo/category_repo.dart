@@ -45,17 +45,17 @@ String normalizeCategoryName(Object? raw) {
 
 bool isSyncName(String name) => name.trim().toLowerCase() == 'sync';
 
-/// Categories, one global set per owner (migrations 024, 025, 031): every
-/// stream the owner has uses it. Names are unique in the set,
-/// case-insensitively; events keep `events.name` equal to their category's
-/// name through DB triggers. Optional parent_id (max depth 2).
+/// Categories, one set per stream (migration 035). Names are unique in
+/// the stream, case-insensitively; events keep `events.name` equal to
+/// their category's name through DB triggers. Optional parent_id (max
+/// depth 2).
 class CategoryRepo {
   CategoryRepo(this._conn);
 
   final Session _conn;
 
   static const _cols = '''
-    c.id::text, c.owner_id::text, c.name, c.color, c.hidden, c.created_at,
+    c.id::text, c.stream_id::text, c.name, c.color, c.hidden, c.created_at,
     c.version,
     (SELECT count(*) FROM events e WHERE e.category_id = c.id)::int,
     (SELECT count(*) FROM events e
@@ -67,7 +67,7 @@ class CategoryRepo {
 
   Category _fromRow(ResultRow r) => Category(
         id: r[0] as String,
-        ownerId: r[1] as String,
+        streamId: r[1] as String,
         name: r[2] as String,
         color: r[3] as String,
         hidden: r[4] as bool,
@@ -90,22 +90,16 @@ class CategoryRepo {
     return rows.isEmpty ? null : rows.first[0] as String;
   }
 
-  /// [ownerId]'s categories, sibling order then name.
-  Future<List<Category>> listByOwner(String ownerId) async {
+  /// [streamId]'s categories, sibling order then name.
+  Future<List<Category>> listByStream(String streamId) async {
+    if (!uuidRe.hasMatch(streamId)) return const [];
     final rows = await _conn.execute(
       Sql.named('SELECT $_cols FROM categories c '
-          'WHERE c.owner_id = @o::uuid '
+          'WHERE c.stream_id = @s::uuid '
           'ORDER BY c.sort_order, c.name, c.created_at'),
-      parameters: {'o': ownerId},
+      parameters: {'s': streamId},
     );
     return rows.map(_fromRow).toList();
-  }
-
-  /// The categories [streamId]'s events use (its owner's set).
-  Future<List<Category>> listByStream(String streamId) async {
-    final owner = await ownerOfStream(streamId);
-    if (owner == null) return const [];
-    return listByOwner(owner);
   }
 
   Future<Category?> get(String id) async {
@@ -117,12 +111,12 @@ class CategoryRepo {
     return rows.isEmpty ? null : _fromRow(rows.first);
   }
 
-  /// [ownerId]'s category named [name] (case-insensitive), if any.
-  Future<Category?> byName(String ownerId, String name) async {
+  /// [streamId]'s category named [name] (case-insensitive), if any.
+  Future<Category?> byName(String streamId, String name) async {
     final rows = await _conn.execute(
-      Sql.named('SELECT $_cols FROM categories c WHERE c.owner_id = @o::uuid '
+      Sql.named('SELECT $_cols FROM categories c WHERE c.stream_id = @s::uuid '
           'AND lower(c.name) = lower(@n)'),
-      parameters: {'o': ownerId, 'n': name.trim()},
+      parameters: {'s': streamId, 'n': name.trim()},
     );
     return rows.isEmpty ? null : _fromRow(rows.first);
   }
@@ -136,8 +130,9 @@ class CategoryRepo {
     return r.first[0] as int;
   }
 
-  Future<void> _checkFree(String ownerId, String name, {String? except}) async {
-    final other = await byName(ownerId, name);
+  Future<void> _checkFree(String streamId, String name,
+      {String? except}) async {
+    final other = await byName(streamId, name);
     if (other != null && other.id != except) {
       throw CategoryNameException(
           'A category named "${other.name}" already exists',
@@ -145,17 +140,17 @@ class CategoryRepo {
     }
   }
 
-  Future<int> _nextSort(String ownerId, String? parentId) async {
+  Future<int> _nextSort(String streamId, String? parentId) async {
     final rows = await _conn.execute(
       Sql.named('SELECT coalesce(max(sort_order), -1) + 1 FROM categories '
-          'WHERE owner_id = @o::uuid '
+          'WHERE stream_id = @s::uuid '
           'AND parent_id IS NOT DISTINCT FROM @p::uuid'),
-      parameters: {'o': ownerId, 'p': parentId},
+      parameters: {'s': streamId, 'p': parentId},
     );
     return rows.first[0] as int;
   }
 
-  Future<void> _assertParent(String ownerId, String? parentId,
+  Future<void> _assertParent(String streamId, String? parentId,
       {String? childId}) async {
     if (parentId == null) return;
     if (!uuidRe.hasMatch(parentId)) {
@@ -165,9 +160,9 @@ class CategoryRepo {
       throw CategoryConstraintException('category cannot be its own parent');
     }
     final parent = await get(parentId);
-    if (parent == null || parent.ownerId != ownerId) {
+    if (parent == null || parent.streamId != streamId) {
       throw CategoryConstraintException(
-          'parentId is not a category of this owner');
+          'parentId is not a category of this stream');
     }
     if (parent.parentId != null) {
       throw CategoryConstraintException(
@@ -192,7 +187,6 @@ class CategoryRepo {
     }
   }
 
-  /// Adds a category to [ownerId]'s set.
   Future<int> _directEventCount(String id) async {
     final rows = await _conn.execute(
       Sql.named(
@@ -202,7 +196,8 @@ class CategoryRepo {
     return rows.first[0] as int;
   }
 
-  Future<Category> create(String ownerId,
+  /// Adds a category to [streamId].
+  Future<Category> create(String streamId,
       {required String name,
       String? color,
       bool hidden = false,
@@ -213,8 +208,8 @@ class CategoryRepo {
       throw CategoryConstraintException('Sync cannot be nested',
           code: 'sync_nested');
     }
-    await _checkFree(ownerId, n);
-    await _assertParent(ownerId, parentId);
+    await _checkFree(streamId, n);
+    await _assertParent(streamId, parentId);
     var parentEvents = 0;
     if (parentId != null) {
       parentEvents = await _directEventCount(parentId);
@@ -225,8 +220,8 @@ class CategoryRepo {
             code: 'category_has_events');
       }
     }
-    color ??= await _unusedColor(ownerId);
-    final sort = await _nextSort(ownerId, parentId);
+    color ??= await _unusedColor(streamId);
+    final sort = await _nextSort(streamId, parentId);
     try {
       // If we must move the parent's events into this new child, park them
       // on a temporary null? Events.category_id is probably NOT NULL.
@@ -240,15 +235,15 @@ class CategoryRepo {
       }
       final rows = await _conn.execute(
         Sql.named(
-            'INSERT INTO categories (owner_id, name, color, hidden, parent_id, sort_order) '
-            'VALUES (@o::uuid, @n, @c, @h, @p::uuid, @s) RETURNING id::text'),
+            'INSERT INTO categories (stream_id, name, color, hidden, parent_id, sort_order) '
+            'VALUES (@s::uuid, @n, @c, @h, @p::uuid, @so) RETURNING id::text'),
         parameters: {
-          'o': ownerId,
+          's': streamId,
           'n': n,
           'c': color,
           'h': hidden,
           'p': insertParent,
-          's': sort,
+          'so': sort,
         },
       );
       final id = rows.first[0] as String;
@@ -271,12 +266,12 @@ class CategoryRepo {
     }
   }
 
-  /// The first lane palette colour no category of [ownerId] uses (the
+  /// The first lane palette colour no category of [streamId] uses (the
   /// next in turn when all are taken).
-  Future<String> _unusedColor(String ownerId) async {
+  Future<String> _unusedColor(String streamId) async {
     final rows = await _conn.execute(
-      Sql.named('SELECT color FROM categories WHERE owner_id = @o::uuid'),
-      parameters: {'o': ownerId},
+      Sql.named('SELECT color FROM categories WHERE stream_id = @s::uuid'),
+      parameters: {'s': streamId},
     );
     final used = {for (final r in rows) r[0] as String};
     for (final c in categoryPalette) {
@@ -298,10 +293,10 @@ class CategoryRepo {
     final c = await get(id);
     if (c == null) return null;
     final n = name == null ? c.name : normalizeCategoryName(name);
-    if (name != null) await _checkFree(c.ownerId, n, except: id);
+    if (name != null) await _checkFree(c.streamId, n, except: id);
     final nextParent = clearParent ? null : (parentId ?? c.parentId);
     if (clearParent || parentId != null) {
-      await _assertParent(c.ownerId, nextParent, childId: id);
+      await _assertParent(c.streamId, nextParent, childId: id);
       if (nextParent != null && await _directEventCount(nextParent) > 0) {
         throw CategoryConstraintException(
             'This category has transactions, so it can\'t become a folder '
@@ -315,7 +310,7 @@ class CategoryRepo {
     }
     var nextSort = sortOrder ?? c.sortOrder;
     if ((clearParent || parentId != null) && nextParent != c.parentId) {
-      nextSort = sortOrder ?? await _nextSort(c.ownerId, nextParent);
+      nextSort = sortOrder ?? await _nextSort(c.streamId, nextParent);
     }
     try {
       await _conn.execute(
@@ -338,31 +333,30 @@ class CategoryRepo {
   }
 
   /// Sets the sibling order of [ids] under [parentId] (null = top-level).
-  /// Every id must belong to [ownerId] and end up with that parent.
+  /// Every id must belong to [streamId] and end up with that parent.
   Future<void> reorder(
-      String ownerId, String? parentId, List<String> ids) async {
+      String streamId, String? parentId, List<String> ids) async {
     if (ids.isEmpty) return;
     for (final id in ids) {
       if (!uuidRe.hasMatch(id)) {
         throw CategoryConstraintException('invalid category id');
       }
     }
-    await _assertParent(ownerId, parentId);
+    await _assertParent(streamId, parentId);
     final unique = ids.toSet();
     if (unique.length != ids.length) {
       throw CategoryConstraintException('duplicate category id in order');
     }
     for (final id in ids) {
       final c = await get(id);
-      if (c == null || c.ownerId != ownerId) {
-        throw CategoryConstraintException(
-            'category is not in this owner\'s set');
+      if (c == null || c.streamId != streamId) {
+        throw CategoryConstraintException('category is not in this stream');
       }
       if (parentId != null && parentId == id) {
         throw CategoryConstraintException('category cannot be its own parent');
       }
       if (c.parentId != parentId) {
-        await _assertParent(ownerId, parentId, childId: id);
+        await _assertParent(streamId, parentId, childId: id);
       }
     }
     // Two-phase so the unique sibling order cannot collide mid-update.
@@ -405,9 +399,10 @@ class CategoryRepo {
       throw CategoryConstraintException('category cannot be its own parent');
     }
     if (name == 'categories_parent_owner_ck' ||
+        name == 'categories_parent_stream_ck' ||
         name == 'categories_parent_id_fkey') {
       throw CategoryConstraintException(
-          'parentId is not a category of this owner');
+          'parentId is not a category of this stream');
     }
     if (msg.contains('filed on a category that has children')) {
       throw CategoryConstraintException(
@@ -448,7 +443,7 @@ class CategoryRepo {
     );
   }
 
-  /// Deletes every event in [id] in ALL the owner's streams (and each
+  /// Deletes every event in [id] in this stream (and each
   /// transfer's other side, skips and overrides) as one undoable batch
   /// filed under [streamId] (`POST /streams/[streamId]/events/trim/undo`
   /// with the returned batch id); the category stays. peerStreams: every
@@ -491,14 +486,14 @@ class CategoryRepo {
   }
 
   /// The name an event body means: its `categoryId`'s name (it must be a
-  /// category of [streamId]'s owner), else the legacy `name` (mapped to /
+  /// category of [streamId]), else the legacy `name` (mapped to /
   /// creating a category by the DB). Throws [FormatException] for an
   /// unknown id.
   Future<String?> nameFor(
       String streamId, Object? categoryId, String? legacyName) async {
     if (categoryId == null) return legacyName;
     final c = await get(categoryId.toString());
-    if (c == null || c.ownerId != await ownerOfStream(streamId)) {
+    if (c == null || c.streamId != streamId) {
       throw FormatException('categoryId is not a category of this stream');
     }
     if (await childCount(c.id) > 0) {
@@ -509,20 +504,20 @@ class CategoryRepo {
     return c.name;
   }
 
-  /// [userId]'s favourite categories that belong to [ownerId], in order.
+  /// [userId]'s favourite categories that belong to [streamId], in order.
   Future<List<Map<String, Object?>>> listFavorites(
-      String userId, String ownerId) async {
+      String userId, String streamId) async {
     final rows = await _conn.execute(
       Sql.named('''
         SELECT f.category_id::text, f.sort_order, f.created_at
         FROM category_favorites f
         JOIN categories c ON c.id = f.category_id
-        WHERE f.user_id = @u::uuid AND c.owner_id = @o::uuid
+        WHERE f.user_id = @u::uuid AND c.stream_id = @s::uuid
           AND NOT EXISTS (
             SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
         ORDER BY f.sort_order, f.created_at, c.name
       '''),
-      parameters: {'u': userId, 'o': ownerId},
+      parameters: {'u': userId, 's': streamId},
     );
     return [
       for (final r in rows)
@@ -535,9 +530,9 @@ class CategoryRepo {
   }
 
   Future<void> addFavorite(String userId, String categoryId,
-      {required String ownerId}) async {
+      {required String streamId}) async {
     final c = await get(categoryId);
-    if (c == null || c.ownerId != ownerId) {
+    if (c == null || c.streamId != streamId) {
       throw CategoryConstraintException('category not found');
     }
     if (await childCount(categoryId) > 0) {
@@ -592,6 +587,64 @@ class CategoryRepo {
         parameters: {'u': userId, 'id': id, 's': i++},
       );
     }
+  }
+
+  /// Root-to-leaf path of [id] (one or two categories). Empty if missing.
+  Future<List<Category>> pathOf(String id) async {
+    final leaf = await get(id);
+    if (leaf == null) return const [];
+    if (leaf.parentId == null) return [leaf];
+    final parent = await get(leaf.parentId!);
+    return [if (parent != null) parent, leaf];
+  }
+
+  /// Finds or creates each node of [path] in [streamId], preserving name,
+  /// colour and hidden. Existing same-named categories are reused (names
+  /// are unique in a stream) and not recoloured. Returns the leaf.
+  Future<Category> ensurePath(String streamId, List<Category> path) async {
+    if (path.isEmpty) {
+      throw CategoryConstraintException('category path is empty');
+    }
+    String? parentId;
+    Category? last;
+    for (final node in path) {
+      var existing = await byName(streamId, node.name);
+      existing ??= await create(streamId,
+          name: node.name,
+          color: node.color,
+          hidden: node.hidden,
+          parentId: parentId);
+      parentId = existing.id;
+      last = existing;
+    }
+    return last!;
+  }
+
+  /// Category in [toStreamId] with the same path as [fromCategoryId],
+  /// created if missing. Null when [fromCategoryId] is missing.
+  Future<String?> destCategoryId(
+      String? fromCategoryId, String toStreamId) async {
+    if (fromCategoryId == null || !uuidRe.hasMatch(fromCategoryId)) {
+      return null;
+    }
+    final current = await get(fromCategoryId);
+    if (current == null) return null;
+    if (current.streamId == toStreamId) return current.id;
+    final path = await pathOf(current.id);
+    if (path.isEmpty) return null;
+    return (await ensurePath(toStreamId, path)).id;
+  }
+
+  /// Points [eventId] at the same-path category in [streamId].
+  Future<void> alignEvent(
+      String eventId, String streamId, List<Category> path) async {
+    if (path.isEmpty) return;
+    final dest = await ensurePath(streamId, path);
+    await _conn.execute(
+      Sql.named('UPDATE events SET category_id = @c::uuid '
+          'WHERE id = @e::uuid AND category_id IS DISTINCT FROM @c::uuid'),
+      parameters: {'c': dest.id, 'e': eventId},
+    );
   }
 }
 

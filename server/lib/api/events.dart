@@ -179,7 +179,6 @@ Router eventsRouter(Session conn) {
     }
   });
 
-
   router.post('/<id>/move', (Request request, String id) async {
     try {
       final body = await readJsonObject(request);
@@ -203,7 +202,8 @@ Router eventsRouter(Session conn) {
         final of = await offsetLoanStreamName(conn, toId);
         if (of != null) return jsonError(409, offsetForMessage(of));
         if (existing.offsetStreamIds.contains(toId)) {
-          return jsonError(400, 'a loan cannot be moved onto its offset account');
+          return jsonError(
+              400, 'a loan cannot be moved onto its offset account');
         }
       }
       if (existing.isSync) {
@@ -506,29 +506,22 @@ ParsedEventBody parseEventBody(Map<String, dynamic> body) {
   return (frequency: f, days: f.days);
 }
 
-
-/// When [event] moves to a stream with a different owner, point it at
-/// that owner's same-named category (creating one if needed) so the
-/// name, colour and category stay.
+/// When [event] moves to another stream, point it at that stream's
+/// same-path category (creating the path, with the same colour, if
+/// needed) so the name, colour and category stay.
 Future<void> rehomeEventCategory(
-    Session tx,
-    BudgetEvent event, {
-    required String fromId,
-    required String toId,
-  }) async {
-  final cats = CategoryRepo(tx);
-  final fromOwner = await cats.ownerOfStream(fromId);
-  final toOwner = await cats.ownerOfStream(toId);
-  if (fromOwner == null || toOwner == null || fromOwner == toOwner) return;
+  Session tx,
+  BudgetEvent event, {
+  required String fromId,
+  required String toId,
+}) async {
+  if (fromId == toId) return;
   final id = event.categoryId;
   if (id == null) return;
-  final current = await cats.get(id);
-  if (current == null) return;
-  var dest = await cats.byName(toOwner, current.name);
-  dest ??= await cats.create(toOwner, name: current.name, color: current.color);
-  if (dest.id == id) return;
+  final dest = await CategoryRepo(tx).destCategoryId(id, toId);
+  if (dest == null || dest == id) return;
   await tx.execute(
     Sql.named('UPDATE events SET category_id = @c::uuid WHERE id = @e::uuid'),
-    parameters: {'c': dest.id, 'e': event.id},
+    parameters: {'c': dest, 'e': event.id},
   );
 }

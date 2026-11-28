@@ -8,12 +8,11 @@ import '../repo/category_repo.dart';
 import 'streams.dart' show notifyPeers;
 import 'json_helpers.dart';
 
-// Categories (migrations 024, 025, 031), mounted under `/api/streams`: the
-// stream OWNER's global set (shared by all their streams). Editors of a
-// shared stream may list and add; renaming, recolouring, hiding,
-// reparenting, reordering and deleting (which reach every stream of the
-// owner) are the owner's. Favourites are per user: any stream member may
-// star or unstar for themselves.
+// Categories (migration 035), mounted under `/api/streams`: each stream
+// has its own set. Viewers read; owners and editors may add, rename,
+// recolour, hide, reparent, reorder and delete (this stream only).
+// Favourites are per user: any stream member may star or unstar for
+// themselves.
 //   GET    /<a>/categories            list (parentId, sortOrder, counts)
 //   POST   /<a>/categories            {name, color?, hidden?, parentId?}
 //   POST   /<a>/categories/reorder    {parentId, ids} sibling order
@@ -25,7 +24,7 @@ import 'json_helpers.dart';
 //   PUT    /<a>/categories/<c>/favorite
 //   DELETE /<a>/categories/<c>/favorite
 //   PATCH  /<a>/category-favorites    {ids}
-// Names are unique in the owner's set (case-insensitive): a taken name is
+// Names are unique in the stream (case-insensitive): a taken name is
 // a 409. Deleting a parent that still has children is a 409.
 void attachCategoryRoutes(Router router, Session conn) {
   const nameError = categoryNameError;
@@ -63,12 +62,10 @@ void attachCategoryRoutes(Router router, Session conn) {
   router.post('/<a>/categories/reorder', (Request r, String a) async {
     try {
       final body = await readJsonObject(r);
-      final owner = await CategoryRepo(conn).ownerOfStream(a);
-      if (owner == null) return jsonError(404, 'stream not found');
       final parentId = optionalParentId(body);
       final ids = idList(body['ids'], 'ids');
       await txOf(conn).runTx((tx) => CategoryRepo(tx)
-          .reorder(owner, body.containsKey('parentId') ? parentId : null, ids));
+          .reorder(a, body.containsKey('parentId') ? parentId : null, ids));
       final list = await CategoryRepo(conn).listByStream(a);
       return jsonOk({'categories': list.map((c) => c.toJson()).toList()});
     } on CategoryConstraintException catch (e) {
@@ -81,9 +78,7 @@ void attachCategoryRoutes(Router router, Session conn) {
   router.post('/<a>/categories', (Request r, String a) async {
     try {
       final body = await readJsonObject(r);
-      final owner = await CategoryRepo(conn).ownerOfStream(a);
-      if (owner == null) return jsonError(404, 'stream not found');
-      final c = await txOf(conn).runTx((tx) => CategoryRepo(tx).create(owner,
+      final c = await txOf(conn).runTx((tx) => CategoryRepo(tx).create(a,
           name: body['name'] is String ? body['name'] as String : '',
           color: parseEventColor(body['color']),
           hidden: optionalBool(body, 'hidden') ?? false,
@@ -102,9 +97,7 @@ void attachCategoryRoutes(Router router, Session conn) {
   Future<Category?> inStream(Session s, String a, String c) async {
     final repo = CategoryRepo(s);
     final cat = await repo.get(c);
-    return cat != null && cat.ownerId == await repo.ownerOfStream(a)
-        ? cat
-        : null;
+    return cat != null && cat.streamId == a ? cat : null;
   }
 
   router.patch('/<a>/categories/<c>', (Request r, String a, String c) async {
@@ -195,24 +188,19 @@ void attachCategoryRoutes(Router router, Session conn) {
   });
 
   router.get('/<a>/category-favorites', (Request r, String a) async {
-    final repo = CategoryRepo(conn);
-    final owner = await repo.ownerOfStream(a);
-    if (owner == null) return jsonError(404, 'stream not found');
     final me = requireAuth(r).user.id;
-    final list = await repo.listFavorites(me, owner);
+    final list = await CategoryRepo(conn).listFavorites(me, a);
     return jsonOk({'favorites': list});
   });
 
   router.patch('/<a>/category-favorites', (Request r, String a) async {
     try {
       final body = await readJsonObject(r);
-      final owner = await CategoryRepo(conn).ownerOfStream(a);
-      if (owner == null) return jsonError(404, 'stream not found');
       final me = requireAuth(r).user.id;
       final ids = idList(body['ids'], 'ids');
       await txOf(conn)
           .runTx((tx) => CategoryRepo(tx).reorderFavorites(me, ids));
-      final list = await CategoryRepo(conn).listFavorites(me, owner);
+      final list = await CategoryRepo(conn).listFavorites(me, a);
       await notifyPeers(conn, r, me, {a}, 'category.favorite_updated');
       return jsonOk({'favorites': list});
     } on CategoryConstraintException catch (e) {
@@ -227,18 +215,15 @@ void attachCategoryRoutes(Router router, Session conn) {
     if (await inStream(conn, a, c) == null) {
       return jsonError(404, 'category not found');
     }
-    final repo = CategoryRepo(conn);
-    final owner = await repo.ownerOfStream(a);
-    if (owner == null) return jsonError(404, 'stream not found');
     final me = requireAuth(r).user.id;
     try {
       await txOf(conn)
-          .runTx((tx) => CategoryRepo(tx).addFavorite(me, c, ownerId: owner));
+          .runTx((tx) => CategoryRepo(tx).addFavorite(me, c, streamId: a));
     } on CategoryConstraintException catch (e) {
       return constraintError(e);
     }
     await notifyPeers(conn, r, me, {a}, 'category.favorite_updated');
-    final list = await CategoryRepo(conn).listFavorites(me, owner);
+    final list = await CategoryRepo(conn).listFavorites(me, a);
     return jsonOk({'favorites': list});
   });
 
@@ -247,12 +232,10 @@ void attachCategoryRoutes(Router router, Session conn) {
     if (await inStream(conn, a, c) == null) {
       return jsonError(404, 'category not found');
     }
-    final owner = await CategoryRepo(conn).ownerOfStream(a);
-    if (owner == null) return jsonError(404, 'stream not found');
     final me = requireAuth(r).user.id;
     await txOf(conn).runTx((tx) => CategoryRepo(tx).removeFavorite(me, c));
     await notifyPeers(conn, r, me, {a}, 'category.favorite_updated');
-    final list = await CategoryRepo(conn).listFavorites(me, owner);
+    final list = await CategoryRepo(conn).listFavorites(me, a);
     return jsonOk({'favorites': list});
   });
 }
@@ -269,7 +252,7 @@ Response categoryNameError(CategoryNameException e) =>
 /// The event name (= category name) an event write in [streamId] means:
 /// `newCategory: {name, color}` creates that category first (a taken name
 /// throws [CategoryNameException], so plans never reuse one), else
-/// `categoryId` (must be one of [streamId]'s owner's), else [legacyName]
+/// `categoryId` (must be one of [streamId]'s), else [legacyName]
 /// (mapped to, or creating, the category by name in the DB). Null when the
 /// body names none.
 Future<String?> resolveEventCategory(
@@ -279,9 +262,7 @@ Future<String?> resolveEventCategory(
   final nc = body['newCategory'];
   if (nc != null) {
     if (nc is! Map) throw FormatException('newCategory must be {name, color}');
-    final owner = await repo.ownerOfStream(streamId);
-    if (owner == null) throw FormatException('stream not found');
-    final c = await repo.create(owner,
+    final c = await repo.create(streamId,
         name: nc['name'] is String ? nc['name'] as String : '',
         color: parseEventColor(nc['color']),
         parentId: nc['parentId'] is String ? nc['parentId'] as String : null);
