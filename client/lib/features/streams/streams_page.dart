@@ -74,6 +74,8 @@ Future<BudgetStream?> createStream(BuildContext context) {
 }
 
 /// Streams home: my streams, then those shared with me, and New stream.
+/// List mode has a drag handle on each row to reorder within a
+/// section; the order is saved per user (owned and shared).
 /// Streams are top level (there are no projects). With [landing] (the `/`
 /// route), the first visit after sign-in opens the last-used stream
 /// instead, when I can still open it.
@@ -241,10 +243,16 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
           onChanged: _setLayout,
         );
 
-        Widget cardOf(BudgetStream stream, {required bool last}) => _StreamCard(
+        Widget cardOf(
+          BudgetStream stream, {
+          required bool last,
+          int? dragIndex,
+        }) => _StreamCard(
+          key: ValueKey('reorder-${stream.id}'),
           stream: stream,
           listMode: listMode,
           showDivider: listMode && !last,
+          dragIndex: dragIndex,
           canDelete: stream.role.isOwner,
           canShare: stream.role.isOwner,
           onShare: () => showShareDialog(
@@ -262,13 +270,39 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
           ),
         );
 
-        Widget listOf(List<BudgetStream> list) {
+        Future<void> reorderSection({
+          required bool sharedSection,
+          required int oldIndex,
+          required int newIndex,
+        }) async {
+          final mineIds = [for (final a in mine) a.id];
+          final sharedIds = [for (final a in shared) a.id];
+          final section = sharedSection ? sharedIds : mineIds;
+          section.insert(newIndex, section.removeAt(oldIndex));
+          try {
+            await ref.read(streamsProvider.notifier).reorder([
+              ...mineIds,
+              ...sharedIds,
+            ]);
+          } catch (error) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text(friendlyError(error))));
+            }
+          }
+        }
+
+        Widget listOf(List<BudgetStream> list, {required bool sharedSection}) {
           if (listMode) {
-            return SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => cardOf(list[i], last: i == list.length - 1),
-                childCount: list.length,
+            return SliverReorderableList(
+              itemCount: list.length,
+              onReorderItem: (oldIndex, newIndex) => reorderSection(
+                sharedSection: sharedSection,
+                oldIndex: oldIndex,
+                newIndex: newIndex,
               ),
+              itemBuilder: (context, i) =>
+                  cardOf(list[i], last: i == list.length - 1, dragIndex: i),
             );
           }
           return SliverGrid(
@@ -327,7 +361,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
                   pad,
                   shared.isNotEmpty ? 16 : 24,
                 ),
-                sliver: listOf(mine),
+                sliver: listOf(mine, sharedSection: false),
               ),
             ],
             if (shared.isNotEmpty) ...[
@@ -337,7 +371,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
               ),
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(pad, 0, pad, 24),
-                sliver: listOf(shared),
+                sliver: listOf(shared, sharedSection: true),
               ),
             ],
           ],
@@ -422,6 +456,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
 
 class _StreamCard extends ConsumerStatefulWidget {
   const _StreamCard({
+    super.key,
     required this.stream,
     required this.onOpen,
     required this.onEdit,
@@ -433,6 +468,7 @@ class _StreamCard extends ConsumerStatefulWidget {
     this.canShare = true,
     this.listMode = false,
     this.showDivider = false,
+    this.dragIndex,
   });
 
   final VoidCallback onShare;
@@ -440,6 +476,9 @@ class _StreamCard extends ConsumerStatefulWidget {
   final bool canShare;
   final bool listMode;
   final bool showDivider;
+
+  /// Non-null in list mode: the row's index for the drag handle.
+  final int? dragIndex;
   final BudgetStream stream;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
@@ -640,6 +679,7 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
         height: rowH,
         child: Row(
           children: [
+            if (widget.dragIndex != null) const SizedBox(width: 24),
             StreamGlyphTile(
               tileKey: ValueKey('stream-card-icon-${stream.id}'),
               size: 28,
@@ -656,26 +696,42 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
                     Row(
                       children: [
                         Expanded(child: nameText),
-                        ...badges,
+                        if (badges.isNotEmpty)
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerRight,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: badges,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
-                    if (chip != null) ...[const SizedBox(height: 4), chip],
+                    if (chip != null) ...[
+                      const SizedBox(height: 4),
+                      SizedBox(width: double.infinity, child: chip),
+                    ],
                   ],
                 ),
               ),
             ),
             const SizedBox(width: 8),
-            ExcludeSemantics(
-              child: Text(
-                balanceText,
-                style: streamListBalanceStyle(alert: low),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 88),
+              child: ExcludeSemantics(
+                child: Text(
+                  balanceText,
+                  style: streamListBalanceStyle(alert: low),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                ),
               ),
             ),
-            const SizedBox(width: 8),
-            chevron,
-            if (menu != null) const SizedBox(width: 52),
+            if (!widget.listMode) ...[const SizedBox(width: 8), chevron],
+            if (menu != null) SizedBox(width: widget.listMode ? 44 : 52),
           ],
         ),
       );
@@ -820,6 +876,31 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
               ),
             ),
           ),
+          if (widget.dragIndex != null)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 24,
+              child: ReorderableDragStartListener(
+                index: widget.dragIndex!,
+                child: Semantics(
+                  button: true,
+                  label: 'Drag to reorder',
+                  child: Tooltip(
+                    message: 'Drag to reorder',
+                    child: Center(
+                      child: Icon(
+                        Icons.drag_indicator_rounded,
+                        key: ValueKey('stream-drag-${stream.id}'),
+                        size: 20,
+                        color: AppTheme.textFaint,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (menu != null) Positioned(top: menuTop, right: 0, child: menu),
         ],
       ),

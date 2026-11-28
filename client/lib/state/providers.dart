@@ -243,8 +243,8 @@ class CategoryFavoritesNotifier
   }
 }
 
-/// Every stream I can open: mine first (display order), then those shared
-/// with me. Streams are top level (no projects).
+/// Every stream I can open, in my saved home-list order (owned and
+/// shared). Streams are top level (no projects).
 final streamsProvider =
     AsyncNotifierProvider<StreamsNotifier, List<BudgetStream>>(
       StreamsNotifier.new,
@@ -313,6 +313,27 @@ class StreamsNotifier extends AsyncNotifier<List<BudgetStream>> {
       id,
       userId: ref.read(authProvider).valueOrNull?.user?.id,
     );
+  }
+
+  /// Saves [ids] as my home-list order. Missing streams stay at the end.
+  Future<void> reorder(List<String> ids) async {
+    final current = state.valueOrNull ?? [];
+    final byId = {for (final a in current) a.id: a};
+    final next = [
+      for (final id in ids)
+        if (byId.containsKey(id)) byId[id]!,
+      for (final a in current)
+        if (!ids.contains(a.id)) a,
+    ];
+    state = AsyncData(next);
+    try {
+      final list = await ref.read(streamRepositoryProvider).reorder(ids);
+      lastStreamId = list.lastStreamId;
+      state = AsyncData(list.streams);
+    } catch (_) {
+      await refresh();
+      rethrow;
+    }
   }
 
   /// Permanently deletes every transaction in [id]. The stream stays.

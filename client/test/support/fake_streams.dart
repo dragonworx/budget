@@ -84,6 +84,29 @@ class FakeStreamRepository extends StreamRepository {
     lastStreamId = id;
   }
 
+  final reorders = <List<String>>[];
+
+  @override
+  Future<StreamList> reorder(List<String> ids) async {
+    reorders.add(List.of(ids));
+    final byId = {for (final a in streams) a.id: a};
+    final next = [
+      for (final id in ids)
+        if (byId.containsKey(id)) byId[id]!,
+      for (final a in streams)
+        if (!ids.contains(a.id)) a,
+    ];
+    streams
+      ..clear()
+      ..addAll(next);
+    return StreamList(
+      List.of(streams),
+      lastStreamId: streams.any((a) => a.id == lastStreamId)
+          ? lastStreamId
+          : null,
+    );
+  }
+
   @override
   Future<BudgetStream> get(String id) async {
     final a = streams.where((a) => a.id == id).firstOrNull;

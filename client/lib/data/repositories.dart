@@ -7,7 +7,7 @@ import '../features/timeline/saved_view.dart';
 import 'models.dart';
 import '../features/loans/loan_models.dart';
 
-/// `GET /api/streams`: accessible streams (mine first, then shared).
+/// `GET /api/streams`: accessible streams in my saved home-list order.
 class StreamList {
   const StreamList(this.streams, {this.lastStreamId});
   final List<BudgetStream> streams;
@@ -19,10 +19,21 @@ class StreamRepository {
 
   final ApiClient _api;
 
-  /// My streams and those shared with me, plus the one I opened last
-  /// (null when none or no longer accessible).
+  /// My streams and those shared with me (in my saved order), plus the
+  /// one I opened last (null when none or no longer accessible).
   Future<StreamList> list() async {
     final data = await _api.get('/api/streams');
+    final last = data is Map<String, dynamic> ? data['lastStreamId'] : null;
+    return StreamList(
+      _asList(data).map(BudgetStream.fromJson).toList(),
+      lastStreamId: last?.toString(),
+    );
+  }
+
+  /// Saves my home-list order (owned and shared). Missing accessible
+  /// ids are appended; the response is the updated list.
+  Future<StreamList> reorder(List<String> ids) async {
+    final data = await _api.patch('/api/streams/reorder', body: {'ids': ids});
     final last = data is Map<String, dynamic> ? data['lastStreamId'] : null;
     return StreamList(
       _asList(data).map(BudgetStream.fromJson).toList(),
