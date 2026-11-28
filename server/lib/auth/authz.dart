@@ -111,6 +111,9 @@ const policies = <Policy>[
   Policy('GET', 'streams/:a/events', Scope.stream),
   Policy('POST', 'streams/:a/events', Scope.stream,
       min: _e, event: 'event.created'),
+  // Reset Stream: delete every event, keep the stream. Editor or owner.
+  Policy('DELETE', 'streams/:a/events', Scope.stream,
+      min: _e, event: 'events.reset'),
   Policy('POST', 'streams/:a/events/import', Scope.stream,
       min: _e, event: 'events.imported'),
   // Undo of an import: bulk delete of the ids that import created.

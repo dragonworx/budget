@@ -202,6 +202,24 @@ Router buildStreamsApi(Session conn) {
     }
   });
 
+  // Reset Stream: delete every event in the stream (and each transfer's
+  // far side in other streams, the same as deleting those events one by
+  // one). The stream, its seed, settings and colour stay. No undo.
+  router.delete('/<streamId>/events',
+      (Request request, String streamId) async {
+    final stream = await streams.get(streamId);
+    if (stream == null) return jsonError(404, 'stream not found');
+    final me = requireAuth(request).user.id;
+    final r = await streams.resetEvents(streamId);
+    await VariableRefIndex(conn).reindexStreams([streamId, ...r.peerStreams]);
+    await notifyPeers(conn, request, me, r.peerStreams, 'events.reset');
+    return jsonOk({
+      'deleted': r.deleted,
+      'counterparts': r.counterparts,
+      'affectedStreams': r.peerStreams.toList(),
+    });
+  });
+
   // Bulk import (see docs in event_import.dart). `?root=YYYY-MM-DD`
   // (required) is the selected timeline day all day offsets count from.
   // Body: the raw paste —

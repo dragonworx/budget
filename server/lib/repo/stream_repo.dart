@@ -393,6 +393,51 @@ class StreamRepo {
     ];
   }
 
+  /// Deletes every event in [id], and the far side of each transfer in
+  /// other streams (the same as deleting those events one by one). The
+  /// stream itself, its seed balance, settings and colour stay. Call
+  /// inside a DB transaction.
+  Future<({int deleted, int counterparts, Set<String> peerStreams})>
+      resetEvents(String id) async {
+    final peers = await transferPeers(id);
+    final peerIds = [for (final p in peers) p.peerId];
+    final peerStreams = {for (final p in peers) p.peerStreamId};
+    var counterparts = 0;
+    if (peerIds.isNotEmpty) {
+      await _conn.execute(
+        Sql.named('''
+          UPDATE streams p SET event_order = COALESCE((
+            SELECT array_agg(x ORDER BY o) FROM unnest(p.event_order)
+              WITH ORDINALITY AS u(x, o)
+            WHERE NOT (x = ANY(@ids::uuid[]))), '{}')
+          WHERE p.id IN (SELECT stream_id FROM events
+                         WHERE id = ANY(@ids::uuid[]))
+        '''),
+        parameters: {'ids': peerIds},
+      );
+      final gone = await _conn.execute(
+        Sql.named('DELETE FROM events WHERE id = ANY(@ids::uuid[]) '
+            'RETURNING id::text'),
+        parameters: {'ids': peerIds},
+      );
+      counterparts = gone.length;
+    }
+    await _conn.execute(
+      Sql.named("UPDATE streams SET event_order = '{}' WHERE id = @id"),
+      parameters: {'id': id},
+    );
+    final rows = await _conn.execute(
+      Sql.named(
+          'DELETE FROM events WHERE stream_id = @id RETURNING id::text'),
+      parameters: {'id': id},
+    );
+    return (
+      deleted: rows.length,
+      counterparts: counterparts,
+      peerStreams: peerStreams,
+    );
+  }
+
   /// Deletes the stream and its own events (cascade). Its transfers'
   /// far sides in other streams never dangle: [transfers] keep turns each
   /// into a plain event of its stream (same name, direction, amount,
