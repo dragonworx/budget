@@ -9,15 +9,19 @@ This is a large, migrating change. Work in phases, commit each phase, and **do n
 ## Status (resume here)
 
 - [x] Investigation (this file).
-- [x] Plan written and pushed (this file). **No migration has been pushed.**
+- [x] Plan written and pushed (`04a9dbd` on main, `docs/018-per-stream-categories.md`). **No migration has been pushed.**
+- [x] Phase A done locally, **not pushed:**
+  - Dev backup: `/workspace/backups/dev-before-035-20261128-153711.dump` (270268 bytes, 15:37 AEDT 28 Nov 2026).
+  - `server/migrations/035_per_stream_categories.sql` + `server/test/migration_035_test.dart` (test passed).
+  - Dry run on `budget_035_dry` (restored from that dump, then dropped): **420** categories (38×10 + 9×2 + 6×2 + 2×1 + 2×4), **69** events, **0** missing, **0** crossed, **8/8** transfer pairs remapped to each leg's stream copy of the same path, uniques stream-scoped, `owner_id` dropped. Idempotent re-run left 420. Cross-stream `category_id` rejected; name-only create stayed in one stream; deleting a stream removed its tree.
+  - **Live dev `budget` was left on the pre-035 schema** (57 categories, `owner_id` still present) so the current owner-scoped API keeps working. Apply 035 to `budget` only when Phase B is ready to run with it.
 - [ ] **Prod backup gate:** cannot be done from this box today (see [Prod backup](#prod-backup-gate)). Stop before pushing `035_per_stream_categories.sql` or any commit that depends on it.
-- [ ] Phase A — Dev backup + migration SQL + dry run + migration test (commit locally; push only after the gate).
 - [ ] Phase B — Server API, repo, triggers, authz, Move to… remap, new-stream behaviour.
 - [ ] Phase C — Client manager entry points, pickers, filters, charts, copy.
 - [ ] Phase D — Tests (`analyze` + suites), Playwright QA, designer shot.
 - [ ] Phase E — After the gate: push, confirm deploy and `/ready`, read-only prod count check, `wake.sh`.
 
-HEAD when this plan was written: `163394c` (Reset Stream), `origin/main` in sync. Next migration number: **035**.
+HEAD when this plan was written: `163394c` (Reset Stream). Plan commit: `04a9dbd`. Next migration number: **035**.
 
 ## Current model (verified 28 Nov 2026 against the dev DB and tree)
 
@@ -91,7 +95,7 @@ After: each stream has its own copy. A viewer of a shared stream **reads that st
 | `category_favorites` | 0 |
 | transfer pairs | 8, **all 8 share one category row** today |
 
-Ali (`musicartscience@gmail.com`): **38 categories, 10 streams** → migration should create **380** category rows for him (38 × 10), and remap every event in those streams to that stream’s copy. Other owners similarly (`qa-kb` 9×2, `loan-qa` 6×2, `wendy.qa` 2×1, `loan-api` 2×4). Expected total after copy: `sum(cats × streams)` = 38×10 + 9×2 + 6×2 + 2×1 + 2×4 = **422**, then drop the 57 originals (they are replaced, not kept alongside). Event count stays 69; every `events.category_id` points at a row with `categories.stream_id = events.stream_id`.
+Ali (`musicartscience@gmail.com`): **38 categories, 10 streams** → migration should create **380** category rows for him (38 × 10), and remap every event in those streams to that stream’s copy. Other owners similarly (`qa-kb` 9×2, `loan-qa` 6×2, `wendy.qa` 2×1, `loan-api` 2×4). Expected total after copy: `sum(cats × streams)` = 38×10 + 9×2 + 6×2 + 2×1 + 2×4 = **420**, then drop the 57 originals (they are replaced, not kept alongside). Event count stays 69; every `events.category_id` points at a row with `categories.stream_id = events.stream_id`.
 
 ## Design decisions
 
