@@ -139,13 +139,13 @@ bool _isMoreItem(Widget w) {
 }
 
 List<String> _moreKeys(WidgetTester tester) {
-  final items =
-      find.byWidgetPredicate(_isMoreItem).evaluate().toList()..sort(
-        (a, b) => tester
-            .getTopLeft(find.byWidget(a.widget))
-            .dy
-            .compareTo(tester.getTopLeft(find.byWidget(b.widget)).dy),
-      );
+  final items = find.byWidgetPredicate(_isMoreItem).evaluate().toList()
+    ..sort(
+      (a, b) => tester
+          .getTopLeft(find.byWidget(a.widget))
+          .dy
+          .compareTo(tester.getTopLeft(find.byWidget(b.widget)).dy),
+    );
   return [for (final e in items) '${(e.widget.key! as ValueKey).value}'];
 }
 
@@ -165,7 +165,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('timeline-more')));
     await tester.pumpAndSettle();
     final keys = _moreKeys(tester);
-    expect(keys.take(2), ['more-settings', 'timeline-loan-summary']);
+    expect(keys.take(3), [
+      'more-settings',
+      'more-categories',
+      'timeline-loan-summary',
+    ]);
     await tester.tap(find.byKey(const ValueKey('timeline-loan-summary')));
     await tester.pumpAndSettle();
     expect(find.byType(LoanSummaryDialog), findsOneWidget);
@@ -174,11 +178,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(LoanSummaryDialog), findsNothing);
 
-    // Wide: Stream settings is a header icon, so Loan summary leads More.
+    // Wide: Stream settings is a header icon, so Categories leads More,
+    // then Loan summary.
     await _pump(tester, const Size(1440, 900), loan: true);
     await tester.tap(find.byKey(const ValueKey('timeline-more')));
     await tester.pumpAndSettle();
-    expect(_moreKeys(tester).first, 'timeline-loan-summary');
+    expect(_moreKeys(tester).take(2), [
+      'more-categories',
+      'timeline-loan-summary',
+    ]);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 

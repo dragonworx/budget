@@ -24,7 +24,7 @@ void storeLastCategory(String streamId, String? id, {String? userId}) {
 /// stored) if it still exists, is visible, and is a leaf, else the
 /// category of the most recently created event on the stream (events are
 /// listed oldest-first) if that row is still a visible leaf, else the
-/// first visible leaf in the owner's list order.
+/// first visible leaf in the stream's list order.
 Category? defaultNewEventCategory({
   required Iterable<Category> categories,
   String? preferredId,

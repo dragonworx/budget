@@ -318,8 +318,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('editor-color')), findsNothing);
     expect(find.byKey(const ValueKey('editor-name')), findsNothing);
-    // Default: the first category (Rent, positional blue).
-    expect(_headerColor(tester), laneColor(0));
+    // Default: the most recently created event's category (Gym).
+    expect(_headerColor(tester), const Color(0xFF3C8A6E));
     await pickCategory(tester, fakeCategoryId('Gym'));
     expect(_headerColor(tester), const Color(0xFF3C8A6E), reason: 'live');
     await tester.enterText(_field('editor-amount'), '12');

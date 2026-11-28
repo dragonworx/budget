@@ -1923,8 +1923,8 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           icon: glyph,
         );
 
-    // More, in order: Stream settings first, then (loan streams) Loan
-    // summary, then whatever overflowed.
+    // More, in order: Stream settings (below 960px), Categories, then
+    // (loan streams) Loan summary, then Share / Import / Reset.
     final more = <Widget>[
       if (canEdit && !mid)
         MenuItemButton(
