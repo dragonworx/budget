@@ -18,14 +18,15 @@ import 'json_helpers.dart';
 //   POST   /<a>/categories/reorder    {parentId, ids} sibling order
 //   PATCH  /<a>/categories/<c>        {name?, color?, hidden?, parentId?, sortOrder?}
 //   GET    /<a>/categories/<c>/delete-preview  {events, counterparts, children}
-//   DELETE /<a>/categories/<c>        deletes it and all its events
+//   DELETE /<a>/categories/<c>        deletes it, descendants, and their events
 //   DELETE /<a>/categories/<c>/events deletes all its events, keeps it
 //   GET    /<a>/category-favorites
 //   PUT    /<a>/categories/<c>/favorite
 //   DELETE /<a>/categories/<c>/favorite
 //   PATCH  /<a>/category-favorites    {ids}
 // Names are unique in the stream (case-insensitive): a taken name is
-// a 409. Deleting a parent that still has children is a 409.
+// a 409. Deleting a folder also deletes its descendants and any
+// transactions filed on them (same rule as a leaf).
 void attachCategoryRoutes(Router router, Session conn) {
   const nameError = categoryNameError;
 

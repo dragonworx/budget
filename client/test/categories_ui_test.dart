@@ -158,7 +158,10 @@ class _Cats extends FakeCategoryRepository {
 
   @override
   Future<void> delete(String streamId, String id) async {
-    s.txs.removeWhere((_, e) => e.categoryId == id);
+    final ids = subtreeIds(await list(streamId), id);
+    s.txs.removeWhere(
+      (_, e) => e.categoryId != null && ids.contains(e.categoryId),
+    );
     await super.delete(streamId, id);
   }
 }
@@ -632,6 +635,90 @@ void main() {
     expect(cats.calls, contains('delete $_groc'));
     expect(store.txs.keys, isNot(contains('g2')));
     expect(find.byKey(ValueKey('category-row-$_groc')), findsNothing);
+  });
+
+  testWidgets('Delete folder: confirmation names the subtree and its '
+      'transactions; Cancel keeps them, confirming deletes all', (
+    tester,
+  ) async {
+    const housingId = 'cat-housing';
+    const ratesId = 'cat-rates';
+    const bodyId = 'cat-body-corp';
+    final (store, cats) = await _pump(
+      tester,
+      extra: [
+        const Category(
+          id: housingId,
+          streamId: 'acc',
+          name: 'Housing',
+          color: '#3D6FD8',
+        ),
+        const Category(
+          id: ratesId,
+          streamId: 'acc',
+          name: 'Rates',
+          color: '#B36A12',
+          parentId: housingId,
+          depth: 1,
+        ),
+        const Category(
+          id: bodyId,
+          streamId: 'acc',
+          name: 'Body corp',
+          color: '#5B7A2A',
+          parentId: housingId,
+          depth: 1,
+        ),
+      ],
+    );
+    store.txs['rates1'] = _ev(
+      'rates1',
+      'Rates',
+      amount: 40,
+    ).copyWith(categoryId: ratesId);
+    store.txs['rates2'] = _ev(
+      'rates2',
+      'Rates',
+      amount: 20,
+    ).copyWith(categoryId: ratesId);
+    store.txs['body1'] = _ev(
+      'body1',
+      'Body corp',
+      amount: 15,
+    ).copyWith(categoryId: bodyId);
+    await _openManager(tester);
+    await _openRowMenu(tester, housingId);
+    await tester.tap(find.byKey(const ValueKey('category-delete-$housingId')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Delete Housing and its 2 subcategories?'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('all 3 of their transactions in this stream'),
+      findsOneWidget,
+    );
+    expect(find.textContaining("This can't be undone."), findsOneWidget);
+    await tester.tap(find.text('Cancel').last);
+    await tester.pumpAndSettle();
+    expect(cats.calls.where((c) => c.startsWith('delete')), isEmpty);
+    expect(
+      find.byKey(const ValueKey('category-row-$housingId')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('category-row-$ratesId')), findsOneWidget);
+    expect(store.txs.keys, containsAll(['rates1', 'rates2', 'body1']));
+    await _openRowMenu(tester, housingId);
+    await tester.tap(find.byKey(const ValueKey('category-delete-$housingId')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete categories and events'));
+    await tester.pumpAndSettle();
+    expect(cats.calls, contains('delete $housingId'));
+    expect(store.txs.keys, isNot(contains('rates1')));
+    expect(store.txs.keys, isNot(contains('body1')));
+    expect(find.byKey(const ValueKey('category-row-$housingId')), findsNothing);
+    expect(find.byKey(const ValueKey('category-row-$ratesId')), findsNothing);
+    expect(find.byKey(const ValueKey('category-row-$bodyId')), findsNothing);
   });
 
   testWidgets('viewers: the table is read-only (no actions, no rename, no '

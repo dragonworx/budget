@@ -23,8 +23,8 @@ class CategoryConstraintException implements Exception {
   CategoryConstraintException(this.message, {this.code = 'invalid_parent'});
   final String message;
 
-  /// `category_has_children`, `max_depth`, `sync_nested`, `invalid_parent`,
-  /// `category_not_a_leaf`, `category_has_events`.
+  /// `max_depth`, `sync_nested`, `invalid_parent`, `category_not_a_leaf`,
+  /// `category_has_events`.
   final String code;
   @override
   String toString() => message;
@@ -419,20 +419,47 @@ class CategoryRepo {
         msg.isEmpty ? 'invalid category parent' : msg);
   }
 
-  /// What deleting [id] removes: its events and their transfer
-  /// counterparts in other streams, plus how many children block a
-  /// category delete.
+  /// [id] and every descendant, deepest first so [parent_id] RESTRICT
+  /// is satisfied when deleting them in that order.
+  Future<List<String>> _subtreeIdsDeepestFirst(String id) async {
+    final rows = await _conn.execute(
+      Sql.named('''
+        WITH RECURSIVE tree AS (
+          SELECT id, 0 AS depth
+            FROM categories WHERE id = @id::uuid
+          UNION ALL
+          SELECT c.id, t.depth + 1
+            FROM categories c
+            JOIN tree t ON c.parent_id = t.id
+        )
+        SELECT id::text FROM tree ORDER BY depth DESC
+      '''),
+      parameters: {'id': id},
+    );
+    return [for (final r in rows) r[0] as String];
+  }
+
+  /// What deleting [id] removes: events on it or any descendant, their
+  /// transfer counterparts in other streams (or on categories outside
+  /// the subtree), and how many descendants go with it.
   Future<({int events, int counterparts, int children})> deleteCounts(
       String id) async {
     final r = await _conn.execute(
       Sql.named('''
-        SELECT count(*)::int,
+        WITH RECURSIVE tree AS (
+          SELECT id FROM categories WHERE id = @id::uuid
+          UNION ALL
+          SELECT c.id FROM categories c JOIN tree t ON c.parent_id = t.id
+        )
+        SELECT
+          (SELECT count(*)::int FROM events e
+            WHERE e.category_id IN (SELECT id FROM tree)),
           (SELECT count(*)::int FROM events p
              JOIN events e ON e.transfer_id = p.transfer_id AND p.id <> e.id
-            WHERE e.category_id = @id::uuid AND e.transfer_id IS NOT NULL
-              AND p.category_id <> @id::uuid),
-          (SELECT count(*)::int FROM categories ch WHERE ch.parent_id = @id::uuid)
-        FROM events WHERE category_id = @id::uuid
+            WHERE e.category_id IN (SELECT id FROM tree)
+              AND e.transfer_id IS NOT NULL
+              AND p.category_id NOT IN (SELECT id FROM tree)),
+          (SELECT count(*)::int FROM tree WHERE id <> @id::uuid)
       '''),
       parameters: {'id': id},
     );
@@ -464,24 +491,39 @@ class CategoryRepo {
         userId: userId, anyStream: true);
   }
 
-  /// Deletes [id] with every event in it (see [deleteEvents]; the events'
-  /// batch is not offered for undo since the category itself is gone).
-  /// Null when the category does not exist. Throws
-  /// [CategoryConstraintException] when it still has children.
+  /// Deletes [id] and every descendant, with every event filed on any of
+  /// them (see [deleteEvents]; the events' batch is not offered for undo
+  /// since the categories themselves are gone). Favourites on the
+  /// subtree are removed. Null when the category does not exist in
+  /// [streamId]. Call inside one DB transaction. Descendants are deleted
+  /// bottom-up so [parent_id] RESTRICT is satisfied.
   Future<({String? batchId, List<String> deleted, Set<String> peerStreams})?>
       delete(String id,
           {required String streamId, required String userId}) async {
-    if (await childCount(id) > 0) {
-      throw CategoryConstraintException(
-          'Move or delete its subcategories first',
-          code: 'category_has_children');
-    }
-    final r = await deleteEvents(id, streamId: streamId, userId: userId);
-    if (r == null) return null;
-    await _conn.execute(
-      Sql.named('DELETE FROM categories WHERE id = @id::uuid'),
-      parameters: {'id': id},
+    final c = await get(id);
+    if (c == null || c.streamId != streamId) return null;
+    final ids = await _subtreeIdsDeepestFirst(id);
+    if (ids.isEmpty) return null;
+    final evRows = await _conn.execute(
+      Sql.named('SELECT id::text FROM events '
+          'WHERE category_id = ANY(@ids::uuid[]) '
+          'ORDER BY created_at'),
+      parameters: {'ids': ids},
     );
+    final r = await TrimBatchRepo(_conn).deleteAsBatch(
+        streamId, [for (final row in evRows) row[0] as String],
+        userId: userId, anyStream: true);
+    await _conn.execute(
+      Sql.named(
+          'DELETE FROM category_favorites WHERE category_id = ANY(@ids::uuid[])'),
+      parameters: {'ids': ids},
+    );
+    for (final cid in ids) {
+      await _conn.execute(
+        Sql.named('DELETE FROM categories WHERE id = @id::uuid'),
+        parameters: {'id': cid},
+      );
+    }
     return r;
   }
 

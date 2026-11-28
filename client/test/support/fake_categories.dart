@@ -63,6 +63,20 @@ class FakeCategoryRepository extends CategoryRepository {
       );
     }
     for (final c in extra[streamId] ?? const <Category>[]) {
+      final i = out.indexWhere((x) => x.id == c.id);
+      if (i >= 0) {
+        final cur = out[i];
+        out[i] = (edits[c.id] ?? c).copyWith(
+          eventCount: cur.eventCount,
+          eventCountSubtree: c.eventCountSubtree > cur.eventCount
+              ? c.eventCountSubtree
+              : cur.eventCount,
+          parentId: c.parentId,
+          clearParent: c.parentId == null,
+          depth: c.depth,
+        );
+        continue;
+      }
       add(c);
     }
     return out;
@@ -136,16 +150,30 @@ class FakeCategoryRepository extends CategoryRepository {
     return list(streamId);
   }
 
+  Set<String> subtreeIds(List<Category> all, String id) {
+    final ids = <String>{id};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final c in all) {
+        final p = c.parentId;
+        if (p != null && ids.contains(p) && ids.add(c.id)) grew = true;
+      }
+    }
+    return ids;
+  }
+
   @override
   Future<({int events, int counterparts, int children})> deletePreview(
     String streamId,
     String id,
   ) async {
-    final c = (await list(streamId)).firstWhere((c) => c.id == id);
-    final children = (await list(streamId))
-        .where((x) => x.parentId == id)
-        .length;
-    return (events: c.eventCount, counterparts: 0, children: children);
+    final all = await list(streamId);
+    final ids = subtreeIds(all, id);
+    final events = all
+        .where((c) => ids.contains(c.id))
+        .fold<int>(0, (a, c) => a + c.eventCount);
+    return (events: events, counterparts: 0, children: ids.length - 1);
   }
 
   final favorites = <String, List<String>>{};
@@ -170,14 +198,8 @@ class FakeCategoryRepository extends CategoryRepository {
   @override
   Future<void> delete(String streamId, String id) async {
     calls.add('delete $id');
-    final kids = (await list(streamId)).where((c) => c.parentId == id);
-    if (kids.isNotEmpty) {
-      throw ApiException(
-        'Move or delete its subcategories first',
-        statusCode: 409,
-      );
-    }
-    deletedIds.add(id);
+    final ids = subtreeIds(await list(streamId), id);
+    deletedIds.addAll(ids);
   }
 
   @override

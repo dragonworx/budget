@@ -389,44 +389,68 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
       ? ', plus ${others == 1 ? 'the other side of 1 transfer' : 'the other sides of $others transfers'}'
       : '';
 
-  Future<void> _delete(Category c, int n) async {
-    int children = 0;
+  static String _subcats(int n) =>
+      n == 1 ? '1 subcategory' : '$n subcategories';
+
+  Future<void> _delete(Category c) async {
+    var events = c.eventCountSubtree;
+    var children = 0;
+    var others = 0;
     try {
       final p = await ref
           .read(categoryRepositoryProvider)
           .deletePreview(widget.streamId, c.id);
+      events = p.events;
       children = p.children;
+      others = p.counterparts;
     } catch (_) {}
     if (!mounted) return;
-    if (children > 0) {
-      final label = children == 1 ? '1 subcategory' : '$children subcategories';
-      await showConfirmDialog(
-        context,
-        title: 'Move or delete subcategories first',
-        message:
-            '"${c.name}" has $label. Move them to another category or '
-            'the top level, or delete them, before deleting this one.',
-        confirmLabel: 'OK',
-      );
-      return;
-    }
-    final others = n == 0 ? 0 : await _counterparts(c);
-    if (!mounted) return;
-    final ok = await showConfirmDialog(
-      context,
-      title: 'Delete category "${c.name}"?',
-      message: n == 0
+    final label = _subcats(children);
+    final title = children == 0
+        ? 'Delete category "${c.name}"?'
+        : 'Delete ${c.name} and its $label?';
+    final String message;
+    if (children == 0) {
+      message = events == 0
           ? 'This category has no transactions. Only the category is deleted.'
           : 'This deletes "${c.name}" and '
-                '${n == 1 ? 'its 1 transaction' : 'all $n of its transactions'} '
-                'in this stream${_others(others)}. This can\'t be undone.',
-      confirmLabel: n == 0 ? 'Delete category' : 'Delete category and events',
+                '${events == 1 ? 'its 1 transaction' : 'all $events of its transactions'} '
+                'in this stream${_others(others)}. This can\'t be undone.';
+    } else if (events == 0) {
+      message =
+          'This deletes "${c.name}" and its $label. '
+          'They have no transactions. This can\'t be undone.';
+    } else {
+      message =
+          'This deletes "${c.name}" and its $label, and '
+          '${events == 1 ? 'their 1 transaction' : 'all $events of their transactions'} '
+          'in this stream${_others(others)}. This can\'t be undone.';
+    }
+    final confirmLabel = events == 0
+        ? (children == 0 ? 'Delete category' : 'Delete categories')
+        : (children == 0
+              ? 'Delete category and events'
+              : 'Delete categories and events');
+    final ok = await showConfirmDialog(
+      context,
+      title: title,
+      message: message,
+      confirmLabel: confirmLabel,
     );
     if (!ok || !mounted) return;
     await _run(() async {
+      final gone = <String>{c.id};
+      var grew = true;
+      while (grew) {
+        grew = false;
+        for (final x in _list) {
+          final p = x.parentId;
+          if (p != null && gone.contains(p) && gone.add(x.id)) grew = true;
+        }
+      }
       await _notifier.delete(c.id);
       final last = lastCategoryProvider(widget.streamId);
-      if (ref.read(last) == c.id) {
+      if (gone.contains(ref.read(last))) {
         rememberLastCategory(ref, widget.streamId, null);
       }
     });
@@ -1382,7 +1406,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
                         Icons.delete_outline_rounded,
                         color: theme.colorScheme.error,
                       ),
-                      onPressed: _busy ? null : () => _delete(c, direct),
+                      onPressed: _busy ? null : () => _delete(c),
                       child: const Text('Delete category'),
                     ),
                   ],

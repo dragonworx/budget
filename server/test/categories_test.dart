@@ -5,6 +5,7 @@
 // legacy-name event writes, import mapping, Move to… path remap, editor
 // write / viewer read-only. DB-backed
 // (TEST_DATABASE_URL, default local budget_test); skipped without Postgres.
+import 'package:postgres/postgres.dart';
 import 'package:test/test.dart';
 
 import 'authz/harness.dart';
@@ -348,7 +349,8 @@ void main() {
     expect((await cats(s.a)).map((c) => c['name']), ['Pay']);
   });
 
-  test('hierarchy: nest, max depth 2, unique names, delete blocked', () async {
+  test('hierarchy: nest, max depth 2, unique names, recursive delete',
+      () async {
     if (!h.ok) return markTestSkipped('no test DB');
     me = 'cathier';
     final s = await h.seed(me, 'Hier');
@@ -390,31 +392,107 @@ void main() {
     expect(u['eventCountSubtree'], 1);
     expect(list.firstWhere((c) => c['name'] == 'Power')['eventCount'], 1);
 
-    // Deleting the parent is blocked while it has children.
+    // Deleting the parent removes the child and events filed on it.
+    // (Nesting is capped at 2 levels, so this is the deepest legal tree.)
     final pre = await h.call('GET',
         '/api/streams/${s.a}/categories/${parent.json['id']}/delete-preview',
         as: me);
-    expect(pre.json['children'], 1);
-    final blocked = await h.call(
-        'DELETE', '/api/streams/${s.a}/categories/${parent.json['id']}',
-        as: me);
-    expect(blocked.status, 409, reason: '${blocked.json}');
-    expect(blocked.json['details']['code'], 'category_has_children');
-    expect(blocked.json['details']['children'], 1);
-
-    // Un-nest, then delete is allowed (the empty folder has no events).
-    final moved = await h.call(
-        'PATCH', '/api/streams/${s.a}/categories/${power.json['id']}',
-        as: me, body: {'parentId': null});
-    expect(moved.status, 200, reason: '${moved.json}');
-    expect(moved.json['parentId'], isNull);
+    expect(pre.json, {'events': 1, 'counterparts': 0, 'children': 1});
     final del = await h.call(
         'DELETE', '/api/streams/${s.a}/categories/${parent.json['id']}',
         as: me);
     expect(del.status, 200, reason: '${del.json}');
+    expect((del.json['deletedEvents'] as List).length, 1);
     expect(
         (await cats(s.a)).map((c) => c['name']), isNot(contains('Utilities')));
-    expect((await cats(s.a)).map((c) => c['name']), contains('Power'));
+    expect((await cats(s.a)).map((c) => c['name']), isNot(contains('Power')));
+    expect(
+        (await evs(s.a)).map((e) => e['id']), isNot(contains(ev2.json['id'])));
+    expect((await evs(s.a)).map((e) => e['name']), contains('Pay'));
+  });
+
+  test('delete folder: subtree events, counterparts, favourites, authz',
+      () async {
+    if (!h.ok) return markTestSkipped('no test DB');
+    me = 'catrec';
+    final s = await h.seed(me, 'RecA');
+    final b = await h.seed(me, 'RecB');
+    final housing = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Housing'});
+    expect(housing.status, 201, reason: '${housing.json}');
+    final rent = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Rent', 'parentId': housing.json['id']});
+    final rates = await h.call('POST', '/api/streams/${s.a}/categories',
+        as: me, body: {'name': 'Rates', 'parentId': housing.json['id']});
+    expect(rent.status, 201, reason: '${rent.json}');
+    expect(rates.status, 201, reason: '${rates.json}');
+
+    final tr =
+        await h.call('POST', '/api/streams/${s.a}/events', as: me, body: {
+      ...Harness.tx('ignored', transferTo: b.a),
+      'categoryId': rent.json['id'],
+    });
+    expect(tr.status, 201, reason: '${tr.json}');
+    final r1 =
+        await h.call('POST', '/api/streams/${s.a}/events', as: me, body: {
+      ...Harness.tx('ignored'),
+      'categoryId': rates.json['id'],
+      'amount': '20',
+    });
+    final r2 =
+        await h.call('POST', '/api/streams/${s.a}/events', as: me, body: {
+      ...Harness.tx('ignored'),
+      'categoryId': rates.json['id'],
+      'amount': '15',
+    });
+    expect(r1.status, 201, reason: '${r1.json}');
+    expect(r2.status, 201, reason: '${r2.json}');
+
+    final star = await h.call(
+        'PUT', '/api/streams/${s.a}/categories/${rent.json['id']}/favorite',
+        as: me);
+    expect(star.status, 200, reason: '${star.json}');
+
+    final folderPre = await h.call('GET',
+        '/api/streams/${s.a}/categories/${housing.json['id']}/delete-preview',
+        as: me);
+    // Rent transfer + two Rates events in this stream; one counterpart on B.
+    expect(folderPre.json, {'events': 3, 'counterparts': 1, 'children': 2});
+
+    await h.login('catrecview');
+    await h.call('POST', '/api/streams/${s.a}/invites',
+        as: me, body: {'email': h.email('catrecview')});
+    final asView = await h.call(
+        'DELETE', '/api/streams/${s.a}/categories/${housing.json['id']}',
+        as: 'catrecview');
+    expect(asView.status, 403, reason: '${asView.json}');
+
+    await h.login('catreced');
+    await h.call('POST', '/api/streams/${s.a}/invites',
+        as: me, body: {'email': h.email('catreced'), 'role': 'editor'});
+    final recDel = await h.call(
+        'DELETE', '/api/streams/${s.a}/categories/${housing.json['id']}',
+        as: 'catreced');
+    expect(recDel.status, 200, reason: '${recDel.json}');
+    // 3 events in this stream + the transfer counterpart.
+    expect((recDel.json['deletedEvents'] as List).length, 4);
+    final names = [for (final c in await cats(s.a)) c['name']];
+    expect(names, isNot(contains('Housing')));
+    expect(names, isNot(contains('Rent')));
+    expect(names, isNot(contains('Rates')));
+    expect(names, contains('Pay'));
+    expect((await evs(s.a)).map((e) => e['name']), ['Pay']);
+    // B's seed Pay stays; its transfer leg was the counterpart.
+    expect((await evs(b.a)).map((e) => e['name']).toList(), ['Pay']);
+    final favs =
+        await h.call('GET', '/api/streams/${s.a}/category-favorites', as: me);
+    expect(favs.json['favorites'], isEmpty);
+    final audit = await h.conn!.execute(
+        Sql.named("SELECT action FROM audit_log "
+            "WHERE stream_id = @a::uuid AND action = 'category.deleted' "
+            "AND entity_id = @c"),
+        parameters: {'a': s.a, 'c': housing.json['id']});
+    expect(audit.length, 1);
   });
 
   test('Sync cannot be nested; favourites are per user', () async {
