@@ -219,20 +219,20 @@ void main() {
       'shared': [_tx('t2', 'shared', 'Kid')],
     });
     await _app(tester, streams, txs);
-    // Open the shared card: no Stream actions if the viewer cannot share
-    // or edit. Reset must not appear at all.
+    // Both cards have a ⋮ menu (Categories is available to viewers).
     expect(find.byKey(const ValueKey('stream-card-shared')), findsOneWidget);
-    final actions = find.byTooltip('Stream actions');
-    // Only the owned card has a menu.
-    expect(actions, findsOneWidget);
-    await tester.tap(actions);
+    expect(find.byKey(const ValueKey('stream-actions-shared')), findsOneWidget);
+    expect(find.byKey(const ValueKey('stream-actions-mine')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('stream-actions-shared')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('reset-stream')), findsOneWidget);
-    // Close and confirm the viewer card has no reset item in the tree
-    // beyond that one (owned) menu.
+    expect(find.byKey(const ValueKey('stream-categories')), findsOneWidget);
+    expect(find.byKey(const ValueKey('reset-stream')), findsNothing);
+    expect(find.text('Reset Stream'), findsNothing);
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();
-    expect(find.text('Reset Stream'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('stream-actions-mine')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('reset-stream')), findsOneWidget);
   });
 
   testWidgets('the timeline More menu has Reset Stream, disabled when empty', (

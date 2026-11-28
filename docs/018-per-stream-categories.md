@@ -17,7 +17,7 @@ This is a large, migrating change. Work in phases, commit each phase, and **do n
   - **Live dev `budget` was left on the pre-035 schema** (57 categories, `owner_id` still present) so the current owner-scoped API keeps working. Apply 035 to `budget` only when Phase B is ready to run with it.
 - [ ] **Prod backup gate:** cannot be done from this box today (see [Prod backup](#prod-backup-gate)). Stop before pushing `035_per_stream_categories.sql` or any commit that depends on it.
 - [x] Phase B done locally, **not pushed:** server Category/repo/API use `streamId`; editors may write; Move to… and transfer peers remap by full path; event category must belong to the event's stream. `categories_test`, `event_move_test`, `route_sweep_test`, `migration_035_test` passed. Live dev `budget` is on 035 (420 categories, 69 events).
-- [ ] Phase C — Client manager entry points, pickers, filters, charts, copy.
+- [x] Phase C done locally, **not pushed:** removed user-menu Categories; added Categories to the Home stream ⋮ (`stream-categories`) and timeline More (`more-categories`); editors can manage this stream's categories; copy uses “transactions” and “this stream”. Viewers get a ⋮ menu with Categories only. `categories_ui_test` has 2 remaining failures (Esc closes category picker; editor-save after Esc in the sort test) — investigate in Phase D. `reset_stream_test`, `auth_test`, `entry_points_test` passed.
 - [ ] Phase D — Tests (`analyze` + suites), Playwright QA, designer shot.
 - [ ] Phase E — After the gate: push, confirm deploy and `/ready`, read-only prod count check, `wake.sh`.
 

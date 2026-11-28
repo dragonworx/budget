@@ -159,13 +159,13 @@ void main() {
 
   group('timeline has no user menu', () {
     testWidgets('the avatar is not in the header; More has no Variables, '
-        'Categories or Help; ? opens shortcuts; View still offers '
+        'Help; ? opens shortcuts; More has Categories; View still offers '
         'Manage categories…', (tester) async {
       await _timeline(tester);
       expect(k('user-menu'), findsNothing);
       await tester.tap(k('timeline-more'));
       await tester.pumpAndSettle();
-      expect(k('more-categories'), findsNothing);
+      expect(k('more-categories'), findsOneWidget);
       expect(k('more-variables'), findsNothing);
       expect(find.text('Manage categories…'), findsNothing);
       expect(find.text('Edit variables'), findsNothing);

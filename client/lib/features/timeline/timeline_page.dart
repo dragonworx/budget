@@ -34,6 +34,7 @@ import '../../widgets/list_glyph.dart';
 import '../../widgets/stream_picker.dart';
 import '../../widgets/ui.dart';
 import '../../widgets/app_menu_anchor.dart';
+import '../../widgets/user_menu.dart';
 import '../events/editor_outcome.dart';
 import '../events/import_dialog.dart';
 import '../planning/goal_models.dart';
@@ -1932,6 +1933,16 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           onPressed: () => _editStream(context, stream),
           child: const Text('Stream settings'),
         ),
+      MenuItemButton(
+        key: const ValueKey('more-categories'),
+        leadingIcon: const CategoryMenuGlyph(size: 18),
+        onPressed: () => showCategoriesManager(
+          context,
+          streamId: stream.id,
+          canEdit: canEdit,
+        ),
+        child: const Text('Categories'),
+      ),
       if (streamHasLoan(stream, events))
         MenuItemButton(
           key: const ValueKey('timeline-loan-summary'),
@@ -2043,7 +2054,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage>
           ref.watch(categoriesProvider(widget.streamId)).valueOrNull ??
           const [],
       // Hiding a category hides it in all the owner's streams: owner only.
-      canEditCategories: stream.role.isOwner,
+      canEditCategories: stream.role.canEdit,
       onToggleCategory: (c) => _toggleCategory(c),
       onManageCategories: () => showCategoriesManager(
         context,

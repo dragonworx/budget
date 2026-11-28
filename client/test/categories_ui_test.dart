@@ -1,4 +1,4 @@
-// Categories (global per owner): the model helpers, the manager table
+// Categories (per stream): the model helpers, the manager table
 // (drag handle, leaf colour / folder icon, single-line name, ⋮ menu with
 // Delete N events / Delete category; dashed new-category row; opened from
 // the View menu), the editor's read-only picker, the eye menu's Categories
@@ -336,8 +336,8 @@ void main() {
         );
       }
       await _openRowMenu(tester, _groc);
-      expect(find.text('Delete 2 events'), findsOneWidget);
-      expect(find.text('Delete 1 event'), findsNothing);
+      expect(find.text('Delete 2 transactions'), findsOneWidget);
+      expect(find.text('Delete 1 transaction'), findsNothing);
       expect(find.text('Delete category'), findsOneWidget);
       expect(find.byKey(const ValueKey('category-new-row')), findsOneWidget);
       expect(
@@ -384,7 +384,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('view-manage-categories')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('categories-manager')), findsOneWidget);
-    expect(find.textContaining('all your streams'), findsWidgets);
+    expect(find.textContaining('belong to this stream'), findsWidgets);
   });
 
   testWidgets('a name is renamed in place: tap, type, Enter / check / blur '
@@ -571,35 +571,41 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Delete N events confirms (all streams), keeps the category, '
-      'the menu item is hidden at 0, and Undo restores', (tester) async {
-    final (store, cats) = await _pump(tester);
-    await _openManager(tester);
-    await _openRowMenu(tester, _groc);
-    final btn = find.byKey(ValueKey('category-delete-events-$_groc'));
-    expect(find.text('Delete 2 events'), findsOneWidget);
-    await tester.tap(btn);
-    await tester.pumpAndSettle();
-    expect(find.text('Delete 2 events?'), findsOneWidget);
-    expect(find.textContaining('across all your streams'), findsOneWidget);
-    expect(find.textContaining('The category stays.'), findsOneWidget);
-    await tester.tap(find.text('Delete 2 events').last);
-    await tester.pumpAndSettle();
-    expect(cats.calls, contains('deleteEvents $_groc'));
-    expect(store.txs.keys, isNot(contains('g1')));
-    expect(find.byKey(ValueKey('category-row-$_groc')), findsOneWidget);
-    await _openRowMenu(tester, _groc);
-    expect(find.byKey(ValueKey('category-delete-events-$_groc')), findsNothing);
-    expect(find.text('Delete 2 events'), findsNothing);
-    await _closeRowMenu(tester);
-    expect(find.byKey(const ValueKey('category-undo')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('category-undo-button')));
-    await tester.pumpAndSettle();
-    expect(store.calls, contains('undo batch-$_groc'));
-    expect(store.txs.keys, containsAll(['g1', 'g2']));
-    await _openRowMenu(tester, _groc);
-    expect(find.text('Delete 2 events'), findsOneWidget);
-  });
+  testWidgets(
+    'Delete N transactions confirms (this stream), keeps the category, '
+    'the menu item is hidden at 0, and Undo restores',
+    (tester) async {
+      final (store, cats) = await _pump(tester);
+      await _openManager(tester);
+      await _openRowMenu(tester, _groc);
+      final btn = find.byKey(ValueKey('category-delete-events-$_groc'));
+      expect(find.text('Delete 2 transactions'), findsOneWidget);
+      await tester.tap(btn);
+      await tester.pumpAndSettle();
+      expect(find.text('Delete 2 transactions?'), findsOneWidget);
+      expect(find.textContaining('in this stream'), findsOneWidget);
+      expect(find.textContaining('The category stays.'), findsOneWidget);
+      await tester.tap(find.text('Delete 2 transactions').last);
+      await tester.pumpAndSettle();
+      expect(cats.calls, contains('deleteEvents $_groc'));
+      expect(store.txs.keys, isNot(contains('g1')));
+      expect(find.byKey(ValueKey('category-row-$_groc')), findsOneWidget);
+      await _openRowMenu(tester, _groc);
+      expect(
+        find.byKey(ValueKey('category-delete-events-$_groc')),
+        findsNothing,
+      );
+      expect(find.text('Delete 2 transactions'), findsNothing);
+      await _closeRowMenu(tester);
+      expect(find.byKey(const ValueKey('category-undo')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('category-undo-button')));
+      await tester.pumpAndSettle();
+      expect(store.calls, contains('undo batch-$_groc'));
+      expect(store.txs.keys, containsAll(['g1', 'g2']));
+      await _openRowMenu(tester, _groc);
+      expect(find.text('Delete 2 transactions'), findsOneWidget);
+    },
+  );
 
   testWidgets('Delete category: the confirmation names it and its event '
       'count in all streams; Cancel keeps it, confirming deletes both', (
@@ -612,7 +618,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Delete category "Groceries"?'), findsOneWidget);
     expect(
-      find.textContaining('all 2 of its events across all your streams'),
+      find.textContaining('all 2 of its transactions in this stream'),
       findsOneWidget,
     );
     await tester.tap(find.text('Cancel').last);
@@ -642,14 +648,17 @@ void main() {
     expect(find.byKey(ValueKey('category-name-field-$_rent')), findsNothing);
   });
 
-  testWidgets('editors: may add on the last row, but not rename or delete '
-      '(those reach all the owner\'s streams)', (tester) async {
+  testWidgets('editors: may add, rename and delete on this stream', (
+    tester,
+  ) async {
     await _pump(tester, role: Role.editor);
     await _openManager(tester);
     expect(find.byKey(const ValueKey('category-new-row')), findsOneWidget);
-    expect(find.byKey(ValueKey('category-delete-$_rent')), findsNothing);
-    expect(find.byKey(ValueKey('category-color-$_rent')), findsNothing);
-    expect(find.textContaining('only the owner'), findsOneWidget);
+    expect(find.byKey(ValueKey('category-color-$_rent')), findsOneWidget);
+    expect(find.textContaining('belong to this stream'), findsOneWidget);
+    expect(find.textContaining('only the owner'), findsNothing);
+    await _openRowMenu(tester, _rent);
+    expect(find.byKey(ValueKey('category-delete-$_rent')), findsOneWidget);
   });
 
   Future<void> openEditor(WidgetTester tester) async {
@@ -1240,28 +1249,28 @@ void main() {
   }
 
   testWidgets('confirmations are singular for one event, plural for more '
-      '(never "all 1 event")', (tester) async {
+      '(never "all 1 transaction")', (tester) async {
     await _pump(tester);
     await _openManager(tester);
-    // Rent has 1 event.
+    // Rent has 1 transaction.
     await _openRowMenu(tester, _rent);
     await tester.tap(find.byKey(ValueKey('category-delete-$_rent')));
     await tester.pumpAndSettle();
     expect(
-      find.textContaining('"Rent" and its 1 event across all your streams.'),
+      find.textContaining('"Rent" and its 1 transaction in this stream.'),
       findsOneWidget,
     );
     expect(find.textContaining('all 1'), findsNothing);
     await tester.tap(find.text('Cancel').last);
     await tester.pumpAndSettle();
     await _openRowMenu(tester, _rent);
-    expect(find.text('Delete 1 event'), findsOneWidget);
+    expect(find.text('Delete 1 transaction'), findsOneWidget);
     await tester.tap(find.byKey(ValueKey('category-delete-events-$_rent')));
     await tester.pumpAndSettle();
-    expect(find.text('Delete 1 event?'), findsOneWidget);
+    expect(find.text('Delete 1 transaction?'), findsOneWidget);
     expect(
       find.textContaining(
-        'The 1 event in "Rent" is deleted across all your streams.',
+        'The 1 transaction in "Rent" is deleted in this stream.',
       ),
       findsOneWidget,
     );
@@ -1270,12 +1279,12 @@ void main() {
     await tester.pumpAndSettle();
     // Groceries has 2.
     await _openRowMenu(tester, _groc);
-    expect(find.text('Delete 2 events'), findsOneWidget);
+    expect(find.text('Delete 2 transactions'), findsOneWidget);
     await tester.tap(find.byKey(ValueKey('category-delete-events-$_groc')));
     await tester.pumpAndSettle();
     expect(
       find.textContaining(
-        'All 2 events in "Groceries" are deleted across all your streams.',
+        'All 2 transactions in "Groceries" are deleted in this stream.',
       ),
       findsOneWidget,
     );

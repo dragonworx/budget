@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/auth_repository.dart';
-import '../data/models.dart' show BudgetStream, ServerFeatures;
-import '../features/categories/categories_manager.dart';
+import '../data/models.dart' show ServerFeatures;
 import '../features/timeline/shortcuts_help.dart';
 import '../features/variables/variables_manager.dart';
 import '../state/auth_providers.dart';
-import '../state/providers.dart';
 import '../state/realtime_providers.dart';
 import '../theme/app_theme.dart';
 import 'formula/variable_icon.dart';
@@ -40,13 +38,11 @@ class UserAvatar extends StatelessWidget {
   }
 }
 
-/// Avatar button in the app header: identity, then Variables, Categories,
+/// Avatar button in the app header: identity, then Variables,
 /// Admin (admins only), Help and Sign out.
 ///
-/// Renders nothing when signed out. [streamId] / [canEdit] are set on
-/// the timeline so Categories and Variables open in that stream's
-/// context (viewers get the view-only manager). On Streams home,
-/// Categories uses the last-opened or first stream when one exists.
+/// Renders nothing when signed out. [streamId] is set on the timeline
+/// so Variables open in that stream's context.
 class UserMenu extends ConsumerWidget {
   const UserMenu({
     super.key,
@@ -68,19 +64,6 @@ class UserMenu extends ConsumerWidget {
   /// Tighter padding and a slightly smaller avatar on narrow headers.
   final bool compact;
 
-  BudgetStream? _stream(WidgetRef ref) {
-    if (!ref.exists(streamsProvider)) return null;
-    final streams = ref.read(streamsProvider).valueOrNull ?? const [];
-    if (streams.isEmpty) return null;
-    final want = streamId ?? ref.read(streamsProvider.notifier).lastStreamId;
-    for (final s in streams) {
-      if (s.id == want) return s;
-    }
-    return streams.first;
-  }
-
-  bool _hasStream(WidgetRef ref) => streamId != null || _stream(ref) != null;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authProvider).valueOrNull?.user;
@@ -93,15 +76,6 @@ class UserMenu extends ConsumerWidget {
           GoRouter.of(context).go('/admin');
         case 'variables':
           showVariablesManager(context, streamId: streamId);
-        case 'categories':
-          final s = _stream(ref);
-          final id = streamId ?? s?.id;
-          if (id == null) return;
-          showCategoriesManager(
-            context,
-            streamId: id,
-            canEdit: canEdit ?? s?.role.canEdit ?? false,
-          );
         case 'help':
           showShortcutsHelp(context);
       }
@@ -169,20 +143,14 @@ class UserMenu extends ConsumerWidget {
             leadingIcon: const VariableGlyph(size: 18),
             child: const Text('Variables'),
           ),
-        // Everyone opens it (viewers read only); categories are shared by
-        // all the owner's streams. Hidden when no stream can be resolved.
-        if (_hasStream(ref))
-          MenuItemButton(
-            key: const ValueKey('menu-categories'),
-            onPressed: () => pick('categories'),
-            leadingIcon: const CategoryMenuGlyph(size: 18),
-            child: const Text('Categories'),
-          ),
         if (user.isAdmin)
           MenuItemButton(
             key: const ValueKey('menu-admin'),
             onPressed: () => pick('admin'),
-            leadingIcon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
+            leadingIcon: const Icon(
+              Icons.admin_panel_settings_outlined,
+              size: 18,
+            ),
             child: const Text('Admin'),
           ),
         MenuItemButton(
@@ -204,14 +172,14 @@ class UserMenu extends ConsumerWidget {
           onTap: () =>
               controller.isOpen ? controller.close() : controller.open(),
           child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (showRealtimeDot) const RealtimeDot(),
-            UserAvatar(user: user, radius: compact ? 13 : 15),
-          ],
-        ),
+            padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showRealtimeDot) const RealtimeDot(),
+                UserAvatar(user: user, radius: compact ? 13 : 15),
+              ],
+            ),
           ),
         ),
       ),

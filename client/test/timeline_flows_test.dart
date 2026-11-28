@@ -2181,7 +2181,7 @@ void main() {
       expect(find.text('Gestures & shortcuts'), findsNothing);
       expect(find.text('Manage categories…'), findsNothing);
       expect(find.text('Edit variables'), findsNothing);
-      expect(find.byKey(const ValueKey('more-categories')), findsNothing);
+      expect(find.byKey(const ValueKey('more-categories')), findsOneWidget);
       // Events is never duplicated in More.
       expect(find.byKey(const ValueKey('more-events')), findsNothing);
       expect(find.text('Transactions (2)'), findsNothing);
@@ -3329,9 +3329,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           tester
-              .widget<MenuItemButton>(
-                find.byKey(const ValueKey('more-import')),
-              )
+              .widget<MenuItemButton>(find.byKey(const ValueKey('more-import')))
               .onPressed,
           isNotNull,
         );

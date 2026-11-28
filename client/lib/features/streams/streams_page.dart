@@ -27,6 +27,7 @@ import '../sharing/share_dialog.dart';
 import '../../data/repositories.dart' show StreamDeleteTransfers;
 import 'delete_stream_dialog.dart';
 import 'reset_stream_dialog.dart';
+import '../categories/categories_manager.dart';
 import 'stream_home_layout.dart';
 
 /// P4/P6/P9: compact 112dp stream cards on a responsive grid.
@@ -246,6 +247,11 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
           onEdit: () => _edit(context, stream),
           onDelete: () => _delete(context, stream),
           onReset: () => _reset(context, stream),
+          onCategories: () => showCategoriesManager(
+            context,
+            streamId: stream.id,
+            canEdit: stream.role.canEdit,
+          ),
         );
 
         Widget listOf(List<BudgetStream> list) {
@@ -413,6 +419,7 @@ class _StreamCard extends ConsumerStatefulWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onReset,
+    required this.onCategories,
     required this.onShare,
     this.canDelete = true,
     this.canShare = true,
@@ -430,6 +437,7 @@ class _StreamCard extends ConsumerStatefulWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onReset;
+  final VoidCallback onCategories;
 
   @override
   ConsumerState<_StreamCard> createState() => _StreamCardState();
@@ -440,7 +448,7 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
 
   BudgetStream get stream => widget.stream;
 
-  bool get _hasMenu => stream.role.canEdit || widget.canShare;
+  bool get _hasMenu => true;
 
   void _openMenu() {
     if (!_hasMenu) return;
@@ -514,6 +522,12 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
                       onPressed: widget.onEdit,
                       child: const Text('Stream settings'),
                     ),
+                  MenuItemButton(
+                    key: const ValueKey('stream-categories'),
+                    leadingIcon: const CategoryMenuGlyph(size: 18),
+                    onPressed: widget.onCategories,
+                    child: const Text('Categories'),
+                  ),
                   if (stream.role.canEdit || widget.canDelete)
                     const Divider(height: 8),
                   if (stream.role.canEdit)
@@ -531,6 +545,7 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
                     ),
                 ],
                 builder: (context, controller, _) => IconButton(
+                  key: ValueKey('stream-actions-${stream.id}'),
                   tooltip: 'Stream actions',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(

@@ -50,9 +50,8 @@ String freeCategoryName(String base, Iterable<Category> existing) {
   }
 }
 
-/// Live number of events per category of [streamId]'s owner, across all
-/// that owner's streams (the listed counts; the list refetches whenever
-/// events change).
+/// Live number of events per category of [streamId] (the listed counts;
+/// the list refetches whenever events change).
 Map<String, int> categoryEventCounts(WidgetRef ref, String streamId) => {
   for (final c
       in ref.watch(categoriesProvider(streamId)).valueOrNull ??
@@ -60,11 +59,10 @@ Map<String, int> categoryEventCounts(WidgetRef ref, String streamId) => {
     c.id: c.eventCount,
 };
 
-/// Opens the category manager of [streamId]'s owner (a dialog on every
-/// screen size). [canEdit]: may add categories (editors and the owner);
-/// renaming, recolouring and deleting reach every stream of the owner, so
-/// only the owner gets those. Resolves to the id of the last category
-/// created in it, if any.
+/// Opens the category manager for [streamId] (a dialog on every screen
+/// size). [canEdit]: owners and editors may add, rename, recolour, hide
+/// and delete (this stream only). Viewers are read-only. Resolves to the
+/// id of the last category created in it, if any.
 Future<String?> showCategoriesManager(
   BuildContext context, {
   required String streamId,
@@ -86,12 +84,12 @@ Future<String?> showCategoriesManager(
   );
 }
 
-/// The category manager: a table of the owner's categories (shared by all
-/// their streams). Columns: colour (tap to change), name (tap to rename in
-/// place), event count (all streams), and two icon buttons: delete the
-/// events (keeping the category; undoable) and delete the category with
-/// its events. A dashed "new category" row is pinned below the rows (only
-/// the rows scroll). Viewers see the table read-only; editors may only add.
+/// The category manager: a table of this stream's categories. Columns:
+/// colour (tap to change), name (tap to rename in place), event count
+/// (this stream), and two icon buttons: delete the events (keeping the
+/// category; undoable) and delete the category with its events. A dashed
+/// "new category" row is pinned below the rows (only the rows scroll).
+/// Viewers see the table read-only; owners and editors may edit.
 class CategoriesManager extends ConsumerStatefulWidget {
   const CategoriesManager({
     super.key,
@@ -179,12 +177,8 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     ];
   }
 
-  /// Rename, recolour, delete: the owner only (they reach every stream).
-  bool get _canManage {
-    if (!widget.canEdit) return false;
-    final role = ref.watch(streamProvider(widget.streamId)).valueOrNull?.role;
-    return role?.isOwner ?? true;
-  }
+  /// Rename, recolour, delete: owners and editors of this stream.
+  bool get _canManage => widget.canEdit;
 
   bool get _touch {
     final p = Theme.of(context).platform;
@@ -389,7 +383,7 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
     }
   }
 
-  static String _events(int n) => n == 1 ? '1 event' : '$n events';
+  static String _events(int n) => n == 1 ? '1 transaction' : '$n transactions';
 
   static String _others(int others) => others > 0
       ? ', plus ${others == 1 ? 'the other side of 1 transfer' : 'the other sides of $others transfers'}'
@@ -422,10 +416,10 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
       context,
       title: 'Delete category "${c.name}"?',
       message: n == 0
-          ? 'No stream has events in it. Only the category is deleted.'
+          ? 'This category has no transactions. Only the category is deleted.'
           : 'This deletes "${c.name}" and '
-                '${n == 1 ? 'its 1 event' : 'all $n of its events'} across '
-                'all your streams${_others(others)}. This can\'t be undone.',
+                '${n == 1 ? 'its 1 transaction' : 'all $n of its transactions'} '
+                'in this stream${_others(others)}. This can\'t be undone.',
       confirmLabel: n == 0 ? 'Delete category' : 'Delete category and events',
     );
     if (!ok || !mounted) return;
@@ -445,8 +439,8 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
       context,
       title: 'Delete ${_events(n)}?',
       message:
-          '${n == 1 ? 'The 1 event' : 'All $n events'} in "${c.name}" '
-          '${n == 1 ? 'is' : 'are'} deleted across all your streams'
+          '${n == 1 ? 'The 1 transaction' : 'All $n transactions'} in '
+          '"${c.name}" ${n == 1 ? 'is' : 'are'} deleted in this stream'
           '${_others(others)}. The category stays.',
       confirmLabel: 'Delete ${_events(n)}',
     );
@@ -672,15 +666,12 @@ class _CategoriesManagerState extends ConsumerState<CategoriesManager> {
             child: Text(
               key: const ValueKey('categories-description'),
               !widget.canEdit
-                  ? 'View only: you have viewer access. Categories are shared '
-                        'by all the owner\'s streams.'
-                  : manage
-                  ? 'Shared by all your streams. Tap a name to rename a '
-                        'category, or a folder to expand it. Recolour a leaf '
-                        'with its dot. Drag the handle to reorder. More has '
-                        'Move, Delete, and Delete events.'
-                  : 'Shared by all the owner\'s streams. You can add '
-                        'categories; only the owner renames or deletes them.',
+                  ? 'View only: you have viewer access. These categories '
+                        'belong to this stream.'
+                  : 'These categories belong to this stream. Tap a name to '
+                        'rename a category, or a folder to expand it. Recolour '
+                        'a leaf with its dot. Drag the handle to reorder. More '
+                        'has Move, Delete, and Delete events.',
               style: muted,
             ),
           ),
