@@ -127,9 +127,17 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
     final count = streams?.length;
     return Scaffold(
       appBar: AppBar(
-        title: const Align(
+        title: Align(
           alignment: AlignmentDirectional.centerStart,
-          child: BudgieNavbarLockup(height: 32),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const BudgieNavbarLockup(height: 32),
+              const SizedBox(width: 10),
+              // Own semantics node so the label does not merge with "Budgie".
+              Semantics(container: true, child: const RealtimeDot(badge: true)),
+            ],
+          ),
         ),
         actions: [
           IconButton(
@@ -137,7 +145,7 @@ class _StreamsPageState extends ConsumerState<StreamsPage> {
             onPressed: () => ref.read(streamsProvider.notifier).refresh(),
             icon: const Icon(Icons.refresh_rounded),
           ),
-          const UserMenu(),
+          const UserMenu(showRealtimeDot: false),
           const SizedBox(width: 8),
         ],
       ),
